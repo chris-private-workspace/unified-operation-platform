@@ -3,10 +3,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { EventType, LineItemStage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { GraphService } from '../integration/graph/graph.service';
+import {
+  GraphService,
+  type GraphUser,
+} from '../integration/graph/graph.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { aggregateRequestStatus } from './stage.service';
 
@@ -81,7 +85,15 @@ export class AssignService {
         'Phase 1 sync gate not passed: azureSyncedAt is null',
       );
     }
-    const user = await this.graph.findUser(request.targetUpn);
+    // findUser returns null for a genuine 404 (not synced yet) but *throws* on
+    // an auth / network / throttle failure — wrap that so a raw Graph error
+    // never propagates unhandled (BUG-002: it crashes the Nest process).
+    let user: GraphUser | null;
+    try {
+      user = await this.graph.findUser(request.targetUpn);
+    } catch (err) {
+      throw this.graphUnavailable('look up the target user', err);
+    }
     if (!user) {
       throw new BadRequestException(
         'Target user not found in Azure AD (not synced yet)',
@@ -94,7 +106,12 @@ export class AssignService {
         'User has no usageLocation; provide one to assign',
       );
     }
-    const skus = await this.graph.getSubscribedSkus();
+    let skus;
+    try {
+      skus = await this.graph.getSubscribedSkus();
+    } catch (err) {
+      throw this.graphUnavailable('read the tenant license inventory', err);
+    }
     const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
     if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
       throw new BadRequestException(
@@ -103,9 +120,13 @@ export class AssignService {
     }
 
     // ── Graph assignment (external side-effect, BEFORE the DB transaction) ──
-    await this.graph.assignLicense(request.targetUpn, item.sku.skuId, {
-      usageLocation,
-    });
+    try {
+      await this.graph.assignLicense(request.targetUpn, item.sku.skuId, {
+        usageLocation,
+      });
+    } catch (err) {
+      throw this.graphUnavailable('assign the license in Microsoft Graph', err);
+    }
 
     // ── Atomic domain writes (OD2) — only assignedQuantity moves (DESIGN §5) ──
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -170,5 +191,24 @@ export class AssignService {
       `Assigned line item ${lineItemId} (${item.sku.skuPartNumber}, request ${request.id})`,
     );
     return updated;
+  }
+
+  /**
+   * Wrap a raw Microsoft Graph failure as a clean 503. A raw MSAL error is not
+   * an HttpException and carries an invalid status that crashes the Nest process
+   * (BUG-002). H4: never log the UPN — the action + message is enough to triage.
+   */
+  private graphUnavailable(
+    action: string,
+    err: unknown,
+  ): ServiceUnavailableException {
+    this.logger.error(
+      `Microsoft Graph unavailable while trying to ${action}: ${
+        (err as Error)?.message
+      }`,
+    );
+    return new ServiceUnavailableException(
+      `Microsoft Graph is unavailable — could not ${action}. Please retry.`,
+    );
   }
 }

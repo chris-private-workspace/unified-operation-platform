@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { AssignService } from './assign.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
@@ -226,9 +230,34 @@ describe('AssignService', () => {
   describe('assignLineItem — failure isolation', () => {
     it('does not touch the ledger if Graph assignLicense throws', async () => {
       arrangeHappy();
-      graph.assignLicense.mockRejectedValue(new Error('no seats'));
+      graph.assignLicense.mockRejectedValue(new Error('graph 500'));
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow('no seats');
+      // BUG-002: a raw Graph error becomes a clean 503, not an unhandled throw.
+      await expect(service.assignLineItem('li1')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.opcoSkuLedger.upsert).not.toHaveBeenCalled();
+    });
+
+    // BUG-002 regression: findUser *throws* (auth/network/throttle — not a 404
+    // null) → must surface a 503, never propagate the raw MSAL error (which
+    // crashes the Nest process with an invalid status code).
+    it('wraps a findUser failure as 503 and touches nothing (fail-closed)', async () => {
+      prisma.requestLineItem.findUnique.mockResolvedValue(readyItem());
+      graph.findUser.mockRejectedValue(
+        Object.assign(
+          new Error('AADSTS700038: invalid application identifier'),
+          {
+            statusCode: -1,
+          },
+        ),
+      );
+
+      await expect(service.assignLineItem('li1')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(graph.assignLicense).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(tx.opcoSkuLedger.upsert).not.toHaveBeenCalled();
     });
