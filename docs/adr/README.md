@@ -14,8 +14,4 @@
 
 | ADR | Title | Status | Date | Source |
 |---|---|---|---|---|
-| _(空 — ADR-0001 落地時加第一行)_ | | | | |
-
-<!-- 範例:
-| [0001](./0001-xxx.md) | {決定標題} | Accepted | 2026-01-10 | W02 F3 / stakeholder approval |
--->
+| [0001](./0001-frontend-in-repo-monorepo.md) | 前端納入本 repo,採 monorepo(`apps/api` + `apps/web`) | Accepted | 2026-07-09 | 用戶 approval(H1/H3);design handoff 入 repo |

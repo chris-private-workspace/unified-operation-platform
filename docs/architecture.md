@@ -4,7 +4,7 @@
 > **模組級決策**(LicenseOps 定位 / scope / 對帳 / domain model / request 生命週期)唔喺呢度重複 —— 睇 `docs/02-architecture/licenseops/DESIGN.md`(決策 SSOT)。
 > **Frozen 慣例**:核心 section lock 後只有 owner approve 先 increment version;改架構經 ADR(CLAUDE.md §5 H1)。
 
-**Version**: 0.1(draft) · **Status**: draft · **Owner**: Chris Lai · **Last Updated**: 2026-07-09
+**Version**: 0.2(draft) · **Status**: draft · **Owner**: Chris Lai · **Last Updated**: 2026-07-09 · **ADRs**: [ADR-0001](adr/0001-frontend-in-repo-monorepo.md)
 
 ---
 
@@ -26,6 +26,7 @@ Unified Operation Platform 係一個自建嘅 **admin portal**,統一管理 IT o
 - **In scope(當前)**:
   - 平台四層地基(見 §3)+ integration layer。
   - **LicenseOps 模組**:onboarding 當下 M365 加 license、消費 ServiceNow request 回寫、per-OpCo ledger + 總量層對帳 + drift alert、指派 license。
+  - **LicenseOps 前端**(`apps/web`,ADR-0001)—— 由 `design_handoff_licenseops/` hifi 設計還原,受 CLAUDE.md §5 H6 保護。
 - **Out of scope / 未來 Tier**(對應 CLAUDE.md §5 H3):
   - 平台層:其他 IT ops 模組(offboarding / cost insights / D365 / 其他 support 工作流)—— 未 approve 前唔起。
   - LicenseOps 層排除項(ticket 表單 / 審批鏈 / SLA / 成本發票 / offboarding / D365 …)見 module spec §2。
@@ -37,16 +38,16 @@ Unified Operation Platform 係一個自建嘅 **admin portal**,統一管理 IT o
 3. **Orchestration / Action layer** — 執行 + 人手介入控制點;`@nestjs/schedule` `@Cron`(sync poll / daily reconcile)+(planned)Redis + BullMQ。n8n 今天、AI 明天接呢層。
 4. **API + UI layer** — REST + OpenAPI(`/docs/api`);呢個 OpenAPI contract 就係 n8n / AI 未來受控接入點。
 
-## 4. Application Architecture
-
-- **NestJS modular monolith**;每個 module 對齊四層地基。前後端分開(方案甲)。
-- **模組地圖**:`integration`(✅ built)/ `prisma`(`@Global`,planned)/ `license`(module C:catalog + 對帳 + ledger,planned)/ `fulfilment`(module D:request 生命週期,planned)。
-- **Data**:`prisma/schema.prisma` = domain model 真相(10 models,見 module spec §6)。
-- ⚠️ **當前 scaffold 現狀**(entry 檔位置、缺 module、無 build config)見 `docs/setup.md`。
+- **Monorepo**(ADR-0001):`apps/api`(NestJS 後端)+ `apps/web`(React 前端);`docs/` 同 `design_handoff_licenseops/` 留 root。
+- **Backend**(`apps/api`):**NestJS modular monolith**,每個 module 對齊四層地基。模組地圖:`integration`(✅ built)/ `prisma`(`@Global`,planned)/ `license`(module C:catalog + 對帳 + ledger,planned)/ `fulfilment`(module D:request 生命週期,planned)。Data:`prisma/schema.prisma` = domain model 真相(10 models,見 module spec §6)。
+- **Frontend**(`apps/web`):React + TypeScript + Tailwind + shadcn/ui;設計系統見 §5 + `docs/02-architecture/design-system.md`;經 OpenAPI 對後端。
+- ⚠️ **當前 scaffold 現狀**(後端待遷入 `apps/api`、entry 檔位置、缺 module、無 build config)見 `docs/setup.md`;由 phase W01 收尾。
 
 ## 5. UI / Views(LicenseOps)
 
-LicenseOps 前端由 `design_handoff_licenseops/`(**hifi 設計 SSOT**)定義:app shell(sidebar + top bar,role-scoped)→ Overview dashboard → **License Assets**(Platform / By-OpCo / Compare 三層 + allocation/adjust/edit operations)→ Requests console → **Request detail**(per-line stage stepper + assign flow + sync gate + AI Assist preview)→ Drift alerts → SKU Catalog → Settings/Integrations。受 CLAUDE.md §5(將來 H6)+ §7 保護。
+- **設計系統 SSOT** = `docs/02-architecture/design-system.md`(token 契約 + component inventory + anti-drift);**視覺真相** = `design_handoff_licenseops/`。受 CLAUDE.md §5 **H6** 保護。
+- **8 個畫面**:app shell(sidebar + top bar,role-scoped)→ Overview dashboard → **License Assets**(Platform / By-OpCo / Compare 三層 + allocation/adjust/edit operations)→ Requests console → **Request detail**(per-line stage stepper + assign flow + sync gate + AI Assist preview)→ Drift alerts → SKU Catalog → Settings/Integrations → Login。
+- **Build order**(滾動 phase):app shell → tokens/theme → Overview → License Assets → Requests → Request detail → Drift → SKU Catalog → Settings → Login。
 
 ## 6. Delivery Plan
 
@@ -80,7 +81,8 @@ Rolling / JIT phases —— 每 phase kickoff 建 `docs/01-planning/W{NN}-{name}
 
 ## Decision Log
 
-重大平台決定促成後 promote 做 ADR(`docs/adr/`)。LicenseOps 已鎖定決策清單見 module spec §9。
+- **2026-07-09 · ADR-0001** — 前端納入本 repo,採 monorepo(`apps/api` + `apps/web`);新增 H6 Design Fidelity。
+- 重大平台決定促成後 promote 做 ADR(`docs/adr/`)。LicenseOps 已鎖定決策清單見 module spec §9。
 
 ---
 

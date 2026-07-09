@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-09(git init + baseline commit `5ff2cae` done)
+**最後更新**:2026-07-09(git baseline `5ff2cae` · ADR-0001 前端入 repo monorepo + H6)
 
 ---
 
@@ -21,7 +21,7 @@
 
 | ID | 任務 | 狀態 | 下一步 / 阻塞 | 來源 |
 |---|---|---|---|---|
-| W01 | Backend Bootstrap（令後端跑得起：package.json / 佈局歸位 / PrismaModule / docker-compose / boot 驗證） | 已規劃（plan `draft`） | 等 Chris approve plan → flip `active` → 由 F1 開工 | `W01-backend-bootstrap/plan.md` |
+| W01 | Backend Bootstrap（令後端跑得起 + **遷入 monorepo `apps/api`**：package.json / 佈局 / PrismaModule / docker-compose / boot 驗證） | 已規劃（plan `draft`） | 等 Chris approve plan → flip `active` → 由 F1 開工 | `W01-backend-bootstrap/plan.md` · ADR-0001 |
 
 ---
 
@@ -40,7 +40,7 @@
 | MOD-C | Module C：SKU Catalog 初始化 + 總量層對帳 / drift | 已設計 | W01 完成後開工（DESIGN 建議功能上先 C） | `docs/02-architecture/licenseops/DESIGN.md §11` |
 | MOD-D | Module D：Request 履行（triage → sync gate → assign → ledger → 回寫 ServiceNow） | 已設計 | W01 完成、建議 C 之後 | `docs/02-architecture/licenseops/DESIGN.md §11` |
 | AUTH | Entra SSO + role/OpCo-scope guard（controllers 現時 unguarded） | 已設計（model 已有 role/scope） | 真實曝露前必做 | `docs/architecture.md §9` |
-| FE | LicenseOps 前端（React + Vite + Tailwind + shadcn） | 已設計（hifi handoff 就緒） | 另一 deliverable；落本 repo 時考慮升 H6 | `design_handoff_licenseops/` |
+| FE | LicenseOps 前端（`apps/web`；React+TS+Tailwind+shadcn；滾動 build order：app shell→theme→Overview→License Assets→Requests→Request detail→Drift→Catalog→Settings→Login） | 已設計（hifi handoff + 設計系統就緒；ADR-0001 已定 in-repo；H6 已生效） | 前置 `apps/web` scaffold（W01 monorepo 之後）；每段一滾動 phase | `docs/02-architecture/design-system.md` · `design_handoff_licenseops/` |
 
 ---
 

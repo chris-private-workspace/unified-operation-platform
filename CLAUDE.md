@@ -66,8 +66,8 @@
 | 改架構 / 違反 §5 設計 | **STOP** — 先確認(H1)+ 寫 ADR `docs/adr/` |
 | 加 vendor / dependency / 換 component | **STOP** — 先確認(H2)+ 寫 ADR |
 | 寫 / 改 backend feature(Graph / ServiceNow 整合) | `docs/05-usage/INTEGRATION_SETUP.md` + `src/integration/` |
-| 寫 / 改 frontend / UI(LicenseOps) | `design_handoff_licenseops/`(**hifi 設計 SSOT** — 見 §7;唔可以 eyeball token) |
-| 寫 / 改 API endpoint | OpenAPI(`main.ts` DocumentBuilder;runtime UI `/docs/api`) |
+| 寫 / 改 frontend / UI(LicenseOps) | `docs/02-architecture/design-system.md`(**設計系統 SSOT** + anti-drift)→ 視覺真相 `design_handoff_licenseops/` → commit 前跑 `ui-design` skill(見 §5 H6、§7) |
+| 寫 / 改 API endpoint | OpenAPI(`apps/api` 的 `main.ts` DocumentBuilder;runtime UI `/docs/api`) |
 | 寫 eval / test | `docs/01-planning/PROCESS.md` + §3.4(H5 覆蓋規則) |
 | Risk-related decision | `docs/01-planning/RISK_REGISTER.md` |
 | 反覆「暫時唔做」嘅決定 | `docs/01-planning/DEFERRED_REGISTER.md` |
@@ -87,8 +87,12 @@
 - **DTO validation**:class-validator + global `ValidationPipe({ whitelist: true, transform: true })`(已喺 `main.ts`)。
 - **Logging**:Nest `Logger`,唔用 `console.log`;**絕不** log secret / PII(見 §5 H4)。
 
-### 3.2 Frontend(React + Vite + Tailwind + shadcn/ui)— 未落本 repo
-- 落地時對齊 `design_handoff_licenseops/design-system/`(tokens 為色彩/字體/間距真相)。詳見 §7 + H3 註。
+### 3.2 Frontend(React + Vite + TypeScript + Tailwind + shadcn/ui)— 落 `apps/web`(ADR-0001)
+- **設計系統契約**:`docs/02-architecture/design-system.md` = SSOT;`design_handoff_licenseops/` = 視覺真相。**唔可以 eyeball / hardcode 色值** —— 一律用 token(見 §5 H6)。
+- **Token**:原封引入 `design_handoff_licenseops/design-system/tokens/*.css`,Tailwind theme 只**引用 CSS var**(`accent:'var(--accent)'` …),唔複製 hex。`darkMode:'class'`(`.dark` 掛 root)。
+- **元件**:shadcn/ui 做底,re-skin 成 handoff token;handoff 個 19 個 `.jsx` reference 當 **spec**(唔照抄 inline-style 版),重建到視覺 1:1。
+- **State**:server state = TanStack Query(對 NestJS OpenAPI);UI state = Zustand(theme / role / sidebar / filters …)。Routing:每畫面一 route。
+- **Icon**:`lucide-react`(stroke-only);**Fonts**:Geist + Geist Mono;**數字 / 識別碼一律 mono**。一個 view **一個** primary action(Ricoh red `#E60027`)。
 
 ### 3.3 共通 Naming
 - Classes `PascalCase`;vars / methods `camelCase`;檔名 kebab(Nest 慣例 `*.service.ts`)。
@@ -154,7 +158,8 @@ Scope:模組名(`integration` / `license` / `fulfilment` / `prisma` / `claude-md
 | 背景工作 | Redis + BullMQ · 排程 `@nestjs/schedule` |
 | 對外 API | REST + OpenAPI(NestJS Swagger) |
 | Auth | Entra ID SSO + app roles(未建) |
-| 前端 | React + Vite + Tailwind + shadcn/ui(另一 deliverable) |
+| 前端 | React + Vite + TypeScript + Tailwind + shadcn/ui(落 `apps/web`,ADR-0001) |
+| Monorepo | `apps/api`(NestJS)+ `apps/web`(React)（ADR-0001) |
 | 部署 | Docker Compose(app + postgres + redis) |
 | Integration vendors | Microsoft Graph、ServiceNow Table API、(future)n8n |
 
@@ -181,6 +186,18 @@ Scope:模組名(`integration` / `license` / `fulfilment` / `prisma` / `claude-md
 **定義**:critical path module 寫 code 必須同步寫 test。Critical path = license `assignLicense`、ledger `assignedQuantity` 更新、SKU 總量層對帳 / drift 偵測、request stage 推進 / sync gate。
 **Required behavior**:改到上述 path 冇對應 test → task 未完;Graph / ServiceNow 一律 mock(§3.4)。
 
+### 5.6 H6 — Design Fidelity Constraint(前端專用)
+
+**定義**:LicenseOps 前端(`apps/web`)必須忠實還原 `design_handoff_licenseops/` 嘅 hifi 設計。以下屬 violate:
+- **hardcode 色 / 字 / 間距 / 半徑 / 陰影值**(唔用 `design-system/tokens/*` 嘅 CSS var / Tailwind token)。
+- **eyeball** token(憑感覺調數值,唔查 `tokens/*.css` 實際值)。
+- 引入 handoff 以外嘅 **accent 色 / gradient / 陰影美學 / icon set**(accent 只有 Ricoh red;icon 只有 lucide stroke;唯一 gradient = login)。
+- 一個 view **多過一個** primary action。
+- 只做 light 或只做 dark(兩個都要）。
+
+**Required behavior**:UI 改動 commit / 驗收前跑 `.claude/skills/ui-design` 自檢;要偏離設計(加新元件 / 新 pattern / 改 token)→ **STOP**,先同 owner 確認,必要時更新 `docs/02-architecture/design-system.md`(+ 若屬架構級 → ADR)。
+**唔屬 violate**:用既有 token 砌新畫面 / 組合既有 primitive / 加 handoff 已定義嘅 state。
+
 ---
 
 ## 6. Architecture Decision Record (ADR) Format
@@ -193,11 +210,10 @@ Scope:模組名(`integration` / `license` / `fulfilment` / `prisma` / `claude-md
 
 ## 7. External References — 設計 handoff(read-only)
 
-`design_handoff_licenseops/` 係 LicenseOps 嘅 **hifi 設計參考**(HTML prototype + framework-agnostic design system):
+`design_handoff_licenseops/` 係 LicenseOps 嘅 **hifi 設計參考**(HTML prototype + framework-agnostic design system),= 前端**視覺真相**;可操作契約 + anti-drift 喺 `docs/02-architecture/design-system.md`(SSOT)。
 - **只讀 / recreate,唔可以 port 佢個 `.dc.html` runtime,唔可以照 copy prototype code。**
-- Token(色 / 字 / 間距)真相喺 `design-system/tokens/*` —— **唔可以 eyeball**,用實際 `--token`。
-- 建佢個前端前先讀 `design-system/readme.md`(brand/voice/visual)+ `styles.css` + tokens。
-- ⚠️ 前端正式落本 repo 起嗰陣,考慮把「設計還原度」升做 **H6**(hifi 100% 還原)。
+- Token(色 / 字 / 間距)真相喺 `design-system/tokens/*` —— **唔可以 eyeball**,用實際 `--token`(見 §5 **H6**)。
+- 建前端前先讀 `docs/02-architecture/design-system.md`,再 `design-system/readme.md` + `styles.css` + tokens。
 
 ---
 
@@ -275,6 +291,7 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
 | SKU 靠名定靠 GUID | 一律 `skuId` GUID,唔信 Excel / 記憶中嘅 part number |
 | 要加 dependency 至做到 | STOP(H2),唔好靜靜 `npm i` |
 | Assign 但 user 未 sync | 唔 assign — `findUser` null / `azureSyncedAt` 空 = Phase 1 sync gate 未過 |
+| UI 想調色 / 間距 / 加元件 | 查 `design-system/tokens/*` 用 token,唔 eyeball / hardcode;要新 pattern 先問(H6) |
 | Performance vs simplicity | 早期:simplicity wins |
 
 ---
@@ -293,12 +310,15 @@ Unified Operation Platform — Strict Mode
 ├─ Baseline (§1): think → simple → surgical → goal
 ├─ Platform spec: docs/architecture.md
 ├─ Module 1 (LicenseOps): docs/02-architecture/licenseops/DESIGN.md
+├─ Design system: docs/02-architecture/design-system.md (視覺真相 design_handoff_licenseops/)
+├─ Monorepo: apps/api (NestJS) + apps/web (React) — ADR-0001
 ├─ Stack: NestJS+Prisma+Postgres · Redis/BullMQ · Graph+ServiceNow · React/shadcn(FE)
 ├─ Hard Constraints (STOP+ask on trigger):
 │  ├─ H1 Architectural change      H2 Vendor/dep lock
 │  ├─ H3 Scope/Tier boundary       H4 Security/PII
-│  └─ H5 Test coverage (critical path)
-└─ When in doubt: ask, don't guess · skuId not name · sync gate before assign
+│  ├─ H5 Test coverage (critical path)
+│  └─ H6 Design fidelity (token-only, 1 primary/view, lucide, light+dark)
+└─ When in doubt: ask, don't guess · skuId not name · sync gate before assign · UI: token 唔 eyeball
 ```
 
 ---

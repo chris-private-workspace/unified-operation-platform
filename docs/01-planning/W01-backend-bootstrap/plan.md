@@ -20,7 +20,9 @@ prior_phase: null             # first phase
 
 ## 1. Scope
 
-依家 repo 有 integration layer(`src/integration/`)、Prisma schema、seed 同 entry 檔,但**跑唔起**:冇 `package.json` / build config、entry 檔位置同 import 路徑唔一致、`app.module.ts` 引用嘅 `PrismaModule` / `LicenseModule` / `FulfilmentModule` 未存在。本 phase 目標 = **建立 NestJS build/run 工具鏈 + 修正檔案佈局,令 `npm run start:dev` 真正 boot、Prisma migrate、seed、OpenAPI UI serve**。呢個係之後所有 module 工作(C / D)嘅前置,unblock 全部後續開發。
+依家 repo 有 integration layer(`src/integration/`)、Prisma schema、seed 同 entry 檔,但**跑唔起**:冇 `package.json` / build config、entry 檔位置同 import 路徑唔一致、`app.module.ts` 引用嘅 `PrismaModule` / `LicenseModule` / `FulfilmentModule` 未存在。本 phase 目標 = **建立 monorepo(ADR-0001)+ NestJS build/run 工具鏈 + 把後端遷入 `apps/api`,令 `npm run start:dev` 真正 boot、Prisma migrate、seed、OpenAPI UI serve**。呢個係之後所有 module 工作(C / D)同前端(`apps/web`)嘅前置,unblock 全部後續開發。
+
+> **ADR-0001 影響**:採 monorepo `apps/api`(NestJS)+ `apps/web`(React,本 phase 唔起,只預留)。後端由 repo root 遷入 `apps/api/`;root 設 workspace。前端 scaffold 屬後續 phase。
 
 **明確 out-of-scope(H3)**:唔實作 module C(catalog + 對帳)/ module D(request 履行)嘅業務邏輯;`LicenseModule` / `FulfilmentModule` 本 phase 只建**空 stub**令 app compile,實際 service 留 W02+。唔加 auth guard(另一 phase)。
 
@@ -36,12 +38,13 @@ prior_phase: null             # first phase
 - **Effort estimate**:3h
 - **Owner**:AI / Chris
 
-### F2 — 檔案佈局歸位
-- **Spec ref**:`docs/setup.md` 現狀
+### F2 — 遷入 monorepo `apps/api`(ADR-0001)
+- **Spec ref**:`docs/setup.md` 現狀 · ADR-0001 · `docs/architecture.md §4`
 - **Acceptance criteria**:
-  - `main.ts` → `src/main.ts`;`app.module.ts` → `src/app.module.ts`;`seed.ts` → `prisma/seed.ts`。
-  - `src/integration/` 相對 import 對得返;`app.module.ts` import 路徑生效。
-- **Effort estimate**:1h
+  - root 設 workspace(`apps/*`);`apps/web` 先留空 placeholder。
+  - `main.ts` → `apps/api/src/main.ts`;`app.module.ts` → `apps/api/src/app.module.ts`;`src/integration/` → `apps/api/src/integration/`;`seed.ts` → `apps/api/prisma/seed.ts`;`prisma/schema.prisma` → `apps/api/prisma/`。
+  - import 路徑 + `nest-cli.json` root 對得返;`app.module.ts` import 生效。
+- **Effort estimate**:1.5h
 - **Owner**:AI
 
 ### F3 — PrismaModule + 空 module stubs
@@ -100,6 +103,7 @@ N/A — first phase。
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-09 | Initial plan | 框架落地首個 phase | Chris Lai |
+| 2026-07-09 | 併入 monorepo:後端遷入 `apps/api`(F2 改)+ scope 提及 `apps/web` 預留 | ADR-0001(前端入 repo)approved,W01 需對準 monorepo 佈局免起錯 | Chris Lai |
 
 ---
 

@@ -133,6 +133,7 @@
       <a onClick="{{ goCatalog }}" title="SKU Catalog" style="{{ nav.catalog }}" style-hover="{{ navHover }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg><sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}">SKU Catalog</sc-if></a>
       <sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}"><div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--fg-subtle);padding:12px 10px 5px;text-transform:uppercase;">Administration</div></sc-if>
       <a onClick="{{ goUsers }}" title="Users & roles" style="{{ nav.users }}" style-hover="{{ navHover }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}">Users &amp; roles</sc-if></a>
+      <a onClick="{{ goOpcos }}" title="OpCos" style="{{ nav.opcos }}" style-hover="{{ navHover }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg><sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}">OpCos</sc-if></a>
       <a onClick="{{ goIntegrations }}" title="Integrations" style="{{ nav.integrations }}" style-hover="{{ navHover }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}">Integrations</sc-if></a>
       <sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}"><div style="font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--fg-subtle);padding:12px 10px 5px;text-transform:uppercase;">Roadmap</div></sc-if>
       <div style="{{ navDisabled }}" title="Offboarding — coming soon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></svg><sc-if value="{{ expanded }}" hint-placeholder-val="{{ true }}">Offboarding<span style="{{ soonStyle }}">Soon</span></sc-if></div>
@@ -593,35 +594,35 @@
 
         <!-- COMPARE -->
         <sc-if value="{{ isCompare }}" hint-placeholder-val="{{ false }}">
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:auto;">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;">
           <div style="display:flex;align-items:center;gap:16px;padding:12px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
             <span style="font-size:12px;color:var(--fg-muted);">Cell = <b style="color:var(--fg);">available</b> seats</span>
             <div style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fg-muted);"><span style="width:10px;height:10px;border-radius:3px;background:var(--danger);"></span>≤0</div>
             <div style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fg-muted);"><span style="width:10px;height:10px;border-radius:3px;background:var(--warn);"></span>tight (1–2)</div>
             <div style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fg-muted);"><span style="width:10px;height:10px;border-radius:3px;background:var(--ok);"></span>headroom</div>
           </div>
-          <table style="border-collapse:collapse;width:100%;min-width:820px;">
-            <thead>
-              <tr>
-                <th style="position:sticky;left:0;background:var(--card);text-align:left;padding:10px 18px;font-size:11px;font-weight:600;letter-spacing:.03em;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);z-index:1;">SKU</th>
+          <div style="overflow:auto;">
+            <div style="width:max-content;min-width:100%;">
+              <!-- header -->
+              <div style="display:flex;border-bottom:1px solid var(--border);">
+                <div style="position:sticky;left:0;z-index:1;background:var(--card);width:220px;flex-shrink:0;padding:10px 18px;font-size:11px;font-weight:600;letter-spacing:.03em;color:var(--fg-subtle);text-transform:uppercase;">SKU</div>
                 <sc-for list="{{ compareOpcos }}" as="o" hint-placeholder-count="8">
-                  <th style="padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);border-bottom:1px solid var(--border);text-align:center;white-space:nowrap;">{{ o }}</th>
+                  <div style="width:72px;flex-shrink:0;padding:10px 6px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-align:center;white-space:nowrap;">{{ o }}</div>
                 </sc-for>
-              </tr>
-            </thead>
-            <tbody>
+              </div>
+              <!-- rows -->
               <sc-for list="{{ compareRows }}" as="row" hint-placeholder-count="8">
-                <tr style-hover="{{ rowHover }}">
-                  <td style="position:sticky;left:0;background:var(--card);padding:9px 18px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:500;white-space:nowrap;">{{ row.sku }}</td>
+                <div style="display:flex;border-bottom:1px solid var(--border);" style-hover="{{ rowHover }}">
+                  <div style="position:sticky;left:0;z-index:1;background:var(--card);width:220px;flex-shrink:0;padding:9px 18px;font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.sku }}</div>
                   <sc-for list="{{ row.cells }}" as="c" hint-placeholder-count="8">
-                    <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;">
+                    <div style="width:72px;flex-shrink:0;padding:6px 8px;display:flex;align-items:center;justify-content:center;">
                       <div style="{{ c.chip }}" title="{{ c.title }}">{{ c.avail }}</div>
-                    </td>
+                    </div>
                   </sc-for>
-                </tr>
+                </div>
               </sc-for>
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
         </sc-if>
       </div>
@@ -835,33 +836,26 @@
           <div style="flex:1;"></div>
           <button onClick="{{ syncCatalog }}" style="height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:12.5px;font-weight:500;font-family:inherit;display:flex;align-items:center;gap:7px;cursor:pointer;" style-hover="{{ iconBtnHover }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg>Sync catalog from tenant</button>
         </div>
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:auto;">
-          <table style="border-collapse:collapse;width:100%;min-width:1000px;">
-            <thead><tr>
-              <th style="text-align:left;padding:10px 16px;font-size:11px;font-weight:600;letter-spacing:.03em;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">Display name</th>
-              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">Part number</th>
-              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">skuId</th>
-              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">Alias</th>
-              <th style="text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">Category</th>
-              <th style="text-align:center;padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">Base</th>
-              <th style="text-align:center;padding:10px 12px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);">Active</th>
-              <th style="text-align:right;padding:10px 16px;font-size:11px;font-weight:600;color:var(--fg-subtle);text-transform:uppercase;border-bottom:1px solid var(--border);"></th>
-            </tr></thead>
-            <tbody>
-              <sc-for list="{{ catalogRows }}" as="c" hint-placeholder-count="8">
-                <tr style-hover="{{ rowHover }}">
-                  <td style="padding:11px 16px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:550;">{{ c.name }}</td>
-                  <td style="padding:11px 12px;border-bottom:1px solid var(--border);font-size:11.5px;font-family:var(--mono);color:var(--fg-muted);">{{ c.part }}</td>
-                  <td style="padding:11px 12px;border-bottom:1px solid var(--border);font-size:10.5px;font-family:var(--mono);color:var(--fg-subtle);">{{ c.guid }}</td>
-                  <td style="padding:11px 12px;border-bottom:1px solid var(--border);"><span style="font-size:11.5px;background:var(--hover);border:1px solid var(--border);border-radius:6px;padding:2px 8px;">{{ c.alias }}</span></td>
-                  <td style="padding:11px 12px;border-bottom:1px solid var(--border);"><span style="{{ c.catStyle }}">{{ c.cat }}</span></td>
-                  <td style="padding:11px 12px;border-bottom:1px solid var(--border);text-align:center;">{{ c.baseMark }}</td>
-                  <td style="padding:11px 12px;border-bottom:1px solid var(--border);text-align:center;"><span style="width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block;"></span></td>
-                  <td style="padding:11px 16px;border-bottom:1px solid var(--border);text-align:right;"><button onClick="{{ c.edit }}" style="height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg-muted);font-size:11.5px;font-family:inherit;cursor:pointer;" style-hover="{{ iconBtnHover }}">Edit</button></td>
-                </tr>
-              </sc-for>
-            </tbody>
-          </table>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;">
+          <div style="overflow-x:auto;">
+          <div style="min-width:1000px;">
+            <div style="display:grid;grid-template-columns:1.5fr 1.1fr 1.7fr 100px 130px 70px 70px 80px;padding:10px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;letter-spacing:.03em;color:var(--fg-subtle);text-transform:uppercase;">
+              <span>Display name</span><span>Part number</span><span>skuId</span><span>Alias</span><span>Category</span><span style="text-align:center;">Base</span><span style="text-align:center;">Active</span><span></span>
+            </div>
+            <sc-for list="{{ catalogRows }}" as="c" hint-placeholder-count="8">
+              <div style="display:grid;grid-template-columns:1.5fr 1.1fr 1.7fr 100px 130px 70px 70px 80px;align-items:center;padding:11px 16px;border-bottom:1px solid var(--border);" style-hover="{{ rowHover }}">
+                <span style="font-size:12.5px;font-weight:550;padding-right:10px;">{{ c.name }}</span>
+                <span style="font-size:11.5px;font-family:var(--mono);color:var(--fg-muted);padding-right:10px;">{{ c.part }}</span>
+                <span style="font-size:10.5px;font-family:var(--mono);color:var(--fg-subtle);padding-right:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ c.guid }}</span>
+                <span><span style="font-size:11.5px;background:var(--hover);border:1px solid var(--border);border-radius:6px;padding:2px 8px;">{{ c.alias }}</span></span>
+                <span><span style="{{ c.catStyle }}">{{ c.cat }}</span></span>
+                <span style="text-align:center;">{{ c.baseMark }}</span>
+                <span style="text-align:center;"><span style="width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block;"></span></span>
+                <span style="text-align:right;"><button onClick="{{ c.edit }}" style="height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg-muted);font-size:11.5px;font-family:inherit;cursor:pointer;" style-hover="{{ iconBtnHover }}">Edit</button></span>
+              </div>
+            </sc-for>
+          </div>
+          </div>
           <sc-if value="{{ catPager.show }}" hint-placeholder-val="{{ false }}">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 18px;border-top:1px solid var(--border);">
               <span style="font-size:11.5px;color:var(--fg-subtle);">{{ catPager.summary }}</span>
@@ -975,6 +969,42 @@
           </div>
           </sc-if>
 
+          <!-- OPCOS -->
+          <sc-if value="{{ isSetOpcos }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);">
+                <div style="display:flex;flex-direction:column;"><h3 style="margin:0;font-size:13.5px;font-weight:600;">Operating companies</h3><span style="font-size:11.5px;color:var(--fg-subtle);">{{ opcoCount }} OpCos · shared tenant. Added OpCos appear across License Assets automatically.</span></div>
+                <button onClick="{{ addOpco }}" style="height:34px;padding:0 14px;border-radius:8px;border:none;background:var(--accent);color:var(--accent-fg);font-size:12.5px;font-weight:550;font-family:inherit;display:flex;align-items:center;gap:6px;cursor:pointer;" style-hover="{{ accentBtnHover }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add OpCo</button>
+              </div>
+              <div style="overflow-x:auto;">
+              <div style="min-width:600px;">
+              <div style="display:grid;grid-template-columns:1.7fr 1fr 78px 90px 90px 84px;padding:10px 18px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;letter-spacing:.03em;color:var(--fg-subtle);text-transform:uppercase;">
+                <span>OpCo</span><span>Region</span><span style="text-align:right;">SKUs</span><span style="text-align:right;">Allocated</span><span style="text-align:right;">Assigned</span><span style="text-align:right;">Actions</span>
+              </div>
+              <sc-for list="{{ opcoRows }}" as="o" hint-placeholder-count="8">
+                <div style="display:grid;grid-template-columns:1.7fr 1fr 78px 90px 90px 84px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--border);" style-hover="{{ rowHover }}">
+                  <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                    <div style="width:30px;height:30px;border-radius:7px;background:var(--hover);color:var(--fg-muted);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;font-family:var(--mono);flex-shrink:0;">{{ o.initials }}</div>
+                    <div style="display:flex;flex-direction:column;line-height:1.25;min-width:0;"><span style="font-size:12.5px;font-weight:600;">{{ o.code }}</span><span style="font-size:11px;color:var(--fg-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ o.name }}</span></div>
+                  </div>
+                  <span style="font-size:12px;color:var(--fg-muted);">{{ o.region }}</span>
+                  <span style="text-align:right;font-family:var(--mono);font-size:12px;color:var(--fg-muted);">{{ o.skus }}</span>
+                  <span style="text-align:right;font-family:var(--mono);font-size:12.5px;">{{ o.alloc }}</span>
+                  <span style="text-align:right;font-family:var(--mono);font-size:12.5px;color:var(--info);">{{ o.assigned }}</span>
+                  <div style="display:flex;gap:6px;justify-content:flex-end;">
+                    <button onClick="{{ o.edit }}" title="Edit OpCo" style="width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--fg-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="{{ iconBtnHover }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+                    <sc-if value="{{ o.canRemove }}" hint-placeholder-val="{{ true }}"><button onClick="{{ o.remove }}" title="Remove OpCo" style="width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--danger);display:flex;align-items:center;justify-content:center;cursor:pointer;" style-hover="{{ iconBtnHover }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+              </div>
+              </div>
+            </div>
+            <p style="margin:0;font-size:11.5px;color:var(--fg-subtle);display:flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>New OpCos start with 0 allocated seats for every SKU. Set their allocations in License Assets → Platform → Manage.</p>
+          </div>
+          </sc-if>
+
           <!-- INTEGRATIONS -->
           <sc-if value="{{ isSetIntegrations }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:16px;">
@@ -1041,6 +1071,22 @@
 
     </main>
   </div>
+
+  <!-- OPCO ADD/EDIT DIALOG -->
+  <sc-if value="{{ opcoDialogOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeOpcoDialog }}" style="position:fixed;inset:0;z-index:92;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease;">
+      <div onClick="{{ stop }}" style="width:400px;max-width:92vw;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-overlay);overflow:hidden;">
+        <div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;"><h3 style="margin:0;font-size:14px;font-weight:600;">{{ opcoDialogTitle }}</h3><button onClick="{{ closeOpcoDialog }}" style="width:26px;height:26px;border-radius:6px;border:none;background:transparent;color:var(--fg-muted);cursor:pointer;font-size:16px;">✕</button></div>
+        <div style="padding:18px;display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;flex-direction:column;gap:5px;"><label style="font-size:11.5px;font-weight:550;color:var(--fg-muted);">OpCo code</label><input value="{{ opcoDialogCode }}" onInput="{{ opcoOnCode }}" placeholder="e.g. RSG or RAPO/FIN" style="height:36px;padding:0 11px;border-radius:8px;border:1px solid var(--border-strong);background:var(--panel);color:var(--fg);font-size:13px;font-family:var(--mono);outline:none;" /><span style="font-size:10.5px;color:var(--fg-subtle);">Short identifier shown across the console.</span></div>
+          <div style="display:flex;flex-direction:column;gap:5px;"><label style="font-size:11.5px;font-weight:550;color:var(--fg-muted);">Full name</label><input value="{{ opcoDialogName }}" onInput="{{ opcoOnName }}" placeholder="e.g. Ricoh Singapore" style="height:36px;padding:0 11px;border-radius:8px;border:1px solid var(--border-strong);background:var(--panel);color:var(--fg);font-size:13px;font-family:inherit;outline:none;" /></div>
+          <div style="display:flex;flex-direction:column;gap:5px;"><label style="font-size:11.5px;font-weight:550;color:var(--fg-muted);">Region</label><input value="{{ opcoDialogRegion }}" onInput="{{ opcoOnRegion }}" placeholder="e.g. Singapore" style="height:36px;padding:0 11px;border-radius:8px;border:1px solid var(--border-strong);background:var(--panel);color:var(--fg);font-size:13px;font-family:inherit;outline:none;" /></div>
+          <sc-if value="{{ opcoDialogIsAdd }}" hint-placeholder-val="{{ true }}"><div style="display:flex;align-items:center;gap:7px;padding:8px 11px;border-radius:8px;background:var(--info-soft);color:var(--info);font-size:11.5px;font-weight:500;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>Starts with 0 allocated seats for all SKUs. Allocate in License Assets.</div></sc-if>
+        </div>
+        <div style="padding:14px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:9px;"><button onClick="{{ closeOpcoDialog }}" style="height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--fg);font-size:12.5px;font-family:inherit;cursor:pointer;">Cancel</button><button onClick="{{ saveOpco }}" style="height:34px;padding:0 16px;border-radius:8px;border:none;background:var(--accent);color:var(--accent-fg);font-size:12.5px;font-weight:550;font-family:inherit;cursor:pointer;">Save OpCo</button></div>
+      </div>
+    </div>
+  </sc-if>
 
   <!-- TOAST -->
   <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
@@ -1223,6 +1269,16 @@ class Component extends DCLogic {
   constructor(props){
     super(props);
     this.opcos = ['RAPO/IT','RAPO/SCM','RHK','RTH','RVN','RTW','RSP','PFU-HK'];
+    this.opcoMeta = {
+      'RAPO/IT':{name:'Ricoh Asia Pacific — IT', region:'Singapore'},
+      'RAPO/SCM':{name:'Ricoh Asia Pacific — SCM', region:'Singapore'},
+      'RHK':{name:'Ricoh Hong Kong', region:'Hong Kong'},
+      'RTH':{name:'Ricoh Thailand', region:'Thailand'},
+      'RVN':{name:'Ricoh Vietnam', region:'Vietnam'},
+      'RTW':{name:'Ricoh Taiwan', region:'Taiwan'},
+      'RSP':{name:'Ricoh Singapore', region:'Singapore'},
+      'PFU-HK':{name:'PFU Hong Kong', region:'Hong Kong'},
+    };
     // sku matrix: [alloc,assigned] per opco (order matches this.opcos)
     this.skuMatrix = [
       {sku:'Microsoft 365 E3', cat:'Base', base:true,  by:[[70,63],[40,37],[60,54],[45,41],[38,35],[30,28],[22,19],[18,15]]},
@@ -1254,7 +1310,7 @@ class Component extends DCLogic {
     this.state = {
       theme:'light', role:'regional', view:'overview', assetsMode:'platform',
       sidebarCollapsed:false, userMenu:false, overviewTab:'summary',
-      settingsTab:'account', connResults:{}, reqPage:1, catPage:1,
+      settingsTab:'account', connResults:{}, reqPage:1, catPage:1, opcoDialog:null,
       n8n:{baseUrl:'https://ricoh-it.app.n8n.cloud', apiKey:'n8n_api_\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u20224f2a', webhook:'/webhook/licenseops', tIngested:true, tAssigned:true, tDrift:false},
       selectedOpco:'RHK', selectedReq:'REQ-2041', reqFilter:'all',
       toast:null, dialog:null, assignModal:null, authed:false, assetDialog:null,
@@ -1352,6 +1408,38 @@ class Component extends DCLogic {
   saveEditAlloc(){ const d=this.state.assetDialog; if(!d)return; const pair=this.skuMatrix[d.skuIdx].by[d.opcoIdx]; pair[0]=d.draft; pair[1]=d.draftAsg; this.setState({assetDialog:null}); this.toast('Record updated','ok'); }
   syncTenant(){ this.toast('Syncing license counts from tenant…','info'); }
 
+  // ===== OpCo management =====
+  openAddOpco(){ this.setState({opcoDialog:{mode:'add', code:'', name:'', region:'', origCode:null}}); }
+  openEditOpco(code){ const m=this.opcoMeta[code]||{}; this.setState({opcoDialog:{mode:'edit', code, name:m.name||'', region:m.region||'', origCode:code}}); }
+  closeOpcoDialog(){ this.setState({opcoDialog:null}); }
+  setOpcoField(k,v){ const d=this.state.opcoDialog; if(!d)return; this.setState({opcoDialog:{...d,[k]:v}}); }
+  saveOpco(){
+    const d=this.state.opcoDialog; if(!d)return;
+    const code=(d.code||'').trim(); if(!code){ this.toast('OpCo code is required','info'); return; }
+    if(d.mode==='add'){
+      if(this.opcos.includes(code)){ this.toast('That OpCo code already exists','info'); return; }
+      this.opcos.push(code);
+      this.opcoMeta[code]={name:(d.name||'').trim()||code, region:(d.region||'').trim()};
+      this.skuMatrix.forEach(m=>m.by.push([0,0]));   // new column, zeroed
+      this.setState({opcoDialog:null}); this.toast('OpCo “'+code+'” added','ok');
+    } else {
+      const i=this.opcos.indexOf(d.origCode); if(i<0){ this.setState({opcoDialog:null}); return; }
+      if(code!==d.origCode && this.opcos.includes(code)){ this.toast('That OpCo code already exists','info'); return; }
+      this.opcos[i]=code;
+      if(code!==d.origCode) delete this.opcoMeta[d.origCode];
+      this.opcoMeta[code]={name:(d.name||'').trim()||code, region:(d.region||'').trim()};
+      const patch={opcoDialog:null}; if(this.state.selectedOpco===d.origCode) patch.selectedOpco=code;
+      this.setState(patch); this.toast('OpCo updated','ok');
+    }
+  }
+  removeOpco(code){ return ()=>{
+    const i=this.opcos.indexOf(code); if(i<0) return;
+    this.opcos.splice(i,1); delete this.opcoMeta[code];
+    this.skuMatrix.forEach(m=>m.by.splice(i,1));
+    const patch={}; if(this.state.selectedOpco===code) patch.selectedOpco=this.opcos[0];
+    this.setState(patch); this.toast('OpCo “'+code+'” removed','ok');
+  }; }
+
   openAssign(reqId,lineIdx){ return ()=>{ const req=this.state.requests.find(r=>r.id===reqId); if(!req)return; const line=req.lines[lineIdx]; const mi=this.skuMatrix.findIndex(m=>m.sku===line.sku); const oi=this.opcos.indexOf(req.opco); const pair=mi>=0?this.skuMatrix[mi].by[oi]:[0,0]; const avail=pair[0]-pair[1], asg=pair[1];
     const steps=[
       {key:'precheck',label:'Pre-flight \u2014 seat availability',ep:'GET /v1.0/subscribedSkus',okResp:'200 OK \u00b7 availableUnits: '+avail},
@@ -1387,6 +1475,7 @@ class Component extends DCLogic {
     const navSt=(v)=>S.view===v||(v==='requests'&&S.view==='request')?navActive:navBase;
     const nav={overview:navSt('overview'),requests:navSt('requests'),assets:navSt('assets'),drift:navSt('drift'),catalog:navSt('catalog'),
       users:(S.view==='settings'&&S.settingsTab==='users')?navActive:navBase,
+      opcos:(S.view==='settings'&&S.settingsTab==='opcos')?navActive:navBase,
       integrations:(S.view==='settings'&&S.settingsTab==='integrations')?navActive:navBase};
     const navDisabled=Object.assign({},navBase,{color:'var(--fg-subtle)',cursor:'not-allowed',opacity:.6});
 
@@ -1677,7 +1766,7 @@ class Component extends DCLogic {
       userName:isRegional?'Alex Tan':'May Wong', userInitials:isRegional?'AT':'MW', userRoleLabel:isRegional?'Regional IT operator':'RHK IT · OpCo admin',
       nav, navHover:{background:'var(--hover)',color:'var(--fg)'}, navDisabled,
       goOverview:this.nav('overview'), goRequests:this.nav('requests'), goAssets:this.nav('assets'), goDrift:this.nav('drift'), goCatalog:this.nav('catalog'),
-      goUsers:()=>this.setState({view:'settings',settingsTab:'users'}), goIntegrations:()=>this.setState({view:'settings',settingsTab:'integrations'}),
+      goUsers:()=>this.setState({view:'settings',settingsTab:'users'}), goIntegrations:()=>this.setState({view:'settings',settingsTab:'integrations'}), goOpcos:()=>this.setState({view:'settings',settingsTab:'opcos'}),
       isOverview:S.view==='overview', isAssets:S.view==='assets', isRequests:S.view==='requests', isRequest:S.view==='request', isDrift:S.view==='drift', isCatalog:S.view==='catalog',
       setRegional:()=>this.setState({role:'regional'}), setOpco:()=>this.setState({role:'opco',selectedOpco:'RHK',assetsMode:'single'}),
       roleRegionalStyle:this.segStyle(isRegional), roleOpcoStyle:this.segStyle(!isRegional),
@@ -1754,11 +1843,12 @@ class Component extends DCLogic {
       retryAssign:()=>this.runAssign('success'),
       // ===== SETTINGS / INTEGRATIONS =====
       isSettings:S.view==='settings',
-      isSetAccount:S.settingsTab==='account', isSetPreferences:S.settingsTab==='preferences', isSetUsers:S.settingsTab==='users', isSetIntegrations:S.settingsTab==='integrations',
+      isSetAccount:S.settingsTab==='account', isSetPreferences:S.settingsTab==='preferences', isSetUsers:S.settingsTab==='users', isSetOpcos:S.settingsTab==='opcos', isSetIntegrations:S.settingsTab==='integrations',
       settingsTabs:[
         ['account','Account',[['path',{d:'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'}],['circle',{cx:12,cy:7,r:4}]]],
         ['preferences','Preferences',[['line',{x1:4,y1:21,x2:4,y2:14}],['line',{x1:4,y1:10,x2:4,y2:3}],['line',{x1:12,y1:21,x2:12,y2:12}],['line',{x1:12,y1:8,x2:12,y2:3}],['line',{x1:20,y1:21,x2:20,y2:16}],['line',{x1:20,y1:12,x2:20,y2:3}],['line',{x1:2,y1:14,x2:6,y2:14}],['line',{x1:10,y1:8,x2:14,y2:8}],['line',{x1:18,y1:16,x2:22,y2:16}]]],
         ['users','Users & roles',[['path',{d:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'}],['circle',{cx:9,cy:7,r:4}],['path',{d:'M22 21v-2a4 4 0 0 0-3-3.87'}],['path',{d:'M16 3.13a4 4 0 0 1 0 7.75'}]]],
+        ['opcos','OpCos',[['path',{d:'M3 21h18'}],['path',{d:'M5 21V7l8-4v18'}],['path',{d:'M19 21V11l-6-4'}],['path',{d:'M9 9v.01M9 12v.01M9 15v.01M9 18v.01'}]]],
         ['integrations','Integrations',[['path',{d:'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'}],['path',{d:'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'}]]],
       ].map(([k,label,ic])=>{const active=S.settingsTab===k; return {key:k,label,select:()=>this.setState({settingsTab:k}),icon:svgIco(active?'var(--accent)':'var(--fg-muted)',ic),style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 11px',borderRadius:'8px',fontSize:'13px',fontWeight:active?600:500,color:active?'var(--fg)':'var(--fg-muted)',background:active?'var(--active)':'transparent',cursor:'pointer',textDecoration:'none'}};}),
       prefLightStyle:this.segStyle(!dark), prefDarkStyle:this.segStyle(dark),
@@ -1772,6 +1862,25 @@ class Component extends DCLogic {
         {name:'Sam Lee',email:'sam.lee@ricoh.com',role:'Read-only auditor',rtone:'neutral',scope:'All OpCos',status:'Active',stone:'ok',last:'5d ago'},
       ].map(u=>({...u, initials:u.name.split(' ').map(w=>w[0]).slice(0,2).join(''), roleStyle:this.pill(u.rtone==='accent'?'danger':u.rtone,{fontSize:'11px'}), statusStyle:this.pill(u.stone,{fontSize:'11px'})})),
       inviteUser:()=>this.toast('Invite sent','ok'), saveProfile:()=>this.toast('Profile saved','ok'), addConnection:()=>this.toast('Add connection \u2014 coming soon','info'),
+      opcoCount:this.opcos.length,
+      addOpco:()=>this.openAddOpco(),
+      opcoRows:this.opcos.map((code,i)=>{
+        const meta=this.opcoMeta[code]||{};
+        const skusWith=this.skuMatrix.filter(m=>m.by[i][0]>0).length;
+        const alloc=this.skuMatrix.reduce((s,m)=>s+m.by[i][0],0);
+        const asg=this.skuMatrix.reduce((s,m)=>s+m.by[i][1],0);
+        return {code, name:meta.name||code, region:meta.region||'\u2014',
+          initials:code.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase()||'OC',
+          skus:skusWith+' / '+this.skuMatrix.length, alloc, assigned:asg,
+          edit:()=>this.openEditOpco(code), remove:this.removeOpco(code),
+          canRemove:this.opcos.length>1};
+      }),
+      opcoDialog:S.opcoDialog, opcoDialogOpen:!!S.opcoDialog,
+      opcoDialogTitle:S.opcoDialog?(S.opcoDialog.mode==='add'?'Add OpCo':'Edit OpCo \u00b7 '+S.opcoDialog.origCode):'',
+      opcoDialogCode:S.opcoDialog&&S.opcoDialog.code, opcoDialogName:S.opcoDialog&&S.opcoDialog.name, opcoDialogRegion:S.opcoDialog&&S.opcoDialog.region,
+      opcoOnCode:(e)=>this.setOpcoField('code',e.target.value), opcoOnName:(e)=>this.setOpcoField('name',e.target.value), opcoOnRegion:(e)=>this.setOpcoField('region',e.target.value),
+      closeOpcoDialog:()=>this.closeOpcoDialog(), saveOpco:()=>this.saveOpco(),
+      opcoDialogIsAdd:S.opcoDialog&&S.opcoDialog.mode==='add',
       connectors:this.connectors.map(c=>{const res=S.connResults[c.id]; const st=c.status; const map={connected:['Connected','ok'],error:['Error','danger'],disconnected:['Not connected','neutral']}; const sm=map[st]||map.disconnected;
         let resultText='',resultStyle={display:'none'},testing=false;
         if(res){ if(res.status==='testing'){resultText='Testing connection…';resultStyle={fontSize:'11.5px',color:'var(--fg-muted)'};testing=true;} else if(res.status==='ok'){resultText='\u2713 '+res.msg+(res.latency?' \u00b7 '+res.latency:'');resultStyle={fontSize:'11.5px',color:'var(--ok)',fontFamily:'var(--mono)'};} else {resultText='\u2717 '+res.msg;resultStyle={fontSize:'11.5px',color:'var(--danger)',fontFamily:'var(--mono)'};}}

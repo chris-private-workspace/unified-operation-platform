@@ -19,12 +19,12 @@ last_updated: 2026-07-09
 - [ ] `npm install` resolve 成功
 - [ ] verify:`npm run build` 0 error(G1)
 
-## F2 — 檔案佈局歸位
+## F2 — 遷入 monorepo `apps/api`(ADR-0001)
 
-- [ ] move `main.ts` → `src/main.ts`
-- [ ] move `app.module.ts` → `src/app.module.ts`
-- [ ] move `seed.ts` → `prisma/seed.ts`
-- [ ] 修正 import 路徑,`src/integration/` 對得返
+- [ ] root 設 workspace(`apps/*`);`apps/web` 留 placeholder
+- [ ] move `main.ts` / `app.module.ts` / `src/integration/` → `apps/api/src/`
+- [ ] move `seed.ts` → `apps/api/prisma/seed.ts`;`prisma/schema.prisma` → `apps/api/prisma/`
+- [ ] 修正 import 路徑 + `nest-cli.json` root,`app.module.ts` import 生效
 
 ## F3 — PrismaModule + 空 module stubs
 
