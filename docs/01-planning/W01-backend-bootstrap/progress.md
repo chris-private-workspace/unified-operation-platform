@@ -21,7 +21,7 @@ status: in-progress    # in-progress | closed
 - `checklist.md` derived from plan deliverables。
 - Carry-over:N/A(first phase)。
 
-**Commit**:_(git 未 init;`git init` 後補 `chore(planning): kickoff W01 backend-bootstrap`)_
+**Commit**:`5ff2cae` — `chore: initial baseline — dev-framework onboarding + LicenseOps scaffold`(git init + baseline,含本 phase planning docs)。
 
 **下一步**:Chris approve plan → status `active` → 由 F1 開工。
 

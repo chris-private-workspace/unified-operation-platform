@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-09
+**最後更新**:2026-07-09(git init + baseline commit `5ff2cae` done)
 
 ---
 
@@ -29,7 +29,7 @@
 
 | ID | 任務 | 狀態 | 前置 / 下一步 | 來源 |
 |---|---|---|---|---|
-| INIT | `git init` + 首個 baseline commit（框架落地基線） | 候選 | 無前置；建立 repo 版本控制起點 | CLAUDE.md §4 |
+| INIT | `git init` + 首個 baseline commit（框架落地基線） | 完成（`5ff2cae`,main） | — | CLAUDE.md §4 |
 
 ---
 
