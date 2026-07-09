@@ -1,7 +1,7 @@
 ---
 phase: W01-backend-bootstrap
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete    # in-progress | complete
 last_updated: 2026-07-09
 ---
 
@@ -37,26 +37,26 @@ last_updated: 2026-07-09
 
 - [x] `docker-compose.yml`(postgres + redis;postgres host port 5433 避開既有 5432)
 - [x] `docker compose up -d` → `pg_isready` + `redis-cli ping` OK(兩容器 healthy)
-- [ ] 🚧 verify:`npm run prisma:migrate` 建表成功 —— **blocked**:Prisma engine 被 proxy 阻擋(見 progress Blockers)
-- [ ] 🚧 verify:`npm run seed` → 23 OpCos + admin user(G3)—— **blocked**(需 engine + migrate 先)
+- [x] verify:`prisma migrate dev --name init` 建表成功(9 domain 表;engine 流動網路 cache 後)
+- [x] verify:`npm run seed` → 23 OpCos + admin user(G3 ✓,DB 實查確認)
 
 ## F5 — Boot 驗證
 
-- [ ] 🚧 `npm run start:dev` boot 無 error —— **blocked**:PrismaService `$connect` runtime 需 engine(見 Blockers)
-- [ ] 🚧 verify:`curl -sf http://localhost:3000/docs/api` → 200(G2)—— **blocked**(app 未 boot 到)
+- [x] `node dist/main.js` boot 無 error(Prisma 連到 DB)
+- [x] verify:`curl -sf http://localhost:3100/docs/api` → 200(G2 ✓,驗 3 次;3000 俾 Langfuse 佔 → PORT=3100)
 - [x] verify:`npm run lint` clean(G4 ✓)
 
 ---
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git(⚠️ 需先 `git init` —— 見 CLAUDE.md §4）
-- [ ] All open-question status changes reflected in decision tracker(R4)
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase W02(module C）kickoff trigger noted in retro
+- [x] All deliverables committed to git(scaffold `6ca5e0c` + closeout commit)
+- [x] All open-question status changes reflected in decision tracker(R4;本 phase 無 OQ 變動)
+- [x] All architectural-adjacent decisions documented as ADR(ADR-0001 已存在;本 phase 純執行,無新 ADR)
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
+- [x] `progress.md` retro section written
+- [x] `progress.md` frontmatter status flipped to `closed`
+- [x] Phase W02(module C)kickoff trigger noted in retro
 
 ---
 

@@ -23,7 +23,7 @@ NestJS(modular monolith)+ Prisma / PostgreSQL · Redis + BullMQ · Microsoft Gra
 
 ## 快速開始
 
-⚠️ 本 repo 目前係 **scaffolding 階段**(`package.json` / build config 未建、entry 檔待歸位)。完整 setup 步驟 + 當前現狀見 [`docs/setup.md`](./docs/setup.md)。
+Monorepo（`apps/api` NestJS + `apps/web` 前端 placeholder）。後端已跑得起:`npm install` → `docker compose up -d` → `apps/api/.env` → `npm run prisma:migrate && npm run seed` → `npm run start:dev`（`http://localhost:3100/docs/api`）。完整步驟 + 本機避坑（Prisma engine CDN / port）見 [`docs/setup.md`](./docs/setup.md)。
 
 ## 開發紀律
 

@@ -2,49 +2,42 @@
 
 > 本地開發環境 setup。CLAUDE.md §2 routing 由「setup local dev」指過嚟。
 
-## ⚠️ 當前 build 現狀(2026-07 · 未 runnable)
-
-本 repo 目前係 **scaffolding 階段**,以下步驟係**目標介面**,要先補以下缺件先跑得起:
-
-- **未有** `package.json` / `tsconfig.json` / `nest-cli.json` / `docker-compose.yml`。
-- **entry 檔位置**:`main.ts` / `app.module.ts` / `seed.ts` 喺 repo root,但 import 假設喺 `src/`;要歸位(`src/main.ts`、`src/app.module.ts`、`prisma/seed.ts`)。
-- **缺 module**:`app.module.ts` 引用嘅 `PrismaModule`(`@Global`)/ `LicenseModule`(C)/ `FulfilmentModule`(D)未存在;只有 `src/integration/`。
-- **未有 auth**:controllers 預期 unguarded 到 Entra guard 建成(找 `TODO: @Roles`)。
-
-呢啲追蹤喺 `docs/01-planning/BACKLOG.md`(scaffolding 收尾工作)。
+> **狀態(2026-07-09)**:W01 完成 —— monorepo 後端跑得起、DB seeded。佈局 = `apps/api`(NestJS)+ `apps/web`(placeholder,ADR-0001)。
 
 ## 前置
 
-- **Node 20+**(ServiceNow client 用 global `fetch`)
-- **Docker**(Postgres + Redis)
-- npm
+- **Node 20+**(本機 v22;ServiceNow client 用 global `fetch`)
+- **Docker**(Postgres + Redis)· npm
 
-## 步驟(package.json 補齊後)
+## 步驟
 
 1. Clone + 入資料夾。
-2. `npm install`
-3. `docker compose up -d` —— 起 Postgres + Redis。
-4. Copy env:`cp .env.example .env`,填 Graph / ServiceNow / `DATABASE_URL`(**唔好 commit `.env`**;Graph 權限見 `docs/05-usage/INTEGRATION_SETUP.md`)。
-5. `npm run prisma:generate` → `npm run prisma:migrate`(建表)→ `npm run seed`(23 OpCos + admin user)。
-6. `npm run start:dev` → http://localhost:3000 · OpenAPI UI `/docs/api`。
+2. `npm install`(root workspace,一次裝 `apps/*`)。
+3. `docker compose up -d` —— 起 Postgres(host **5433**)+ Redis(6379)。
+4. `apps/api/.env`:copy `apps/api/.env.example` 做 `apps/api/.env`,填 Graph / ServiceNow(boot 可用佔位值)+ `DATABASE_URL`(已對齊 5433)。**唔好 commit `.env`**;Graph 權限見 `docs/05-usage/INTEGRATION_SETUP.md`。
+5. `npm run prisma:generate` → `npm run prisma:migrate`(建表)→ `npm run seed`(23 OpCos + admin)。
+   - ⚠️ 若 `binaries.prisma.sh` 回 **503**(公司 proxy 封 Prisma engine CDN):轉**流動網路**跑一次 generate/migrate cache engine(見「常見坑」)。
+6. `npm run start:dev` → OpenAPI UI(本機 `PORT=3100`,見下)`http://localhost:3100/docs/api`。
 
 ## 首個 smoke test
 
 ```
-# 用真實 tenant subscribedSkus 灌 SKU catalog(需 Graph env):
-curl -X POST http://localhost:3000/license/catalog/sync
+# 用真實 tenant subscribedSkus 灌 SKU catalog(需 module C + Graph env,W01 之後):
+curl -X POST http://localhost:3100/license/catalog/sync
 ```
 
 ## 本機服務清單
 
-| 服務 | port | 起法 |
-|---|---|---|
-| backend(NestJS) | 3000 | `npm run start:dev` |
-| PostgreSQL | 5432 | `docker compose up -d` |
-| Redis | 6379 | `docker compose up -d` |
+| 服務 | port | 起法 | 備註 |
+|---|---|---|---|
+| backend(NestJS) | **3100** | `npm run start:dev` | 預設 3000;本機俾 Langfuse 佔 → `PORT=3100`(`apps/api/.env`) |
+| PostgreSQL(docker) | **5433** | `docker compose up -d` | 預設 5432;本機俾既有 Postgres 佔 → host 5433 |
+| Redis(docker) | 6379 | `docker compose up -d` | |
 
 ## 常見坑
 
+- **🔴 Prisma engine CDN 被公司 proxy 封**:`binaries.prisma.sh` 回 503 → `prisma generate`/`migrate` 失敗。**解**:轉流動網路跑一次 `npm run prisma:generate` + `cd apps/api && npx prisma migrate dev`,engine cache 落 `node_modules` 後返公司網即用本機 binary。其他 TLS 用 `NODE_EXTRA_CA_CERTS=C:/Users/CLai03/ricoh-ca.pem`。RISK R1。
+- **Port 衝突**:3000(Langfuse)/ 5432(既有 Postgres)本機已佔 → 用 3100 / 5433。
 - **Graph `assignLicense`**:指派前 user 必須有 `usageLocation`;無空 seat 會失敗 —— 先查可用量。詳見 `docs/05-usage/INTEGRATION_SETUP.md`。
 - **Phase 1 sync gate**:`findUser` 回 `null` = user 未 sync 落 Azure AD,唔好 assign。
 - **ServiceNow table/field**:`sc_req_item` / `work_notes` 係預設,要對齊 Phase 1 實際 instance。

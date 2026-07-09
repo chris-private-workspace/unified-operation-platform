@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-09(git baseline `5ff2cae` · ADR-0001 前端入 repo monorepo + H6)
+**最後更新**:2026-07-09(W01 backend-bootstrap **完成**;monorepo 跑得起 + DB seeded)
 
 ---
 
@@ -21,7 +21,8 @@
 
 | ID | 任務 | 狀態 | 下一步 / 阻塞 | 來源 |
 |---|---|---|---|---|
-| W01 | Backend Bootstrap（令後端跑得起 + **遷入 monorepo `apps/api`**：package.json / 佈局 / PrismaModule / docker-compose / boot 驗證） | 已規劃（plan `draft`） | 等 Chris approve plan → flip `active` → 由 F1 開工 | `W01-backend-bootstrap/plan.md` · ADR-0001 |
+| W01 | Backend Bootstrap（monorepo `apps/api` + PrismaModule + docker-compose） | ✅ **完成**（2026-07-09；G1-G4 全 pass） | — | `W01-backend-bootstrap/`（retro 已寫） |
+| — | **下一個 phase(揀一)**:W02 module C（catalog + 對帳）**或** 第一個前端 phase（app shell + token/theme） | 候選（等 Chris 揀） | Chris 決定 → kickoff 建 folder | `BACKLOG.md` B 區 MOD-C / FE |
 
 ---
 

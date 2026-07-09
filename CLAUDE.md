@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | 早期 — LicenseOps 後端 scaffolding(見 §9;`package.json` 未建,entry 檔待歸位) |
+| Phase | W01 完成 — 後端跑得起(monorepo `apps/api`,DB seeded);下一個 phase 待揀(見 BACKLOG / §9) |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -228,11 +228,10 @@ Scope:模組名(`integration` / `license` / `fulfilment` / `prisma` / `claude-md
 
 Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 folder,見 `BACKLOG.md`。唔清楚而家喺邊個 phase → **ask user**。
 
-**⚠️ 當前 scaffold 現狀(未 runnable,新 session 必知)**:
-- 未有 `package.json` / `tsconfig.json` / `nest-cli.json` / `docker-compose.yml`(README 列嘅 npm script 係目標介面,未定義)。
-- `main.ts` / `app.module.ts` / `seed.ts` 喺 **repo root**,但 import 路徑假設喺 `src/`(`main.ts`→`src/main.ts`、`app.module.ts`→`src/app.module.ts`、`seed.ts`→`prisma/seed.ts`),待歸位。
-- `app.module.ts` 引用但**未存在**嘅 module:`PrismaModule`(`@Global`)、`LicenseModule`(module C)、`FulfilmentModule`(module D)。只有 `src/integration/` 實際存在。
-- 未有 auth;controllers 預期 unguarded 到 Entra guard 建成(找 `TODO: @Roles`)。詳情 → `docs/setup.md` + `BACKLOG.md`。
+**當前狀態(W01 完成,2026-07-09)**:
+- 後端 = monorepo `apps/api`(NestJS),跑得起、DB seeded(23 OpCos + admin)、`/docs/api` 200。`apps/web` = placeholder。起法 + 避坑見 `docs/setup.md`。
+- **本機 runtime 避坑**:Prisma engine CDN 被公司 proxy 封(clean reinstall 後轉流動網路 cache engine,RISK R1);port 3000→Langfuse 佔用 PORT=3100、5432→既有 Postgres 用 docker 5433。
+- **仍未做**:auth guard(controllers unguarded,找 `TODO: @Roles`)、module C(catalog+對帳)/ D(request 履行)業務邏輯、前端 `apps/web`。詳見 `BACKLOG.md`。
 
 ---
 
