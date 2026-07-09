@@ -36,7 +36,7 @@
 | ID | 任務 | 狀態 | 前置 / 下一步 | 來源 |
 |---|---|---|---|---|
 | INIT | `git init` + 首個 baseline commit（框架落地基線） | 完成（`5ff2cae`,main） | — | CLAUDE.md §4 |
-| BUG-cand | **H4:`GraphService.assignLicense` log 咗 UPN（PII）** —— W04 接通 assign 後變真實暴露 | 候選（W04 retro flag） | 開 `BUG-001`（一行:log userId 或遮蔽 UPN）→ Bug-fix workflow | `apps/api/src/integration/graph/graph.service.ts:132` · CLAUDE.md §5.4 H4 |
+| BUG-001 | **H4:`GraphService` log 咗 UPN（PII）**（assignLicense + findUser 錯誤） | ✅ 完成（2026-07-09；Sev3;fix + regression test,實證 fails-before） | — | `docs/03-implementation/bugs/BUG-001-graph-logs-upn-pii/` |
 
 ---
 

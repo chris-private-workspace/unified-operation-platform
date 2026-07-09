@@ -95,7 +95,8 @@ export class GraphService {
       };
     } catch (err: any) {
       if (err?.statusCode === 404) return null;
-      this.logger.error(`findUser failed for ${userIdOrUpn}: ${err?.message}`);
+      // H4: do not log the UPN (PII); the error message is enough to triage.
+      this.logger.error(`findUser failed: ${err?.message}`);
       throw err;
     }
   }
@@ -129,6 +130,7 @@ export class GraphService {
         addLicenses: [{ skuId, disabledPlans: options.disabledPlans ?? [] }],
         removeLicenses: [],
       });
-    this.logger.log(`Assigned SKU ${skuId} to ${userIdOrUpn}`);
+    // H4: do not log the UPN (PII); who-got-what is tracked via RequestEvent.
+    this.logger.log(`Assigned SKU ${skuId}`);
   }
 }
