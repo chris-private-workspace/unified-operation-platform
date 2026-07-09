@@ -252,7 +252,7 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
 - **R7** — Pending 工作變動必須反映喺 `BACKLOG.md`。
 
 ### 10.3 AI Session Start Protocol
-每 session(§0 identity check 之後):①讀 `docs/12-ai-assistant/01-prompts/session-start.template.md`(若已 instantiate)→ ②active phase `plan.md`(scope + acceptance)→ ③`checklist.md`(next unchecked)→ ④`progress.md` 最近 3 個 Day-N → ⑤`git status --short` + `git log --oneline -5`(git init 後)→ ⑥唔清楚 ask。**Compact 後**必須 re-read ①-④。
+每 session(§0 identity check 之後):①讀 `docs/12-ai-assistant/01-prompts/session-start.md`(詳版 onboarding)→ ②active phase `plan.md`(scope + acceptance)→ ③`checklist.md`(next unchecked)→ ④`progress.md` 最近 3 個 Day-N → ⑤`git status --short` + `git log --oneline -5` → ⑥唔清楚 ask。SessionStart hook 已自動注入 `SESSION_SUMMARY.md` + active phase + git;`/compact` 前用 `compact-session.md`。**Compact 後**必須 re-read ①-④。
 
 ---
 
