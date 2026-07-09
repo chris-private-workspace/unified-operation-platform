@@ -1,0 +1,23 @@
+/* Design tokens — imported (NOT copied) from the read-only design_handoff.
+   styles.css @imports the 6 token files (fonts/colors/typography/spacing/
+   elevation/base). Tailwind (below) only references these CSS vars. */
+@import '../../../design_handoff_licenseops/design-system/styles.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App root fills the viewport; surface + text come from tokens. */
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  -webkit-font-smoothing: antialiased;
+}

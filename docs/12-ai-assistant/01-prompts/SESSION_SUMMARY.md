@@ -6,7 +6,7 @@
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
 **當前座標(2026-07-09)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。**W01-backend-bootstrap 完成**(G1-G4 全 pass):monorepo `apps/api`(NestJS)跑得起、`/docs/api` 200、DB seeded(23 OpCos + admin)。`apps/web` = placeholder。
-**開發路線(2026-07-09 敲定)= backend-first**;**W02 Module C ✅**、**W03 Module D-1 ✅**、**W04 Module D-2 ✅** —— **Module D 全完 → LicenseOps 後端業務層完成**(37 test 全綠;`/license/*` + `/fulfilment/*` 共 13 endpoint)。**下一段 = 前端:下一個 = FE-scaffold**(`apps/web` app shell + token/theme,Vite+Tailwind+shadcn)→ FE-1/2/3 畫面 → AUTH → deploy。**未做**:前端全部、AUTH guard(endpoint unguarded + `TODO(auth)`)、🚩 BUG 候選(`GraphService.assignLicense` log UPN,H4)。詳見 `BACKLOG.md`。前端受 H6 保護 —— 見 [[ui-design-fidelity]]。
+**開發路線(2026-07-09)= backend-first → 前端**;後端業務層完成(**W02 C / W03 D-1 / W04 D-2 ✅**,37 test,`/license/*`+`/fulfilment/*` 13 endpoint)、**W05 FE-scaffold ✅**(`apps/web` Vite+React+TS+Tailwind+shadcn 跑得起;原封引入 handoff token;app shell[sidebar+topbar]對 prototype 1:1;light+dark 截圖驗;39 backend + 2 fe test)。**下一個 = FE-1**(Overview dashboard + License Assets;首次接後端 data via TanStack Query — provider 已就位)→ FE-2 Requests → FE-3 → AUTH → deploy。**未做**:前端畫面、AUTH guard、🚩 2 flag(Avatar `#8a0018` gradient DS-7 決策 / npm dev vulnerabilities)。前端 = **H6 保護**,token-only 唔 eyeball,寫前跑 `ui-design` skill,vite dev 5173 —— 見 [[ui-design-fidelity]]。
 
 **提醒(完整見 CLAUDE.md §5)**:掂 H1-H6 第一句 **STOP+ask**(H1 架構 / H2 vendor / H3 scope / H4 security / H5 test / H6 UI design fidelity)。**繁中回覆**。非 trivial 工作先 pre-doc gate(R1)。
 

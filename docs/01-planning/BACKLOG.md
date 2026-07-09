@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-09(**W04 Module D-2 完成 → Module D 全完 → LicenseOps 後端業務層完成**;下一個 = FE-scaffold 前端)
+**最後更新**:2026-07-09(**W05 FE-scaffold 完成** — apps/web app shell + token/theme 跑得起,light+dark 驗;下一個 = FE-1 Overview+Assets)
 
 ---
 
@@ -25,9 +25,10 @@
 | W02 | **Module C:SKU Catalog 字典 + 總量層對帳 / drift**（純後端） | ✅ **完成**（2026-07-09；G1–G4 全 pass） | — | `W02-catalog-reconcile/`（retro 已寫） |
 | W03 | **Module D-1:Request 生命週期骨架**（intake → line items → triage → stage machine;無 side-effect） | ✅ **完成**（2026-07-09；G1–G4 全 pass） | — | `W03-request-lifecycle/`（retro 已寫） |
 | W04 | **Module D-2:履行動作**（sync gate → `assignLicense` → `assignedQuantity` +1 → 回寫 ServiceNow → `ASSIGNED`） | ✅ **完成**（2026-07-09；G1–G4 全 pass） | — | `W04-assign-fulfilment/`（retro 已寫） |
-| FE-scaffold | **前端第一個 phase**:`apps/web` app shell + token/theme（Vite+Tailwind+shadcn;H6 保護） | 候選（等 kickoff） | Chris go → 建 folder + 寫 plan（R1）→ approve 先 code | `docs/02-architecture/design-system.md` · `design_handoff_licenseops/` |
+| W05 | **FE-scaffold**:`apps/web` app shell + token/theme（Vite+React+TS+Tailwind+shadcn;H6） | ✅ **完成**（2026-07-09；G1–G5 全 pass;light+dark 截圖驗） | — | `W05-fe-scaffold/`（retro 已寫） |
+| FE-1 | **前端畫面 1**:Overview dashboard + License Assets（首次接後端 `/license/*` `/fulfilment/*` via TanStack Query） | 候選（等 kickoff） | Chris go → 建 folder + 寫 plan（R1）→ approve 先 code | `design-system.md` · `design_handoff .../full-console.html` |
 
-> **開發路線（2026-07-09）= Backend-first**:W02 Module C ✅ → W03 Module D-1 ✅ → W04 Module D-2 ✅ → **後端業務層完成**。下一段 = 前端:**FE-scaffold**（下一個）→ FE-1/2/3 → AUTH → DEPLOY。詳見 §二 roadmap（B 區 MOD-C/MOD-D/FE/AUTH）。
+> **開發路線（2026-07-09）= Backend-first**:W02 C ✅ → W03 D-1 ✅ → W04 D-2 ✅（後端業務層完成）→ **W05 FE-scaffold ✅**。前端進行中:**FE-1**（下一個,Overview+Assets）→ FE-2（Requests）→ FE-3（Drift/Catalog/Settings/Login）→ AUTH → DEPLOY。
 
 ---
 
@@ -37,6 +38,8 @@
 |---|---|---|---|---|
 | INIT | `git init` + 首個 baseline commit（框架落地基線） | 完成（`5ff2cae`,main） | — | CLAUDE.md §4 |
 | BUG-001 | **H4:`GraphService` log 咗 UPN（PII）**（assignLicense + findUser 錯誤） | ✅ 完成（2026-07-09；Sev3;fix + regression test,實證 fails-before） | — | `docs/03-implementation/bugs/BUG-001-graph-logs-upn-pii/` |
+| DS-flag | **Avatar brand gradient `#8a0018`**:handoff 用非 token gradient,衝突 design-system.md DS-7「唯一 gradient=login」 | 候選（W05 flag,等 owner 決） | Chris 定:保留 hifi gradient（更新 DS-7 例外）定改 token-only | `apps/web/src/components/ui/avatar.tsx` · design-system.md DS-7 |
+| FE-vuln | **apps/web npm 32 vulnerabilities**（1 critical/8 high,全 dev 工具鏈 vite/vitest/jsdom） | 候選（W05 flag） | `npm audit` 評估 → 選擇性 fix（唔盲 `--force` breaking） | `apps/web/package.json` |
 
 ---
 
