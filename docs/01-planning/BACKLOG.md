@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-09(W01 backend-bootstrap **完成**;monorepo 跑得起 + DB seeded)
+**最後更新**:2026-07-09(**W02 Module C 完成**;下一個 = W03 Module D。路線 = backend-first)
 
 ---
 
@@ -22,7 +22,10 @@
 | ID | 任務 | 狀態 | 下一步 / 阻塞 | 來源 |
 |---|---|---|---|---|
 | W01 | Backend Bootstrap（monorepo `apps/api` + PrismaModule + docker-compose） | ✅ **完成**（2026-07-09；G1-G4 全 pass） | — | `W01-backend-bootstrap/`（retro 已寫） |
-| — | **下一個 phase(揀一)**:W02 module C（catalog + 對帳）**或** 第一個前端 phase（app shell + token/theme） | 候選（等 Chris 揀） | Chris 決定 → kickoff 建 folder | `BACKLOG.md` B 區 MOD-C / FE |
+| W02 | **Module C:SKU Catalog 字典 + 總量層對帳 / drift**（純後端） | ✅ **完成**（2026-07-09；G1–G4 全 pass） | — | `W02-catalog-reconcile/`（retro 已寫） |
+| W03 | **Module D:Request 履行**（intake → line items → triage → sync gate → assign → ledger → 回寫 ServiceNow） | 候選（等 kickoff） | Chris go → 建 folder + 寫 plan（R1）→ approve 先 code | `docs/02-architecture/licenseops/DESIGN.md §11`（D） |
+
+> **開發路線（2026-07-09）= Backend-first**:W02 Module C ✅ → **W03/04 Module D**（下一個）→ FE-scaffold（app shell+theme）→ FE-1/2/3 → AUTH → DEPLOY。詳見 §二 roadmap（B 區 MOD-C/MOD-D/FE/AUTH）。
 
 ---
 
@@ -38,8 +41,8 @@
 
 | ID | 任務 | 狀態 | 解封條件 | 來源 |
 |---|---|---|---|---|
-| MOD-C | Module C：SKU Catalog 初始化 + 總量層對帳 / drift | 已設計 | W01 完成後開工（DESIGN 建議功能上先 C） | `docs/02-architecture/licenseops/DESIGN.md §11` |
-| MOD-D | Module D：Request 履行（triage → sync gate → assign → ledger → 回寫 ServiceNow） | 已設計 | W01 完成、建議 C 之後 | `docs/02-architecture/licenseops/DESIGN.md §11` |
+| MOD-C | Module C：SKU Catalog 字典 + 總量層對帳 / drift | ✅ 完成（W02,2026-07-09） | — | `W02-catalog-reconcile/` |
+| MOD-D | Module D：Request 履行（triage → sync gate → assign → ledger → 回寫 ServiceNow） | 已設計（**下一個 = W03**） | Chris go → kickoff | `docs/02-architecture/licenseops/DESIGN.md §11` |
 | AUTH | Entra SSO + role/OpCo-scope guard（controllers 現時 unguarded） | 已設計（model 已有 role/scope） | 真實曝露前必做 | `docs/architecture.md §9` |
 | FE | LicenseOps 前端（`apps/web`；React+TS+Tailwind+shadcn；滾動 build order：app shell→theme→Overview→License Assets→Requests→Request detail→Drift→Catalog→Settings→Login） | 已設計（hifi handoff + 設計系統就緒；ADR-0001 已定 in-repo；H6 已生效） | 前置 `apps/web` scaffold（W01 monorepo 之後）；每段一滾動 phase | `docs/02-architecture/design-system.md` · `design_handoff_licenseops/` |
 
