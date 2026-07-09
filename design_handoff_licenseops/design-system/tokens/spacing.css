@@ -1,0 +1,47 @@
+/* ===========================================================================
+   SPACING & RADII — the console works on a tight, mostly 2px-stepped rhythm.
+   Values are the literal ones used in the product, not snapped to a 4/8 grid.
+   =========================================================================== */
+:root {
+  /* --- spacing scale --- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 18px;
+  --space-10: 22px;
+  --space-11: 24px;
+  --space-12: 40px;   /* page bottom padding */
+
+  /* --- common component paddings --- */
+  --pad-card: 16px;         /* card body */
+  --pad-cell-y: 11px;       /* table cell vertical */
+  --pad-cell-x: 18px;       /* table cell horizontal */
+  --pad-page: 22px 24px 40px;
+
+  /* --- radii --- */
+  --radius-xs: 5px;    /* tags, tiny chips */
+  --radius-sm: 6px;    /* segmented control inner, small buttons */
+  --radius-md: 7px;    /* buttons, chips */
+  --radius-lg: 8px;    /* inputs, controls, cards-in-panel */
+  --radius-xl: 10px;   /* dialogs footer, wells */
+  --radius-2xl: 12px;  /* cards, panels */
+  --radius-3xl: 14px;  /* dialog shell */
+  --radius-pill: 999px;
+
+  /* --- layout --- */
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 56px;
+
+  /* --- control heights --- */
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 34px;
+  --control-xl: 36px;
+  --control-input: 42px;   /* login inputs */
+}

@@ -1,0 +1,29 @@
+<!-- @dsCard group="Components" viewport="700x200" name="Overlay" subtitle="Tooltip — hover label on a dark chip" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:26px;background:var(--bg)}</style></head>
+<body><div id="r"></div>
+<script type="text/babel">
+const NS = Object.values(window).find(v => v && typeof v==='object' && v.Tooltip) || {};
+const { Tooltip, IconButton, Badge } = NS;
+const Ico = (d)=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg>;
+function Demo(){
+  return (<div style={{display:'flex',alignItems:'center',gap:28,flexWrap:'wrap'}}>
+    <Tooltip label="Toggle light / dark theme"><IconButton>{Ico('M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z')}</IconButton></Tooltip>
+    <Tooltip label="Run reconciliation now"><IconButton>{Ico('M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5')}</IconButton></Tooltip>
+    <div style={{display:'flex',alignItems:'center',gap:8}}>
+      <span style={{font:'12.5px var(--font-sans)',color:'var(--fg-muted)'}}>Compare cell</span>
+      <Tooltip label="RHK · Microsoft 365 E3 — 60 allocated · 54 assigned">
+        <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:34,height:26,borderRadius:7,background:'var(--ok-soft)',color:'var(--ok)',fontFamily:'var(--font-mono)',fontSize:12.5,fontWeight:600,cursor:'default'}}>6</span>
+      </Tooltip>
+    </div>
+    <Tooltip label="Assignment blocked until Azure AD sync" placement="bottom"><Badge tone="danger" dot>Blocked · sync</Badge></Tooltip>
+    <span style={{font:'11.5px var(--font-sans)',color:'var(--fg-subtle)'}}>hover any element →</span>
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('r')).render(<Demo/>);
+</script>
+</body></html>

@@ -1,0 +1,61 @@
+/* ===========================================================================
+   COLORS — light theme on :root, dark theme on .dark
+   Base palette + semantic aliases. Ricoh red is the single restrained accent.
+   =========================================================================== */
+:root {
+  /* --- surfaces & structure --- */
+  --bg: #f5f5f6;            /* app background */
+  --panel: #ffffff;         /* top bar, elevated bars */
+  --card: #ffffff;          /* cards, tables, sheets */
+  --sidebar: #fbfbfc;       /* left nav surface */
+  --hover: #efeff1;         /* row / control hover, inset wells */
+  --active: #f3f3f5;        /* active nav item */
+  --border: #e9e9ec;        /* hairline dividers, default control border */
+  --border-strong: #d7d7dc; /* input borders, scrollbar, steppers */
+
+  /* --- foreground / text --- */
+  --fg: #131317;            /* primary text */
+  --fg-muted: #63636c;      /* secondary text, labels */
+  --fg-subtle: #9a9aa4;     /* tertiary text, meta, placeholders */
+
+  /* --- brand accent (Ricoh red) --- */
+  --accent: #E60027;        /* primary actions, active nav, links */
+  --accent-fg: #ffffff;     /* text/icon on accent fill */
+  --accent-soft: #fdecef;   /* tinted accent background */
+  --accent-line: #f6c9d2;   /* accent hairline / quote bar */
+
+  /* --- semantic status: ok / warn / info / danger / neutral / purple --- */
+  --ok: #15803d;      --ok-soft: #e7f4ec;
+  --warn: #b45309;    --warn-soft: #fbf0e0;
+  --info: #1d4ed8;    --info-soft: #e8eefc;
+  --danger: #c81e1e;  --danger-soft: #fceaea;
+  --neutral: #52525b; --neutral-soft: #eeeef0;
+  --purple: #6d28d9;  --purple-soft: #f0eafb;   /* AI-assist / roadmap accent */
+}
+
+.dark {
+  --bg: #08080a;
+  --panel: #0f0f11;
+  --card: #141417;
+  --sidebar: #0b0b0d;
+  --hover: #1b1b1f;
+  --active: #202025;
+  --border: #242427;
+  --border-strong: #34343a;
+
+  --fg: #f3f3f5;
+  --fg-muted: #9d9da7;
+  --fg-subtle: #6c6c76;
+
+  --accent: #ff3355;        /* brightened so it holds on dark surfaces */
+  --accent-fg: #ffffff;
+  --accent-soft: #2a1015;
+  --accent-line: #4a1a22;
+
+  --ok: #43d17f;      --ok-soft: #10241a;
+  --warn: #f6b545;    --warn-soft: #2a1e0b;
+  --info: #5f9bff;    --info-soft: #101f39;
+  --danger: #f47171;  --danger-soft: #2a1113;
+  --neutral: #a1a1aa; --neutral-soft: #1c1c20;
+  --purple: #a982f0;  --purple-soft: #1c1330;
+}

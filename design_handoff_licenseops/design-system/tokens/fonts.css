@@ -1,0 +1,5 @@
+/* Webfonts.
+   Geist (UI) + Geist Mono (numerics, identifiers) are loaded from Google Fonts.
+   NOTE: no local binaries are bundled — consumers fetch from the Google CDN.
+   Replace with self-hosted @font-face + url() targets for fully offline use. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');

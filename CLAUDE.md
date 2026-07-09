@@ -1,0 +1,306 @@
+# CLAUDE.md — Unified Operation Platform Standing Instructions
+
+> **AI coding agent:呢份文件係你嘅 standing instructions。每個 session 開始必須先讀,然後先做任何嘢。**
+> **本 instruction 採用 Strict Mode**:架構決定一旦 lock 就唔可以單方面改,凡涉及 architectural change 必須 STOP and confirm。
+
+---
+
+## 0. Quick Identity Check(每 session 開始 30 秒讀)
+
+| 項目 | Value |
+|---|---|
+| Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
+| Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
+| Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
+| Phase | 早期 — LicenseOps 後端 scaffolding(見 §9;`package.json` 未建,entry 檔待歸位) |
+| Strict Mode | **ON** — see §5 Hard Constraints |
+| Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
+| Decision Owner(architecture) | **Chris Lai** |
+| Decision Owner(scope / business) | **Chris Lai** |
+
+---
+
+## 1. Behavioral Baseline(universal coding mindset)
+
+> 適用於**所有** code change / review / refactor,與 §2 以下 project rule 並行,優先級僅次於 §5 Hard Constraints。
+> Trivial task 可用 judgment,non-trivial task 必須跟。
+
+### 1.1 Think Before Coding — 想清先寫
+- 把 assumption 明確講出嚟;唔肯定就問,唔好估。
+- 有多種詮釋 → 全部 present,唔好默默揀一個。
+- 有更簡單做法 → 講出嚟,有需要 push back。
+- 唔清楚就 STOP,講明邊度唔清楚,然後問。
+
+### 1.2 Simplicity First — 最少 code 解決問題
+- 唔加未要求嘅 feature / abstraction / 「flexibility」。
+- 唔處理冇可能發生嘅 error scenario。
+- 自我檢查:「senior engineer 會唔會話呢段 over-engineered?」答 yes 就簡化。
+
+### 1.3 Surgical Changes — 精準改動,只清自己嘅 mess
+- 唔「順手」改 adjacent code / comment / formatting。
+- 唔 refactor 冇 break 嘅嘢;match existing style。
+- 見到無關 dead code → mention,但唔好刪。
+- 你嘅改動製造嘅 orphan(unused import / var)→ 要刪。
+- 驗證標準:**每一行改動都 trace 得返用戶嘅 request**。
+
+### 1.4 Goal-Driven Execution — 定義成功標準,loop 到 verify 為止
+- 把 task 轉做 verifiable goal(「加 validation」→「寫 test for invalid input,make them pass」)。
+- Multi-step task 先講 plan:`1. [step] → verify: [check]`。
+- Strong success criteria 等你可以獨立 loop,唔使用戶不斷 clarify。
+
+---
+
+## 2. Document Routing(when to read what)
+
+> **呢份 CLAUDE.md 唔重複任何 spec 內容。** 要做嘢就跟以下 routing 去搵 source of truth。
+
+| 情況 | 必讀文件 |
+|---|---|
+| 想知有咩 pending / 揀下一個 task | `docs/01-planning/BACKLOG.md` |
+| 平台級架構 / 定位 / 四層地基 / locked stack | `docs/architecture.md` |
+| LicenseOps 業務決策(定位 / scope / 對帳 / domain model / request 生命週期) | `docs/02-architecture/licenseops/DESIGN.md`(**決策 SSOT**) |
+| Domain model 真相(Prisma schema) | `prisma/schema.prisma` |
+| Multi-day phase / sprint work | `docs/01-planning/PROCESS.md §2` + active phase folder |
+| Change to existing feature(<3 日) | `docs/01-planning/PROCESS.md §3` + new `docs/03-implementation/changes/CH-{NNN}-{kebab}/` |
+| Bug-fix | `docs/01-planning/PROCESS.md §4` + new `docs/03-implementation/bugs/BUG-{NNN}-{kebab}/` |
+| 改架構 / 違反 §5 設計 | **STOP** — 先確認(H1)+ 寫 ADR `docs/adr/` |
+| 加 vendor / dependency / 換 component | **STOP** — 先確認(H2)+ 寫 ADR |
+| 寫 / 改 backend feature(Graph / ServiceNow 整合) | `docs/05-usage/INTEGRATION_SETUP.md` + `src/integration/` |
+| 寫 / 改 frontend / UI(LicenseOps) | `design_handoff_licenseops/`(**hifi 設計 SSOT** — 見 §7;唔可以 eyeball token) |
+| 寫 / 改 API endpoint | OpenAPI(`main.ts` DocumentBuilder;runtime UI `/docs/api`) |
+| 寫 eval / test | `docs/01-planning/PROCESS.md` + §3.4(H5 覆蓋規則) |
+| Risk-related decision | `docs/01-planning/RISK_REGISTER.md` |
+| 反覆「暫時唔做」嘅決定 | `docs/01-planning/DEFERRED_REGISTER.md` |
+
+**Default**:唔確定 task 屬邊個 doc 範圍 → **ask before guessing**。
+
+---
+
+## 3. Coding Conventions
+
+### 3.1 Backend(NestJS / TypeScript)
+- **Runtime**:Node 20+(ServiceNow client 用 global `fetch`)。TypeScript strict。
+- **結構**:modular monolith;每個 feature = 一個 Nest module(`*.module.ts` / `*.service.ts` / `*.controller.ts` / `dto/`)。Module 邊界對齊四層地基(見 `docs/architecture.md`)。
+- **DI**:constructor injection;唔用 service locator。Config 一律經 `ConfigService.getOrThrow(...)`,唔直接讀 `process.env`。
+- **Data layer**:Prisma;`prisma/schema.prisma` = domain model 真相。DB 改動一律經 migration(唔手改 DB)。
+- **Vendor SDK 只准喺 `src/integration/`**;domain / orchestration 層唔可以直接 import Graph / ServiceNow SDK。
+- **DTO validation**:class-validator + global `ValidationPipe({ whitelist: true, transform: true })`(已喺 `main.ts`)。
+- **Logging**:Nest `Logger`,唔用 `console.log`;**絕不** log secret / PII(見 §5 H4)。
+
+### 3.2 Frontend(React + Vite + Tailwind + shadcn/ui)— 未落本 repo
+- 落地時對齊 `design_handoff_licenseops/design-system/`(tokens 為色彩/字體/間距真相)。詳見 §7 + H3 註。
+
+### 3.3 共通 Naming
+- Classes `PascalCase`;vars / methods `camelCase`;檔名 kebab(Nest 慣例 `*.service.ts`)。
+- Env vars `SCREAMING_SNAKE_CASE`。Prisma model `PascalCase` / field `camelCase`。
+- SKU 一律以 `skuId`(GUID)為主鍵,唔靠名(見 module spec §5)。
+- **Comments**:解釋 **why**,唔係 **what**。
+- **TODO format**:`// TODO(<owner>): <description>`。
+- **絕不 commit**:secret / API key / PII / `.env` 內容。
+
+### 3.4 測試(H5)
+- 框架:Jest(Nest 預設),unit + e2e。Graph / ServiceNow **一律 mock**,唔打真 tenant。
+- 掂到 critical path(assign / ledger 更新 / 對帳)嘅 code 必須同步寫 test(見 §5 H5)。
+
+---
+
+## 4. Git & Workflow Conventions
+
+> ⚠️ 本 repo 暫時**未 init git**。下列慣例喺 `git init` 後生效。
+
+### 4.1 Branch naming
+```
+main                          ← protected,永遠 deployable
+feat/<area>-<short-desc>      fix/<area>-<short-desc>
+chore/<short-desc>            docs/<short-desc>
+adr/<adr-number>-<short>
+```
+
+### 4.2 Commit message(Conventional Commits)
+`<type>(<scope>): <description>` — types:`feat` / `fix` / `chore` / `docs` / `refactor` / `test` / `perf` / `style`。
+Scope:模組名(`integration` / `license` / `fulfilment` / `prisma` / `claude-md` …)。
+
+### 4.3 PR Rules
+- One feature per PR。PR description:link spec section / list test scenario /(前端)screenshots。
+- Pre-merge:tests pass / coverage 不降 / no linter warning / ADR updated(若架構改動)。
+
+### 4.4 絕不 touch
+- `.git/`、`.env*`、任何含 credential 嘅檔。
+- `design_handoff_licenseops/`(read-only 設計參考 — 只可 read / recreate,唔可以 port runtime,見 §7)。
+- 主 spec / module spec 嘅 content-locked section(只有 owner approve 後先 increment version)。
+
+---
+
+## 5. Hard Constraints(Strict Mode)
+
+> 呢啲 constraint **violate 即係 broken project**。遇到以下情況**必須 STOP and ask**(第一句就講)。
+
+### 5.1 H1 — Architectural Change Constraint
+
+**定義**:任何符合其一 —— 改平台四層地基 / module 邊界;改 vendor / service;改 storage layout / 資料模型 / Prisma schema;動到 module spec 已 lock 嘅決策(對帳方案甲、`skuId` 主鍵、ledger 兩層數字 `allocatedQuantity`/`assignedQuantity`、stage 掛 line item、`azureSyncedAt` sync gate)。
+
+**Required behavior**:①**STOP** 寫 code → ②chat 講明:想做咩架構改動 / 點解現 spec 唔啱 / proposed 替代 → ③等「approved + write ADR」→ ④寫 ADR 入 `docs/adr/`。
+
+**唔屬架構改動(可自行做)**:bug fix / 內部 refactor 冇改 interface / 加 internal helper / 加 test / 加 logging。
+
+### 5.2 H2 — Vendor / Dependency Constraint
+
+**定義**:技術棧已 lock(下表)。加新 runtime dependency 或換 vendor = 觸發。
+
+| Layer | Locked |
+|---|---|
+| 後端 | NestJS(modular monolith)· TypeScript · Node 20+ |
+| DB | PostgreSQL + Prisma |
+| 背景工作 | Redis + BullMQ · 排程 `@nestjs/schedule` |
+| 對外 API | REST + OpenAPI(NestJS Swagger) |
+| Auth | Entra ID SSO + app roles(未建) |
+| 前端 | React + Vite + Tailwind + shadcn/ui(另一 deliverable) |
+| 部署 | Docker Compose(app + postgres + redis) |
+| Integration vendors | Microsoft Graph、ServiceNow Table API、(future)n8n |
+
+**唯一合法路徑**:STOP → 解釋點解現 stack 唔夠 → 等 approval → 寫 ADR。
+**例外(可自行加)**:pure utility lib / type stub / dev dependency(test / linter / formatter)。
+
+### 5.3 H3 — Scope / Tier Constraint
+
+**定義**:有明確 in / out-of-scope,唔可以「順手做埋」。兩個層面:
+- **平台層**:LicenseOps = **模組一**。其他 IT ops 模組(offboarding / cost insights / D365 / 其他 support 工作流)**未 approve 前唔起**。
+- **LicenseOps 模組**(module spec §1-2 刻意排除):ticket 申請表單 / 審批鏈 / SLA 管理 / service catalog / 把 CMDB 當 source of truth / 成本發票金額(→ DocuWare,只記 `quoteRef`/`poRef`)/ offboarding·license 回收 / D365 / 非 onboarding 的獨立 license request。
+
+**Required behavior**:想加超出當前 scope / tier 嘅 feature → **STOP**,講清楚屬邊個未來 tier,等 approval。模糊 → default out-of-scope,ask。
+
+### 5.4 H4 — Security / Privacy Constraint
+
+- **絕不 log / commit**:Entra `GRAPH_CLIENT_SECRET`、ServiceNow 帳密、`DATABASE_URL`、任何 connection string / token。
+- **絕不 hard-code**:tenant id / client id / secret / instance URL —— 一律 from env(`ConfigService`)。
+- **PII 謹慎**:user UPN / email / displayName 唔好 log 落 plaintext file;debug log 用完即清。
+- 掂到敏感資料嘅改動 = 高度小心,唔確定就 STOP。
+
+### 5.5 H5 — Test Coverage Constraint
+
+**定義**:critical path module 寫 code 必須同步寫 test。Critical path = license `assignLicense`、ledger `assignedQuantity` 更新、SKU 總量層對帳 / drift 偵測、request stage 推進 / sync gate。
+**Required behavior**:改到上述 path 冇對應 test → task 未完;Graph / ServiceNow 一律 mock(§3.4)。
+
+---
+
+## 6. Architecture Decision Record (ADR) Format
+
+違反 §5 嘅改動,approval 後必須寫 ADR。Format 見 `docs/adr/0000-TEMPLATE.md`:`Context → Decision → Alternatives Considered → Consequences → References`。
+- 檔位 `docs/adr/NNNN-short-title.md`(NNNN 4-digit),index 喺 `docs/adr/README.md`。
+- Status:`Proposed → Accepted → Superseded by ADR-MMMM`。Accepted 唔改內容,要推翻寫新 ADR。
+
+---
+
+## 7. External References — 設計 handoff(read-only)
+
+`design_handoff_licenseops/` 係 LicenseOps 嘅 **hifi 設計參考**(HTML prototype + framework-agnostic design system):
+- **只讀 / recreate,唔可以 port 佢個 `.dc.html` runtime,唔可以照 copy prototype code。**
+- Token(色 / 字 / 間距)真相喺 `design-system/tokens/*` —— **唔可以 eyeball**,用實際 `--token`。
+- 建佢個前端前先讀 `design-system/readme.md`(brand/voice/visual)+ `styles.css` + tokens。
+- ⚠️ 前端正式落本 repo 起嗰陣,考慮把「設計還原度」升做 **H6**(hifi 100% 還原)。
+
+---
+
+## 8. Open Questions(影響 default behavior)
+
+見 module spec(`docs/02-architecture/licenseops/DESIGN.md §10`)嘅 open items:成本可見度、`isBaseLicense` 去留、ServiceNow 實際 table/field、對帳「對回」機制、OpCo self-service 開放時機。
+- Open → 用 spec default 繼續,commit 標「depends on OQ default」。Blocked → STOP 對應 work item,ask。
+
+---
+
+## 9. Sprint / Phase Awareness + 當前 build state
+
+Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 folder,見 `BACKLOG.md`。唔清楚而家喺邊個 phase → **ask user**。
+
+**⚠️ 當前 scaffold 現狀(未 runnable,新 session 必知)**:
+- 未有 `package.json` / `tsconfig.json` / `nest-cli.json` / `docker-compose.yml`(README 列嘅 npm script 係目標介面,未定義)。
+- `main.ts` / `app.module.ts` / `seed.ts` 喺 **repo root**,但 import 路徑假設喺 `src/`(`main.ts`→`src/main.ts`、`app.module.ts`→`src/app.module.ts`、`seed.ts`→`prisma/seed.ts`),待歸位。
+- `app.module.ts` 引用但**未存在**嘅 module:`PrismaModule`(`@Global`)、`LicenseModule`(module C)、`FulfilmentModule`(module D)。只有 `src/integration/` 實際存在。
+- 未有 auth;controllers 預期 unguarded 到 Entra guard 建成(找 `TODO: @Roles`)。詳情 → `docs/setup.md` + `BACKLOG.md`。
+
+---
+
+## 10. Phase Planning Workflow
+
+> Source of truth:`docs/01-planning/PROCESS.md`。
+
+### 10.1 Per-Phase Artifacts
+每 phase `docs/01-planning/W{NN}-{name}/`:`plan.md`(locked 後改要 changelog)/ `checklist.md`(daily tick)/ `progress.md`(daily + retro)。
+
+### 10.2 Binding Rules
+- **R1** — multi-day implementation 前必須有 approved pre-doc(plan/spec/report)。冇 → STOP。
+- **R2** — Daily commit 對應 `progress.md` Day-N entry。
+- **R3** — Plan/spec deviation 必須 log changelog,唔可以 silent drift。
+- **R4** — Open question resolved → 同步更新對應文件 + progress。
+- **R5** — 架構級決定 → 必寫 ADR。
+- **R7** — Pending 工作變動必須反映喺 `BACKLOG.md`。
+
+### 10.3 AI Session Start Protocol
+每 session(§0 identity check 之後):①讀 `docs/12-ai-assistant/01-prompts/session-start.template.md`(若已 instantiate)→ ②active phase `plan.md`(scope + acceptance)→ ③`checklist.md`(next unchecked)→ ④`progress.md` 最近 3 個 Day-N → ⑤`git status --short` + `git log --oneline -5`(git init 後)→ ⑥唔清楚 ask。**Compact 後**必須 re-read ①-④。
+
+---
+
+## 11. Output / Communication Conventions
+
+- **回覆語言**:**繁體中文為主**,英文只限 code identifier / 檔名 / API / commit hash / ADR 編號 / vendor 名。
+- 唔好過度 disclaimer / hedging。重要決定明確 surface,唔好 bury 喺長文最後。
+- Code change 說明 **what + why**,唔重複 code。引用 spec 標明 section。
+- 遇到 §5 hard constraint trigger,**第一句就 STOP and explain**。
+
+---
+
+## 12. Self-Verification Before Marking Task Done
+
+- [ ] 對應 spec 邊個 section?
+- [ ] 有冇 violate §5 hard constraints?(有 → 未完)
+- [ ] 有冇 violate §1 behavioral baseline?(每行改動 trace 得返 request?)
+- [ ] Test 寫咗未?(critical path → H5)
+- [ ] Linter / formatter run 過?
+- [ ] Commit message follow Conventional Commits?
+- [ ] 架構-adjacent 改動 → ADR 寫咗未?
+- [ ] Phase checklist tick 咗?progress Day-N 寫咗?(R2)
+- [ ] Pending 變動 → BACKLOG 同步咗?(R7)
+
+---
+
+## 13. When in Doubt(default behavior)
+
+| 情況 | Default |
+|---|---|
+| Spec 同 your idea 衝突 | Spec wins,除非 explicitly raise + get approval |
+| Spec 缺 detail | Ask user,don't guess |
+| 兩種實作都 reasonable | 揀更接近既有 pattern 嗰個 |
+| Stakeholder feedback 同 spec 衝突 | STOP — surface conflict,等 resolution |
+| Scope 邊界模糊 | Default out-of-scope,ask(H3) |
+| SKU 靠名定靠 GUID | 一律 `skuId` GUID,唔信 Excel / 記憶中嘅 part number |
+| 要加 dependency 至做到 | STOP(H2),唔好靜靜 `npm i` |
+| Assign 但 user 未 sync | 唔 assign — `findUser` null / `azureSyncedAt` 空 = Phase 1 sync gate 未過 |
+| Performance vs simplicity | 早期:simplicity wins |
+
+---
+
+## 14. Update This File
+
+當以下發生 update:加新 vendor(approved + ADR)/ 改 phase / 加改 hard constraint / open question resolved / 新 convention / scaffold 現狀清除(§9)。
+- 改動 commit 標 `docs(claude-md): <change>`。重大(§1 / §5)需 owner explicit approve;微調(routing entry / phase status)可自行做。
+
+---
+
+## Appendix: Quick Reference Card
+
+```
+Unified Operation Platform — Strict Mode
+├─ Baseline (§1): think → simple → surgical → goal
+├─ Platform spec: docs/architecture.md
+├─ Module 1 (LicenseOps): docs/02-architecture/licenseops/DESIGN.md
+├─ Stack: NestJS+Prisma+Postgres · Redis/BullMQ · Graph+ServiceNow · React/shadcn(FE)
+├─ Hard Constraints (STOP+ask on trigger):
+│  ├─ H1 Architectural change      H2 Vendor/dep lock
+│  ├─ H3 Scope/Tier boundary       H4 Security/PII
+│  └─ H5 Test coverage (critical path)
+└─ When in doubt: ask, don't guess · skuId not name · sync gate before assign
+```
+
+---
+
+**End of CLAUDE.md** · Version 1.0 · Owner: Chris Lai

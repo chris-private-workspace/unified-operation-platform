@@ -1,0 +1,45 @@
+{
+  "_comment": "Claude Code 本機設定。hooks = 自動行為(SessionStart 注入 context / UserPromptSubmit 注入紀律提醒)。",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-Command",
+              "& \"$env:CLAUDE_PROJECT_DIR\\docs\\12-ai-assistant\\01-prompts\\session-bootstrap.ps1\""
+            ],
+            "statusMessage": "注入 session summary + active phase + git"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-Command",
+              "Write-Output '紀律提醒:繁中為主。掂到 H1-H5(架構/vendor/scope/安全/測試)第一句 STOP-and-ask。SKU 用 skuId 唔靠名;assign 前過 azureSyncedAt sync gate。非 trivial 工作先開 pre-doc(見 PROCESS 三軌)。'"
+            ],
+            "statusMessage": "discipline reminder"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "claude-api@anthropic-agent-skills": true,
+    "document-skills@anthropic-agent-skills": true,
+    "andrej-karpathy-skills@karpathy-skills": true
+  }
+}

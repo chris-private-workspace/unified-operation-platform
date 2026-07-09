@@ -1,0 +1,38 @@
+# CI — NestJS / TypeScript。PR_WORKFLOW.md §4 引用呢個做 merge gate。
+# 註:package.json + scripts 補齊後先真正生效(見 docs/setup.md scaffold 現狀)。
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Prisma generate
+        run: npm run prisma:generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+# 註:另可加獨立 deploy workflow(push-to-main only)。
+# deploy 若需 cloud 憑證(Azure OIDC)未配好前會卡 —— 屬預期,非 regression。

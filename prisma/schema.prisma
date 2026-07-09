@@ -1,0 +1,240 @@
+// ─────────────────────────────────────────────────────────────
+// Phase 2 Unified Platform — Domain Model (v1, finalised fields)
+//
+// Positioning : System of Action.  ServiceNow (System of Record)
+//               fields are MIRROR / REFERENCE only — the platform
+//               does not own intake, approval or SLA.
+// Scope       : onboarding-time M365 license fulfilment only.
+//               No license change, no offboarding, M365 only.
+// Reconcile   : Option (甲) manual ledger + SKU TOTAL-level drift.
+// Out of scope (by design): license cost/invoice (DocuWare owns it),
+//               per-user auto-attribution, D365.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Identity & access (Entra SSO → app roles) ────────────────
+
+enum Role {
+  ADMIN    // platform admin
+  REGIONAL // Regional IT — sees all OpCos
+  OPCO_IT  // OpCo IT — scoped to own OpCo (future self-service)
+}
+
+model AppUser {
+  id              String         @id @default(cuid())
+  entraOid        String         @unique // Entra object id from the SSO token
+  email           String         @unique
+  displayName     String
+  role            Role           @default(REGIONAL)
+  opcoScopeId     String? // set for OPCO_IT; null = all (REGIONAL / ADMIN)
+  opcoScope       Opco?          @relation(fields: [opcoScopeId], references: [id])
+  active          Boolean        @default(true)
+  lastLoginAt     DateTime? // ops visibility
+  createdAt       DateTime       @default(now())
+  handledRequests Request[] // requests this operator is handling
+  events          RequestEvent[]
+}
+
+// ── OpCo (company + optional cost-center; the 24 Excel columns)
+
+model Opco {
+  id          String          @id @default(cuid())
+  code        String          @unique // e.g. "RAPO/IT", "RHK", "RTH"
+  displayName String
+  company     String // e.g. "RAPO", "RHK"
+  costCenter  String? // e.g. "IT", "SCM"; null for company-level
+  active      Boolean         @default(true)
+  ledger      OpcoSkuLedger[]
+  requests    Request[]
+  scopedUsers AppUser[]
+  createdAt   DateTime        @default(now())
+}
+
+// ── SKU catalog ──────────────────────────────────────────────
+// skuId (GUID) is the ONLY primary truth. Seed from live tenant
+// subscribedSkus; businessAlias maps the old (unreliable) Excel names.
+
+model SkuCatalog {
+  id            String              @id @default(cuid())
+  skuId         String              @unique // M365 GUID (subscribedSkus.skuId) — source of truth
+  skuPartNumber String // e.g. "SPE_E3", "ENTERPRISEPACK"
+  displayName   String // human-friendly official name
+  businessAlias String? // old Excel label — for mapping / reconciliation only
+  category      String? // grouping for the OpCo asset-list view (e.g. "Base", "Add-on", "Power Platform", "Security")
+  isBaseLicense Boolean             @default(false) // base bundle (E3/F3) vs add-on — UI default hint, NOT a hard gate
+  active        Boolean             @default(true)
+  lastSyncedAt  DateTime? // last time this entry was confirmed against tenant subscribedSkus
+  ledger        OpcoSkuLedger[]
+  lineItems     RequestLineItem[]
+  snapshots     TenantSkuSnapshot[]
+  driftAlerts   DriftAlert[]
+  createdAt     DateTime            @default(now())
+}
+
+// ── Per-OpCo per-SKU ledger (Option 甲: manual) ──────────────
+// allocatedQuantity = OpCo budget / owned (the Excel cell, OpCo-managed) → display
+// assignedQuantity  = actually assigned baseline → THIS reconciles vs M365 total
+
+model OpcoSkuLedger {
+  id                String     @id @default(cuid())
+  opcoId            String
+  opco              Opco       @relation(fields: [opcoId], references: [id])
+  skuCatalogId      String
+  sku               SkuCatalog @relation(fields: [skuCatalogId], references: [id])
+  allocatedQuantity Int        @default(0) // budget / owned (OpCo-managed)
+  assignedQuantity  Int        @default(0) // baseline assigned (+1 on assign)
+  updatedAt         DateTime   @updatedAt
+
+  @@unique([opcoId, skuCatalogId])
+}
+
+// ── Live M365 tenant state (from subscribedSkus) — total truth
+
+model TenantSkuSnapshot {
+  id             String     @id @default(cuid())
+  skuCatalogId   String
+  sku            SkuCatalog @relation(fields: [skuCatalogId], references: [id])
+  prepaidEnabled Int // prepaidUnits.enabled (total purchased)
+  consumedUnits  Int // consumedUnits (total assigned in tenant)
+  capturedAt     DateTime   @default(now())
+
+  @@index([skuCatalogId, capturedAt])
+}
+
+// ── Drift detection — reconciliation at SKU TOTAL level only ──
+// sum(all OpCo assignedQuantity) vs M365 tenant consumedUnits
+
+enum DriftStatus {
+  OPEN
+  RESOLVED
+}
+
+model DriftAlert {
+  id                String      @id @default(cuid())
+  skuCatalogId      String
+  sku               SkuCatalog  @relation(fields: [skuCatalogId], references: [id])
+  ledgerAssignedSum Int // sum of assignedQuantity across OpCos
+  tenantConsumed    Int // M365 consumedUnits at detection
+  delta             Int // tenantConsumed - ledgerAssignedSum
+  status            DriftStatus @default(OPEN)
+  note              String?
+  detectedAt        DateTime    @default(now())
+  resolvedAt        DateTime?
+}
+
+// ── Onboarding license request (consumes a ServiceNow ticket) ─
+
+enum RequestStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Request {
+  id                String            @id @default(cuid())
+  serviceNowSysId   String?           @unique // reference to the SNOW record
+  serviceNowNumber  String? // e.g. RITM0012345
+  serviceNowStatus  String? // mirrored for display, not owned
+  rawRequestText    String? // free-text remark → source for human / future-AI interpretation
+  requesterEmail    String? // who filed the ticket (may differ from the new user)
+  targetUpn         String // the new user being onboarded
+  targetDisplayName String?
+  opcoId            String
+  opco              Opco              @relation(fields: [opcoId], references: [id])
+  status            RequestStatus     @default(OPEN)
+  handledById       String? // Regional operator owning this request
+  handledBy         AppUser?          @relation(fields: [handledById], references: [id])
+
+  // Phase 1 (n8n) linkage — assign is GATED on azureSyncedAt
+  accountCreatedAt  DateTime?
+  azureSyncedAt     DateTime?
+
+  lineItems         RequestLineItem[]
+  events            RequestEvent[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  closedAt          DateTime?
+
+  @@index([opcoId, status])
+}
+
+// ── Per-SKU line item ────────────────────────────────────────
+// The fulfilment STAGE lives HERE, not on the request, because one
+// request can have SKUs at different stages
+// (E3 available → assign now; Copilot → still in procurement).
+
+enum LineItemStage {
+  REQUESTED       // interpreted from the request
+  QUOTING         // procurement: getting vendor quote
+  OPCO_APPROVED   // procurement: OpCo approved the spend
+  AWAITING_VENDOR // procurement: PO sent, waiting for provisioning
+  READY           // procured OR already available — ready to assign (may wait for sync)
+  ASSIGNED        // license assigned in M365
+  CANCELLED
+}
+
+model RequestLineItem {
+  id                  String         @id @default(cuid())
+  requestId           String
+  request             Request        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  skuCatalogId        String
+  sku                 SkuCatalog     @relation(fields: [skuCatalogId], references: [id])
+  quantity            Int            @default(1)
+  procurementRequired Boolean        @default(false) // set at triage: false = short path, true = procurement path
+  stage               LineItemStage  @default(REQUESTED)
+
+  // procurement references (recorded during manual stage tracking)
+  quoteRef            String? // vendor quotation reference
+  poRef               String? // purchase order reference
+
+  // stage timestamps (procurement path)
+  quotedAt            DateTime?
+  opcoApprovedAt      DateTime?
+  vendorOrderedAt     DateTime?
+  readyAt             DateTime?
+  assignedAt          DateTime?
+
+  note                String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  events              RequestEvent[]
+
+  @@index([requestId])
+  @@index([stage])
+}
+
+// ── Operational history (platform-owned; NOT the ServiceNow audit)
+
+enum EventType {
+  STAGE_CHANGE
+  ASSIGN
+  SYNC
+  RECONCILE
+  NOTE
+}
+
+model RequestEvent {
+  id         String           @id @default(cuid())
+  requestId  String
+  request    Request          @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  lineItemId String?
+  lineItem   RequestLineItem? @relation(fields: [lineItemId], references: [id])
+  type       EventType
+  fromStage  LineItemStage?
+  toStage    LineItemStage?
+  message    String?
+  actorId    String?
+  actor      AppUser?         @relation(fields: [actorId], references: [id])
+  createdAt  DateTime         @default(now())
+
+  @@index([requestId, createdAt])
+}

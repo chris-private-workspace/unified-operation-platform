@@ -1,0 +1,27 @@
+# === Secrets(絕不 commit)===
+.env
+.env.local
+.env.*.local
+
+# === AI agent 本機工具 ===
+# .claude/settings.json + commands/skills/hooks 團隊共享(track);只 ignore 本機 override。
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+# .claude/          # 若唔想 track 成個 .claude/,uncomment
+# .agents/
+
+# === 依賴 / build（NestJS / TypeScript）===
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# === Prisma ===
+# generated client 落 node_modules;若改 output path 記得同步 ignore
+
+# === 本機雜項 ===
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,42 @@
+/* ===========================================================================
+   TYPOGRAPHY — Geist for UI, Geist Mono for numerics & identifiers.
+   Enterprise-dense: base UI text is 13.5px. Never smaller than 10.5px.
+   =========================================================================== */
+:root {
+  --font-sans: 'Geist', -apple-system, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+  /* legacy alias used across the console */
+  --mono: var(--font-mono);
+
+  /* --- font sizes (px, matching the console's dense scale) --- */
+  --text-display: 32px;   /* login hero */
+  --text-h1: 22px;        /* page / settings heading */
+  --text-h2: 18px;        /* card title, request user name */
+  --text-title: 15px;     /* top-bar page title */
+  --text-lg: 14px;        /* section heading, primary body */
+  --text-base: 13.5px;    /* default UI text */
+  --text-sm: 12.5px;      /* table cells, secondary */
+  --text-xs: 12px;        /* meta, filter labels */
+  --text-2xs: 11.5px;     /* dense meta */
+  --text-3xs: 11px;       /* timestamps, sub-meta */
+  --text-micro: 10.5px;   /* column headers, tags (uppercase) */
+
+  /* --- weights --- */
+  --weight-normal: 400;
+  --weight-book: 450;
+  --weight-medium: 500;
+  --weight-semi: 550;
+  --weight-bold: 600;
+  --weight-heavy: 700;
+
+  /* --- line heights --- */
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
+
+  /* --- tracking --- */
+  --tracking-tight: -0.02em;   /* large headings */
+  --tracking-heading: -0.01em; /* titles */
+  --tracking-caps: 0.06em;     /* uppercase nav-section / column labels */
+}

@@ -1,0 +1,51 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Forms" subtitle="Button · IconButton · Input · Select · Checkbox · Switch · Segmented" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:var(--bg)}
+#r{display:flex;flex-direction:column;gap:16px}
+.grp{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lbl{font:600 10.5px var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--fg-subtle);width:74px;flex-shrink:0}</style></head>
+<body><div id="r"></div>
+<script type="text/babel">
+const NS = Object.values(window).find(v => v && typeof v==='object' && v.Button && v.Input && v.SegmentedControl) || {};
+const { Button, IconButton, Input, Select, Checkbox, Switch, SegmentedControl } = NS;
+const Ico = (d)=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg>;
+function Demo(){
+  const [mode,setMode]=React.useState('Single OpCo');
+  const [sw,setSw]=React.useState(true);
+  const [ck,setCk]=React.useState(true);
+  return (<React.Fragment>
+    <div className="grp"><span className="lbl">Button</span>
+      <Button variant="primary">Assign now</Button>
+      <Button variant="secondary" icon={Ico('M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5')}>Reconcile</Button>
+      <Button variant="ghost">Cancel</Button>
+      <Button variant="danger">Resolve</Button>
+      <Button variant="primary" disabled>Blocked</Button>
+      <Button size="sm" variant="secondary">Edit</Button>
+    </div>
+    <div className="grp"><span className="lbl">Icon</span>
+      <IconButton title="a">{Ico('M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z')}</IconButton>
+      <IconButton active title="b">{Ico('M4 4h16v6H4z')}</IconButton>
+      <span style={{width:16}}></span>
+      <span className="lbl">Segmented</span>
+      <SegmentedControl options={['Single OpCo','Compare']} value={mode} onChange={setMode}/>
+      <SegmentedControl size="sm" options={['Light','Dark']} value="Light" onChange={()=>{}}/>
+    </div>
+    <div className="grp"><span className="lbl">Input</span>
+      <div style={{width:220}}><Input icon={Ico('M11 11 21 21 M11 6a5 5 0 1 1 0 10 5 5 0 0 1 0-10z')} placeholder="Filter SKU…"/></div>
+      <div style={{width:150}}><Select><option>Base</option><option>Add-on</option></Select></div>
+    </div>
+    <div className="grp"><span className="lbl">Toggle</span>
+      <Checkbox checked={ck} onChange={e=>setCk(e.target.checked)} label="License assigned"/>
+      <span style={{width:16}}></span>
+      <Switch checked={sw} onChange={e=>setSw(e.target.checked)}/>
+      <span style={{font:'12.5px var(--font-sans)',color:'var(--fg-muted)'}}>Reduce motion</span>
+    </div>
+  </React.Fragment>);
+}
+ReactDOM.createRoot(document.getElementById('r')).render(<Demo/>);
+</script>
+</body></html>
