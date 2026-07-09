@@ -20,7 +20,7 @@
 
 ---
 
-## 1. Behavioral Baseline(universal coding mindset)
+## 1. Behavioral Baseline(Karpathy Guidelines - universal coding mindset)
 
 > 適用於**所有** code change / review / refactor,與 §2 以下 project rule 並行,優先級僅次於 §5 Hard Constraints。
 > Trivial task 可用 judgment,non-trivial task 必須跟。

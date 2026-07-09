@@ -1,0 +1,31 @@
+# === Secrets(絕不 commit)===
+.env
+.env.local
+.env.*.local
+infrastructure/secrets/
+
+# === AI agent 本機工具(machine-specific;要唔要 track 睇你團隊)===
+# EKP 把 .claude/ + .agents/ gitignore(只經同步夾分享)。
+# 但若要團隊共享 commands/skills/hooks,可以反而 track 佢哋 —— 睇你取捨。
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+# .claude/          # 若唔想 track 成個 .claude/,uncomment
+# .agents/
+
+# === 第三方 read-only reference(license risk,唔入 repo)===
+references/{third-party-ref}/
+
+# === 依賴 / build ===
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# === 本機雜項 ===
+*.log
+.DS_Store

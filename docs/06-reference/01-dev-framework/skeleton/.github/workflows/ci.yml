@@ -1,0 +1,31 @@
+# CI — 通用骨架。填你 stack 嘅 lint / type-check / test / build。
+# PR_WORKFLOW.md §4 引用呢個做 merge gate。
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- {語言 A,例 backend / Python} ---
+      - name: Setup {語言 A}
+        run: echo "{setup 命令 — 例 setup-python + 裝 deps}"
+      - name: Lint
+        run: echo "{lint 命令 — 例 ruff check}"
+      - name: Type-check
+        run: echo "{type 命令 — 例 mypy --strict}"
+      - name: Test
+        run: echo "{test 命令 — 例 pytest -q}"
+
+      # --- {語言 B,例 frontend / TS}(若有)---
+      - name: Test frontend
+        run: echo "{lint + tsc + build}"
+
+# 註:另可加獨立 deploy workflow（push-to-main only）。
+# 若 deploy 需要 cloud 憑證(例 Azure OIDC),未配好前 deploy job 會卡 —— 屬預期,非 regression。

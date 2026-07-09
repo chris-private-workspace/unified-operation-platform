@@ -1,0 +1,15 @@
+#!/bin/sh
+# pre-commit hook — lint staged 檔(快)。
+# 啟用一次: git config core.hooksPath scripts/hooks
+# 緊急跳過: git commit --no-verify
+set -e
+
+# 只揀 staged + 本語言嘅檔(例 backend Python):
+STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '{你嘅檔 pattern,例 ^backend/.*\.py$}' || true)
+[ -z "$STAGED" ] && exit 0
+
+echo "[pre-commit] lint on staged files..."
+# {你嘅 lint 命令,例: ruff check $STAGED}
+{LINT_CMD} $STAGED || { echo "[pre-commit] FAILED — 修好先 commit (急可 --no-verify)"; exit 1; }
+
+echo "[pre-commit] lint OK"

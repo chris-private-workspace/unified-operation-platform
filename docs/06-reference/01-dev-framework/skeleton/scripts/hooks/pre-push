@@ -1,0 +1,12 @@
+#!/bin/sh
+# pre-push hook — push 前跑較重檢查(type-check / test)。
+# 啟用一次: git config core.hooksPath scripts/hooks
+# 緊急跳過: git push --no-verify
+set -e
+
+echo "[pre-push] type-check + test..."
+# {你嘅 type-check 命令,例: mypy --strict backend/}
+# {你嘅 test 命令,例: pytest -q}
+{CHECK_CMD} || { echo "[pre-push] FAILED — 修好先 push (急可 --no-verify)"; exit 1; }
+
+echo "[pre-push] checks OK"

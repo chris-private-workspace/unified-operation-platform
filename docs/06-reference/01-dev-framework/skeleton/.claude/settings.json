@@ -1,0 +1,43 @@
+{
+  "_comment": "AI agent(Claude Code)本機設定。hooks = 自動行為(SessionStart 注入 context / UserPromptSubmit 注入紀律提醒)。通常 gitignore(machine-specific),但框架把佢做 template 畀新項目 copy。填 {...} 佔位符。",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-Command",
+              "& \"$env:CLAUDE_PROJECT_DIR\\docs\\12-ai-assistant\\01-prompts\\session-bootstrap.ps1\""
+            ],
+            "statusMessage": "注入 session summary + active phase + git"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell",
+            "args": [
+              "-NoProfile",
+              "-Command",
+              "Write-Output '{填你項目每次 prompt 都想提醒 AI 嘅紀律,例:回覆語言 / STOP-and-ask on hard constraint}'"
+            ],
+            "statusMessage": "discipline reminder"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "_comment": "填你用嘅 agent plugin,例:andrej-karpathy-skills / document-skills"
+  }
+}
