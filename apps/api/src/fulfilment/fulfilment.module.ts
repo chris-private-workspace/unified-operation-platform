@@ -1,9 +1,18 @@
 import { Module } from '@nestjs/common';
+import { IntegrationModule } from '../integration/integration.module';
+import { RequestService } from './request.service';
+import { StageService } from './stage.service';
+import { FulfilmentController } from './fulfilment.controller';
 
 /**
- * Module D — onboarding request lifecycle (triage → sync gate → assign →
- * ledger → ServiceNow write-back). Empty shell for W01 bootstrap so AppModule
- * compiles; services land in a later phase (see BACKLOG MOD-D, DESIGN.md §11).
+ * Module D-1 — onboarding request lifecycle skeleton (intake → triage → stage
+ * advance). Consumes ServiceNow tickets (mirror) via ServiceNowService; Prisma
+ * comes from the @Global PrismaModule. Assign / ledger / SN write-back = D-2.
  */
-@Module({})
+@Module({
+  imports: [IntegrationModule], // ServiceNowService
+  controllers: [FulfilmentController],
+  providers: [RequestService, StageService],
+  exports: [RequestService, StageService],
+})
 export class FulfilmentModule {}

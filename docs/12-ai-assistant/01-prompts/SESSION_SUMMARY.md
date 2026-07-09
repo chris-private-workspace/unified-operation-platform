@@ -6,7 +6,7 @@
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
 **當前座標(2026-07-09)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。**W01-backend-bootstrap 完成**(G1-G4 全 pass):monorepo `apps/api`(NestJS)跑得起、`/docs/api` 200、DB seeded(23 OpCos + admin)。`apps/web` = placeholder。
-**開發路線(2026-07-09 敲定)= backend-first**;**W02 Module C 完成**(G1–G4 全 pass:catalog sync + 方案甲總量層對帳 + `DriftAlert`;4 條 `/license/*` endpoint;8 test)。**下一個 = W03/04 Module D**(request 履行:intake → line items → triage → sync gate → assign → ledger → 回寫 ServiceNow)→ FE-scaffold(app shell+theme)→ FE-1/2/3 → AUTH → deploy。Module D 邏輯 + AUTH guard 未做。詳見 `BACKLOG.md`。前端受 H6 保護 —— 見 [[ui-design-fidelity]]。
+**開發路線(2026-07-09 敲定)= backend-first**;**W02 Module C ✅**(catalog sync + 方案甲對帳 + `/license/*`)、**W03 Module D-1 ✅**(request intake + triage + stage machine + `/fulfilment/*`;無 external side-effect;25 test 全綠)。**下一個 = W04 Module D-2**(sync gate → `assignLicense` → 更新 `assignedQuantity` → 回寫 ServiceNow → `ASSIGNED` stage;最硬 critical path,同 W02 對帳扣返)→ FE-scaffold(app shell+theme)→ FE-1/2/3 → AUTH → deploy。D-2 + AUTH guard 未做。詳見 `BACKLOG.md`。前端受 H6 保護 —— 見 [[ui-design-fidelity]]。
 
 **提醒(完整見 CLAUDE.md §5)**:掂 H1-H6 第一句 **STOP+ask**(H1 架構 / H2 vendor / H3 scope / H4 security / H5 test / H6 UI design fidelity)。**繁中回覆**。非 trivial 工作先 pre-doc gate(R1)。
 
