@@ -106,7 +106,7 @@
 
 ## 4. Git & Workflow Conventions
 
-> ⚠️ 本 repo 暫時**未 init git**。下列慣例喺 `git init` 後生效。
+> Repo 已連 GitHub remote:`origin` = `https://github.com/laitim2001/unified-operation-platform.git`(**PUBLIC**;branch `main`)。⚠️ public repo —— 守 §5 H4,唔好 push secret / 真實 credential。
 
 ### 4.1 Branch naming
 ```
