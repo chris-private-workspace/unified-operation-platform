@@ -13,38 +13,38 @@ last_updated: 2026-07-09
 
 ## F1 — Build / tooling config
 
-- [ ] 建 `package.json`(deps + scripts:start:dev / build / prisma:generate / prisma:migrate / seed / lint / test)
-- [ ] 建 `tsconfig.json` + `tsconfig.build.json` + `nest-cli.json`
-- [ ] 建 eslint + prettier config
-- [ ] `npm install` resolve 成功
-- [ ] verify:`npm run build` 0 error(G1)
+- [x] 建 `package.json`(deps + scripts:start:dev / build / prisma:generate / prisma:migrate / seed / lint / test)
+- [x] 建 `tsconfig.json` + `tsconfig.build.json` + `nest-cli.json`
+- [x] 建 eslint + prettier config
+- [x] `npm install` resolve 成功(767 pkgs)
+- [x] verify:`npm run build` 0 error(G1 ✓,`dist/main.js` 產出)
 
 ## F2 — 遷入 monorepo `apps/api`(ADR-0001)
 
-- [ ] root 設 workspace(`apps/*`);`apps/web` 留 placeholder
-- [ ] move `main.ts` / `app.module.ts` / `src/integration/` → `apps/api/src/`
-- [ ] move `seed.ts` → `apps/api/prisma/seed.ts`;`prisma/schema.prisma` → `apps/api/prisma/`
-- [ ] 修正 import 路徑 + `nest-cli.json` root,`app.module.ts` import 生效
+- [x] root 設 workspace(`apps/*`);`apps/web` 留 placeholder
+- [x] move `main.ts` / `app.module.ts` / `src/integration/` → `apps/api/src/`
+- [x] move `seed.ts` → `apps/api/prisma/seed.ts`;`prisma/schema.prisma` → `apps/api/prisma/`
+- [x] 修正 import 路徑 + `nest-cli.json` root,`app.module.ts` import 生效(build 通過為證)
 
 ## F3 — PrismaModule + 空 module stubs
 
-- [ ] `PrismaModule`(`@Global`)+ `PrismaService`(connect / shutdown hook)
-- [ ] `LicenseModule` 空 shell
-- [ ] `FulfilmentModule` 空 shell
-- [ ] verify:`app.module.ts` compile 通過
+- [x] `PrismaModule`(`@Global`)+ `PrismaService`(connect / shutdown hook)
+- [x] `LicenseModule` 空 shell
+- [x] `FulfilmentModule` 空 shell
+- [x] verify:`app.module.ts` compile 通過(build ✓)
 
 ## F4 — 本機 infra(docker-compose)
 
-- [ ] `docker-compose.yml`(postgres + redis,對齊 `.env.example`)
-- [ ] `docker compose up -d` → `pg_isready` + `redis-cli ping` OK
-- [ ] verify:`npm run prisma:migrate` 建表成功
-- [ ] verify:`npm run seed` → 23 OpCos + admin user(G3)
+- [x] `docker-compose.yml`(postgres + redis;postgres host port 5433 避開既有 5432)
+- [x] `docker compose up -d` → `pg_isready` + `redis-cli ping` OK(兩容器 healthy)
+- [ ] 🚧 verify:`npm run prisma:migrate` 建表成功 —— **blocked**:Prisma engine 被 proxy 阻擋(見 progress Blockers)
+- [ ] 🚧 verify:`npm run seed` → 23 OpCos + admin user(G3)—— **blocked**(需 engine + migrate 先)
 
 ## F5 — Boot 驗證
 
-- [ ] `npm run start:dev` boot 無 error
-- [ ] verify:`curl -sf http://localhost:3000/docs/api` → 200(G2)
-- [ ] verify:`npm run lint` clean(G4)
+- [ ] 🚧 `npm run start:dev` boot 無 error —— **blocked**:PrismaService `$connect` runtime 需 engine(見 Blockers)
+- [ ] 🚧 verify:`curl -sf http://localhost:3000/docs/api` → 200(G2)—— **blocked**(app 未 boot 到)
+- [x] verify:`npm run lint` clean(G4 ✓)
 
 ---
 

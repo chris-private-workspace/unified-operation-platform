@@ -78,7 +78,13 @@ export class GraphService {
     try {
       const u = await this.client
         .api(`/users/${encodeURIComponent(userIdOrUpn)}`)
-        .select(['id', 'userPrincipalName', 'displayName', 'usageLocation', 'accountEnabled'])
+        .select([
+          'id',
+          'userPrincipalName',
+          'displayName',
+          'usageLocation',
+          'accountEnabled',
+        ])
         .get();
       return {
         id: u.id,

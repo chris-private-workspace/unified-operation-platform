@@ -1,0 +1,6 @@
+{
+  "name": "@uop/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LicenseOps frontend (React + Vite + Tailwind + shadcn/ui). Placeholder — scaffolded in a later phase (see BACKLOG FE, docs/02-architecture/design-system.md)."
+}

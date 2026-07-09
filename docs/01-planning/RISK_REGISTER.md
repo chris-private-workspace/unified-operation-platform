@@ -2,7 +2,7 @@
 artifact: risk-register
 version: 1.0
 status: living
-last_updated: YYYY-MM-DD
+last_updated: 2026-07-09
 ---
 
 # Unified Operation Platform — Risk Register(living)
@@ -19,7 +19,7 @@ last_updated: YYYY-MM-DD
 
 | ID | Risk | Source | Likelihood | Impact | Mitigation | Status |
 |---|---|---|---|---|---|---|
-| R1 | _(空)_ | | High/Med/Low | High/Med/Low | | ⚠️ Open |
+| R1 | 公司 proxy 阻擋 `binaries.prisma.sh`(Prisma engine CDN)→ generate/migrate/seed/boot 卡住 | W01 執行(2026-07-09) | High(已發生) | 🔴 High(阻 backend runtime) | IT allowlist host / 用可達 `PRISMA_ENGINES_MIRROR` / 無 inspection 網絡跑一次 generate;engine 可快取後續即通 | ⚠️ Open |
 
 <!-- 範例:
 | R1 | 某外部服務單點故障 | BUG-0XX postmortem | Med | High | 加 fallback + 熱切換(ADR-00XX) | 🟡 Mitigating |

@@ -4,7 +4,7 @@ name: "Backend Bootstrap — 令 LicenseOps 後端跑得起"
 sprint_week: W01
 start_date: 2026-07-09
 end_date: 2026-07-16          # planned, may slip with changelog log
-status: draft                 # draft | active | closed
+status: active                # draft | active | closed
 spec_refs:
   - docs/architecture.md §4 Application Architecture
   - docs/02-architecture/licenseops/DESIGN.md §12 Artifact index
@@ -16,7 +16,7 @@ prior_phase: null             # first phase
 
 > **Plan version**:1.0(initial)
 > **Owner**:Chris Lai
-> **Approved by**:_(status draft → active 時填)_
+> **Approved by**:Chris Lai(2026-07-09)
 
 ## 1. Scope
 
