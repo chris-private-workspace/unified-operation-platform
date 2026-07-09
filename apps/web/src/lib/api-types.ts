@@ -17,6 +17,9 @@ export type LineItemStage =
   | 'ASSIGNED'
   | 'CANCELLED';
 
+export type EventType =
+  'STAGE_CHANGE' | 'ASSIGN' | 'SYNC' | 'RECONCILE' | 'NOTE';
+
 /** GET /license/catalog → SkuCatalogDto[] */
 export interface SkuCatalog {
   id: string;
@@ -59,14 +62,79 @@ export interface DriftAlert {
   sku: DriftSkuRef;
 }
 
-/** GET /fulfilment/requests → RequestDto[] */
+/** OpCo reference (service include: { code, displayName }). */
+export interface OpcoRef {
+  code: string;
+  displayName: string;
+}
+
+/** SKU reference embedded in a detail line item (service include). */
+export interface LineItemSkuRef {
+  skuId: string;
+  skuPartNumber: string;
+  displayName: string;
+}
+
+/** A per-SKU line item (stage lives here). `sku` present on the detail view. */
+export interface RequestLineItem {
+  id: string;
+  requestId: string;
+  skuCatalogId: string;
+  quantity: number;
+  procurementRequired: boolean;
+  stage: LineItemStage;
+  quoteRef: string | null;
+  poRef: string | null;
+  quotedAt: string | null;
+  opcoApprovedAt: string | null;
+  vendorOrderedAt: string | null;
+  readyAt: string | null;
+  assignedAt: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sku?: LineItemSkuRef;
+}
+
+/** An operational-history event (detail view). */
+export interface RequestEvent {
+  id: string;
+  requestId: string;
+  lineItemId: string | null;
+  type: EventType;
+  fromStage: LineItemStage | null;
+  toStage: LineItemStage | null;
+  message: string | null;
+  actorId: string | null;
+  createdAt: string;
+}
+
+/**
+ * GET /fulfilment/requests → the service returns the full Request plus `opco`
+ * and `lineItems` (richer than RequestDto). Fields beyond the DTO are real.
+ */
 export interface OnboardingRequest {
   id: string;
+  serviceNowSysId: string | null;
+  serviceNowNumber: string | null;
+  serviceNowStatus: string | null;
+  rawRequestText: string | null;
+  requesterEmail: string | null;
   targetUpn: string;
   targetDisplayName: string | null;
   opcoId: string;
   status: RequestStatus;
-  serviceNowNumber: string | null;
-  requesterEmail: string | null;
+  handledById: string | null;
+  accountCreatedAt: string | null;
+  azureSyncedAt: string | null;
   createdAt: string;
+  updatedAt: string;
+  opco?: OpcoRef;
+  lineItems?: RequestLineItem[];
+}
+
+/** GET /fulfilment/requests/:id → adds line-item `sku` + the event timeline. */
+export interface RequestDetail extends OnboardingRequest {
+  lineItems: RequestLineItem[];
+  events: RequestEvent[];
 }

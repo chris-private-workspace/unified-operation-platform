@@ -3,6 +3,7 @@ import { apiGet } from '@/lib/api';
 import type {
   DriftAlert,
   OnboardingRequest,
+  RequestDetail,
   SkuCatalog,
 } from '@/lib/api-types';
 
@@ -26,10 +27,19 @@ export function useDrift() {
   });
 }
 
-/** GET /fulfilment/requests — onboarding requests. */
+/** GET /fulfilment/requests — onboarding requests (with opco + lineItems). */
 export function useRequests() {
   return useQuery({
     queryKey: ['fulfilment', 'requests'],
     queryFn: () => apiGet<OnboardingRequest[]>('/fulfilment/requests'),
+  });
+}
+
+/** GET /fulfilment/requests/:id — one request with line items (sku) + events. */
+export function useRequest(id: string | undefined) {
+  return useQuery({
+    queryKey: ['fulfilment', 'requests', id],
+    queryFn: () => apiGet<RequestDetail>(`/fulfilment/requests/${id}`),
+    enabled: Boolean(id),
   });
 }

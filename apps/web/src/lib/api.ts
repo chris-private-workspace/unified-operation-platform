@@ -36,3 +36,31 @@ export async function apiPost<T>(path: string): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+
+/**
+ * PATCH with an optional JSON body. On a non-2xx the server's `message` (NestJS
+ * error shape) is surfaced so callers can toast the real reason (seat exhausted,
+ * sync gate, …) rather than a generic string.
+ */
+export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers: {
+      Accept: 'application/json',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let message = `PATCH ${path} failed (${res.status})`;
+    try {
+      const data = await res.json();
+      const m = (data as { message?: string | string[] }).message;
+      if (m) message = Array.isArray(m) ? m.join(', ') : m;
+    } catch {
+      // non-JSON error body — keep the generic message
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json() as Promise<T>;
+}

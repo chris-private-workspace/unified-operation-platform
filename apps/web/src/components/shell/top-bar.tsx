@@ -18,7 +18,10 @@ const ROLES: readonly Role[] = ['Regional', 'RHK IT'];
 export function TopBar() {
   const { pathname } = useLocation();
   const { theme, role, toggleTheme, setRole } = useUiStore();
-  const title = TITLES[pathname] ?? 'LicenseOps';
+  // Nested request detail (/requests/:id) has its own title.
+  const title =
+    TITLES[pathname] ??
+    (pathname.startsWith('/requests/') ? 'Request detail' : 'LicenseOps');
   const context =
     role === 'Regional' ? 'Regional — all OpCos' : 'RHK IT — RHK only';
 

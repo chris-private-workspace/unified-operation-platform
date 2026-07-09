@@ -1,0 +1,60 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiPatch } from '@/lib/api';
+import type {
+  LineItemStage,
+  OnboardingRequest,
+  RequestLineItem,
+} from '@/lib/api-types';
+
+// Write hooks for the request detail (OD1=B). Each does query invalidation in
+// onSuccess; callers attach toast feedback via mutate(vars, { onSuccess/onError }).
+// The backend enforces every gate (stage/sync/seat) — the frontend just calls
+// and surfaces the server's error message (see apiPatch).
+
+const base = '/fulfilment/requests';
+
+/** PATCH …/:lineItemId/stage — advance a line item to the next legal stage. */
+export function useAdvanceStage(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lineItemId: string; toStage: LineItemStage }) =>
+      apiPatch<RequestLineItem>(
+        `${base}/${requestId}/line-items/${vars.lineItemId}/stage`,
+        { toStage: vars.toStage },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}
+
+/** PATCH …/:lineItemId/assign — assign the license (sync/seat gated backend). */
+export function useAssignLineItem(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lineItemId: string; usageLocation?: string }) =>
+      apiPatch<RequestLineItem>(
+        `${base}/${requestId}/line-items/${vars.lineItemId}/assign`,
+        vars.usageLocation ? { usageLocation: vars.usageLocation } : undefined,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+      // assignment moves the ledger, so drift may change too
+      qc.invalidateQueries({ queryKey: ['license', 'drift'] });
+    },
+  });
+}
+
+/** PATCH …/:id/sync — open the Azure sync gate (Phase-1 simulation). */
+export function useMarkSynced(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPatch<OnboardingRequest>(`${base}/${requestId}/sync`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}

@@ -87,7 +87,11 @@ export function Sidebar() {
             key={path}
             icon={<Icon size={16} strokeWidth={2} />}
             label={label}
-            active={pathname === path}
+            // keep the parent nav active on nested routes (e.g. /requests/:id)
+            active={
+              pathname === path ||
+              (path !== '/' && pathname.startsWith(`${path}/`))
+            }
             count={count ?? null}
             countTone={countTone}
             onClick={() => navigate(path)}
