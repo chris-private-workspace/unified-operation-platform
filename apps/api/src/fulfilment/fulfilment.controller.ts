@@ -2,9 +2,11 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { RequestService } from './request.service';
 import { StageService } from './stage.service';
+import { AssignService } from './assign.service';
 import { IntakeRequestDto } from './dto/intake.dto';
 import { AddLineItemDto } from './dto/line-item.dto';
 import { AdvanceStageDto } from './dto/advance-stage.dto';
+import { AssignLineItemDto } from './dto/assign.dto';
 import { RequestDto, RequestLineItemDto } from './dto/request-view.dto';
 
 /**
@@ -18,6 +20,7 @@ export class FulfilmentController {
   constructor(
     private readonly requests: RequestService,
     private readonly stage: StageService,
+    private readonly assign: AssignService,
   ) {}
 
   @Post()
@@ -54,5 +57,22 @@ export class FulfilmentController {
     @Body() dto: AdvanceStageDto,
   ): Promise<RequestLineItemDto> {
     return this.stage.advanceStage(lineItemId, dto.toStage);
+  }
+
+  // ── Module D-2 (assign flow) ──
+
+  @Patch(':id/sync')
+  @ApiOkResponse({ type: RequestDto })
+  markSynced(@Param('id') id: string): Promise<RequestDto> {
+    return this.assign.markSynced(id);
+  }
+
+  @Patch(':id/line-items/:lineItemId/assign')
+  @ApiOkResponse({ type: RequestLineItemDto })
+  assignLineItem(
+    @Param('lineItemId') lineItemId: string,
+    @Body() dto: AssignLineItemDto,
+  ): Promise<RequestLineItemDto> {
+    return this.assign.assignLineItem(lineItemId, dto.usageLocation);
   }
 }

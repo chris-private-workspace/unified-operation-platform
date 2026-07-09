@@ -2,17 +2,20 @@ import { Module } from '@nestjs/common';
 import { IntegrationModule } from '../integration/integration.module';
 import { RequestService } from './request.service';
 import { StageService } from './stage.service';
+import { AssignService } from './assign.service';
 import { FulfilmentController } from './fulfilment.controller';
 
 /**
- * Module D-1 — onboarding request lifecycle skeleton (intake → triage → stage
- * advance). Consumes ServiceNow tickets (mirror) via ServiceNowService; Prisma
- * comes from the @Global PrismaModule. Assign / ledger / SN write-back = D-2.
+ * Module D — onboarding request lifecycle.
+ *   D-1: intake → triage → stage advance (RequestService / StageService)
+ *   D-2: sync gate → assign → ledger → SN write-back (AssignService)
+ * GraphService + ServiceNowService come from IntegrationModule; Prisma from
+ * the @Global PrismaModule.
  */
 @Module({
-  imports: [IntegrationModule], // ServiceNowService
+  imports: [IntegrationModule], // GraphService + ServiceNowService
   controllers: [FulfilmentController],
-  providers: [RequestService, StageService],
-  exports: [RequestService, StageService],
+  providers: [RequestService, StageService, AssignService],
+  exports: [RequestService, StageService, AssignService],
 })
 export class FulfilmentModule {}
