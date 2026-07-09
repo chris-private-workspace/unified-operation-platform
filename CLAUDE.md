@@ -106,7 +106,7 @@
 
 ## 4. Git & Workflow Conventions
 
-> Repo 已連 GitHub remote:`origin` = `https://github.com/laitim2001/unified-operation-platform.git`(**PUBLIC**;branch `main`)。⚠️ public repo —— 守 §5 H4,唔好 push secret / 真實 credential。
+> Repo 已連 GitHub remote:`origin` = `https://github.com/chris-private-workspace/unified-operation-platform.git`(**PRIVATE**;branch `main`)。守 §5 H4:即使 private 都唔好 commit 真實 secret / credential。
 
 ### 4.1 Branch naming
 ```
