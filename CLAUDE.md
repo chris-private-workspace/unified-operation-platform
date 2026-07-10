@@ -198,6 +198,28 @@ Scope:模組名(`integration` / `license` / `fulfilment` / `prisma` / `claude-md
 **Required behavior**:UI 改動 commit / 驗收前跑 `.claude/skills/ui-design` 自檢;要偏離設計(加新元件 / 新 pattern / 改 token)→ **STOP**,先同 owner 確認,必要時更新 `docs/02-architecture/design-system.md`(+ 若屬架構級 → ADR)。
 **唔屬 violate**:用既有 token 砌新畫面 / 組合既有 primitive / 加 handoff 已定義嘅 state。
 
+### 5.7 H7 — Tool Result Integrity(工具結果誠信)
+
+**定義**:任何涉及「tool 執行 / 結果 / 驗證狀態」嘅陳述。呢條係為咗杜絕 AI agent
+**腦補(fabricate)tool 結果** —— send 完 tool 冇等真 result,就自己續寫一個扮成回傳嘅
+output(見 `docs/03-implementation/incidents/INC-001`)。bypass permissions mode 冇咗
+「逐個 tool 彈確認」呢個天然 checkpoint,更加容易觸發,所以本條規矩寫成**可觀察行為**,
+唔靠抽象自律。
+
+**Required behavior(可觀察,唔係抽象戒條):**
+1. **絕不生成任何扮 tool 輸出嘅文字。** tool result 只可以係系統真正返嘅 block。
+2. **send tool 即收口**:一個 message 內一旦有 tool call,之後唔可以再有任何文字 —— 到此
+   為止,等真 result 返先繼續。
+3. **結果類陳述必 trace**:講「pass / clean / done / 200 / rendered / 綠」之前,對上必須
+   有一個真 tool_result 支持;trace 唔到 → 一律寫「未驗證」。
+4. **高危節點主動停(補 bypass mode 冇 permission checkpoint)**:凡「宣稱完成 / 跑
+   verify(test·build·lint·render)/ 過 gate」,一個 command 一個 turn;output 淨係可以貼
+   真嘅,唔可以總結成 pass;可驗證嘅優先畀用戶跑。
+5. **紅旗自檢**:若發現自己「已經知道」一個仲未有 tool_result 嘅結果 —— 嗰種確定感就係
+   警號,即停,真跑。
+
+**違反 = 破壞信任,比任何功能 bug 更嚴重(見 `docs/03-implementation/incidents/INC-001`)。**
+
 ---
 
 ## 6. Architecture Decision Record (ADR) Format
@@ -316,10 +338,11 @@ Unified Operation Platform — Strict Mode
 │  ├─ H1 Architectural change      H2 Vendor/dep lock
 │  ├─ H3 Scope/Tier boundary       H4 Security/PII
 │  ├─ H5 Test coverage (critical path)
-│  └─ H6 Design fidelity (token-only, 1 primary/view, lucide, light+dark)
+│  ├─ H6 Design fidelity (token-only, 1 primary/view, lucide, light+dark)
+│  └─ H7 Tool-result integrity (唔作 tool 輸出 · send tool 即收口 · 結果 trace 真 output)
 └─ When in doubt: ask, don't guess · skuId not name · sync gate before assign · UI: token 唔 eyeball
 ```
 
 ---
 
-**End of CLAUDE.md** · Version 1.0 · Owner: Chris Lai
+**End of CLAUDE.md** · Version 1.1 · Owner: Chris Lai
