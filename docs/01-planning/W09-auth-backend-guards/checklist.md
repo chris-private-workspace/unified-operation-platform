@@ -44,6 +44,6 @@ status: active
 - [x] G5 test（guard specs + fails-before,56 全綠）· G6 ADR-0002 Accepted · G7 H4（無敏感 log,config getOrThrow）· G8 lint clean
 
 ## Closeout
-- [ ] plan status → closed · progress retro · BACKLOG 同步（AUTH-1 完成 + AUTH-2/3 carry）
-- [ ] SESSION_SUMMARY + memory 更新
-- [ ] commit + push
+- [x] plan status → closed · progress retro · BACKLOG 同步（AUTH-1 完成 + AUTH-2/3 carry）
+- [x] SESSION_SUMMARY + memory 更新（+ MEMORY.md index）
+- [x] commit（`bd49dcc`）· **push 待用戶指示**
