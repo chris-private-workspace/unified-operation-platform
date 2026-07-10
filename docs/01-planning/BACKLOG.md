@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-10(**FE-3 + BE-graph-harden 完成** — W08 Drift Alerts 前端接真數[`/license/drift` + reconcile];reconcile/catalog `getSubscribedSkus` wrap→503 harden[清 BUG-002 carry-over];gate G1–G7 全 pass,light+dark + harden round-trip live 驗,api 42 test 綠;下一個 = FE-Assets[前置 BE-ledger-read] / AUTH)
+**最後更新**:2026-07-10(**AUTH-1 完成** — W09 後端 Entra JWT 驗證 + `@Roles(ADMIN,REGIONAL)` guard 落 11 endpoint,關 unguarded controllers gap;`jwks-rsa`+`jsonwebtoken`[ADR-0002]+ dev-bypass;gate G1–G8 全 pass,401/200 wiring live 驗,api 56 test 綠。**FE-Assets 探 discovery 揭被 allocation-import[deferred Excel data]卡** → 轉咗做 AUTH。下一個 = AUTH-2[FE SSO,前置 IT 開 SPA app reg] / AUTH-3[OPCO_IT scope] / FE-Assets[前置 allocation import 決定])
 
 ---
 
@@ -31,7 +31,7 @@
 | FE-2 | **前端畫面 2**:Requests 列表 + Request detail（讀 + **寫操作** advance/assign/sync;OD1=B）——首個寫操作 UI,接 `/fulfilment/requests*` | ✅ **完成**（2026-07-09；G1–G6 pass;advance/mark-synced round-trip 端到端驗;light+dark） | — | `W07-fe-requests/`（retro 已寫） |
 | FE-3 | **前端畫面 3**:Drift Alerts（接 `GET /license/drift` 真數 + `POST /license/reconcile`;OD1=A 只 Drift,Settings/Login 隨 AUTH defer）——含 **BE-graph-harden**（reconcile/catalog `getSubscribedSkus` wrap→503,OD2=A） | ✅ **完成**（2026-07-10；G1–G7 全 pass;light+dark 對 prototype;harden round-trip[503 toast + API 唔 crash] live 驗;api 42 test 綠） | — | `W08-fe-drift-harden/` |
 
-> **開發路線（2026-07-10）= Backend-first**:W02 C ✅ → W03 D-1 ✅ → W04 D-2 ✅（後端業務層完成）→ **W05 FE-scaffold ✅ → FE-1 ✅**（W06）→ **FE-2 ✅**（W07,Requests 讀+寫）→ **FE-3 ✅**（W08,Drift Alerts + BE-graph-harden;OD1=A 只 Drift,Settings/Login 隨 AUTH defer）。前端下一個:**FE-Assets**（前置 BE-ledger-read）→ **Settings/Login**（隨 AUTH）→ AUTH → DEPLOY。**BUG-002 ✅ / BE-graph-harden ✅ 已修**（後端 Graph crash carry-over 清完）。
+> **開發路線（2026-07-10）**:W02 C ✅ → W03 D-1 ✅ → W04 D-2 ✅（後端業務層）→ **W05 FE-scaffold ✅ → FE-1 ✅**（W06）→ **FE-2 ✅**（W07）→ **FE-3 ✅**（W08,Drift + BE-graph-harden）→ **AUTH-1 ✅**（W09,後端 JWT 驗證 + role guard）。**路線調整**:原打算 FE-Assets,但 discovery 揭 **FE-Assets 被 allocation-import[deferred Excel data 決定]卡死**（seed 唔播 ledger、`allocatedQuantity`=0 → owned/utilization 無真數）→ Chris 轉做 AUTH。下一個:**AUTH-2**（FE SSO,前置 IT 開 SPA app reg）→ **AUTH-3**（OPCO_IT scope）/ **FE-Assets**（前置 allocation import 決定）→ Settings/Login（隨 AUTH-2）→ DEPLOY。**BUG-002 ✅ / BE-graph-harden ✅ / AUTH-1 ✅**。
 
 ---
 
@@ -56,7 +56,9 @@
 |---|---|---|---|---|
 | MOD-C | Module C：SKU Catalog 字典 + 總量層對帳 / drift | ✅ 完成（W02,2026-07-09） | — | `W02-catalog-reconcile/` |
 | MOD-D | Module D：Request 履行 —— **D-1 生命週期 ✅（W03）+ D-2 履行動作 ✅（W04）= 全完** | ✅ 完成 | — | `W03-request-lifecycle/` · `W04-assign-fulfilment/` |
-| AUTH | Entra SSO + role/OpCo-scope guard（controllers 現時 unguarded） | 已設計（model 已有 role/scope） | 真實曝露前必做 | `docs/architecture.md §9` |
+| AUTH-1 | **後端 Entra JWT 驗證 + role guard**（`@Roles(ADMIN,REGIONAL)` 落 license/fulfilment,關 unguarded gap;dev-bypass 本地） | ✅ **完成**（2026-07-10,W09;ADR-0002;api 56 test;401/200 wiring live 驗） | — | `W09-auth-backend-guards/` · `docs/adr/0002-entra-jwt-validation.md` |
+| AUTH-2 | **前端真 SSO（MSAL）**：`@azure/msal-browser/react` 取 token + attach Bearer,取代 placeholder Login | 候選（W09 carry） | **前置:IT 開 SPA app registration**（redirect + exposed API scope + audience）;之後接真 token（本地 `.env` 補 `ENTRA_*`）→ 端到端驗 AUTH-1 真 token 路徑 | `W09-*/plan.md §2` · `apps/web` Login |
+| AUTH-3 | **OPCO_IT per-OpCo scope 過濾**（REGIONAL 睇全部 / OPCO_IT 只睇自己 OpCo） | 候選（隨 OpCo self-service） | query 層加 opcoScope 過濾 + FE role 切換;DESIGN §10 WHICH-OpCo | `W09-*/plan.md §1.1` · `AppUser.opcoScopeId` |
 | FE | LicenseOps 前端（`apps/web`；React+TS+Tailwind+shadcn；滾動 build order：app shell→theme→Overview→License Assets→Requests→Request detail→Drift→Catalog→Settings→Login） | 已設計（hifi handoff + 設計系統就緒；ADR-0001 已定 in-repo；H6 已生效） | 前置 `apps/web` scaffold（W01 monorepo 之後）；每段一滾動 phase | `docs/02-architecture/design-system.md` · `design_handoff_licenseops/` |
 
 ---

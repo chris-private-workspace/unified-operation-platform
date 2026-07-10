@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { Roles } from '../auth/roles.decorator';
 import { RequestService } from './request.service';
 import { StageService } from './stage.service';
 import { AssignService } from './assign.service';
@@ -12,9 +14,11 @@ import { RequestDto, RequestLineItemDto } from './dto/request-view.dto';
 /**
  * Module D-1 surface — request lifecycle (no assign / ledger / SN write-back).
  * Stage advance rejects ASSIGNED; that flow lands in D-2 (W04).
+ * Guarded to ADMIN / REGIONAL (ADR-0002).
  */
-// TODO(auth): @Roles(ADMIN, REGIONAL) — guard deferred to the AUTH phase (BACKLOG: AUTH).
 @ApiTags('fulfilment')
+@ApiBearerAuth()
+@Roles(Role.ADMIN, Role.REGIONAL)
 @Controller('fulfilment/requests')
 export class FulfilmentController {
   constructor(

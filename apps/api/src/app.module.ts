@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { IntegrationModule } from './integration/integration.module';
+import { AuthModule } from './auth/auth.module';
 import { LicenseModule } from './license/license.module';
 import { FulfilmentModule } from './fulfilment/fulfilment.module';
 
@@ -12,6 +13,7 @@ import { FulfilmentModule } from './fulfilment/fulfilment.module';
     ScheduleModule.forRoot(), // enables @Cron (sync sweep + daily reconcile)
     PrismaModule, // @Global — PrismaService everywhere
     IntegrationModule, // Graph + ServiceNow clients
+    AuthModule, // global APP_GUARD: JwtAuthGuard → RolesGuard (ADR-0002)
     LicenseModule, // (C) catalog + reconciliation + ledger
     FulfilmentModule, // (D) request lifecycle
   ],

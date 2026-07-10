@@ -1,5 +1,7 @@
 import { Controller, Get, Post } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { Roles } from '../auth/roles.decorator';
 import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { CatalogSyncResultDto, SkuCatalogDto } from './dto/catalog.dto';
@@ -8,10 +10,11 @@ import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
 /**
  * Module C surface — SKU catalog + total-level reconciliation.
  * The sync / reconcile POSTs are manual triggers this phase (OD1: daily @Cron
- * deferred to the orchestration phase).
+ * deferred to the orchestration phase). Guarded to ADMIN / REGIONAL (ADR-0002).
  */
-// TODO(auth): @Roles(ADMIN, REGIONAL) — guard deferred to the AUTH phase (BACKLOG: AUTH).
 @ApiTags('license')
+@ApiBearerAuth()
+@Roles(Role.ADMIN, Role.REGIONAL)
 @Controller('license')
 export class LicenseController {
   constructor(

@@ -15,6 +15,7 @@ async function bootstrap() {
     .setTitle('M365 License Operations Platform')
     .setDescription('System of Action — operational + orchestration API')
     .setVersion('0.1')
+    .addBearerAuth() // Entra JWT — endpoints are guarded (ADR-0002)
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs/api', app, document);
