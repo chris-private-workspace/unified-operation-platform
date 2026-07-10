@@ -11,6 +11,7 @@ const TITLES: Record<string, string> = {
   '/assets': 'License Assets',
   '/drift': 'Drift Alerts',
   '/catalog': 'SKU Catalog',
+  '/settings': 'Settings',
 };
 
 const ROLES: readonly Role[] = ['Regional', 'RHK IT'];

@@ -103,8 +103,10 @@ export function deriveStatus(req: OnboardingRequest): DerivedStatus {
   return { label: 'Triage', tone: 'info' };
 }
 
-// List filter tabs. "My queue" is intentionally omitted — it needs the current
-// user's identity, which arrives with AUTH (handler name is likewise unexposed).
+// List filter tabs. "My queue" stays omitted even with AUTH-2 identity: the list
+// endpoint exposes no handler per request, and matching would need the current
+// user's AppUser id (a /me endpoint) — MSAL only gives the Entra account. Deferred
+// to a handler-read + /me endpoint (honest-data rule: no fabricated "my" filter).
 export type RequestFilter = 'all' | 'attention' | 'procurement' | 'blocked';
 
 export function matchesFilter(

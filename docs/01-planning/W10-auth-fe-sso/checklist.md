@@ -32,20 +32,24 @@ status: active
 - 驗:build 1826 modules 0 error（compile-verified）。runtime 邏輯 = D8 unit;真 token e2e = G7 卡 app reg
 
 ## D4 — 真 identity + sign-out
-- [ ] `store/ui.ts` role mockup → msal account + 後端 role 派生
-- [ ] sidebar user card（L126-144）+ topbar（L42-51）顯示真 name/email
-- [ ] sign-out（`logoutRedirect`）
+- [x] `lib/auth/use-current-user.ts`（msal account → name/email;dev-bypass → 誠實 "Developer/Local dev-bypass",唔造假 user）
+- [x] sidebar user card 真 name/email 取代硬派生假名 + 移除 sidebar unused role（§1.3 surgical）
+- [x] sign-out（`logoutRedirect`;非 dev-bypass + configured 先顯示）
+- 驗:build 573KB 0 error（compile）。honest gap:後端無 /me role endpoint → role 顯示留 AUTH-3;topbar user-menu avatar（README §1）defer（sidebar 已提供 sign-out）
 
 ## D5 — Settings 畫面
-- [ ] `pages/settings.tsx` + `/settings` route + sidebar nav 項
-- [ ] profile + sign-out + theme（H6 忠實還原）
+- [x] `pages/settings.tsx`（4-tab Account/Preferences/Users&roles/Integrations）+ `/settings` route + sidebar Administration nav + top-bar title map
+- [x] Account:profile 真 identity disabled + SSO note + sign-out（dev-bypass honest note）· Preferences:theme SegmentedControl 真 · Users&roles/Integrations:coming-soon EmptyState（無 endpoint,誠實）
+- 驗:build 578KB 0 error;**render DOM 驗**（4 tabs / Account disabled profile / dev-bypass note / Preferences theme control / tab 切換 / top-bar title "Settings"）。Settings = 既有 primitive 組合;screenshot renderer busy → DOM 驗結構（Login 已有 light+dark 視覺驗）
 
-## D6 — "My queue" 解封
-- [ ] `requests.ts` L106-107 用真 current-user identity（無 expose → honest 略去 + progress 標）
+## D6 — "My queue" 解封（honest 略去 — 後端 blocker）
+- [x] 查證:list 冇 handler expose + detail `handledById` 係 AppUser.id（前端 useCurrentUser 只 msal account,無 AppUser.id 可 match）→ **仍做唔到**,honest 略去（唔造假 "my" filter）
+- [x] requests.ts comment 精確化 blocker（AUTH-2 identity 到咗,仲差 list handler-read + /me endpoint）→ 真正解封留後端 mini-phase
 
 ## D7 — dev-bypass 前端相容（2a）⭐
-- [ ] `VITE_AUTH_DEV_BYPASS=true` → 跳 login gate + 唔 attach token（配後端）
-- [ ] 現有 4 畫面 + 手測零改動照跑
+- [x] `VITE_AUTH_DEV_BYPASS=true` → RequireAuth skip gate + authHeader 唔 attach token（配後端）
+- [x] 現有畫面照跑（bypass on → shell render,sidebar dev identity,nav/Settings work）
+- 驗:**live 驗**（bypass on:route `/` 冇 redirect + shell render + sidebar "Developer/Local dev-bypass" + 無 sign-out;bypass off[之前]:未登入→/login）
 
 ## D8 — 測試（H5 auth-adjacent）
 - [ ] token-attach 邏輯 unit（mock msal:silent→header / fail→interactive / bypass→無 token）

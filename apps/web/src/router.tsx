@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import { AppShell } from '@/components/shell/app-shell';
 import { RequireAuth } from '@/components/auth/require-auth';
 import { Login } from '@/pages/login';
+import { Settings } from '@/pages/settings';
 import { Placeholder } from '@/pages/placeholder';
 import { Overview } from '@/pages/overview';
 import { Catalog } from '@/pages/catalog';
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
       },
       { path: 'drift', element: <Drift /> },
       { path: 'catalog', element: <Catalog /> },
+      { path: 'settings', element: <Settings /> },
     ],
   },
 ]);

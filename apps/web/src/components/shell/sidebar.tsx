@@ -4,14 +4,19 @@ import {
   Layers,
   LayoutDashboard,
   LineChart,
+  LogOut,
   Package,
+  Settings as SettingsIcon,
   TriangleAlert,
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { useMsal } from '@azure/msal-react';
 import { NavItem } from '@/components/ui/nav-item';
 import { Avatar } from '@/components/ui/avatar';
-import { useUiStore } from '@/store/ui';
+import { IconButton } from '@/components/ui/icon-button';
+import { useCurrentUser } from '@/lib/auth/use-current-user';
+import { msalConfigured } from '@/lib/auth/msal';
 import { useDrift } from '@/hooks/queries';
 
 interface NavEntry {
@@ -64,7 +69,9 @@ const BrandGlyph = () => (
 export function Sidebar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const role = useUiStore((s) => s.role);
+  const user = useCurrentUser();
+  const { instance } = useMsal();
+  const signOut = () => void instance.logoutRedirect();
   // Drift Alerts badge reflects the live open-alert count (shared query cache
   // with the Drift screen). Other nav counts stay placeholder until their phase.
   const { data: drift } = useDrift();
@@ -108,6 +115,14 @@ export function Sidebar() {
           );
         })}
         <div className="pt-[6px]" />
+        <SectionLabel>Administration</SectionLabel>
+        <NavItem
+          icon={<SettingsIcon size={16} strokeWidth={2} />}
+          label="Settings"
+          active={pathname === '/settings'}
+          onClick={() => navigate('/settings')}
+        />
+        <div className="pt-[6px]" />
         <SectionLabel>Roadmap</SectionLabel>
         <NavItem
           icon={<Users size={16} strokeWidth={2} />}
@@ -126,20 +141,20 @@ export function Sidebar() {
       {/* user card */}
       <div className="border-t border-border p-[12px]">
         <div className="flex items-center gap-[9px] rounded-[9px] border border-border bg-card px-[10px] py-[8px]">
-          <Avatar
-            name={role === 'Regional' ? 'Alex Tan' : 'May Wong'}
-            variant="brand"
-          />
+          <Avatar name={user.name} variant="brand" />
           <div className="flex min-w-0 flex-1 flex-col leading-[1.2]">
-            <span className="text-[12.5px] font-medium">
-              {role === 'Regional' ? 'Alex Tan' : 'May Wong'}
+            <span className="truncate text-[12.5px] font-medium">
+              {user.name}
             </span>
-            <span className="text-[11px] text-fg-subtle">
-              {role === 'Regional'
-                ? 'Regional IT operator'
-                : 'RHK IT · OpCo admin'}
+            <span className="truncate text-[11px] text-fg-subtle">
+              {user.email}
             </span>
           </div>
+          {!user.isDevBypass && msalConfigured && (
+            <IconButton title="Sign out" onClick={signOut}>
+              <LogOut size={15} strokeWidth={2} />
+            </IconButton>
+          )}
         </div>
       </div>
     </aside>
