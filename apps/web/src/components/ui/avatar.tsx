@@ -36,7 +36,10 @@ export function Avatar({
         height: size,
         fontSize: Math.round(size * 0.38),
         ...(brand
-          ? { background: 'linear-gradient(135deg,var(--accent),var(--accent-deep))' }
+          ? {
+              background:
+                'linear-gradient(135deg,var(--accent),var(--accent-deep))',
+            }
           : {}),
       }}
     >

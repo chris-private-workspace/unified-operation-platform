@@ -20,7 +20,13 @@ const TABS = [
 const THEMES: readonly Theme[] = ['light', 'dark'];
 
 // Card-like section (handoff card: 12px radius + 1px border + surface tint, DS-7).
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-[12px] border border-border bg-card p-[18px]">
       <h3 className="text-[13px] font-semibold text-fg">{title}</h3>
@@ -29,7 +35,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-[6px]">
       <label className="text-[12px] text-fg-muted">{label}</label>
@@ -66,12 +78,17 @@ export function Settings() {
               <Input value={user.email} disabled readOnly />
             </Field>
             <p className="text-[11.5px] text-fg-subtle">
-              Your profile is managed by Microsoft Entra ID and can’t be edited here.
+              Your profile is managed by Microsoft Entra ID and can’t be edited
+              here.
             </p>
           </Section>
           <Section title="Sign-in &amp; access">
             <Field label="Sign-in method">
-              <Input value="Microsoft Entra ID (single sign-on)" disabled readOnly />
+              <Input
+                value="Microsoft Entra ID (single sign-on)"
+                disabled
+                readOnly
+              />
             </Field>
             {user.isDevBypass ? (
               <p className="text-[11.5px] text-fg-subtle">
@@ -107,8 +124,8 @@ export function Settings() {
           </Section>
           <Section title="More preferences">
             <p className="text-[11.5px] leading-[1.5] text-fg-subtle">
-              Reduce-motion, localization, and notification preferences are coming
-              soon.
+              Reduce-motion, localization, and notification preferences are
+              coming soon.
             </p>
           </Section>
         </>

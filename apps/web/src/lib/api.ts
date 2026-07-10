@@ -3,7 +3,12 @@
 // prod. Override the base with VITE_API_BASE_URL if the API is on another origin.
 
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
-import { msalInstance, msalConfigured, API_SCOPE, AUTH_DEV_BYPASS } from './auth/msal';
+import {
+  msalInstance,
+  msalConfigured,
+  API_SCOPE,
+  AUTH_DEV_BYPASS,
+} from './auth/msal';
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
@@ -12,8 +17,9 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
  * (pre-app-reg) → no header; the backend AUTH_DEV_BYPASS carries it. Otherwise acquire
  * a token silently; on interaction-required kick a redirect and send unauthenticated
  * this once (the redirect takes over / the 401 surfaces). H4: never log the token.
+ * Exported for unit testing (api.test.ts) — the branch logic is auth-adjacent (H5).
  */
-async function authHeader(): Promise<Record<string, string>> {
+export async function authHeader(): Promise<Record<string, string>> {
   if (AUTH_DEV_BYPASS || !msalConfigured) return {};
   const account = msalInstance.getActiveAccount();
   if (!account) return {}; // not signed in — the auth gate sends the user to Login

@@ -45,6 +45,7 @@
 | BE-graph-harden | **catalog sync / reconcile 呼 `getSubscribedSkus` 相同 latent crash**（Graph throw 未 wrap）——BUG-002 carry-over | ✅ **完成**（2026-07-10,W08 OD2=A;新 `graph-unavailable.ts` 共用 helper,reconcile/catalog wrap→503 + regression test,assign 改用同 helper;live 驗 reconcile/catalog 皆 clean 503 + API 唔 crash） | — | `W08-fe-drift-harden/` · `integration/graph/graph-unavailable.ts` |
 | DS-flag | **Avatar brand gradient `#8a0018`**:handoff 用非 token gradient,衝突 design-system.md DS-7「唯一 gradient=login」 | ✅ **完成**（2026-07-10;Chris 揀保留 hifi → tokenize `--accent-deep`[index.css]消硬 hex + DS-7 明文加 Avatar 例外 + SKILL.md 同步） | — | `apps/web/.../ui/avatar.tsx` · `index.css` · design-system.md DS-7 |
 | FE-vuln | **npm dev/build-chain vulnerabilities**（monorepo root 32:apps/web 7[vite/vitest/esbuild/js-yaml/picomatch]+ apps/api 側 uuid/webpack/nest CLI;**全 dev-only 唔入 production bundle**） | 🚧 **defer → DD-2**（2026-07-10;實跑證非-force `npm audit fix`[root+`-w`]一個都清唔到,全繫 breaking major） | vite@8 生態 stabilize → 專門 phase 一次過升 + revalidate（H2,需 ADR） | `DEFERRED_REGISTER.md` DD-2 |
+| FE-bundle-split | **前端 bundle > 500KB warning**（AUTH-2a 引入 MSAL 後 578KB;ADR-0003 已知） | 候選（低優先,唔阻功能） | `build.rollupOptions.manualChunks` 拆 vendor / dynamic import Login+MSAL chunk;非架構,一個小 chore | `docs/adr/0003-msal-frontend-sso.md`（Consequences） |
 | BE-ledger-read | **後端 read-model:per-OpCo ledger + SKU 用量 stats endpoint**（FE-1 OD1-A carry — **License Assets 前端整個畫面** + Overview seat KPI 需此） | 候選（FE-1 kickoff 產生） | 後端 mini-phase:`GET /license/ledger`（每 OpCo 每 SKU owned/allocated/assigned）+ stats 聚合;注意 prepaid `allocatedQuantity` import 仍 deferred（utilization 需埋佢） | `W06-fe-overview-assets/plan.md §1.1` |
 | FE-Assets | **前端 License Assets 畫面**（owned/allocated/assigned ledger 數量表 + utilization bar + Headroom/Over-allocated + Manage）—— FE-1 deviation 移出 | 候選（等 BE-ledger-read） | **前置 BE-ledger-read**（+ allocation import 先有 allocated/utilization 真數）→ 之後一個前端 phase 砌,對 prototype License Assets view | `design_handoff .../full-console.html`（License Assets view） |
 
@@ -57,7 +58,8 @@
 | MOD-C | Module C：SKU Catalog 字典 + 總量層對帳 / drift | ✅ 完成（W02,2026-07-09） | — | `W02-catalog-reconcile/` |
 | MOD-D | Module D：Request 履行 —— **D-1 生命週期 ✅（W03）+ D-2 履行動作 ✅（W04）= 全完** | ✅ 完成 | — | `W03-request-lifecycle/` · `W04-assign-fulfilment/` |
 | AUTH-1 | **後端 Entra JWT 驗證 + role guard**（`@Roles(ADMIN,REGIONAL)` 落 license/fulfilment,關 unguarded gap;dev-bypass 本地） | ✅ **完成**（2026-07-10,W09;ADR-0002;api 56 test;401/200 wiring live 驗） | — | `W09-auth-backend-guards/` · `docs/adr/0002-entra-jwt-validation.md` |
-| AUTH-2 | **前端真 SSO（MSAL）**：`@azure/msal-browser/react` 取 token + attach Bearer,取代 placeholder Login | 候選（W09 carry） | **前置:IT 開 SPA app registration**（redirect + exposed API scope + audience）;之後接真 token（本地 `.env` 補 `ENTRA_*`）→ 端到端驗 AUTH-1 真 token 路徑 | `W09-*/plan.md §2` · `apps/web` Login |
+| AUTH-2a | **前端 SSO scaffold + Login/Settings + token attach**（MSAL provider + `authHeader` acquireTokenSilent→Bearer + Login/Settings 畫面 + 真 identity/sign-out + dev-bypass 相容） | ✅ **完成**（2026-07-10,W10;ADR-0003;8 deliverable + G1-G6/G8 過;web 8 test 綠[含 authHeader 6 分支]） | — | `W10-auth-fe-sso/` · `docs/adr/0003-msal-frontend-sso.md` |
+| AUTH-2b | **真 SSO e2e 驗證**（真 sign-in → token → API 200 → identity → sign-out,G7） | 🔴 **blocked on IT app reg**（見 C 區） | **前置:IT 開 SPA app registration** → 填 `VITE_ENTRA_*` env → 一條 live round-trip 驗 G7 → close W10 | `W10-auth-fe-sso/plan.md §7`（IT checklist） |
 | AUTH-3 | **OPCO_IT per-OpCo scope 過濾**（REGIONAL 睇全部 / OPCO_IT 只睇自己 OpCo） | 候選（隨 OpCo self-service） | query 層加 opcoScope 過濾 + FE role 切換;DESIGN §10 WHICH-OpCo | `W09-*/plan.md §1.1` · `AppUser.opcoScopeId` |
 | FE | LicenseOps 前端（`apps/web`；React+TS+Tailwind+shadcn；滾動 build order：app shell→theme→Overview→License Assets→Requests→Request detail→Drift→Catalog→Settings→Login） | 已設計（hifi handoff + 設計系統就緒；ADR-0001 已定 in-repo；H6 已生效） | 前置 `apps/web` scaffold（W01 monorepo 之後）；每段一滾動 phase | `docs/02-architecture/design-system.md` · `design_handoff_licenseops/` |
 
@@ -67,7 +69,7 @@
 
 | ID | 任務 | 狀態 | Blocker | 來源 |
 |---|---|---|---|---|
-| _(空)_ | | | | |
+| AUTH-2b | **真 SSO e2e 驗證**（AUTH-2a 已交前端全部;剩真 token round-trip G7） | 🔴 blocked | **IT 未開 SPA app registration**（redirect URI + Expose an API scope + audience 對齊 ADR-0002）。ready 後填 `VITE_ENTRA_CLIENT_ID/TENANT_ID/API_SCOPE/REDIRECT_URI` → live 驗 | `W10-auth-fe-sso/plan.md §7`（IT checklist,可直接交 IT） |
 
 ---
 

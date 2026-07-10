@@ -2,12 +2,19 @@ import { cn } from '@/lib/utils';
 
 // Rebuilt from design_handoff forms/Checkbox.jsx — native checkbox tinted with --accent
 // (token-only via arbitrary property, DS-1), optional trailing label.
-export interface CheckboxProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
+export interface CheckboxProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'type'
+> {
   label?: React.ReactNode;
 }
 
-export function Checkbox({ label, className, disabled, ...props }: CheckboxProps) {
+export function Checkbox({
+  label,
+  className,
+  disabled,
+  ...props
+}: CheckboxProps) {
   const box = (
     <input
       type="checkbox"

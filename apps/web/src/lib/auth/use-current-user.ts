@@ -22,5 +22,9 @@ export function useCurrentUser(): CurrentUser {
       isDevBypass: false,
     };
   }
-  return { name: 'Developer', email: 'Local dev-bypass', isDevBypass: AUTH_DEV_BYPASS };
+  return {
+    name: 'Developer',
+    email: 'Local dev-bypass',
+    isDevBypass: AUTH_DEV_BYPASS,
+  };
 }

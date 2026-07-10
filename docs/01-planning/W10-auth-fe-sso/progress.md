@@ -37,4 +37,15 @@ status: active
 - **D7 done**（render 驗）:dev-bypass 前端相容 —— gate skip + token 唔 attach,現有畫面照跑。
 - **render 驗（live bypass on）**:route `/` 冇 redirect（gate skip）· shell render · sidebar "Developer/Local dev-bypass" 無 sign-out · Settings 4-tab（Account disabled profile + dev-bypass note / Preferences theme control / tab 切換 / top-bar title "Settings"）。screenshot renderer busy → DOM 驗結構（W08 pattern;Settings = 既有 primitive 組合,Login 已 light+dark 視覺驗）。
 - **D6 done（honest 略去）**:查證 list 冇 handler expose + detail `handledById` 係 AppUser.id（前端 useCurrentUser 只 msal account,無 AppUser.id match）→ "My queue" 仍做唔到 → honest 略去 + 精確化 requests.ts comment（真正解封需後端 handler-read + /me endpoint mini-phase）。唔造假 "my" filter。
-- **下一步**:D8（token-attach 邏輯 unit:mock msal → silent/fail/dev-bypass/未 config/未登入 分支）。真 SSO e2e（G7）仍卡 app reg。
+- **D8 done**:`api.test.ts`（export `authHeader` + `vi.hoisted` getter mock `@/lib/auth/msal` + 真 `InteractionRequiredAuthError` 保 instanceof）測 **6 分支**:dev-bypass→無 header 且唔攞 token / 未 config→無 header / 未登入→無 header / silent→`Bearer` / InteractionRequired→`acquireTokenRedirect`+無 header / 其他 error→無 header 無 redirect（防 redirect loop）。**同步修現有 web test**:`app-shell.test.tsx` render `<Sidebar>` 缺 `QueryClientProvider`（Sidebar 自 FE-3 用 `useDrift` → "No QueryClient set";`useMsal` msal-react 無 provider 返 stub 唔 throw → 只需補 Query provider）→ **8 tests passed**。build 1831 modules 0 error(tsc 揭 `InteractionRequiredAuthError` 需 ≥2 args → 補);lint exit 0（順帶 `--fix` 格式化 D1-D5 檔）。
+
+**Phase Gate（AUTH-2a closeout,2026-07-10)**:
+- ✅ G1 build 0 error(1831 modules;578KB warning = ADR-0003 已知,code-split defer)· ✅ G2 Login/Settings 對 prototype(light+dark,ui-design DS 過)· ✅ G3 token-attach 6 unit 綠 · ✅ G4 現有流程不破(dev-bypass live + 8 test 綠)· ✅ G5 ADR-0003 Accepted · ✅ G6 H4(env-driven,token/claim 唔 log)· ✅ G8 lint clean · 🔴 **G7 真 SSO e2e = 卡 IT app reg,標未驗（AUTH-2b)**。
+- **7/8 gate 過;唯一未過 = G7,誠實卡 IT,唔當 done。**
+
+**Retro（AUTH-2a)**:
+- ✅ 拆 2a/2b 策略成功:全部可驗嘅（scaffold + UI + token 機制 + dev-bypass + unit）今日交清,唔靠空殼冒充 done（避 FE-Assets 覆轍,守 H7）。
+- ✅ 意外收穫:D8 揭出 `app-shell.test.tsx` 自 FE-3 加 `useDrift` 已默默 RED（無 QueryClientProvider）—— 呢個 phase 一併修返綠,回補 W08 遺漏。
+- ✅ 誠實落差全部標明:SSO button disabled + note、email/password 唔 wire、role 顯示留 AUTH-3、"My queue" 留後端 mini-phase、真 token e2e 留 2b。
+- ⚠️ 技術債:bundle 578KB > 500KB（ADR-0003 預期）→ 之後 code-split Login/MSAL chunk（BACKLOG 記）。
+- **下一步（待 IT）**:IT 開 SPA app registration（plan §7 checklist)→ 填 `VITE_ENTRA_*` env → AUTH-2b:真 sign-in → token → API 200 → identity → sign-out 一條 live 驗（G7)→ 之後正式 close W10。**未經 Chris 指示唔自行開 2b/AUTH-3。**

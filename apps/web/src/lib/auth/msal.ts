@@ -25,7 +25,8 @@ const msalConfig: Configuration = {
     // gates every real login/token call, so these dummy values are never used against Entra.
     clientId: clientId || '00000000-0000-0000-0000-000000000000',
     authority: `https://login.microsoftonline.com/${tenantId || 'common'}`,
-    redirectUri: import.meta.env.VITE_ENTRA_REDIRECT_URI ?? window.location.origin,
+    redirectUri:
+      import.meta.env.VITE_ENTRA_REDIRECT_URI ?? window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
   cache: {

@@ -52,21 +52,21 @@ status: active
 - 驗:**live 驗**（bypass on:route `/` 冇 redirect + shell render + sidebar "Developer/Local dev-bypass" + 無 sign-out;bypass off[之前]:未登入→/login）
 
 ## D8 — 測試（H5 auth-adjacent）
-- [ ] token-attach 邏輯 unit（mock msal:silent→header / fail→interactive / bypass→無 token）
-- [ ] config parse + dev-bypass 分支；現有 web test 綠
-- [ ] 🔴 真 login round-trip live（2b,等 app reg）
+- [x] token-attach 邏輯 unit（`api.test.ts` 6 分支:dev-bypass→無 header / 未 config→無 header / 未登入→無 header / silent→Bearer / InteractionRequired→redirect+無 header / 其他 error→無 header 無 redirect）· export `authHeader`（vi.hoisted getter mock msal + 真 `InteractionRequiredAuthError` 保 instanceof）
+- [x] 現有 web test 綠（修 `app-shell.test.tsx`:Sidebar 現用 `useDrift` 需 `QueryClientProvider`[FE-3 起壞]+ `useMsal` msal-react 無 provider 返 stub 唔 throw → 只補 QueryClientProvider）→ **8 tests passed**
+- [ ] 🔴 真 login round-trip live（2b,等 app reg）— **卡 IT app reg,未驗**
 
 ## Phase Gate（plan §5）
-- [ ] G1 build 0 error
-- [ ] G2 Login/Settings 視覺對 prototype（light+dark,ui-design skill）
-- [ ] G3 token-attach 邏輯 unit
-- [ ] G4 現有流程不破（dev-bypass on,4 畫面照跑）
+- [x] G1 build 0 error（1831 modules;⚠️ 578KB > 500KB = ADR-0003 已知技術債,code-split defer）
+- [x] G2 Login/Settings 視覺對 prototype（light+dark,ui-design DS 全過;Login render 驗 light+dark,Settings DOM 驗）
+- [x] G3 token-attach 邏輯 unit（`api.test.ts` 6 tests 綠）
+- [x] G4 現有流程不破（dev-bypass on 4 畫面照跑 live 驗[D7];現有 web test 綠[修 app-shell]）
 - [x] G5 ADR-0003 Accepted
-- [ ] G6 H4（無敏感 log,config env）
-- [ ] 🔴 G7 真 SSO e2e（真 sign-in→token→API 200→identity→sign-out）— **卡 app reg,未 ready 標未驗**
-- [ ] G8 lint clean
+- [x] G6 H4（msal.ts env-driven 無 hardcode tenant/client;token/claim 唔 log;loggerCallback drop PII）
+- [ ] 🔴 G7 真 SSO e2e（真 sign-in→token→API 200→identity→sign-out）— **卡 IT app reg,未 ready 標未驗（2b)**
+- [x] G8 lint clean（exit 0)
 
 ## Closeout
-- [ ] plan status → closed（或 2a-done + 2b-pending）· progress retro · BACKLOG 同步
-- [ ] SESSION_SUMMARY + memory 更新
+- [x] plan status → **2a-done-2b-blocked**（2a 8 deliverable 全交 + G1-G6/G8 過;2b/G7 卡 IT app reg）· progress retro · BACKLOG 同步
+- [x] SESSION_SUMMARY + memory 更新
 - [ ] commit · push（待用戶指示）

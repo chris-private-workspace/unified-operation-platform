@@ -25,7 +25,9 @@ export function Login() {
 
   const signIn = () => {
     // Scope empty until the app registration exists; msalConfigured gates the button.
-    void instance.loginRedirect({ scopes: API_SCOPE ? [API_SCOPE] : [] }).catch(() => {});
+    void instance
+      .loginRedirect({ scopes: API_SCOPE ? [API_SCOPE] : [] })
+      .catch(() => {});
   };
 
   return (
@@ -62,8 +64,12 @@ export function Login() {
             { figure: 'Live', label: 'Drift reconciliation' },
           ].map((s) => (
             <div key={s.label}>
-              <div className="font-mono text-[22px] font-semibold">{s.figure}</div>
-              <div className="mt-[2px] text-[11.5px] text-white/70">{s.label}</div>
+              <div className="font-mono text-[22px] font-semibold">
+                {s.figure}
+              </div>
+              <div className="mt-[2px] text-[11.5px] text-white/70">
+                {s.label}
+              </div>
             </div>
           ))}
         </div>
@@ -112,19 +118,29 @@ export function Login() {
           <label className="mt-[12px] block text-[12px] text-fg-muted">
             Password
           </label>
-          <Input type="password" placeholder="••••••••" disabled className="mt-[6px]" />
+          <Input
+            type="password"
+            placeholder="••••••••"
+            disabled
+            className="mt-[6px]"
+          />
 
           <div className="mt-[14px] flex items-center justify-between">
             <Checkbox label="Keep me signed in" disabled />
           </div>
 
-          <Button variant="primary" size="lg" disabled className="mt-[16px] w-full">
+          <Button
+            variant="primary"
+            size="lg"
+            disabled
+            className="mt-[16px] w-full"
+          >
             Sign in
           </Button>
 
           <p className="mt-[18px] text-[11.5px] leading-[1.5] text-fg-subtle">
-            Signing in uses your organization’s Microsoft Entra ID. Contact IT if
-            you need access.
+            Signing in uses your organization’s Microsoft Entra ID. Contact IT
+            if you need access.
           </p>
         </div>
       </div>
