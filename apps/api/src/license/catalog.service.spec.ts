@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
@@ -103,5 +104,23 @@ describe('CatalogService', () => {
       where: { active: true, skuId: { notIn: [] } },
       data: { active: false },
     });
+  });
+
+  // BE-graph-harden: a raw Graph error must surface as a clean 503, not crash
+  // the process. Fail closed — no catalog write happens.
+  it('wraps a Graph failure as 503 and writes nothing (fail-closed)', async () => {
+    graph.getSubscribedSkus.mockRejectedValue(
+      Object.assign(new Error('AADSTS700038: invalid application identifier'), {
+        statusCode: -1,
+      }),
+    );
+
+    await expect(service.syncFromTenant()).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expect(prisma.skuCatalog.create).not.toHaveBeenCalled();
+    expect(prisma.skuCatalog.update).not.toHaveBeenCalled();
+    expect(prisma.tenantSkuSnapshot.create).not.toHaveBeenCalled();
+    expect(prisma.skuCatalog.updateMany).not.toHaveBeenCalled();
   });
 });

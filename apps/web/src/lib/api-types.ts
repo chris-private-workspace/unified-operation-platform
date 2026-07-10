@@ -42,6 +42,15 @@ export interface CatalogSyncResult {
   snapshots: number;
 }
 
+/** POST /license/reconcile → ReconcileResultDto */
+export interface ReconcileResult {
+  checked: number; // active SKUs checked
+  opened: number;
+  updated: number;
+  resolved: number;
+  drift: number; // OPEN drift alerts remaining after this run
+}
+
 /** GET /license/drift → DriftAlertDto[] */
 export interface DriftSkuRef {
   skuId: string;

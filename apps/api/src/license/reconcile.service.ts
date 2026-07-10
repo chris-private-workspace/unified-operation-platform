@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DriftStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import { graphUnavailable } from '../integration/graph/graph-unavailable';
 
 /** Outcome of a reconciliation run — surfaced to the trigger endpoint. */
 export interface ReconcileResult {
@@ -33,7 +34,18 @@ export class ReconcileService {
 
   async reconcile(): Promise<ReconcileResult> {
     // OD2: reconcile against fresh tenant totals, not a stored snapshot.
-    const live = await this.graph.getSubscribedSkus();
+    // BE-graph-harden: a raw Graph error must not crash the process (BUG-002);
+    // fail closed with a clean 503 before any drift alert is written.
+    let live;
+    try {
+      live = await this.graph.getSubscribedSkus();
+    } catch (err) {
+      throw graphUnavailable(
+        this.logger,
+        'read the tenant license inventory',
+        err,
+      );
+    }
     const consumedBySkuId = new Map(
       live.map((s) => [s.skuId, s.consumedUnits]),
     );

@@ -5,10 +5,11 @@ import { Overview } from '@/pages/overview';
 import { Catalog } from '@/pages/catalog';
 import { Requests } from '@/pages/requests';
 import { RequestDetail } from '@/pages/request-detail';
+import { Drift } from '@/pages/drift';
 
 // One route per screen (design-system.md §3.2). FE-1 → Overview + SKU Catalog;
-// FE-2 → Requests list + detail (real data + write actions). License Assets is
-// deferred to a phase paired with the ledger read-model.
+// FE-2 → Requests list + detail; FE-3 → Drift Alerts. License Assets is deferred
+// to a phase paired with the ledger read-model.
 export const router = createBrowserRouter([
   {
     path: '/',
@@ -21,10 +22,7 @@ export const router = createBrowserRouter([
         path: 'assets',
         element: <Placeholder title="License Assets" phase="FE-Assets" />,
       },
-      {
-        path: 'drift',
-        element: <Placeholder title="Drift Alerts" phase="FE-3" />,
-      },
+      { path: 'drift', element: <Drift /> },
       { path: 'catalog', element: <Catalog /> },
     ],
   },

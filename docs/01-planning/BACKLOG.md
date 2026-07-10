@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-09(**FE-2 + BUG-002 完成** — W07 Requests 讀+寫;BUG-002 後端 assign crash 修好[3 Graph await wrap→503 + regression test];下一個 = FE-3)
+**最後更新**:2026-07-10(**FE-3 + BE-graph-harden 完成** — W08 Drift Alerts 前端接真數[`/license/drift` + reconcile];reconcile/catalog `getSubscribedSkus` wrap→503 harden[清 BUG-002 carry-over];gate G1–G7 全 pass,light+dark + harden round-trip live 驗,api 42 test 綠;下一個 = FE-Assets[前置 BE-ledger-read] / AUTH)
 
 ---
 
@@ -29,8 +29,9 @@
 | FE-1 | **前端畫面 1**:Overview dashboard + **SKU Catalog**（首次接後端 `/license/*` `/fulfilment/*` via TanStack Query;OD 全 default = A。**2026-07-09 deviation**:第二個 screen License Assets → SKU Catalog,因 Assets 全靠 ledger 無 endpoint） | ✅ **完成**（2026-07-09；G1–G6 全 pass;light+dark 截圖驗;真數 seed 驗） | — | `W06-fe-overview-assets/`（retro 已寫） |
 
 | FE-2 | **前端畫面 2**:Requests 列表 + Request detail（讀 + **寫操作** advance/assign/sync;OD1=B）——首個寫操作 UI,接 `/fulfilment/requests*` | ✅ **完成**（2026-07-09；G1–G6 pass;advance/mark-synced round-trip 端到端驗;light+dark） | — | `W07-fe-requests/`（retro 已寫） |
+| FE-3 | **前端畫面 3**:Drift Alerts（接 `GET /license/drift` 真數 + `POST /license/reconcile`;OD1=A 只 Drift,Settings/Login 隨 AUTH defer）——含 **BE-graph-harden**（reconcile/catalog `getSubscribedSkus` wrap→503,OD2=A） | ✅ **完成**（2026-07-10；G1–G7 全 pass;light+dark 對 prototype;harden round-trip[503 toast + API 唔 crash] live 驗;api 42 test 綠） | — | `W08-fe-drift-harden/` |
 
-> **開發路線（2026-07-09）= Backend-first**:W02 C ✅ → W03 D-1 ✅ → W04 D-2 ✅（後端業務層完成）→ **W05 FE-scaffold ✅ → FE-1 ✅**（W06）→ **FE-2 ✅**（W07,Requests 讀+寫）。前端進行中:**FE-3**（下一個候選,Drift/Settings/Login）→ **FE-Assets**（前置 BE-ledger-read）→ AUTH → DEPLOY。**BUG-002 ✅ 已修**（後端 assign crash）。
+> **開發路線（2026-07-10）= Backend-first**:W02 C ✅ → W03 D-1 ✅ → W04 D-2 ✅（後端業務層完成）→ **W05 FE-scaffold ✅ → FE-1 ✅**（W06）→ **FE-2 ✅**（W07,Requests 讀+寫）→ **FE-3 ✅**（W08,Drift Alerts + BE-graph-harden;OD1=A 只 Drift,Settings/Login 隨 AUTH defer）。前端下一個:**FE-Assets**（前置 BE-ledger-read）→ **Settings/Login**（隨 AUTH）→ AUTH → DEPLOY。**BUG-002 ✅ / BE-graph-harden ✅ 已修**（後端 Graph crash carry-over 清完）。
 
 ---
 
@@ -41,7 +42,7 @@
 | INIT | `git init` + 首個 baseline commit（框架落地基線） | 完成（`5ff2cae`,main） | — | CLAUDE.md §4 |
 | BUG-001 | **H4:`GraphService` log 咗 UPN（PII）**（assignLicense + findUser 錯誤） | ✅ 完成（2026-07-09；Sev3;fix + regression test,實證 fails-before） | — | `docs/03-implementation/bugs/BUG-001-graph-logs-upn-pii/` |
 | BUG-002 | **後端 assign crash**:`findUser` throw Graph/MSAL error（非 return null）未 wrap → invalid status(-1)→ **NestJS process crash**（critical path robustness;FE-2 assign 測試揭出） | ✅ **完成**（2026-07-09;Sev2;3 個 Graph await wrap → 503 + regression test,實證 fails-before;api 40 test 綠） | — | `docs/03-implementation/bugs/BUG-002-assign-graph-error-crashes-api/` |
-| BE-graph-harden | **catalog sync / reconcile 呼 `getSubscribedSkus` 相同 latent crash**（Graph throw 未 wrap）——BUG-002 carry-over | 候選（BUG-002 產生） | GraphService 邊界統一 wrap 或各 POST-trigger service catch → clean 503（同 BUG-002 pattern） | `assign.service.ts`（BUG-002 已示範）· `catalog.service.ts` · `reconcile.service.ts` |
+| BE-graph-harden | **catalog sync / reconcile 呼 `getSubscribedSkus` 相同 latent crash**（Graph throw 未 wrap）——BUG-002 carry-over | ✅ **完成**（2026-07-10,W08 OD2=A;新 `graph-unavailable.ts` 共用 helper,reconcile/catalog wrap→503 + regression test,assign 改用同 helper;live 驗 reconcile/catalog 皆 clean 503 + API 唔 crash） | — | `W08-fe-drift-harden/` · `integration/graph/graph-unavailable.ts` |
 | DS-flag | **Avatar brand gradient `#8a0018`**:handoff 用非 token gradient,衝突 design-system.md DS-7「唯一 gradient=login」 | 候選（W05 flag,等 owner 決） | Chris 定:保留 hifi gradient（更新 DS-7 例外）定改 token-only | `apps/web/src/components/ui/avatar.tsx` · design-system.md DS-7 |
 | FE-vuln | **apps/web npm 32 vulnerabilities**（1 critical/8 high,全 dev 工具鏈 vite/vitest/jsdom） | 候選（W05 flag） | `npm audit` 評估 → 選擇性 fix（唔盲 `--force` breaking） | `apps/web/package.json` |
 | BE-ledger-read | **後端 read-model:per-OpCo ledger + SKU 用量 stats endpoint**（FE-1 OD1-A carry — **License Assets 前端整個畫面** + Overview seat KPI 需此） | 候選（FE-1 kickoff 產生） | 後端 mini-phase:`GET /license/ledger`（每 OpCo 每 SKU owned/allocated/assigned）+ stats 聚合;注意 prepaid `allocatedQuantity` import 仍 deferred（utilization 需埋佢） | `W06-fe-overview-assets/plan.md §1.1` |

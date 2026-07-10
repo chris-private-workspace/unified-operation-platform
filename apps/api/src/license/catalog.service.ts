@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import { graphUnavailable } from '../integration/graph/graph-unavailable';
 
 /** Outcome of a catalog sync run — surfaced to the trigger endpoint. */
 export interface CatalogSyncResult {
@@ -29,7 +30,18 @@ export class CatalogService {
   ) {}
 
   async syncFromTenant(): Promise<CatalogSyncResult> {
-    const skus = await this.graph.getSubscribedSkus();
+    // BE-graph-harden: a raw Graph error must not crash the process (BUG-002);
+    // fail closed with a clean 503 before any catalog write.
+    let skus;
+    try {
+      skus = await this.graph.getSubscribedSkus();
+    } catch (err) {
+      throw graphUnavailable(
+        this.logger,
+        'read the tenant license inventory',
+        err,
+      );
+    }
     const now = new Date();
     let created = 0;
     let updated = 0;

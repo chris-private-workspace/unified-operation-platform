@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiPatch } from '@/lib/api';
+import { apiPatch, apiPost } from '@/lib/api';
 import type {
   LineItemStage,
   OnboardingRequest,
+  ReconcileResult,
   RequestLineItem,
 } from '@/lib/api-types';
 
@@ -55,6 +56,21 @@ export function useMarkSynced(requestId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}
+
+/**
+ * POST /license/reconcile — run total-level reconciliation (Graph → drift).
+ * The backend hits Microsoft Graph; on a Graph outage it returns a clean 503
+ * (BE-graph-harden) whose message apiPost surfaces for the caller's toast.
+ */
+export function useReconcile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<ReconcileResult>('/license/reconcile'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['license', 'drift'] });
     },
   });
 }

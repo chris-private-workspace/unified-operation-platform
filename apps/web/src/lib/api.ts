@@ -25,14 +25,26 @@ export async function apiGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** POST (no body this phase — trigger endpoints); throws ApiError on non-2xx. */
+/**
+ * POST a trigger endpoint (no body this phase). On a non-2xx the server's
+ * `message` is surfaced (same as apiPatch) so callers can toast the real reason
+ * (e.g. "Microsoft Graph is unavailable …") rather than a generic string.
+ */
 export async function apiPost<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
-    throw new ApiError(res.status, `POST ${path} failed (${res.status})`);
+    let message = `POST ${path} failed (${res.status})`;
+    try {
+      const data = await res.json();
+      const m = (data as { message?: string | string[] }).message;
+      if (m) message = Array.isArray(m) ? m.join(', ') : m;
+    } catch {
+      // non-JSON error body — keep the generic message
+    }
+    throw new ApiError(res.status, message);
   }
   return res.json() as Promise<T>;
 }

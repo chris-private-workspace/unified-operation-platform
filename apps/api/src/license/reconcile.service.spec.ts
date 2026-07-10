@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { ReconcileService } from './reconcile.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
@@ -148,5 +149,23 @@ describe('ReconcileService', () => {
     expect(prisma.driftAlert.create).not.toHaveBeenCalled();
     expect(prisma.driftAlert.update).not.toHaveBeenCalled();
     expect(res).toMatchObject({ opened: 0, updated: 0, resolved: 0 });
+  });
+
+  // BE-graph-harden (BUG-002 sibling): a raw Graph error while reading tenant
+  // totals must surface as a clean 503, not crash the process. Fail closed — no
+  // catalog read, no drift write happens.
+  it('wraps a Graph failure as 503 and writes nothing (fail-closed)', async () => {
+    graph.getSubscribedSkus.mockRejectedValue(
+      Object.assign(new Error('AADSTS700038: invalid application identifier'), {
+        statusCode: -1,
+      }),
+    );
+
+    await expect(service.reconcile()).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expect(prisma.skuCatalog.findMany).not.toHaveBeenCalled();
+    expect(prisma.driftAlert.create).not.toHaveBeenCalled();
+    expect(prisma.driftAlert.update).not.toHaveBeenCalled();
   });
 });

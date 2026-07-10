@@ -3,7 +3,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { EventType, LineItemStage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +10,7 @@ import {
   GraphService,
   type GraphUser,
 } from '../integration/graph/graph.service';
+import { graphUnavailable } from '../integration/graph/graph-unavailable';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { aggregateRequestStatus } from './stage.service';
 
@@ -92,7 +92,7 @@ export class AssignService {
     try {
       user = await this.graph.findUser(request.targetUpn);
     } catch (err) {
-      throw this.graphUnavailable('look up the target user', err);
+      throw graphUnavailable(this.logger, 'look up the target user', err);
     }
     if (!user) {
       throw new BadRequestException(
@@ -110,7 +110,11 @@ export class AssignService {
     try {
       skus = await this.graph.getSubscribedSkus();
     } catch (err) {
-      throw this.graphUnavailable('read the tenant license inventory', err);
+      throw graphUnavailable(
+        this.logger,
+        'read the tenant license inventory',
+        err,
+      );
     }
     const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
     if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
@@ -125,7 +129,11 @@ export class AssignService {
         usageLocation,
       });
     } catch (err) {
-      throw this.graphUnavailable('assign the license in Microsoft Graph', err);
+      throw graphUnavailable(
+        this.logger,
+        'assign the license in Microsoft Graph',
+        err,
+      );
     }
 
     // ── Atomic domain writes (OD2) — only assignedQuantity moves (DESIGN §5) ──
@@ -191,24 +199,5 @@ export class AssignService {
       `Assigned line item ${lineItemId} (${item.sku.skuPartNumber}, request ${request.id})`,
     );
     return updated;
-  }
-
-  /**
-   * Wrap a raw Microsoft Graph failure as a clean 503. A raw MSAL error is not
-   * an HttpException and carries an invalid status that crashes the Nest process
-   * (BUG-002). H4: never log the UPN — the action + message is enough to triage.
-   */
-  private graphUnavailable(
-    action: string,
-    err: unknown,
-  ): ServiceUnavailableException {
-    this.logger.error(
-      `Microsoft Graph unavailable while trying to ${action}: ${
-        (err as Error)?.message
-      }`,
-    );
-    return new ServiceUnavailableException(
-      `Microsoft Graph is unavailable — could not ${action}. Please retry.`,
-    );
   }
 }

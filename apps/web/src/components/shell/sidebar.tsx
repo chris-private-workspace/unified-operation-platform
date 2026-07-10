@@ -12,6 +12,7 @@ import {
 import { NavItem } from '@/components/ui/nav-item';
 import { Avatar } from '@/components/ui/avatar';
 import { useUiStore } from '@/store/ui';
+import { useDrift } from '@/hooks/queries';
 
 interface NavEntry {
   path: string;
@@ -31,7 +32,6 @@ const NAV: NavEntry[] = [
     path: '/drift',
     label: 'Drift Alerts',
     Icon: TriangleAlert,
-    count: 3,
     countTone: 'danger',
   },
   { path: '/catalog', label: 'SKU Catalog', Icon: Package },
@@ -65,6 +65,10 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const role = useUiStore((s) => s.role);
+  // Drift Alerts badge reflects the live open-alert count (shared query cache
+  // with the Drift screen). Other nav counts stay placeholder until their phase.
+  const { data: drift } = useDrift();
+  const driftCount = drift?.length ?? 0;
 
   return (
     <aside className="flex w-[248px] shrink-0 flex-col border-r border-border bg-sidebar">
@@ -82,21 +86,27 @@ export function Sidebar() {
       {/* nav */}
       <nav className="flex flex-1 flex-col gap-[2px] px-[12px] py-[14px]">
         <SectionLabel>Operations</SectionLabel>
-        {NAV.map(({ path, label, Icon, count, countTone }) => (
-          <NavItem
-            key={path}
-            icon={<Icon size={16} strokeWidth={2} />}
-            label={label}
-            // keep the parent nav active on nested routes (e.g. /requests/:id)
-            active={
-              pathname === path ||
-              (path !== '/' && pathname.startsWith(`${path}/`))
-            }
-            count={count ?? null}
-            countTone={countTone}
-            onClick={() => navigate(path)}
-          />
-        ))}
+        {NAV.map(({ path, label, Icon, count, countTone }) => {
+          // Drift Alerts shows the live open-alert count; other counts stay
+          // placeholder until their screen phases wire real data.
+          const badge =
+            path === '/drift' ? driftCount || null : (count ?? null);
+          return (
+            <NavItem
+              key={path}
+              icon={<Icon size={16} strokeWidth={2} />}
+              label={label}
+              // keep the parent nav active on nested routes (e.g. /requests/:id)
+              active={
+                pathname === path ||
+                (path !== '/' && pathname.startsWith(`${path}/`))
+              }
+              count={badge}
+              countTone={countTone}
+              onClick={() => navigate(path)}
+            />
+          );
+        })}
         <div className="pt-[6px]" />
         <SectionLabel>Roadmap</SectionLabel>
         <NavItem
