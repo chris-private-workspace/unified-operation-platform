@@ -1,9 +1,15 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { AppUser } from '@prisma/client';
 import { RequestService } from './request.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { StageService } from './stage.service';
+
+// Actors (AUTH-3a). OpCo under test = 'o1'.
+const ADMIN = { id: 'admin', opcoScopeId: null } as unknown as AppUser;
+const O1_IT = { id: 'o1-it', opcoScopeId: 'o1' } as unknown as AppUser;
+const OTHER_IT = { id: 'ox-it', opcoScopeId: 'oX' } as unknown as AppUser;
 
 describe('RequestService', () => {
   let service: RequestService;
@@ -20,7 +26,11 @@ describe('RequestService', () => {
   beforeEach(async () => {
     prisma = {
       opco: { findUnique: jest.fn() },
-      request: { findUnique: jest.fn(), create: jest.fn() },
+      request: {
+        findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(),
+      },
       skuCatalog: { findUnique: jest.fn() },
       requestLineItem: { create: jest.fn() },
       requestEvent: { create: jest.fn() },
@@ -47,10 +57,13 @@ describe('RequestService', () => {
         ...data,
       }));
 
-      const res = await service.intake({
-        targetUpn: 'new.user@rhk.com',
-        opcoId: 'o1',
-      });
+      const res = await service.intake(
+        {
+          targetUpn: 'new.user@rhk.com',
+          opcoId: 'o1',
+        },
+        ADMIN,
+      );
 
       expect(snow.getRecordByNumber).not.toHaveBeenCalled();
       expect(res).toMatchObject({ id: 'r1', status: 'OPEN', opcoId: 'o1' });
@@ -69,11 +82,14 @@ describe('RequestService', () => {
         ...data,
       }));
 
-      const res = await service.intake({
-        targetUpn: 'new.user@rhk.com',
-        opcoId: 'o1',
-        serviceNowNumber: 'RITM0012345',
-      });
+      const res = await service.intake(
+        {
+          targetUpn: 'new.user@rhk.com',
+          opcoId: 'o1',
+          serviceNowNumber: 'RITM0012345',
+        },
+        ADMIN,
+      );
 
       expect(snow.getRecordByNumber).toHaveBeenCalledWith('RITM0012345');
       expect(res).toMatchObject({
@@ -88,7 +104,7 @@ describe('RequestService', () => {
       prisma.opco.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.intake({ targetUpn: 'x@y.com', opcoId: 'nope' }),
+        service.intake({ targetUpn: 'x@y.com', opcoId: 'nope' }, ADMIN),
       ).rejects.toThrow(NotFoundException);
       expect(prisma.request.create).not.toHaveBeenCalled();
     });
@@ -98,19 +114,32 @@ describe('RequestService', () => {
       snow.getRecordByNumber.mockResolvedValue(null);
 
       await expect(
-        service.intake({
-          targetUpn: 'x@y.com',
-          opcoId: 'o1',
-          serviceNowNumber: 'RITM9999999',
-        }),
+        service.intake(
+          {
+            targetUpn: 'x@y.com',
+            opcoId: 'o1',
+            serviceNowNumber: 'RITM9999999',
+          },
+          ADMIN,
+        ),
       ).rejects.toThrow(NotFoundException);
+      expect(prisma.request.create).not.toHaveBeenCalled();
+    });
+
+    // AUTH-3a: OPCO_IT may only file for its own OpCo.
+    it('OPCO_IT filing for another OpCo → 403, no create', async () => {
+      prisma.opco.findUnique.mockResolvedValue({ id: 'o1', code: 'RHK' });
+
+      await expect(
+        service.intake({ targetUpn: 'x@y.com', opcoId: 'o1' }, OTHER_IT),
+      ).rejects.toThrow(ForbiddenException);
       expect(prisma.request.create).not.toHaveBeenCalled();
     });
   });
 
   describe('addLineItem', () => {
     it('creates a REQUESTED line item with triage flag + NOTE event + recompute', async () => {
-      prisma.request.findUnique.mockResolvedValue({ id: 'r1' });
+      prisma.request.findUnique.mockResolvedValue({ id: 'r1', opcoId: 'o1' });
       prisma.skuCatalog.findUnique.mockResolvedValue({
         id: 'c1',
         skuPartNumber: 'SPE_E3',
@@ -120,10 +149,11 @@ describe('RequestService', () => {
         ...data,
       }));
 
-      const item = await service.addLineItem('r1', {
-        skuCatalogId: 'c1',
-        procurementRequired: true,
-      });
+      const item = await service.addLineItem(
+        'r1',
+        { skuCatalogId: 'c1', procurementRequired: true },
+        ADMIN,
+      );
 
       expect(item).toMatchObject({
         stage: 'REQUESTED',
@@ -135,13 +165,66 @@ describe('RequestService', () => {
     });
 
     it('throws NotFound when the SKU is unknown', async () => {
-      prisma.request.findUnique.mockResolvedValue({ id: 'r1' });
+      prisma.request.findUnique.mockResolvedValue({ id: 'r1', opcoId: 'o1' });
       prisma.skuCatalog.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.addLineItem('r1', { skuCatalogId: 'bad' }),
+        service.addLineItem('r1', { skuCatalogId: 'bad' }, ADMIN),
       ).rejects.toThrow(NotFoundException);
       expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
+    });
+
+    // AUTH-3a: OPCO_IT may only add to its own OpCo's requests.
+    it('OPCO_IT adding to another OpCo request → 403, no create', async () => {
+      prisma.request.findUnique.mockResolvedValue({ id: 'r1', opcoId: 'o1' });
+
+      await expect(
+        service.addLineItem('r1', { skuCatalogId: 'c1' }, OTHER_IT),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // AUTH-3a read scope
+  describe('listRequests', () => {
+    it('REGIONAL / ADMIN → no OpCo restriction (where opcoId absent)', async () => {
+      await service.listRequests(ADMIN);
+
+      const arg = prisma.request.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({});
+    });
+
+    it('OPCO_IT → scoped to its own OpCo (where opcoId)', async () => {
+      await service.listRequests(O1_IT);
+
+      const arg = prisma.request.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({ opcoId: 'o1' });
+    });
+  });
+
+  describe('getRequestDetail', () => {
+    it('OPCO_IT reading its own OpCo request is allowed', async () => {
+      prisma.request.findUnique.mockResolvedValue({ id: 'r1', opcoId: 'o1' });
+
+      await expect(
+        service.getRequestDetail('r1', O1_IT),
+      ).resolves.toMatchObject({ id: 'r1' });
+    });
+
+    it('OPCO_IT reading another OpCo request by id → 403 (no data leak)', async () => {
+      prisma.request.findUnique.mockResolvedValue({ id: 'r1', opcoId: 'o1' });
+
+      await expect(service.getRequestDetail('r1', OTHER_IT)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('throws NotFound when the request is missing', async () => {
+      prisma.request.findUnique.mockResolvedValue(null);
+
+      await expect(service.getRequestDetail('missing', ADMIN)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

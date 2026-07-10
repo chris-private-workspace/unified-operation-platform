@@ -57,7 +57,25 @@ async function main() {
     update: { role: 'ADMIN' },
   });
 
-  console.log(`Seeded ${OPCOS.length} OpCos + admin user.`);
+  // ── Dev/test OPCO_IT user, scoped to RHK (AUTH-3a). Lets local dev exercise
+  //    per-OpCo scope via AUTH_DEV_USER_EMAIL. Harmless in any env — a scoped
+  //    role, no elevated access. Real OPCO_IT users arrive via SSO (AUTH-3b).
+  const rhk = await prisma.opco.findUnique({ where: { code: 'RHK' } });
+  if (rhk) {
+    await prisma.appUser.upsert({
+      where: { entraOid: 'dev-opco-it-rhk' },
+      create: {
+        entraOid: 'dev-opco-it-rhk',
+        email: 'opco.it.rhk@rapo.com.hk',
+        displayName: 'RHK OpCo IT',
+        role: 'OPCO_IT',
+        opcoScopeId: rhk.id,
+      },
+      update: { role: 'OPCO_IT', opcoScopeId: rhk.id },
+    });
+  }
+
+  console.log(`Seeded ${OPCOS.length} OpCos + admin + RHK OPCO_IT user.`);
   // NOTE: SkuCatalog is NOT hardcoded — run POST /license/catalog/sync to seed
   // it from live subscribedSkus. OpcoSkuLedger (allocated/assigned) is loaded
   // separately from the Excel best-known values during initialisation.

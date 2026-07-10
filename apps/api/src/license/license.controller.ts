@@ -10,7 +10,9 @@ import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
 /**
  * Module C surface — SKU catalog + total-level reconciliation.
  * The sync / reconcile POSTs are manual triggers this phase (OD1: daily @Cron
- * deferred to the orchestration phase). Guarded to ADMIN / REGIONAL (ADR-0002).
+ * deferred to the orchestration phase). Controller default = ADMIN / REGIONAL
+ * (ADR-0002); the read GETs also allow OPCO_IT (AUTH-3a OD2 — tenant totals are
+ * not per-OpCo, so OPCO_IT may view them; the write POSTs stay ADMIN / REGIONAL).
  */
 @ApiTags('license')
 @ApiBearerAuth()
@@ -29,6 +31,7 @@ export class LicenseController {
   }
 
   @Get('catalog')
+  @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
   @ApiOkResponse({ type: [SkuCatalogDto] })
   listCatalog(): Promise<SkuCatalogDto[]> {
     return this.catalog.listCatalog();
@@ -41,6 +44,7 @@ export class LicenseController {
   }
 
   @Get('drift')
+  @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
   @ApiOkResponse({ type: [DriftAlertDto] })
   listDrift(): Promise<DriftAlertDto[]> {
     return this.reconcile.listDrift();

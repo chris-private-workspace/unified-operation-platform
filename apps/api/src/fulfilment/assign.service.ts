@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { EventType, LineItemStage } from '@prisma/client';
+import { type AppUser, EventType, LineItemStage } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   GraphService,
@@ -12,6 +12,7 @@ import {
 } from '../integration/graph/graph.service';
 import { graphUnavailable } from '../integration/graph/graph-unavailable';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { assertOpcoScope } from '../auth/opco-scope';
 import { aggregateRequestStatus } from './stage.service';
 
 /**
@@ -33,11 +34,13 @@ export class AssignService {
    * Simulate the Phase 1 (n8n) sync write-back that opens the assign gate.
    * Real n8n would set this after the on-prem account syncs to Azure AD.
    */
-  async markSynced(requestId: string) {
+  async markSynced(requestId: string, actor: AppUser) {
     const request = await this.prisma.request.findUnique({
       where: { id: requestId },
     });
     if (!request) throw new NotFoundException(`Request ${requestId} not found`);
+    // AUTH-3a: OPCO_IT may only open the sync gate on its own OpCo (fail-closed).
+    assertOpcoScope(actor, request.opcoId);
 
     const now = new Date();
     const updated = await this.prisma.request.update({
@@ -64,8 +67,8 @@ export class AssignService {
    */
   async assignLineItem(
     lineItemId: string,
-    usageLocationOverride?: string,
-    actorId?: string,
+    usageLocationOverride: string | undefined,
+    actor: AppUser,
   ) {
     const item = await this.prisma.requestLineItem.findUnique({
       where: { id: lineItemId },
@@ -74,6 +77,8 @@ export class AssignService {
     if (!item) throw new NotFoundException(`Line item ${lineItemId} not found`);
 
     // ── Gates (fail closed, in order) ──
+    // AUTH-3a scope gate first: an OPCO_IT actor may only assign within its OpCo.
+    assertOpcoScope(actor, item.request.opcoId);
     if (item.stage !== LineItemStage.READY) {
       throw new BadRequestException(
         `Line item must be READY to assign (currently ${item.stage})`,
@@ -163,7 +168,7 @@ export class AssignService {
           type: EventType.ASSIGN,
           fromStage: LineItemStage.READY,
           toStage: LineItemStage.ASSIGNED,
-          actorId: actorId ?? null,
+          actorId: actor.id,
           message: `Assigned ${item.sku.skuPartNumber}`,
         },
       });

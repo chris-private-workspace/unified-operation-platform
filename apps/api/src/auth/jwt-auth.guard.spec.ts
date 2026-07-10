@@ -22,6 +22,16 @@ const ADMIN = {
   active: true,
 } as never;
 
+const OPCO_IT = {
+  id: 'u-opco',
+  entraOid: 'dev-opco-it-rhk',
+  email: 'opco.it.rhk@rapo.com.hk',
+  displayName: 'RHK OpCo IT',
+  role: 'OPCO_IT',
+  opcoScopeId: 'rhk-id',
+  active: true,
+} as never;
+
 function reflectorFor(isPublic: boolean): Reflector {
   return {
     getAllAndOverride: jest.fn((key: string) =>
@@ -83,6 +93,48 @@ describe('JwtAuthGuard', () => {
       await expect(
         guard.canActivate(ctxWith({ headers: {} })),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    // AUTH-3a dev run-as: AUTH_DEV_USER_EMAIL picks a specific seeded user so
+    // local dev can exercise OPCO_IT scope without SSO.
+    it('runs as the AUTH_DEV_USER_EMAIL user when it exists', async () => {
+      const findFirst = jest.fn().mockResolvedValue(OPCO_IT);
+      const prisma = { appUser: { findFirst } } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        config({
+          AUTH_DEV_BYPASS: 'true',
+          AUTH_DEV_USER_EMAIL: 'opco.it.rhk@rapo.com.hk',
+        }),
+      );
+      const req: Record<string, unknown> = { headers: {} };
+      await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      expect(req.user).toBe(OPCO_IT);
+      expect(findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { email: 'opco.it.rhk@rapo.com.hk', active: true },
+        }),
+      );
+    });
+
+    it('falls back to seed ADMIN when AUTH_DEV_USER_EMAIL has no match', async () => {
+      const findFirst = jest
+        .fn()
+        .mockResolvedValueOnce(null) // email lookup misses
+        .mockResolvedValueOnce(ADMIN); // ADMIN fallback
+      const prisma = { appUser: { findFirst } } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        config({
+          AUTH_DEV_BYPASS: 'true',
+          AUTH_DEV_USER_EMAIL: 'ghost@nowhere',
+        }),
+      );
+      const req: Record<string, unknown> = { headers: {} };
+      await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      expect(req.user).toBe(ADMIN);
     });
   });
 

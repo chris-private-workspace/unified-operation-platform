@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { RequestService } from './request.service';
 import { StageService } from './stage.service';
 import { AssignService } from './assign.service';
@@ -14,11 +15,12 @@ import { RequestDto, RequestLineItemDto } from './dto/request-view.dto';
 /**
  * Module D-1 surface — request lifecycle (no assign / ledger / SN write-back).
  * Stage advance rejects ASSIGNED; that flow lands in D-2 (W04).
- * Guarded to ADMIN / REGIONAL (ADR-0002).
+ * Guarded to ADMIN / REGIONAL / OPCO_IT; OPCO_IT is scoped to its own OpCo by the
+ * services via @CurrentUser (AUTH-3a) — REGIONAL / ADMIN see everything.
  */
 @ApiTags('fulfilment')
 @ApiBearerAuth()
-@Roles(Role.ADMIN, Role.REGIONAL)
+@Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
 @Controller('fulfilment/requests')
 export class FulfilmentController {
   constructor(
@@ -29,20 +31,26 @@ export class FulfilmentController {
 
   @Post()
   @ApiOkResponse({ type: RequestDto })
-  intake(@Body() dto: IntakeRequestDto): Promise<RequestDto> {
-    return this.requests.intake(dto);
+  intake(
+    @Body() dto: IntakeRequestDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<RequestDto> {
+    return this.requests.intake(dto, user);
   }
 
   @Get()
   @ApiOkResponse({ type: [RequestDto] })
-  list(): Promise<RequestDto[]> {
-    return this.requests.listRequests();
+  list(@CurrentUser() user: AuthUser): Promise<RequestDto[]> {
+    return this.requests.listRequests(user);
   }
 
   @Get(':id')
   @ApiOkResponse({ type: RequestDto })
-  detail(@Param('id') id: string): Promise<RequestDto> {
-    return this.requests.getRequestDetail(id);
+  detail(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<RequestDto> {
+    return this.requests.getRequestDetail(id, user);
   }
 
   @Post(':id/line-items')
@@ -50,8 +58,9 @@ export class FulfilmentController {
   addLineItem(
     @Param('id') id: string,
     @Body() dto: AddLineItemDto,
+    @CurrentUser() user: AuthUser,
   ): Promise<RequestLineItemDto> {
-    return this.requests.addLineItem(id, dto);
+    return this.requests.addLineItem(id, dto, user);
   }
 
   @Patch(':id/line-items/:lineItemId/stage')
@@ -59,16 +68,20 @@ export class FulfilmentController {
   advanceStage(
     @Param('lineItemId') lineItemId: string,
     @Body() dto: AdvanceStageDto,
+    @CurrentUser() user: AuthUser,
   ): Promise<RequestLineItemDto> {
-    return this.stage.advanceStage(lineItemId, dto.toStage);
+    return this.stage.advanceStage(lineItemId, dto.toStage, user);
   }
 
   // ── Module D-2 (assign flow) ──
 
   @Patch(':id/sync')
   @ApiOkResponse({ type: RequestDto })
-  markSynced(@Param('id') id: string): Promise<RequestDto> {
-    return this.assign.markSynced(id);
+  markSynced(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<RequestDto> {
+    return this.assign.markSynced(id, user);
   }
 
   @Patch(':id/line-items/:lineItemId/assign')
@@ -76,7 +89,8 @@ export class FulfilmentController {
   assignLineItem(
     @Param('lineItemId') lineItemId: string,
     @Body() dto: AssignLineItemDto,
+    @CurrentUser() user: AuthUser,
   ): Promise<RequestLineItemDto> {
-    return this.assign.assignLineItem(lineItemId, dto.usageLocation);
+    return this.assign.assignLineItem(lineItemId, dto.usageLocation, user);
   }
 }

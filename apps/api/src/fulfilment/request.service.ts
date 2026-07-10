@@ -1,7 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { EventType, LineItemStage, RequestStatus } from '@prisma/client';
+import {
+  type AppUser,
+  EventType,
+  LineItemStage,
+  RequestStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { assertOpcoScope, scopeWhere } from '../auth/opco-scope';
 import { StageService } from './stage.service';
 import { IntakeRequestDto } from './dto/intake.dto';
 import { AddLineItemDto } from './dto/line-item.dto';
@@ -22,11 +28,13 @@ export class RequestService {
     private readonly stage: StageService,
   ) {}
 
-  async intake(dto: IntakeRequestDto) {
+  async intake(dto: IntakeRequestDto, actor: AppUser) {
     const opco = await this.prisma.opco.findUnique({
       where: { id: dto.opcoId },
     });
     if (!opco) throw new NotFoundException(`OpCo ${dto.opcoId} not found`);
+    // AUTH-3a: an OPCO_IT actor may only file requests for its own OpCo.
+    assertOpcoScope(actor, dto.opcoId);
 
     const snMirror = {
       serviceNowSysId: null as string | null,
@@ -65,11 +73,13 @@ export class RequestService {
     return request;
   }
 
-  async addLineItem(requestId: string, dto: AddLineItemDto) {
+  async addLineItem(requestId: string, dto: AddLineItemDto, actor: AppUser) {
     const request = await this.prisma.request.findUnique({
       where: { id: requestId },
     });
     if (!request) throw new NotFoundException(`Request ${requestId} not found`);
+    // AUTH-3a: OPCO_IT may only add line items to its own OpCo's requests.
+    assertOpcoScope(actor, request.opcoId);
     const sku = await this.prisma.skuCatalog.findUnique({
       where: { id: dto.skuCatalogId },
     });
@@ -99,8 +109,10 @@ export class RequestService {
     return item;
   }
 
-  async listRequests() {
+  async listRequests(actor: AppUser) {
+    // AUTH-3a: OPCO_IT sees only its own OpCo; REGIONAL / ADMIN see all ({}).
     return this.prisma.request.findMany({
+      where: scopeWhere(actor),
       orderBy: { createdAt: 'desc' },
       include: {
         opco: { select: { code: true, displayName: true } },
@@ -109,7 +121,7 @@ export class RequestService {
     });
   }
 
-  async getRequestDetail(id: string) {
+  async getRequestDetail(id: string, actor: AppUser) {
     const request = await this.prisma.request.findUnique({
       where: { id },
       include: {
@@ -126,6 +138,8 @@ export class RequestService {
       },
     });
     if (!request) throw new NotFoundException(`Request ${id} not found`);
+    // AUTH-3a: block cross-OpCo reads even by direct id (no data leak via guess).
+    assertOpcoScope(actor, request.opcoId);
     return request;
   }
 }

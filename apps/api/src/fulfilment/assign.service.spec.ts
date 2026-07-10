@@ -1,13 +1,20 @@
 import { Test } from '@nestjs/testing';
 import {
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { AppUser } from '@prisma/client';
 import { AssignService } from './assign.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+
+// Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
+const ADMIN = { id: 'admin', opcoScopeId: null } as unknown as AppUser;
+const O1_IT = { id: 'o1-it', opcoScopeId: 'o1' } as unknown as AppUser;
+const OTHER_IT = { id: 'ox-it', opcoScopeId: 'oX' } as unknown as AppUser;
 
 describe('AssignService', () => {
   let service: AssignService;
@@ -94,7 +101,7 @@ describe('AssignService', () => {
     it('assigns via Graph, increments ledger, marks ASSIGNED, recomputes status, writes back to SN', async () => {
       arrangeHappy();
 
-      await service.assignLineItem('li1');
+      await service.assignLineItem('li1', undefined, ADMIN);
 
       expect(graph.assignLicense).toHaveBeenCalledWith(
         'new.user@rhk.com',
@@ -132,7 +139,7 @@ describe('AssignService', () => {
         accountEnabled: true,
       });
 
-      await service.assignLineItem('li1', 'SG');
+      await service.assignLineItem('li1', 'SG', ADMIN);
 
       expect(graph.assignLicense).toHaveBeenCalledWith(
         'new.user@rhk.com',
@@ -148,11 +155,31 @@ describe('AssignService', () => {
         readyItem({ stage: 'QUOTING' }),
       );
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    // AUTH-3a scope gate (H5): runs before every other gate, fail-closed.
+    it('OPCO_IT out of scope → 403 before any Graph call or tx', async () => {
+      arrangeHappy(); // fully valid READY item in OpCo o1
+
+      await expect(
+        service.assignLineItem('li1', undefined, OTHER_IT), // scope oX != o1
+      ).rejects.toThrow(ForbiddenException);
+      expect(graph.findUser).not.toHaveBeenCalled();
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('OPCO_IT in its own OpCo passes the scope gate (assigns)', async () => {
+      arrangeHappy();
+
+      await service.assignLineItem('li1', undefined, O1_IT); // scope o1 == o1
+
+      expect(graph.assignLicense).toHaveBeenCalled();
     });
 
     it('rejects when the sync gate is closed (azureSyncedAt null)', async () => {
@@ -160,9 +187,9 @@ describe('AssignService', () => {
         readyItem({ request: { azureSyncedAt: null } }),
       );
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
     });
 
@@ -170,9 +197,9 @@ describe('AssignService', () => {
       prisma.requestLineItem.findUnique.mockResolvedValue(readyItem());
       graph.findUser.mockResolvedValue(null);
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
     });
 
@@ -186,9 +213,9 @@ describe('AssignService', () => {
         accountEnabled: true,
       });
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
     });
 
@@ -212,18 +239,18 @@ describe('AssignService', () => {
         },
       ]);
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
     });
 
     it('throws NotFound when the line item is missing', async () => {
       prisma.requestLineItem.findUnique.mockResolvedValue(null);
 
-      await expect(service.assignLineItem('missing')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.assignLineItem('missing', undefined, ADMIN),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -233,9 +260,9 @@ describe('AssignService', () => {
       graph.assignLicense.mockRejectedValue(new Error('graph 500'));
 
       // BUG-002: a raw Graph error becomes a clean 503, not an unhandled throw.
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(ServiceUnavailableException);
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(tx.opcoSkuLedger.upsert).not.toHaveBeenCalled();
     });
@@ -254,9 +281,9 @@ describe('AssignService', () => {
         ),
       );
 
-      await expect(service.assignLineItem('li1')).rejects.toThrow(
-        ServiceUnavailableException,
-      );
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(ServiceUnavailableException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(tx.opcoSkuLedger.upsert).not.toHaveBeenCalled();
@@ -266,7 +293,7 @@ describe('AssignService', () => {
       arrangeHappy();
       snow.addWorkNote.mockRejectedValue(new Error('SN down'));
 
-      const res = await service.assignLineItem('li1');
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
 
       expect(res).toEqual({ id: 'li1', stage: 'ASSIGNED' });
       expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled(); // assign committed
@@ -277,6 +304,7 @@ describe('AssignService', () => {
     it('sets azureSyncedAt + accountCreatedAt and writes a SYNC event', async () => {
       prisma.request.findUnique.mockResolvedValue({
         id: 'r1',
+        opcoId: 'o1',
         accountCreatedAt: null,
       });
       prisma.request.update.mockImplementation(({ data }: any) => ({
@@ -284,7 +312,7 @@ describe('AssignService', () => {
         ...data,
       }));
 
-      const res = await service.markSynced('r1');
+      const res = await service.markSynced('r1', ADMIN);
 
       expect(res.azureSyncedAt).toBeInstanceOf(Date);
       expect(res.accountCreatedAt).toBeInstanceOf(Date);
@@ -300,9 +328,23 @@ describe('AssignService', () => {
     it('throws NotFound when the request is missing', async () => {
       prisma.request.findUnique.mockResolvedValue(null);
 
-      await expect(service.markSynced('missing')).rejects.toThrow(
+      await expect(service.markSynced('missing', ADMIN)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // AUTH-3a scope gate: OPCO_IT can only open the gate on its own OpCo.
+    it('OPCO_IT out of scope → 403, gate untouched', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        accountCreatedAt: null,
+      });
+
+      await expect(service.markSynced('r1', OTHER_IT)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(prisma.request.update).not.toHaveBeenCalled();
     });
   });
 });

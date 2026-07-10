@@ -26,6 +26,7 @@ import { IS_PUBLIC_KEY } from './public.decorator';
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
   private readonly devBypass: boolean;
+  private readonly devUserEmail?: string;
   private readonly issuer?: string;
   private readonly audience?: string;
   private readonly jwks?: JwksClient;
@@ -38,8 +39,12 @@ export class JwtAuthGuard implements CanActivate {
   ) {
     this.devBypass = config.get<string>('AUTH_DEV_BYPASS') === 'true';
     if (this.devBypass) {
+      // Optional: run dev-bypass as a specific seeded user (e.g. an OPCO_IT to
+      // exercise per-OpCo scope locally, AUTH-3a). Unset → seed ADMIN.
+      this.devUserEmail =
+        config.get<string>('AUTH_DEV_USER_EMAIL') || undefined;
       this.logger.warn(
-        '⚠️  AUTH_DEV_BYPASS is ON — requests run as the seed ADMIN without token validation. Never use in production.',
+        '⚠️  AUTH_DEV_BYPASS is ON — requests run as a seed user without token validation. Never use in production.',
       );
       return;
     }
@@ -143,19 +148,37 @@ export class JwtAuthGuard implements CanActivate {
     });
   }
 
-  /** Cached seed ADMIN used when AUTH_DEV_BYPASS is on. */
+  /**
+   * The AppUser dev-bypass runs as (cached). AUTH_DEV_USER_EMAIL picks a specific
+   * seeded user (e.g. an OPCO_IT to test scope); unset or unmatched → seed ADMIN.
+   * H4: log the resolved role + id only, never the email (PII).
+   */
   private async resolveDevUser(): Promise<AppUser> {
     if (this.devUser) return this.devUser;
-    const admin = await this.prisma.appUser.findFirst({
-      where: { role: 'ADMIN', active: true },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (!admin) {
+    let user: AppUser | null = null;
+    if (this.devUserEmail) {
+      user = await this.prisma.appUser.findFirst({
+        where: { email: this.devUserEmail, active: true },
+      });
+      if (!user) {
+        this.logger.warn(
+          'AUTH_DEV_USER_EMAIL set but no matching active user — falling back to seed ADMIN.',
+        );
+      }
+    }
+    if (!user) {
+      user = await this.prisma.appUser.findFirst({
+        where: { role: 'ADMIN', active: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+    if (!user) {
       throw new UnauthorizedException(
         'AUTH_DEV_BYPASS is on but no ADMIN AppUser exists — run the seed.',
       );
     }
-    this.devUser = admin;
-    return admin;
+    this.logger.warn(`Dev-bypass running as role=${user.role} id=${user.id}.`);
+    this.devUser = user;
+    return user;
   }
 }

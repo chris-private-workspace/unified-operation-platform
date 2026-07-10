@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
+import { MeController } from './me.controller';
 
 /**
  * Global auth (ADR-0002). Every request runs JwtAuthGuard (Entra JWT → AppUser,
@@ -10,6 +11,7 @@ import { RolesGuard } from './roles.guard';
  * PrismaService (@Global) and ConfigService (global) are injected into the guards.
  */
 @Module({
+  controllers: [MeController],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

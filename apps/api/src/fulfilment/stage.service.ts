@@ -5,12 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  type AppUser,
   EventType,
   LineItemStage,
   Prisma,
   RequestStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertOpcoScope } from '../auth/opco-scope';
 
 /**
  * Legal line-item stage transitions (DESIGN §7).
@@ -83,14 +85,17 @@ export class StageService {
   async advanceStage(
     lineItemId: string,
     toStage: LineItemStage,
-    actorId?: string,
+    actor: AppUser,
   ) {
     const item = await this.prisma.requestLineItem.findUnique({
       where: { id: lineItemId },
+      include: { request: { select: { opcoId: true } } },
     });
     if (!item) {
       throw new NotFoundException(`Line item ${lineItemId} not found`);
     }
+    // AUTH-3a: an OPCO_IT actor may only touch its own OpCo (fail-closed).
+    assertOpcoScope(actor, item.request.opcoId);
     const fromStage = item.stage;
 
     if (toStage === LineItemStage.ASSIGNED) {
@@ -121,7 +126,7 @@ export class StageService {
         type: EventType.STAGE_CHANGE,
         fromStage,
         toStage,
-        actorId: actorId ?? null,
+        actorId: actor.id,
       },
     });
 
