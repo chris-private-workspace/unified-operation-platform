@@ -220,6 +220,20 @@ output(見 `docs/03-implementation/incidents/INC-001`)。bypass permissions mode
 
 **違反 = 破壞信任,比任何功能 bug 更嚴重(見 `docs/03-implementation/incidents/INC-001`)。**
 
+### 5.8 H8 — Tool Usage Discipline(工具使用強制紀律 · 🔴 零容忍・無例外)
+
+> **來源** merge 事件——大量用 bash `echo`/`cat`/`grep` 拼裝命令 + `{ }` group 重定向,造成嚴重輸出污染(檔案內容重複、亂碼、語意注入),險些 commit 進損壞內容。本條同 §5.7 **H7 同源(訊息 / 工具結構紀律)**,優先級等同。
+
+**絕對禁止(無任何例外,違反即停手改正):**
+
+1. ❌ 用 bash/shell 跑 `cat` / `head` / `tail` / `grep` / `find` / `sed` / `awk` 讀檔或搜尋 → **一律改用 Read / Grep / Glob 工具**
+2. ❌ 用 `echo` 拼裝輸出、`{ }` group 重定向、多命令混合重定向 → **只用單一命令直接重定向** `cmd > file`,再用 **Read 工具**讀
+3. ❌ 靠 bash 即時 stdout 判斷結果 → **寫檔後用 Read 工具讀**
+
+**bash/shell 唯一正當用途**:執行**無專用工具替代**的操作(git、npm、其他 CLI),輸出到檔案時**只用單一命令直接重定向、絕不混 echo**。此為正當用途,非漏洞——禁嘅是「有替代卻用 bash」,唔係「用 bash」本身。
+
+**這不是「避免」,是「禁止」。** 本區優先級等同 §5.7 H7(訊息 / 工具結構紀律同源)。
+
 ---
 
 ## 6. Architecture Decision Record (ADR) Format
@@ -339,10 +353,11 @@ Unified Operation Platform — Strict Mode
 │  ├─ H3 Scope/Tier boundary       H4 Security/PII
 │  ├─ H5 Test coverage (critical path)
 │  ├─ H6 Design fidelity (token-only, 1 primary/view, lucide, light+dark)
-│  └─ H7 Tool-result integrity (唔作 tool 輸出 · send tool 即收口 · 結果 trace 真 output)
+│  ├─ H7 Tool-result integrity (唔作 tool 輸出 · send tool 即收口 · 結果 trace 真 output)
+│  └─ H8 Tool-usage discipline (讀檔/搜尋用 Read/Grep/Glob 唔用 bash cat/grep · 唔 echo 拼裝 · 單一重定向)
 └─ When in doubt: ask, don't guess · skuId not name · sync gate before assign · UI: token 唔 eyeball
 ```
 
 ---
 
-**End of CLAUDE.md** · Version 1.1 · Owner: Chris Lai
+**End of CLAUDE.md** · Version 1.2 · Owner: Chris Lai
