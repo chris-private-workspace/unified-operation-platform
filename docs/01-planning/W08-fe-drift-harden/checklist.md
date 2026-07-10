@@ -44,6 +44,6 @@ status: active
 - [x] G4 DS 自檢 · G5 誠實狀態 · G6 harden test（api 42 綠）· G7 lint
 
 ## Closeout
-- [ ] plan status → closed · progress retro · BACKLOG 同步（FE-3 完成 + BE-graph-harden 完成）
-- [ ] SESSION_SUMMARY + memory 更新
-- [ ] commit + push（批 A 防範已 commit ad3ecb8;批 B W08 code 待 commit）
+- [x] plan status → closed · progress retro · BACKLOG 同步（FE-3 完成 + BE-graph-harden 完成）
+- [x] SESSION_SUMMARY + memory 更新（SESSION_SUMMARY.md + memory `backend-runtime-state` + MEMORY.md index）
+- [x] commit（批 A 防範 `ad3ecb8` · 批 B W08 code `29a0ed5`;本 closeout doc-sync 隨後一個小 commit）· **push 待用戶指示**
