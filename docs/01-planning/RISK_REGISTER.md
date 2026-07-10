@@ -2,7 +2,7 @@
 artifact: risk-register
 version: 1.0
 status: living
-last_updated: 2026-07-09
+last_updated: 2026-07-10
 ---
 
 # Unified Operation Platform — Risk Register(living)
@@ -20,6 +20,7 @@ last_updated: 2026-07-09
 | ID | Risk | Source | Likelihood | Impact | Mitigation | Status |
 |---|---|---|---|---|---|---|
 | R1 | 公司 proxy 阻擋 `binaries.prisma.sh`(Prisma engine CDN)→ generate/migrate/seed/boot 卡住 | W01 執行(2026-07-09) | High(已發生) | 🔴 High(阻 backend runtime) | **Workaround 已用**:流動網路跑一次 generate/migrate → engine cache 落 `node_modules`,返公司網即用本機 binary。長遠靠 IT allowlist `*.prisma.sh`。⚠️ clean reinstall(刪 node_modules)前需再轉流動網路。 | 🟡 Mitigating |
+| R2 | `AUTH_DEV_BYPASS=true` 誤帶入 production → 繞過 JWT 驗證、注入 seed ADMIN(權限完全繞過) | W09 AUTH-1(2026-07-10) | Low | 🔴 High(權限繞過) | 預設 `false`;開啟時啟動打 warning log;prod path `getOrThrow(ENTRA_TENANT_ID/ENTRA_API_AUDIENCE)` 未設即 boot 失敗(fail-fast)。ADR-0002 記錄。部署時確保 `.env` 無此 flag。 | 🟢 Resolved(Mitigated) |
 
 <!-- 範例:
 | R1 | 某外部服務單點故障 | BUG-0XX postmortem | Med | High | 加 fallback + 熱切換(ADR-00XX) | 🟡 Mitigating |

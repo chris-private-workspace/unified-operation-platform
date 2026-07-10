@@ -21,3 +21,11 @@ body {
   font-size: var(--text-base);
   -webkit-font-smoothing: antialiased;
 }
+
+/* App-level token the read-only handoff never tokenized: Avatar.jsx and the
+   login gradient both hardcode #8a0018. Defined here (not in the handoff) so the
+   Avatar brand variant stays token-only per DS-1. Mode-agnostic on purpose —
+   the handoff uses the one hex in both themes. See design-system.md DS-7. */
+:root {
+  --accent-deep: #8a0018;
+}

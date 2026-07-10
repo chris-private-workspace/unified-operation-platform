@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-10(**AUTH-1 完成** — W09 後端 Entra JWT 驗證 + `@Roles(ADMIN,REGIONAL)` guard 落 11 endpoint,關 unguarded controllers gap;`jwks-rsa`+`jsonwebtoken`[ADR-0002]+ dev-bypass;gate G1–G8 全 pass,401/200 wiring live 驗,api 56 test 綠。**FE-Assets 探 discovery 揭被 allocation-import[deferred Excel data]卡** → 轉咗做 AUTH。下一個 = AUTH-2[FE SSO,前置 IT 開 SPA app reg] / AUTH-3[OPCO_IT scope] / FE-Assets[前置 allocation import 決定])
+**最後更新**:2026-07-10(**tech-debt 清理批次** — DS-flag ✅ resolved[Avatar tokenize `--accent-deep` 消硬 hex + design-system.md DS-7 加 Avatar 例外 + SKILL.md 同步];FE-vuln → **defer DD-2**[實跑證非-force `npm audit fix` 一個都清唔到,全繫 breaking major];新登 DEFERRED DD-1[allocation-import]/DD-2[npm-vuln]+ RISK R2[dev-bypass 誤帶 prod,🟢 Mitigated]。前:**AUTH-1 ✅**[W09 後端 Entra JWT 驗證 + `@Roles(ADMIN,REGIONAL)` guard 落 11 endpoint,ADR-0002 + dev-bypass,api 56 test,401/200 wiring live 驗];**FE-Assets 被 allocation-import 卡** → 轉咗 AUTH。下一個 = AUTH-2[FE SSO,前置 IT 開 SPA app reg] / AUTH-3[OPCO_IT scope] / FE-Assets[前置 allocation import 決定])
 
 ---
 
@@ -43,8 +43,8 @@
 | BUG-001 | **H4:`GraphService` log 咗 UPN（PII）**（assignLicense + findUser 錯誤） | ✅ 完成（2026-07-09；Sev3;fix + regression test,實證 fails-before） | — | `docs/03-implementation/bugs/BUG-001-graph-logs-upn-pii/` |
 | BUG-002 | **後端 assign crash**:`findUser` throw Graph/MSAL error（非 return null）未 wrap → invalid status(-1)→ **NestJS process crash**（critical path robustness;FE-2 assign 測試揭出） | ✅ **完成**（2026-07-09;Sev2;3 個 Graph await wrap → 503 + regression test,實證 fails-before;api 40 test 綠） | — | `docs/03-implementation/bugs/BUG-002-assign-graph-error-crashes-api/` |
 | BE-graph-harden | **catalog sync / reconcile 呼 `getSubscribedSkus` 相同 latent crash**（Graph throw 未 wrap）——BUG-002 carry-over | ✅ **完成**（2026-07-10,W08 OD2=A;新 `graph-unavailable.ts` 共用 helper,reconcile/catalog wrap→503 + regression test,assign 改用同 helper;live 驗 reconcile/catalog 皆 clean 503 + API 唔 crash） | — | `W08-fe-drift-harden/` · `integration/graph/graph-unavailable.ts` |
-| DS-flag | **Avatar brand gradient `#8a0018`**:handoff 用非 token gradient,衝突 design-system.md DS-7「唯一 gradient=login」 | 候選（W05 flag,等 owner 決） | Chris 定:保留 hifi gradient（更新 DS-7 例外）定改 token-only | `apps/web/src/components/ui/avatar.tsx` · design-system.md DS-7 |
-| FE-vuln | **apps/web npm 32 vulnerabilities**（1 critical/8 high,全 dev 工具鏈 vite/vitest/jsdom） | 候選（W05 flag） | `npm audit` 評估 → 選擇性 fix（唔盲 `--force` breaking） | `apps/web/package.json` |
+| DS-flag | **Avatar brand gradient `#8a0018`**:handoff 用非 token gradient,衝突 design-system.md DS-7「唯一 gradient=login」 | ✅ **完成**（2026-07-10;Chris 揀保留 hifi → tokenize `--accent-deep`[index.css]消硬 hex + DS-7 明文加 Avatar 例外 + SKILL.md 同步） | — | `apps/web/.../ui/avatar.tsx` · `index.css` · design-system.md DS-7 |
+| FE-vuln | **npm dev/build-chain vulnerabilities**（monorepo root 32:apps/web 7[vite/vitest/esbuild/js-yaml/picomatch]+ apps/api 側 uuid/webpack/nest CLI;**全 dev-only 唔入 production bundle**） | 🚧 **defer → DD-2**（2026-07-10;實跑證非-force `npm audit fix`[root+`-w`]一個都清唔到,全繫 breaking major） | vite@8 生態 stabilize → 專門 phase 一次過升 + revalidate（H2,需 ADR） | `DEFERRED_REGISTER.md` DD-2 |
 | BE-ledger-read | **後端 read-model:per-OpCo ledger + SKU 用量 stats endpoint**（FE-1 OD1-A carry — **License Assets 前端整個畫面** + Overview seat KPI 需此） | 候選（FE-1 kickoff 產生） | 後端 mini-phase:`GET /license/ledger`（每 OpCo 每 SKU owned/allocated/assigned）+ stats 聚合;注意 prepaid `allocatedQuantity` import 仍 deferred（utilization 需埋佢） | `W06-fe-overview-assets/plan.md §1.1` |
 | FE-Assets | **前端 License Assets 畫面**（owned/allocated/assigned ledger 數量表 + utilization bar + Headroom/Over-allocated + Manage）—— FE-1 deviation 移出 | 候選（等 BE-ledger-read） | **前置 BE-ledger-read**（+ allocation import 先有 allocated/utilization 真數）→ 之後一個前端 phase 砌,對 prototype License Assets view | `design_handoff .../full-console.html`（License Assets view） |
 
@@ -77,7 +77,8 @@
 
 | DD | 類別 | 狀態 |
 |---|---|---|
-| _(空)_ | | |
+| DD-1 | Prepaid `allocatedQuantity` Excel import 未定 → 卡 FE-Assets / ledger utilization 真數 | defer（等 Chris 決 import 方式） |
+| DD-2 | npm dev/build-chain vulns 需 breaking major 先清（全 dev-only 唔入 production） | defer（等 vite@8 生態 stabilize + 專門升級 phase） |
 
 ---
 

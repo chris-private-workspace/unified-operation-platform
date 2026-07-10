@@ -8,9 +8,9 @@ export interface AvatarProps {
 }
 
 // Rebuilt from design_handoff display/Avatar.jsx.
-// NOTE(H6 flag): the handoff 'brand' variant uses a gradient ending in a
-// non-token hex (#8a0018) — reproduced 1:1 for fidelity, but it conflicts with
-// design-system.md DS-7 ("only login has a gradient"). Flagged for owner review.
+// The 'brand' variant's gradient (accent → accent-deep) is an owner-approved
+// DS-7 exception: login + Avatar are the two legit gradients. The handoff's
+// hardcoded #8a0018 is tokenized as --accent-deep (index.css). See DS-7.
 export function Avatar({
   name = '',
   size = 30,
@@ -36,7 +36,7 @@ export function Avatar({
         height: size,
         fontSize: Math.round(size * 0.38),
         ...(brand
-          ? { background: 'linear-gradient(135deg,var(--accent),#8a0018)' }
+          ? { background: 'linear-gradient(135deg,var(--accent),var(--accent-deep))' }
           : {}),
       }}
     >

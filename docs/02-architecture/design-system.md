@@ -42,7 +42,7 @@
 ### 1.4 Elevation / Motion(`tokens/elevation.css` + `base.css`)
 - 近乎平面 —— 深度靠 **1px border + surface tint**,唔靠 blur。`--shadow`(resting card)· `--shadow-overlay`(dialog)· `--shadow-toast` · `--ring-accent`(stepper active)。
 - Motion 克制:`fadeIn`(換 view)· `toastIn`(12px rise)· `spin`(API in-flight);120–150ms;**無 bounce / scale**。
-- **唯一 gradient** = login brand panel(`150deg` 深紅 + dotted radial)。card/button/header 一律 solid。
+- **Gradient 只此兩處**:① login brand panel(`150deg` 深紅 + dotted radial)· ② Avatar brand variant(`135deg` `--accent`→`--accent-deep`;owner-approved 例外,2026-07-10 — handoff 原生視覺,`--accent-deep` tokenize 咗 handoff 硬寫嘅 `#8a0018`)。card/button/header 一律 solid。
 
 ### 1.5 Tailwind 映射範式
 ```ts
@@ -98,7 +98,7 @@ shadcn/ui 做底但 re-skin 用上面 token(或 alias `--primary:var(--accent)` 
 - [ ] Light + dark 都試過(`.dark` swap 冇爆)?
 - [ ] 數字 / 識別碼用 mono?
 - [ ] icon 全部 lucide stroke(冇 filled / emoji / 第三方 icon set)?
-- [ ] 無新 gradient(除 login)?深度靠 border + tint 而唔係 blur?
+- [ ] 無新 gradient(除 login + Avatar brand)?深度靠 border + tint 而唔係 blur?
 - [ ] 新狀態用返 6 semantic tint + Badge,冇自創色?
 - [ ] 對住 `design_handoff_licenseops/prototype/full-console.html` 睇過視覺一致?
 

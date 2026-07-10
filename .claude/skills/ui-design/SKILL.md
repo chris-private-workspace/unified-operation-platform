@@ -17,7 +17,7 @@ description: LicenseOps 前端設計系統自檢 — 寫 / review / 驗收任何
 | DS-4 | **Light + dark 都掂** | 淨試 light;`.dark` swap 有爆(硬色/對比不足) | `:root` / `.dark` 都要行過 |
 | DS-5 | **數字 / 識別碼 mono** | seat 數 / delta / id / UPN / GUID 用 sans | Geist Mono |
 | DS-6 | **Icon = lucide stroke** | 用 emoji / filled / 第三方 icon / PNG | `lucide-react` stroke-only(唯一多色 = login MS logo) |
-| DS-7 | **平面美學** | 加 blur 陰影 / colored-left-border card / 自加 gradient | 深度靠 1px border + surface tint;唯一 gradient = login |
+| DS-7 | **平面美學** | 加 blur 陰影 / colored-left-border card / 自加 gradient | 深度靠 1px border + surface tint;gradient 只此兩處 = login + Avatar brand(owner-approved) |
 | DS-8 | **狀態走 Badge + semantic** | 自創狀態色;冇跟 stage→tone map | Ready→ok / Quoting·Awaiting→warn / Requested→info / Blocked→danger / Assigned→neutral / AI→purple |
 | DS-9 | **Motion 克制** | bounce / scale / 長 transition | fadeIn / toastIn / spin;120–150ms |
 | DS-10 | **Voice / casing** | 長句 label;亂 UPPERCASE;chrome 內加 emoji | 短名詞;Sentence case;caps 只細結構 label |

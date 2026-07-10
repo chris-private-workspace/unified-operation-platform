@@ -6,7 +6,7 @@
 >
 > **只收 recurring / 結構性 class**:一次性、唔會再問嘅 defer,喺 phase `progress.md` 標 🚧 即可,唔使入本冊。
 
-**最後更新**:YYYY-MM-DD
+**最後更新**:2026-07-10
 
 ---
 
@@ -14,7 +14,8 @@
 
 | ID | 類別 | 來源 | 現況 | 恢復 / Close 條件 |
 |---|---|---|---|---|
-| DD-1 | _(空)_ | {phase / ADR / 分析} | {當前狀態} | {咩情況會重新開工} |
+| DD-1 | **Prepaid `allocatedQuantity` Excel import 未定** → 卡 License Assets 前端 + ledger utilization 真數 | FE-1 deviation(W06)+ FE-Assets discovery(W09 pivot) | defer — `seed.ts` 唔播 `OpcoSkuLedger`、`allocatedQuantity`=0;已卡 FE-Assets **兩次**(SKU Catalog 頂上) | Chris 決定 Excel→ledger import 方式 → 解封 BE-ledger-read + FE-Assets |
+| DD-2 | **npm dev/build-chain vulns 需 breaking major 先清**(monorepo 32:apps/web vite/vitest/esbuild/js-yaml/picomatch + apps/api uuid/webpack/nest CLI) | W05 flag + tech-debt batch(2026-07-10) | defer — 全 **dev-only、唔入 production bundle**;非-force `npm audit fix`(root + `-w`)**一個都清唔到**(2026-07-10 實跑,工作樹零 lockfile 改為證) | vite@8 生態 stabilize → 專門 phase 一次過升 + revalidate build/dev/test(**H2 breaking,需 ADR**) |
 
 <!-- 範例:
 | DD-1 | X 功能等真實用量先做 | W05 retro | defer | 出現 ≥3 真實用戶要求,或 stakeholder 排入 roadmap |
