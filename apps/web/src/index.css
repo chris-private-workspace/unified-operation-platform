@@ -22,10 +22,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* App-level token the read-only handoff never tokenized: Avatar.jsx and the
-   login gradient both hardcode #8a0018. Defined here (not in the handoff) so the
-   Avatar brand variant stays token-only per DS-1. Mode-agnostic on purpose —
-   the handoff uses the one hex in both themes. See design-system.md DS-7. */
+/* App-level tokens the read-only handoff never tokenized (hardcoded there):
+   --accent-deep   — Avatar brand + login gradient's mid stop (#8a0018).
+   --gradient-brand — the login brand panel, the system's one full gradient (DS-7).
+   Defined here (not the read-only handoff) so both stay token-only per DS-1.
+   Mode-agnostic on purpose — the handoff uses these hexes in both themes. */
 :root {
   --accent-deep: #8a0018;
+  --gradient-brand: linear-gradient(150deg, #c30021, var(--accent-deep) 55%, #4d000d);
 }

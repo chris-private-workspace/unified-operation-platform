@@ -16,3 +16,4 @@
 |---|---|---|---|---|
 | [0001](./0001-frontend-in-repo-monorepo.md) | 前端納入本 repo,採 monorepo(`apps/api` + `apps/web`) | Accepted | 2026-07-09 | 用戶 approval(H1/H3);design handoff 入 repo |
 | [0002](./0002-entra-jwt-validation.md) | 後端 Entra ID JWT 驗證策略(`jwks-rsa`+`jsonwebtoken` · 全域 guard · dev-bypass) | Accepted | 2026-07-10 | 用戶 approval(H2);W09 AUTH-1 |
+| [0003](./0003-msal-frontend-sso.md) | 前端 Entra ID SSO 策略(MSAL `@azure/msal-browser`+`@azure/msal-react` · auth code PKCE · redirect · dev-bypass 相容) | Accepted | 2026-07-10 | 用戶 approval(H2);W10 AUTH-2 |

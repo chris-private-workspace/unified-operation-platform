@@ -1,0 +1,35 @@
+---
+phase: W10-auth-fe-sso
+status: active
+---
+
+# W10（AUTH-2）— Progress（daily + retro）
+
+## Day 0 — 2026-07-10（kickoff / plan draft）
+
+**做咗**:
+- 路線:清完 tech-debt batch（commit `399283f`)後,Chris 揀推 **AUTH 線**。確認 IT SPA app registration 現況 = **未開始 / 仲傾緊** → 第一步 = **plan-first + IT checklist**（唔即 code 空殼）。
+- Research:
+  - microsoft-docs 核實 MSAL React 整合（`MsalProvider` + `PublicClientApplication` singleton + `acquireTokenSilent` attach Bearer;api.ts 呢種 non-component 用 module-level msal instance 攞 token,唔喺 provider context 外 call interactive）+ Entra SPA app registration 規格（SPA platform + PKCE、Expose an API scope、audience 對齊）。
+  - Explore agent 掃 `apps/web` 整合觸點（見 plan §1.1）：api.ts L18/33/57（3 module-level fetch,零 token）· App.tsx L18-22（QueryClientProvider>RouterProvider,無 auth provider）· router.tsx（無 login/guard）· store/ui.ts（`role` mockup toggle,無真 identity）· top-bar L42-51 + sidebar L126-144（sign-out/identity 落點）· requests.ts L106-107（"My queue" 已預留 AUTH）· package.json 零 msal dep。
+- Plan:寫 `W10-auth-fe-sso/plan.md`（+ checklist + progress）。**關鍵 = 拆 AUTH-2a（唔卡 IT,驗得到:scaffold + UI 視覺 + token 機制 + dev-bypass 相容）/ AUTH-2b（卡 app reg:真 sign-in → token e2e）**,避 FE-Assets 空殼覆轍（H7 誠實）。IT 需求 checklist 收錄 plan §7。
+- 交付 IT app registration 需求 checklist（用戶可即攞去追 IT,解 blocker 前置）。
+
+**未做 / 待敲**:
+- **plan 待 approve**（R1:approve 咗先 code）。
+- 5 個 OD 待敲:OD1 MSAL dep approve + ADR-0003（H2）· OD2 2a timing（建議 C:plan 定案,等 IT ready 一次過做,避空殼返工）· OD3 redirect/popup · OD4 dev-bypass 前端相容 · OD5 Login 視覺來源（handoff 有無整頁 mockup)。
+
+**🚩 flag / 誠實限制**:
+- 🔴 真 SSO e2e（G7）**卡 IT app registration**（未開）→ 未 ready 前一律標未驗,唔當 done。
+- Login/Settings H6 視覺來源（OD5）未確認 handoff 有無整頁 login mockup → 無 = STOP 問 owner。
+
+**紀律自檢**:H2 MSAL dep = 第一句 STOP,劃入 OD1 approve + ADR-0003（未 `npm i`）· H3 AUTH-3 per-OpCo scope 明確 out（本 phase 只身份 + 顯示角色）· H6 Login/Settings 新畫面需 ui-design + 忠實還原 · H7 拆 2a/2b 避空殼 = done · R1 plan-first 未 code。
+
+**（同日 approve + 開工）**:
+- **plan approved → active**;OD 敲定:OD1=approve MSAL dep + ADR-0003 · OD2=**A（做 AUTH-2a full）** · OD3=**redirect** · OD4=dev-bypass env（default）· OD5=下述查證。
+- **OD5 resolved**:handoff README **§0 Login 有整頁 two-panel mockup**（左 ~52% brand gradient panel + wordmark/headline/3 stats;右 form「Continue with Microsoft Entra ID」MS 4-color logo + email/password + Keep me signed in + Sign in + SSO footnote）→ **1:1 還原有依據,唔使 STOP 問 owner**（H6 滿足）。誠實落差:真 SSO 只 wire「Continue with Entra ID」（redirect),email/password 視覺還原但唔造收密碼假 form。user menu/Sign out + Settings(Preferences) 亦有 README §1 依據。
+- **D0 done**:ADR-0003 Accepted（`docs/adr/0003-msal-frontend-sso.md` + README index）· checklist G5 tick。
+- **D1 done**:dep `@azure/msal-browser ^5.17.0` + `@azure/msal-react ^5.5.2`（vuln 冇增）· `src/lib/auth/msal.ts`（env-driven config + `PublicClientApplication` singleton + `initMsal` initialize/handleRedirectPromise;placeholder clientId + `msalConfigured` gate 令未 config 都跑到 = dev-bypass 相容）· `main.tsx` init-before-render · `App.tsx` `<MsalProvider>` 最外層。**build 1826 modules 0 error**（compile-verified）。⚠️ 技術債:bundle 568KB > 500KB（ADR-0003 預期,之後 code-split Login/MSAL）。
+- **D3 done**:api.ts `authHeader()`（dev-bypass/未 config/未登入→無 header;否則 `acquireTokenSilent`→Bearer,`InteractionRequiredAuthError`→`acquireTokenRedirect`;H4 唔 log token）落 3 fn。build 1826 0 error（compile-verified;runtime 邏輯 = D8 unit）。
+- **D2 done**:`pages/login.tsx`（handoff §0 two-panel:brand `--gradient-brand` panel + wordmark/headline/3 mono stats;form Continue-with-Entra + email/password/keep + Sign in + footnote）· 新 primitive `checkbox.tsx` · `--gradient-brand` token（mid stop reuse `--accent-deep`）· MS 4-square logo（DS-6 exception）· `RequireAuth` gate（dev-bypass skip / 未登入→/login）· router `/login` route。**render 驗 light+dark 對 §0**（DOM:gradient resolved 正確 / SSO disabled + note / MS 4 rect / email·Sign in disabled;screenshot 兩 mode 靚無爆）。H6 DS 自檢全過。誠實:未 app reg → SSO button disabled + 明示,email/password 視覺還原但唔 wire。
+- **下一步**:D4（真 identity + sign-out:topbar/sidebar 用 msal account 取代 role mockup）→ D5（Settings 畫面）→ D6（My queue）→ D7（dev-bypass gate 已部分,補完）→ D8 test。真 SSO e2e（G7）仍卡 app reg。

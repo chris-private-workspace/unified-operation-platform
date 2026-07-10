@@ -2,7 +2,34 @@
 // to the NestJS API by vite in dev (vite.config.ts) and by a reverse proxy in
 // prod. Override the base with VITE_API_BASE_URL if the API is on another origin.
 
+import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import { msalInstance, msalConfigured, API_SCOPE, AUTH_DEV_BYPASS } from './auth/msal';
+
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
+
+/**
+ * Authorization header for an API call (ADR-0003). Dev-bypass or unconfigured MSAL
+ * (pre-app-reg) → no header; the backend AUTH_DEV_BYPASS carries it. Otherwise acquire
+ * a token silently; on interaction-required kick a redirect and send unauthenticated
+ * this once (the redirect takes over / the 401 surfaces). H4: never log the token.
+ */
+async function authHeader(): Promise<Record<string, string>> {
+  if (AUTH_DEV_BYPASS || !msalConfigured) return {};
+  const account = msalInstance.getActiveAccount();
+  if (!account) return {}; // not signed in — the auth gate sends the user to Login
+  try {
+    const { accessToken } = await msalInstance.acquireTokenSilent({
+      scopes: [API_SCOPE],
+      account,
+    });
+    return { Authorization: `Bearer ${accessToken}` };
+  } catch (err) {
+    if (err instanceof InteractionRequiredAuthError) {
+      void msalInstance.acquireTokenRedirect({ scopes: [API_SCOPE], account });
+    }
+    return {};
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -17,7 +44,7 @@ export class ApiError extends Error {
 /** GET a JSON resource; throws ApiError on a non-2xx response. */
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...(await authHeader()) },
   });
   if (!res.ok) {
     throw new ApiError(res.status, `GET ${path} failed (${res.status})`);
@@ -33,7 +60,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...(await authHeader()) },
   });
   if (!res.ok) {
     let message = `POST ${path} failed (${res.status})`;
@@ -59,6 +86,7 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
     method: 'PATCH',
     headers: {
       Accept: 'application/json',
+      ...(await authHeader()),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
