@@ -45,33 +45,63 @@ export function Login() {
             backgroundSize: '18px 18px',
           }}
         />
-        <div className="relative text-[15px] font-semibold tracking-[-0.02em]">
-          LicenseOps
+        <div className="relative flex items-center gap-[10px]">
+          <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md bg-white/15">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 4h16v6H4z" />
+              <path d="M4 14h10v6H4z" />
+              <path d="M18 14h2v6h-2z" />
+            </svg>
+          </div>
+          <div className="flex flex-col leading-[1.15]">
+            <span className="text-[15px] font-semibold tracking-[-0.02em]">
+              LicenseOps
+            </span>
+            <span className="text-[11.5px] text-white/70">
+              Ricoh APAC · Regional IT
+            </span>
+          </div>
         </div>
-        <div className="relative max-w-[420px]">
+        <div className="relative max-w-[440px]">
           <h1 className="text-[32px] font-semibold leading-[1.15] tracking-[-0.02em]">
-            Microsoft 365 license fulfilment, unified.
+            Microsoft 365 license fulfilment, under control.
           </h1>
           <p className="mt-[14px] text-[13.5px] leading-[1.5] text-white/80">
-            Onboarding license requests, catalog truth, and tenant drift — one
-            operator console for the group.
+            The operations console for onboarding license assignment and
+            inventory reconciliation across all Ricoh APAC operating companies —
+            one shared tenant, one source of action.
           </p>
         </div>
-        <div className="relative flex gap-[40px]">
-          {[
-            { figure: '23', label: 'Operating companies' },
-            { figure: 'M365', label: 'License SKUs tracked' },
-            { figure: 'Live', label: 'Drift reconciliation' },
-          ].map((s) => (
-            <div key={s.label}>
-              <div className="font-mono text-[22px] font-semibold">
-                {s.figure}
+        <div className="relative flex flex-col gap-[22px]">
+          <div className="flex gap-[40px]">
+            {[
+              { figure: '23', label: 'Operating companies' },
+              { figure: '10', label: 'License SKUs tracked' },
+              { figure: 'Live', label: 'Drift reconciliation' },
+            ].map((s) => (
+              <div key={s.label}>
+                <div className="font-mono text-[22px] font-semibold">
+                  {s.figure}
+                </div>
+                <div className="mt-[2px] text-[11.5px] text-white/70">
+                  {s.label}
+                </div>
               </div>
-              <div className="mt-[2px] text-[11.5px] text-white/70">
-                {s.label}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="text-[11.5px] leading-[1.5] text-white/60">
+            Consumes ServiceNow requests · writes to Microsoft Graph ·
+            reconciles the ledger
+          </div>
         </div>
       </div>
 

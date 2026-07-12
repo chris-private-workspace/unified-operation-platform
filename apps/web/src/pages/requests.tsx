@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
-import { Tabs, type TabItem } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { Inbox } from 'lucide-react';
@@ -65,21 +64,44 @@ export function Requests() {
     safePage * PAGE_SIZE + PAGE_SIZE,
   );
 
-  const tabs: TabItem[] = FILTERS.map((f) => ({
-    value: f.value,
-    label: f.label,
-    count: counts[f.value],
-  }));
-
-  function pick(f: string) {
-    setFilter(f as RequestFilter);
+  function pick(f: RequestFilter) {
+    setFilter(f);
     setPage(0);
   }
 
   return (
     <div className="flex flex-col gap-[16px]">
       <div className="flex items-center justify-between gap-[16px]">
-        <Tabs tabs={tabs} value={filter} onChange={pick} />
+        {/* Filter pills (prototype): active = inverted pill, others plain + count. */}
+        <div className="flex flex-wrap items-center gap-[6px]">
+          {FILTERS.map((f) => {
+            const active = filter === f.value;
+            return (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => pick(f.value)}
+                className={cn(
+                  'inline-flex cursor-pointer items-center gap-[7px] rounded-pill px-[12px] py-[6px] text-[12.5px] transition-colors',
+                  active
+                    ? 'bg-fg font-semibold text-bg'
+                    : 'font-medium text-fg-muted hover:bg-hover',
+                )}
+              >
+                {f.label}
+                {active ? (
+                  <span className="font-mono text-[10.5px] text-bg opacity-70">
+                    {counts[f.value]}
+                  </span>
+                ) : (
+                  <span className="rounded-pill bg-hover px-[6px] font-mono text-[10.5px] text-fg-subtle">
+                    {counts[f.value]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
         {requests.data && (
           <span className="shrink-0 text-[11.5px] text-fg-subtle">
             {rows.length} of {all.length} requests

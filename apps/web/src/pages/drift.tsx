@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError, Loading } from '@/components/ui/feedback-states';
 import { Toast } from '@/components/ui/toast';
-import { relativeTime, signed } from '@/lib/format';
+import { formatDateTime, signed } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 // Total-level drift only (方案甲 / DESIGN §5): every alert is a tenant-total
@@ -168,7 +168,7 @@ function DriftRow({ alert }: { alert: DriftAlert }) {
         </Badge>
       </td>
       <td className="px-[18px] py-[11px] font-mono text-[12px] text-fg-muted">
-        {relativeTime(alert.detectedAt)}
+        {formatDateTime(alert.detectedAt)}
       </td>
     </tr>
   );

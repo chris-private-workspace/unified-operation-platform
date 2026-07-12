@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Activity,
+  ArrowRight,
   CircleAlert,
-  Clock,
+  ClipboardList,
   Inbox,
   LineChart,
   Lightbulb,
@@ -15,9 +17,30 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { useCatalog, useDrift, useRequests } from '@/hooks/queries';
+import { matchesFilter } from '@/lib/requests';
 import type { RequestStatus } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 import { relativeTime, signed } from '@/lib/format';
+
+// Small "→" link shown in a card header (prototype: View all / Open).
+function HeaderLink({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex shrink-0 cursor-pointer items-center gap-[4px] text-[11.5px] font-medium text-fg-muted hover:text-fg"
+    >
+      {label}
+      <ArrowRight size={13} strokeWidth={2} />
+    </button>
+  );
+}
 
 // Aggregate request status → badge tone + label + leading-dot colour.
 const REQ: Record<RequestStatus, { tone: BadgeTone; label: string }> = {
@@ -69,6 +92,7 @@ const ROADMAP: {
 ];
 
 export function Overview() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'summary' | 'analytics'>('summary');
   const requests = useRequests();
   const drift = useDrift();
@@ -77,11 +101,18 @@ export function Overview() {
   const openReqs = (requests.data ?? []).filter(
     (r) => r.status !== 'COMPLETED' && r.status !== 'CANCELLED',
   );
-  const inProgress = (requests.data ?? []).filter(
-    (r) => r.status === 'IN_PROGRESS',
+  // Requests with an active procurement-stage line item (derived, like the list).
+  const inProcurement = (requests.data ?? []).filter((r) =>
+    matchesFilter(r, 'procurement'),
   ).length;
   const openDrift = (drift.data ?? []).filter((d) => d.status === 'OPEN');
   const activeSkus = (catalog.data ?? []).filter((s) => s.active).length;
+  // Honest "last checked" proxy: the most recent alert detection (no separate
+  // reconcile-run timestamp is stored). Undefined until data loads.
+  const lastChecked = openDrift
+    .map((d) => d.detectedAt)
+    .sort()
+    .at(-1);
 
   // KPI value: never invent a number — show '—' while loading / on error.
   const kpi = (
@@ -130,11 +161,11 @@ export function Overview() {
               sub="across all OpCos"
             />
             <StatCard
-              label="In progress"
-              value={kpi(requests, inProgress)}
+              label="In procurement"
+              value={kpi(requests, inProcurement)}
               tone="warn"
-              icon={<Clock size={16} strokeWidth={2} />}
-              sub="being fulfilled"
+              icon={<ClipboardList size={16} strokeWidth={2} />}
+              sub="awaiting quote · vendor"
             />
             <StatCard
               label="Open drift alerts"
@@ -166,6 +197,12 @@ export function Overview() {
                   />
                   Needs attention
                 </span>
+              }
+              action={
+                <HeaderLink
+                  label="View all requests"
+                  onClick={() => navigate('/requests')}
+                />
               }
             >
               <div className="px-[16px]">
@@ -219,7 +256,17 @@ export function Overview() {
 
             <div className="flex flex-col gap-[16px]">
               {/* Drift summary */}
-              <Card title="Drift summary">
+              <Card
+                title="Drift summary"
+                action={
+                  openDrift.length > 0 ? (
+                    <HeaderLink
+                      label="Open"
+                      onClick={() => navigate('/drift')}
+                    />
+                  ) : undefined
+                }
+              >
                 {drift.isLoading ? (
                   <Loading />
                 ) : drift.isError ? (
@@ -239,6 +286,8 @@ export function Overview() {
                       </span>
                       <span className="text-[12px] text-fg-subtle">
                         open {openDrift.length === 1 ? 'alert' : 'alerts'}
+                        {lastChecked &&
+                          ` · last checked ${relativeTime(lastChecked)}`}
                       </span>
                     </div>
                     <div className="flex flex-col">

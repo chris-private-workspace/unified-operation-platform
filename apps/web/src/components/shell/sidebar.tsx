@@ -1,13 +1,15 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Boxes,
+  Cable,
   Inbox,
   Layers,
   LayoutDashboard,
   LineChart,
   LogOut,
   Package,
-  Settings as SettingsIcon,
   TriangleAlert,
+  UserMinus,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -17,6 +19,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { IconButton } from '@/components/ui/icon-button';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { msalConfigured } from '@/lib/auth/msal';
+import { useUiStore } from '@/store/ui';
 import { useDrift } from '@/hooks/queries';
 
 interface NavEntry {
@@ -27,9 +30,9 @@ interface NavEntry {
   countTone?: 'neutral' | 'danger';
 }
 
-// OPERATIONS nav (design_handoff index.html). Counts are placeholder until the
+// OPERATIONS nav (design_handoff full-console). Counts are placeholder until the
 // screen phases wire real data via TanStack Query.
-const NAV: NavEntry[] = [
+const OPERATIONS: NavEntry[] = [
   { path: '/', label: 'Overview', Icon: LayoutDashboard },
   { path: '/requests', label: 'Requests', Icon: Inbox, count: 6 },
   { path: '/assets', label: 'License Assets', Icon: Layers },
@@ -39,7 +42,18 @@ const NAV: NavEntry[] = [
     Icon: TriangleAlert,
     countTone: 'danger',
   },
+];
+
+// SKU Catalog sits in its own CATALOG section (prototype), not under Operations.
+const CATALOG: NavEntry[] = [
   { path: '/catalog', label: 'SKU Catalog', Icon: Package },
+];
+
+// ADMINISTRATION deep-links into the Settings sub-tabs (prototype): Users & roles
+// and Integrations are the two admin surfaces, not a generic "Settings" item.
+const ADMIN: { tab: string; label: string; Icon: LucideIcon }[] = [
+  { tab: 'users', label: 'Users & roles', Icon: Users },
+  { tab: 'integrations', label: 'Integrations', Icon: Cable },
 ];
 
 const SectionLabel = ({ children }: { children: string }) => (
@@ -69,70 +83,101 @@ const BrandGlyph = () => (
 export function Sidebar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [params] = useSearchParams();
   const user = useCurrentUser();
   const { instance } = useMsal();
+  const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const signOut = () => void instance.logoutRedirect();
   // Drift Alerts badge reflects the live open-alert count (shared query cache
   // with the Drift screen). Other nav counts stay placeholder until their phase.
   const { data: drift } = useDrift();
   const driftCount = drift?.length ?? 0;
 
+  const isActive = (path: string) =>
+    pathname === path || (path !== '/' && pathname.startsWith(`${path}/`));
+
+  const renderNav = (entries: NavEntry[]) =>
+    entries.map(({ path, label, Icon, count, countTone }) => {
+      const badge = path === '/drift' ? driftCount || null : (count ?? null);
+      return (
+        <NavItem
+          key={path}
+          icon={<Icon size={16} strokeWidth={2} />}
+          label={label}
+          collapsed={collapsed}
+          active={isActive(path)}
+          count={badge}
+          countTone={countTone}
+          onClick={() => navigate(path)}
+        />
+      );
+    });
+
   return (
-    <aside className="flex w-[248px] shrink-0 flex-col border-r border-border bg-sidebar">
+    <aside
+      className={`flex ${
+        collapsed ? 'w-[64px]' : 'w-[248px]'
+      } shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-150`}
+    >
       {/* brand */}
-      <div className="flex h-[56px] items-center gap-[10px] border-b border-border px-[18px]">
-        <div className="flex h-[28px] w-[28px] items-center justify-center rounded-md bg-accent text-accent-fg">
+      <div
+        className={`flex h-[56px] items-center gap-[10px] border-b border-border ${
+          collapsed ? 'justify-center px-0' : 'px-[18px]'
+        }`}
+      >
+        <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg">
           <BrandGlyph />
         </div>
-        <div className="flex flex-col leading-[1.15]">
-          <span className="font-semibold">LicenseOps</span>
-          <span className="text-[11px] text-fg-subtle">Ricoh APAC IT</span>
-        </div>
+        {!collapsed && (
+          <div className="flex flex-col leading-[1.15]">
+            <span className="font-semibold">LicenseOps</span>
+            <span className="text-[11px] text-fg-subtle">Ricoh APAC IT</span>
+          </div>
+        )}
       </div>
 
       {/* nav */}
       <nav className="flex flex-1 flex-col gap-[2px] px-[12px] py-[14px]">
-        <SectionLabel>Operations</SectionLabel>
-        {NAV.map(({ path, label, Icon, count, countTone }) => {
-          // Drift Alerts shows the live open-alert count; other counts stay
-          // placeholder until their screen phases wire real data.
-          const badge =
-            path === '/drift' ? driftCount || null : (count ?? null);
-          return (
-            <NavItem
-              key={path}
-              icon={<Icon size={16} strokeWidth={2} />}
-              label={label}
-              // keep the parent nav active on nested routes (e.g. /requests/:id)
-              active={
-                pathname === path ||
-                (path !== '/' && pathname.startsWith(`${path}/`))
-              }
-              count={badge}
-              countTone={countTone}
-              onClick={() => navigate(path)}
-            />
-          );
-        })}
+        {!collapsed && <SectionLabel>Operations</SectionLabel>}
+        {renderNav(OPERATIONS)}
+
         <div className="pt-[6px]" />
-        <SectionLabel>Administration</SectionLabel>
-        <NavItem
-          icon={<SettingsIcon size={16} strokeWidth={2} />}
-          label="Settings"
-          active={pathname === '/settings'}
-          onClick={() => navigate('/settings')}
-        />
+        {!collapsed && <SectionLabel>Catalog</SectionLabel>}
+        {renderNav(CATALOG)}
+
         <div className="pt-[6px]" />
-        <SectionLabel>Roadmap</SectionLabel>
+        {!collapsed && <SectionLabel>Administration</SectionLabel>}
+        {ADMIN.map(({ tab, label, Icon }) => (
+          <NavItem
+            key={tab}
+            icon={<Icon size={16} strokeWidth={2} />}
+            label={label}
+            collapsed={collapsed}
+            active={pathname === '/settings' && params.get('tab') === tab}
+            onClick={() => navigate(`/settings?tab=${tab}`)}
+          />
+        ))}
+
+        <div className="pt-[6px]" />
+        {!collapsed && <SectionLabel>Roadmap</SectionLabel>}
         <NavItem
-          icon={<Users size={16} strokeWidth={2} />}
+          icon={<UserMinus size={16} strokeWidth={2} />}
           label="Offboarding"
+          collapsed={collapsed}
           disabled
           soon
         />
         <NavItem
           icon={<LineChart size={16} strokeWidth={2} />}
           label="Cost Insights"
+          collapsed={collapsed}
+          disabled
+          soon
+        />
+        <NavItem
+          icon={<Boxes size={16} strokeWidth={2} />}
+          label="D365 Licenses"
+          collapsed={collapsed}
           disabled
           soon
         />
@@ -140,20 +185,28 @@ export function Sidebar() {
 
       {/* user card */}
       <div className="border-t border-border p-[12px]">
-        <div className="flex items-center gap-[9px] rounded-[9px] border border-border bg-card px-[10px] py-[8px]">
+        <div
+          className={`flex items-center gap-[9px] rounded-[9px] border border-border bg-card ${
+            collapsed ? 'justify-center p-[6px]' : 'px-[10px] py-[8px]'
+          }`}
+        >
           <Avatar name={user.name} variant="brand" />
-          <div className="flex min-w-0 flex-1 flex-col leading-[1.2]">
-            <span className="truncate text-[12.5px] font-medium">
-              {user.name}
-            </span>
-            <span className="truncate text-[11px] text-fg-subtle">
-              {user.email}
-            </span>
-          </div>
-          {!user.isDevBypass && msalConfigured && (
-            <IconButton title="Sign out" onClick={signOut}>
-              <LogOut size={15} strokeWidth={2} />
-            </IconButton>
+          {!collapsed && (
+            <>
+              <div className="flex min-w-0 flex-1 flex-col leading-[1.2]">
+                <span className="truncate text-[12.5px] font-medium">
+                  {user.name}
+                </span>
+                <span className="truncate text-[11px] text-fg-subtle">
+                  {user.email}
+                </span>
+              </div>
+              {!user.isDevBypass && msalConfigured && (
+                <IconButton title="Sign out" onClick={signOut}>
+                  <LogOut size={15} strokeWidth={2} />
+                </IconButton>
+              )}
+            </>
           )}
         </div>
       </div>
