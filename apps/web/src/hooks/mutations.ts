@@ -2,12 +2,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPatch, apiPost } from '@/lib/api';
 import type {
   AdminUser,
+  ChangePasswordBody,
   CreateUserBody,
   LedgerImportResult,
   LineItemStage,
   OnboardingRequest,
   ReconcileResult,
   RequestLineItem,
+  ResetPasswordBody,
   UpdateUserBody,
 } from '@/lib/api-types';
 
@@ -112,6 +114,26 @@ export function useUpdateUser() {
   return useMutation({
     mutationFn: (vars: { id: string; body: UpdateUserBody }) =>
       apiPatch<AdminUser>(`/admin/users/${vars.id}`, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  });
+}
+
+// Password lifecycle (AUTH-4c-A). Both endpoints return 204 (no body).
+
+/** PATCH /me/password — a local user changes their own password. */
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (body: ChangePasswordBody) =>
+      apiPatch<void>('/me/password', body),
+  });
+}
+
+/** POST /admin/users/:id/reset-password — admin sets a new password (force-change on next login). */
+export function useResetPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: ResetPasswordBody }) =>
+      apiPost<void>(`/admin/users/${vars.id}/reset-password`, vars.body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
 }

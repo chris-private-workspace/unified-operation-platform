@@ -5,13 +5,17 @@ import { AUTH_DEV_BYPASS } from '@/lib/auth/msal';
 import { getLocalSession } from '@/lib/auth/local-session';
 
 /**
- * Gate the app shell (ADR-0003 + ADR-0005). A local password session or an Entra
- * session (or dev-bypass) is authenticated; otherwise go to /login. Dev-bypass
- * pairs with the backend AUTH_DEV_BYPASS for local dev.
+ * Gate the app shell (ADR-0003 + ADR-0005 + ADR-0006). A local password session
+ * or an Entra session (or dev-bypass) is authenticated; otherwise go to /login.
+ * A local session flagged mustChangePassword (AUTH-4c-A) is routed to the
+ * force-change gate until it sets its own password. Dev-bypass pairs with the
+ * backend AUTH_DEV_BYPASS for local dev.
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
-  if (AUTH_DEV_BYPASS || isAuthenticated || getLocalSession())
-    return <>{children}</>;
+  const local = getLocalSession();
+  if (local?.user.mustChangePassword)
+    return <Navigate to="/change-password" replace />;
+  if (AUTH_DEV_BYPASS || isAuthenticated || local) return <>{children}</>;
   return <Navigate to="/login" replace />;
 }

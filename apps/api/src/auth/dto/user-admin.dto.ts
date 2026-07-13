@@ -32,6 +32,10 @@ export class AdminUserDto {
   @ApiProperty() active!: boolean;
   @ApiProperty({ nullable: true, required: false })
   lastLoginAt!: Date | null;
+  @ApiProperty({
+    description: 'local account still on an admin-set password (AUTH-4c-A)',
+  })
+  mustChangePassword!: boolean;
 }
 
 /**

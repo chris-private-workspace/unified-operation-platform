@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
@@ -220,6 +220,56 @@ describe('JwtAuthGuard', () => {
           ctxWith({ headers: { authorization: 'Bearer bad.local' } }),
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    // Force-change gate (ADR-0006 §5): a mustChangePassword local account may only
+    // hit PATCH /me/password until it sets its own password.
+    describe('force-change gate', () => {
+      const mustChange = {
+        id: 'u-local',
+        email: 'admin@uop.local',
+        role: 'ADMIN',
+        active: true,
+        authProvider: 'local',
+        mustChangePassword: true,
+      } as never;
+      const guardFor = () => {
+        (jwt.decode as jest.Mock).mockReturnValue({
+          iss: LOCAL_JWT_ISSUER,
+          sub: 'u-local',
+        });
+        const prisma = {
+          appUser: { findFirst: jest.fn().mockResolvedValue(mustChange) },
+        } as unknown as PrismaService;
+        return new JwtAuthGuard(
+          reflectorFor(false),
+          prisma,
+          localJwt({ sub: 'u-local', role: 'ADMIN' }),
+          config(PROD_CFG),
+        );
+      };
+
+      it('403 on any route other than the change-password route', async () => {
+        await expect(
+          guardFor().canActivate(
+            ctxWith({
+              method: 'GET',
+              url: '/license/catalog',
+              headers: { authorization: 'Bearer local.tok' },
+            }),
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('allows PATCH /me/password', async () => {
+        const req: Record<string, unknown> = {
+          method: 'PATCH',
+          url: '/me/password',
+          headers: { authorization: 'Bearer local.tok' },
+        };
+        await expect(guardFor().canActivate(ctxWith(req))).resolves.toBe(true);
+        expect(req.user).toBe(mustChange);
+      });
     });
   });
 

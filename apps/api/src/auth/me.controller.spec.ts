@@ -1,6 +1,10 @@
 import { MeController } from './me.controller';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { AuthService } from './auth.service';
 import type { AuthUser } from './current-user.decorator';
+
+// AuthService is only used by PATCH /me/password, not GET /me — a stub is enough.
+const auth = {} as unknown as AuthService;
 
 describe('MeController (GET /me, AUTH-3a)', () => {
   it('REGIONAL / ADMIN → identity with opcoScope null (no OpCo lookup)', async () => {
@@ -12,9 +16,10 @@ describe('MeController (GET /me, AUTH-3a)', () => {
       displayName: 'Admin',
       role: 'ADMIN',
       opcoScopeId: null,
+      mustChangePassword: false,
     } as unknown as AuthUser;
 
-    const me = await new MeController(prisma).me(user);
+    const me = await new MeController(prisma, auth).me(user);
 
     expect(me).toEqual({
       id: 'u1',
@@ -23,6 +28,7 @@ describe('MeController (GET /me, AUTH-3a)', () => {
       role: 'ADMIN',
       opcoScopeId: null,
       opcoScope: null,
+      mustChangePassword: false,
     });
     expect(findUnique).not.toHaveBeenCalled();
   });
@@ -40,7 +46,7 @@ describe('MeController (GET /me, AUTH-3a)', () => {
       opcoScopeId: 'rhk-id',
     } as unknown as AuthUser;
 
-    const me = await new MeController(prisma).me(user);
+    const me = await new MeController(prisma, auth).me(user);
 
     expect(me.role).toBe('OPCO_IT');
     expect(me.opcoScopeId).toBe('rhk-id');

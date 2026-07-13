@@ -10,9 +10,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { Toast } from '@/components/ui/toast';
 import { useAdminOpcos, useAdminUsers } from '@/hooks/queries';
-import { useCreateUser, useUpdateUser } from '@/hooks/mutations';
+import {
+  useCreateUser,
+  useResetPassword,
+  useUpdateUser,
+} from '@/hooks/mutations';
 import { ApiError } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { validatePassword } from '@/lib/password-policy';
 import { cn } from '@/lib/utils';
 import type { AdminOpco, AdminUser, Role } from '@/lib/api-types';
 import {
@@ -170,13 +175,13 @@ function CreateUserDialog({
           <Input
             type="password"
             value={form.password}
-            placeholder="At least 8 characters"
+            placeholder="At least 12 characters"
             onChange={(e) => set({ password: e.target.value })}
           />
         </Field>
         <p className="text-[11.5px] leading-[1.5] text-fg-subtle">
-          Share the password with the user out of band. Self-service change and
-          reset arrive with password lifecycle (AUTH-4c).
+          At least 12 characters, with 3 of: lowercase, uppercase, number,
+          symbol. The user must change it on first sign-in.
         </p>
       </div>
     </Dialog>
@@ -197,10 +202,31 @@ function EditUserDialog({
   flash: Flash;
 }) {
   const update = useUpdateUser();
+  const reset = useResetPassword();
   const [role, setRole] = useState<Role>(user.role);
   const [opcoScopeId, setOpcoScopeId] = useState(user.opcoScopeId ?? '');
   const [active, setActive] = useState(user.active);
+  const [newPw, setNewPw] = useState('');
   const scopeError = role === 'OPCO_IT' && !opcoScopeId;
+  const pwError = newPw ? validatePassword(newPw, { email: user.email }) : null;
+
+  const doReset = () => {
+    if (pwError || !newPw) return;
+    reset.mutate(
+      { id: user.id, body: { newPassword: newPw } },
+      {
+        onSuccess: () => {
+          setNewPw('');
+          flash(`Password reset for ${user.displayName}`, 'ok');
+        },
+        onError: (e) =>
+          flash(
+            e instanceof Error ? e.message : 'Could not reset password',
+            'danger',
+          ),
+      },
+    );
+  };
 
   const submit = () => {
     if (scopeError) return;
@@ -286,6 +312,38 @@ function EditUserDialog({
             onChange={(v) => setActive(v === 'Active')}
           />
         </Field>
+        {isLocal(user) && (
+          <div className="flex flex-col gap-[6px] border-t border-border pt-[14px]">
+            <label className="text-[12px] text-fg-muted">Reset password</label>
+            <div className="flex items-start gap-[8px]">
+              <div className="flex-1">
+                <Input
+                  type="password"
+                  value={newPw}
+                  placeholder="New password"
+                  onChange={(e) => setNewPw(e.target.value)}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                disabled={!newPw || Boolean(pwError) || reset.isPending}
+                onClick={doReset}
+              >
+                Reset
+              </Button>
+            </div>
+            <p
+              className={cn(
+                'text-[11.5px] leading-[1.5]',
+                pwError && newPw ? 'text-danger' : 'text-fg-subtle',
+              )}
+            >
+              {newPw
+                ? (pwError ?? 'The user must change it on next sign-in.')
+                : 'Set a new password; the user must change it on next sign-in.'}
+            </p>
+          </div>
+        )}
       </div>
     </Dialog>
   );
@@ -409,9 +467,14 @@ export function UsersPanel() {
                       </Badge>
                     </td>
                     <td className={TD}>
-                      <Badge tone={u.active ? 'ok' : 'neutral'} dot>
-                        {u.active ? 'Active' : 'Disabled'}
-                      </Badge>
+                      <div className="flex flex-col items-start gap-[4px]">
+                        <Badge tone={u.active ? 'ok' : 'neutral'} dot>
+                          {u.active ? 'Active' : 'Disabled'}
+                        </Badge>
+                        {u.active && u.mustChangePassword && (
+                          <Badge tone="warn">Must change</Badge>
+                        )}
+                      </div>
                     </td>
                     <td
                       className={cn(

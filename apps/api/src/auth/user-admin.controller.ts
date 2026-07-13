@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from './roles.decorator';
@@ -10,6 +18,7 @@ import {
   CreateUserDto,
   UpdateUserDto,
 } from './dto/user-admin.dto';
+import { ResetPasswordDto } from './dto/password.dto';
 
 /**
  * Admin user console (ADR-0005 §6 / AUTH-4b). ADMIN-only (RolesGuard). Manages
@@ -47,6 +56,16 @@ export class UserAdminController {
     @Body() dto: UpdateUserDto,
   ): Promise<AdminUserDto> {
     return this.users.update(actor, id, dto);
+  }
+
+  @Post('users/:id/reset-password')
+  @HttpCode(204)
+  resetPassword(
+    @CurrentUser() actor: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ResetPasswordDto,
+  ): Promise<void> {
+    return this.users.resetPassword(actor, id, dto);
   }
 
   @Get('opcos')

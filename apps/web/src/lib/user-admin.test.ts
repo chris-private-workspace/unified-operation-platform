@@ -14,7 +14,7 @@ const form = (over: Partial<CreateUserForm> = {}): CreateUserForm => ({
   displayName: 'New User',
   role: 'REGIONAL',
   opcoScopeId: '',
-  password: 'sup3rsecret',
+  password: 'Sup3r!Secret9',
   ...over,
 });
 
@@ -28,6 +28,7 @@ const user = (over: Partial<AdminUser> = {}): AdminUser => ({
   authProvider: 'local',
   active: true,
   lastLoginAt: null,
+  mustChangePassword: false,
   ...over,
 });
 
@@ -63,10 +64,13 @@ describe('validateCreateUser', () => {
     ).toBeNull();
   });
 
-  it('enforces the 8-char password floor', () => {
+  it('enforces the strict password policy (min length + classes)', () => {
     expect(validateCreateUser(form({ password: 'short' }))).toMatch(
-      /at least 8/i,
+      /at least 12/i,
     );
+    expect(
+      validateCreateUser(form({ password: 'alllowercaseletters' })),
+    ).toMatch(/at least 3/i);
   });
 });
 

@@ -28,6 +28,7 @@ const rowWithScope = (over: Record<string, unknown> = {}) => ({
   authProvider: 'local',
   active: true,
   lastLoginAt: null,
+  mustChangePassword: false,
   passwordHash: 'argon2-hash', // present on the row — must NOT survive mapping
   ...over,
 });
@@ -70,10 +71,10 @@ describe('UserAdminService', () => {
         email: 'new@uop.local',
         displayName: 'New User',
         role: Role.REGIONAL,
-        initialPassword: 'sup3rsecret',
+        initialPassword: 'Sup3r!Secret9',
       });
 
-      expect(argon2.hash).toHaveBeenCalledWith('sup3rsecret');
+      expect(argon2.hash).toHaveBeenCalledWith('Sup3r!Secret9');
       expect(prisma.appUser.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -81,10 +82,24 @@ describe('UserAdminService', () => {
             passwordHash: 'argon2-hash',
             role: Role.REGIONAL,
             opcoScopeId: null,
+            mustChangePassword: true, // force-change the admin-set password
           }),
         }),
       );
       expect(res).not.toHaveProperty('passwordHash');
+    });
+
+    it('rejects an initial password that fails the strict policy (400)', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(null);
+      await expect(
+        service.create(ADMIN, {
+          email: 'weak@uop.local',
+          displayName: 'Weak',
+          role: Role.REGIONAL,
+          initialPassword: 'short', // < 12, < 3 classes
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.appUser.create).not.toHaveBeenCalled();
     });
 
     it('rejects OPCO_IT without an OpCo scope (400)', async () => {
@@ -93,7 +108,7 @@ describe('UserAdminService', () => {
           email: 'o@uop.local',
           displayName: 'O',
           role: Role.OPCO_IT,
-          initialPassword: 'sup3rsecret',
+          initialPassword: 'Sup3r!Secret9',
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.appUser.create).not.toHaveBeenCalled();
@@ -111,7 +126,7 @@ describe('UserAdminService', () => {
         displayName: 'O',
         role: Role.OPCO_IT,
         opcoScopeId: 'opco-rhk',
-        initialPassword: 'sup3rsecret',
+        initialPassword: 'Sup3r!Secret9',
       });
 
       expect(prisma.appUser.create).toHaveBeenCalledWith(
@@ -130,7 +145,7 @@ describe('UserAdminService', () => {
         displayName: 'A',
         role: Role.ADMIN,
         opcoScopeId: 'opco-rhk',
-        initialPassword: 'sup3rsecret',
+        initialPassword: 'Sup3r!Secret9',
       });
 
       expect(prisma.opco.findFirst).not.toHaveBeenCalled();
@@ -148,7 +163,7 @@ describe('UserAdminService', () => {
           email: 'dupe@uop.local',
           displayName: 'D',
           role: Role.REGIONAL,
-          initialPassword: 'sup3rsecret',
+          initialPassword: 'Sup3r!Secret9',
         }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.appUser.create).not.toHaveBeenCalled();
@@ -239,6 +254,67 @@ describe('UserAdminService', () => {
       await expect(
         service.update(ADMIN, 'u3', { role: Role.OPCO_IT }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('rehashes and forces a change on next login', async () => {
+      prisma.appUser.findUnique.mockResolvedValue({
+        id: 'u9',
+        email: 'u9@uop.local',
+        authProvider: 'local',
+      });
+
+      await service.resetPassword(ADMIN, 'u9', {
+        newPassword: 'Res3t!Password9',
+      });
+
+      expect(argon2.hash).toHaveBeenCalledWith('Res3t!Password9');
+      expect(prisma.appUser.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u9' },
+          data: expect.objectContaining({
+            passwordHash: 'argon2-hash',
+            mustChangePassword: true,
+            passwordChangedAt: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('404 when the user does not exist', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(null);
+      await expect(
+        service.resetPassword(ADMIN, 'ghost', {
+          newPassword: 'Res3t!Password9',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('400 for an SSO (non-local) account', async () => {
+      prisma.appUser.findUnique.mockResolvedValue({
+        id: 'sso',
+        email: 'sso@rapo.com.hk',
+        authProvider: 'entra',
+      });
+      await expect(
+        service.resetPassword(ADMIN, 'sso', {
+          newPassword: 'Res3t!Password9',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.appUser.update).not.toHaveBeenCalled();
+    });
+
+    it('400 when the new password fails the strict policy', async () => {
+      prisma.appUser.findUnique.mockResolvedValue({
+        id: 'u9',
+        email: 'u9@uop.local',
+        authProvider: 'local',
+      });
+      await expect(
+        service.resetPassword(ADMIN, 'u9', { newPassword: 'weak' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.appUser.update).not.toHaveBeenCalled();
     });
   });
 });

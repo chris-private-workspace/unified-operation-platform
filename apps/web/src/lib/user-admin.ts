@@ -1,5 +1,6 @@
 import type { AdminUser, Role } from './api-types';
 import type { BadgeTone } from '@/components/ui/badge';
+import { validatePassword } from './password-policy';
 
 // Presentation + client-side validation for the Users & roles console (AUTH-4b).
 // The backend re-validates everything; these just give fast feedback and honest
@@ -43,8 +44,6 @@ export function isLocal(user: AdminUser): boolean {
   return user.authProvider === 'local';
 }
 
-export const MIN_PASSWORD_LENGTH = 8;
-
 export interface CreateUserForm {
   email: string;
   displayName: string;
@@ -57,8 +56,8 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /**
  * First validation error for the create form, or null when valid. Mirrors the
- * backend rules (OPCO_IT needs a scope; password floor) so the UI can block
- * submit early — the server remains the source of truth.
+ * backend rules (OPCO_IT needs a scope; strict password policy, ADR-0006 §1) so
+ * the UI can block submit early — the server remains the source of truth.
  */
 export function validateCreateUser(form: CreateUserForm): string | null {
   if (!form.email.trim()) return 'Email is required.';
@@ -67,8 +66,5 @@ export function validateCreateUser(form: CreateUserForm): string | null {
   if (form.role === 'OPCO_IT' && !form.opcoScopeId) {
     return 'OpCo IT users need an OpCo scope.';
   }
-  if (form.password.length < MIN_PASSWORD_LENGTH) {
-    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
-  }
-  return null;
+  return validatePassword(form.password, { email: form.email.trim() });
 }

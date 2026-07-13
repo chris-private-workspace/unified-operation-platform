@@ -146,7 +146,19 @@ export interface LoginResponse {
     displayName: string;
     role: string;
     opcoScopeId: string | null;
+    mustChangePassword: boolean; // AUTH-4c-A force-change-on-first-login
   };
+}
+
+/** PATCH /me/password body (AUTH-4c-A self-service change). */
+export interface ChangePasswordBody {
+  currentPassword: string;
+  newPassword: string;
+}
+
+/** POST /admin/users/:id/reset-password body (AUTH-4c-A admin reset). */
+export interface ResetPasswordBody {
+  newPassword: string;
 }
 
 /** App roles (Prisma Role enum). */
@@ -167,6 +179,7 @@ export interface AdminUser {
   authProvider: string; // 'entra' | 'local'
   active: boolean;
   lastLoginAt: string | null;
+  mustChangePassword: boolean; // local account still on an admin-set password
 }
 
 /** GET /admin/opcos → AdminOpcoDto[] (create-user scope selector). */

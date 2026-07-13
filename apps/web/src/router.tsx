@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import { AppShell } from '@/components/shell/app-shell';
 import { RequireAuth } from '@/components/auth/require-auth';
 import { Login } from '@/pages/login';
+import { ForcePasswordChange } from '@/pages/force-password-change';
 import { Settings } from '@/pages/settings';
 import { Overview } from '@/pages/overview';
 import { Catalog } from '@/pages/catalog';
@@ -15,6 +16,7 @@ import { Assets } from '@/pages/assets';
 // (By-OpCo ledger table, consumes GET /license/ledger + /ledger/stats).
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
+  { path: '/change-password', element: <ForcePasswordChange /> },
   {
     path: '/',
     element: (

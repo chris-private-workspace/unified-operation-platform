@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -97,7 +98,9 @@ export class JwtAuthGuard implements CanActivate {
     const unverified = jwt.decode(token) as jwt.JwtPayload | null;
     if (unverified?.iss === LOCAL_JWT_ISSUER) {
       const claims = this.localJwt.verify(token); // throws 401 on bad sig / exp
-      req.user = await this.resolveLocalUser(claims.sub);
+      const user = await this.resolveLocalUser(claims.sub);
+      this.ensurePasswordChanged(user, req);
+      req.user = user;
       return true;
     }
 
@@ -114,6 +117,24 @@ export class JwtAuthGuard implements CanActivate {
 
     req.user = await this.resolveUser(payload);
     return true;
+  }
+
+  /**
+   * Force-change gate (ADR-0006 §5). A local account flagged mustChangePassword
+   * may only call PATCH /me/password until it sets its own password — every other
+   * route is 403. Defends the API even if the frontend gate is bypassed.
+   */
+  private ensurePasswordChanged(
+    user: AppUser,
+    req: { method?: string; url?: string },
+  ): void {
+    if (!user.mustChangePassword) return;
+    const path = (req.url ?? '').split('?')[0];
+    const isChangeRoute =
+      req.method === 'PATCH' && path.endsWith('/me/password');
+    if (!isChangeRoute) {
+      throw new ForbiddenException('Password change required');
+    }
   }
 
   /** Resolve the AppUser a local token was issued for (by `sub` = AppUser.id). */

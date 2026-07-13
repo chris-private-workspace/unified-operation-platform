@@ -15,6 +15,8 @@ import {
   CreateUserDto,
   UpdateUserDto,
 } from './dto/user-admin.dto';
+import { ResetPasswordDto } from './dto/password.dto';
+import { validatePassword } from './password-policy';
 
 // Prisma row shape with the opcoScope relation we select for the console.
 type UserWithScope = AppUser & {
@@ -66,6 +68,12 @@ export class UserAdminService {
     if (clash)
       throw new ConflictException('A user with this email already exists');
 
+    // Strict policy applies to the admin-set initial password too (ADR-0006 §1).
+    const violation = validatePassword(dto.initialPassword, {
+      email: dto.email,
+    });
+    if (violation) throw new BadRequestException(violation);
+
     const passwordHash = await argon2.hash(dto.initialPassword);
 
     const user = await this.prisma.appUser.create({
@@ -76,6 +84,8 @@ export class UserAdminService {
         opcoScopeId,
         passwordHash,
         authProvider: 'local',
+        // Force the user to replace the admin-set password on first login.
+        mustChangePassword: true,
       },
       include: SCOPE_INCLUDE,
     });
@@ -135,6 +145,42 @@ export class UserAdminService {
   }
 
   /**
+   * Admin resets a local account's password (AUTH-4c-A). Admin-typed (no
+   * current-password check) + strict policy; sets mustChangePassword so the user
+   * must replace the admin-set password on next login. Local accounts only.
+   */
+  async resetPassword(
+    actor: AppUser,
+    id: string,
+    dto: ResetPasswordDto,
+  ): Promise<void> {
+    const target = await this.prisma.appUser.findUnique({ where: { id } });
+    if (!target) throw new NotFoundException('User not found');
+    if (target.authProvider !== 'local') {
+      throw new BadRequestException(
+        'Only local accounts have a password to reset',
+      );
+    }
+
+    const violation = validatePassword(dto.newPassword, {
+      email: target.email,
+    });
+    if (violation) throw new BadRequestException(violation);
+
+    const passwordHash = await argon2.hash(dto.newPassword);
+    await this.prisma.appUser.update({
+      where: { id },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+        passwordChangedAt: new Date(),
+      },
+    });
+    // H4: log ids only — never the new password / hash.
+    this.logger.log(`Password reset by admin: userId=${id} by=${actor.id}`);
+  }
+
+  /**
    * Enforce role↔scope consistency and verify the OpCo exists.
    * OPCO_IT → a scope is required; ADMIN / REGIONAL → forced null (they see all).
    */
@@ -167,5 +213,6 @@ function toAdminUser(user: UserWithScope): AdminUserDto {
     authProvider: user.authProvider,
     active: user.active,
     lastLoginAt: user.lastLoginAt,
+    mustChangePassword: user.mustChangePassword,
   };
 }

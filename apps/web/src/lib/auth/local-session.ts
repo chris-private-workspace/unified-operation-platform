@@ -8,6 +8,7 @@ export interface LocalSessionUser {
   displayName: string;
   role: string;
   opcoScopeId: string | null;
+  mustChangePassword: boolean; // AUTH-4c-A — gate the app until changed
 }
 
 interface LocalSession {
@@ -49,6 +50,16 @@ export function setLocalSession(
 
 export function clearLocalSession(): void {
   localStorage.removeItem(KEY);
+}
+
+/** Clear the force-change flag after a successful change (AUTH-4c-A), keeping the session. */
+export function clearMustChangePassword(): void {
+  const s = getLocalSession();
+  if (!s) return;
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({ ...s, user: { ...s.user, mustChangePassword: false } }),
+  );
 }
 
 /** The Bearer token for the local session, or null. Used by authHeader (api.ts). */

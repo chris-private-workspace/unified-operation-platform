@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Cable,
@@ -15,6 +16,8 @@ import { cn } from '@/lib/utils';
 import { useUiStore, type Theme } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
+import { getLocalSession } from '@/lib/auth/local-session';
+import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
 import { UsersPanel } from '@/components/settings/users-panel';
 
@@ -70,6 +73,8 @@ export function Settings() {
 
   const user = useCurrentUser();
   const signOut = useSignOut();
+  const isLocalSession = Boolean(getLocalSession());
+  const [pwChanged, setPwChanged] = useState(false);
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
 
@@ -140,6 +145,14 @@ export function Settings() {
                   </p>
                 )}
               </Section>
+              {isLocalSession && (
+                <Section title="Password">
+                  {pwChanged && (
+                    <p className="text-[12px] text-ok">Password updated.</p>
+                  )}
+                  <ChangePasswordForm onDone={() => setPwChanged(true)} />
+                </Section>
+              )}
             </>
           )}
 

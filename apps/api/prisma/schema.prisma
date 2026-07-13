@@ -37,6 +37,11 @@ model AppUser {
   displayName     String
   passwordHash    String? // argon2id hash (local accounts; null for SSO) — NEVER serialised
   authProvider    String         @default("entra") // 'entra' | 'local'
+  // Password lifecycle (ADR-0006 / AUTH-4c-A). Local accounts only.
+  mustChangePassword Boolean     @default(false) // force-change-on-first-login (set on admin create/reset)
+  failedLoginCount   Int         @default(0) // consecutive failed local logins → lockout
+  lockedUntil        DateTime? // local login locked until this time (null = not locked)
+  passwordChangedAt  DateTime? // last local password change (audit)
   role            Role           @default(REGIONAL)
   opcoScopeId     String? // set for OPCO_IT; null = all (REGIONAL / ADMIN)
   opcoScope       Opco?          @relation(fields: [opcoScopeId], references: [id])

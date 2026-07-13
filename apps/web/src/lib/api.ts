@@ -87,6 +87,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     }
     throw new ApiError(res.status, message);
   }
+  if (res.status === 204) return undefined as T; // No Content (e.g. password reset)
   return res.json() as Promise<T>;
 }
 
@@ -116,5 +117,6 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
     }
     throw new ApiError(res.status, message);
   }
+  if (res.status === 204) return undefined as T; // No Content (e.g. change password)
   return res.json() as Promise<T>;
 }

@@ -21,4 +21,9 @@ export class MeDto {
   opcoScopeId!: string | null;
   @ApiProperty({ type: MeOpcoScopeDto, nullable: true, required: false })
   opcoScope!: MeOpcoScopeDto | null;
+  @ApiProperty({
+    description:
+      'local account must change its password before using the app (AUTH-4c-A)',
+  })
+  mustChangePassword!: boolean;
 }
