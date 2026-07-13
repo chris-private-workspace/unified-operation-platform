@@ -4,6 +4,7 @@ import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { LedgerReadService } from './ledger-read.service';
+import { TenantOwnedService } from './tenant-owned.service';
 import { LicenseController } from './license.controller';
 
 /**
@@ -20,12 +21,14 @@ import { LicenseController } from './license.controller';
     ReconcileService,
     AllocationImportService,
     LedgerReadService,
+    TenantOwnedService,
   ],
   exports: [
     CatalogService,
     ReconcileService,
     AllocationImportService,
     LedgerReadService,
+    TenantOwnedService,
   ],
 })
 export class LicenseModule {}

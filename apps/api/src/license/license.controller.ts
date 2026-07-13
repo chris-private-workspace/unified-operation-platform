@@ -7,6 +7,7 @@ import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { LedgerReadService } from './ledger-read.service';
+import { TenantOwnedService } from './tenant-owned.service';
 import { CatalogSyncResultDto, SkuCatalogDto } from './dto/catalog.dto';
 import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
 import {
@@ -14,6 +15,7 @@ import {
   LedgerImportResultDto,
 } from './dto/ledger-import.dto';
 import { LedgerRowDto, LedgerStatsDto } from './dto/ledger-read.dto';
+import { TenantSkuRowDto, TenantSkuStatsDto } from './dto/tenant-owned.dto';
 
 /**
  * Module C surface — SKU catalog + total-level reconciliation.
@@ -32,6 +34,7 @@ export class LicenseController {
     private readonly reconcile: ReconcileService,
     private readonly allocationImport: AllocationImportService,
     private readonly ledgerRead: LedgerReadService,
+    private readonly tenantOwned: TenantOwnedService,
   ) {}
 
   @Post('catalog/sync')
@@ -89,5 +92,23 @@ export class LicenseController {
   @ApiOkResponse({ type: LedgerStatsDto })
   ledgerStats(@CurrentUser() actor: AuthUser): Promise<LedgerStatsDto> {
     return this.ledgerRead.ledgerStats(actor);
+  }
+
+  /**
+   * Tenant-level per-SKU read-model for the Assets Platform mode (BE-tenant-owned
+   * / W16). ADMIN / REGIONAL only — a tenant-wide owned/allocated/unallocated
+   * planning view, gated like the prototype's `showPlatformMode` (OPCO_IT gets
+   * the per-OpCo By-OpCo view instead; W15). No scope: totals span all OpCos.
+   */
+  @Get('tenant-skus')
+  @ApiOkResponse({ type: [TenantSkuRowDto] })
+  listTenantSkus(): Promise<TenantSkuRowDto[]> {
+    return this.tenantOwned.listTenantSkus();
+  }
+
+  @Get('tenant-skus/stats')
+  @ApiOkResponse({ type: TenantSkuStatsDto })
+  tenantSkuStats(): Promise<TenantSkuStatsDto> {
+    return this.tenantOwned.tenantSkuStats();
   }
 }
