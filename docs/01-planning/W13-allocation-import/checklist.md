@@ -7,31 +7,31 @@ status: active
 
 > Plan approved 2026-07-13(OD1-4 default)。逐 D 一項;critical path(ledger write)必同步 test(H5)。
 
-## D1 — ADR-0004（import 機制決定)
-- [ ] 寫 `docs/adr/0004-allocation-import-mechanism.md`(Context → Decision[admin CSV upload + dry-run + businessAlias + curation-as-scope + allocatedQuantity-only] → Alternatives[one-shot script / xlsx-native / import-all-mapped] → Consequences → References)
-- [ ] `docs/adr/README.md` index 加 ADR-0004(status Accepted)
+## D1 — ADR-0004（import 機制決定)✅
+- [x] 寫 `docs/adr/0004-allocation-import-mechanism.md`(Context → Decision[admin CSV upload + dry-run + businessAlias + curation-as-scope + allocatedQuantity-only] → Alternatives[one-shot script / xlsx-native / import-all-mapped / denylist / multipart] → Consequences → References)
+- [x] `docs/adr/README.md` index 加 ADR-0004(status Accepted)
 
-## D2 — BE endpoint（`POST /license/ledger/import`)
-- [ ] DTO:import body(csv string + dryRun flag)+ response(counts + per-row mapped/skipped + delta)
-- [ ] controller method `@Roles(ADMIN, REGIONAL)` + `@CurrentUser`(OD2;OPCO_IT 唔加)
-- [ ] wire 入 `LicenseController` / module(reuse 既有 LicenseModule)
+## D2 — BE endpoint（`POST /license/ledger/import`)✅
+- [x] DTO(`dto/ledger-import.dto.ts`):request(csv string + dryRun flag)+ response(summary counts + changes[before/target/delta] + skippedSkuLabels + unknownOpcoHeaders)
+- [x] controller method `@Roles(ADMIN, REGIONAL)`(OD2;OPCO_IT 唔加;無 audit 表 → 唔取 actor,keep minimal)
+- [x] wire 入 `LicenseController` + `LicenseModule`(reuse;provider/export 加 `AllocationImportService`)
 
-## D3 — BE parse + map
-- [ ] zero-dep CSV parse(wide matrix:R1 OpCo header / col A SKU / int 格;防禦性 quote handle)
-- [ ] unpivot 每非空格 → OpCo(`code` exact)+ SKU(`businessAlias` active)對映
-- [ ] 分類 mapped / skipped(unmapped-sku | unknown-opco | empty | grand-total)+ 計 allocatedQuantity delta(before→after)
+## D3 — BE parse + map ✅
+- [x] zero-dep CSV parse(`csv.ts`;quoted field/CRLF/BOM/trailing-newline handle;6 test)
+- [x] unpivot 每 cell → OpCo(`code` exact)+ SKU(`businessAlias` active)對映
+- [x] 分類 changes(target≠before)/ skippedSkuLabels(unmapped)/ unknownOpcoHeaders(非 Grand Total);Grand Total + 空 header + blank SKU row skip;delta = target−before
 
-## D4 — BE commit（invariant)
-- [ ] dry-run(default)唔寫 DB,只回 preview
-- [ ] commit:`$transaction` upsert on `@@unique([opcoId, skuCatalogId])`,**只寫 allocatedQuantity**
-- [ ] idempotent:re-import 同檔 = 零 delta
+## D4 — BE commit（invariant)✅
+- [x] dry-run(default `dryRun !== false`)唔寫 DB,只回 preview
+- [x] commit:`$transaction` upsert on `opcoId_skuCatalogId`,**create 省 assignedQuantity(schema default 0)+ update 只 `{ allocatedQuantity }`**
+- [x] idempotent:re-import 同值 → target===before → 零 change(test 實證)
 
-## D5 — BE tests（H5,catalog mock)
-- [ ] 對映正確(OpCo code + SKU businessAlias)
-- [ ] unmapped-sku / unknown-opco / empty / Grand-Total 全 skip + 報
-- [ ] **allocatedQuantity-only invariant**:commit 後 assignedQuantity 不變(專門 assert)
-- [ ] dry-run 唔寫 · commit 寫 · idempotent re-import
-- [ ] scope:OPCO_IT → 403
+## D5 — BE tests（H5,catalog mock)✅
+- [x] 對映正確(OpCo code + SKU businessAlias;dry-run summary 2/3/2/4)
+- [x] unmapped-sku(D365)→ skippedSkuLabels · unknown-opco(BOGUS)→ 報 · Grand Total 非 unknown · blank/empty skip
+- [x] **allocatedQuantity-only invariant**:每個 upsert create/update 皆無 `assignedQuantity`(assigned baseline 5 存活)
+- [x] dry-run 唔寫(0 upsert)· commit 寫(4 upsert)· idempotent(0 change)· blank→0 downgrade(update `{allocatedQuantity:0}`)
+- [x] scope:OPCO_IT → controller `@Roles(ADMIN,REGIONAL)` 排除(RolesGuard 既有 spec 覆蓋 403 路徑;live D7 驗)
 
 ## D6 — FE upload UI（Settings › Integrations)
 - [ ] 取代 coming-soon EmptyState → 檔案選擇(`file.text()`)→ dry-run POST

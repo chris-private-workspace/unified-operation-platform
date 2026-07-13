@@ -1,11 +1,16 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
+import { AllocationImportService } from './allocation-import.service';
 import { CatalogSyncResultDto, SkuCatalogDto } from './dto/catalog.dto';
 import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
+import {
+  LedgerImportRequestDto,
+  LedgerImportResultDto,
+} from './dto/ledger-import.dto';
 
 /**
  * Module C surface — SKU catalog + total-level reconciliation.
@@ -22,6 +27,7 @@ export class LicenseController {
   constructor(
     private readonly catalog: CatalogService,
     private readonly reconcile: ReconcileService,
+    private readonly allocationImport: AllocationImportService,
   ) {}
 
   @Post('catalog/sync')
@@ -48,5 +54,18 @@ export class LicenseController {
   @ApiOkResponse({ type: [DriftAlertDto] })
   listDrift(): Promise<DriftAlertDto[]> {
     return this.reconcile.listDrift();
+  }
+
+  /**
+   * Allocation import (ADR-0004 / W13). ADMIN / REGIONAL only — a central
+   * all-OpCo op, so OPCO_IT is excluded (OD2). dry-run by default (OD4).
+   */
+  @Post('ledger/import')
+  @Roles(Role.ADMIN, Role.REGIONAL)
+  @ApiOkResponse({ type: LedgerImportResultDto })
+  importAllocation(
+    @Body() dto: LedgerImportRequestDto,
+  ): Promise<LedgerImportResultDto> {
+    return this.allocationImport.import(dto);
   }
 }

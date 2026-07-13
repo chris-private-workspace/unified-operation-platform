@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { IntegrationModule } from '../integration/integration.module';
 import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
+import { AllocationImportService } from './allocation-import.service';
 import { LicenseController } from './license.controller';
 
 /**
@@ -13,7 +14,7 @@ import { LicenseController } from './license.controller';
 @Module({
   imports: [IntegrationModule], // GraphService
   controllers: [LicenseController],
-  providers: [CatalogService, ReconcileService],
-  exports: [CatalogService, ReconcileService],
+  providers: [CatalogService, ReconcileService, AllocationImportService],
+  exports: [CatalogService, ReconcileService, AllocationImportService],
 })
 export class LicenseModule {}
