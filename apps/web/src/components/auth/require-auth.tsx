@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useIsAuthenticated } from '@azure/msal-react';
 import { AUTH_DEV_BYPASS } from '@/lib/auth/msal';
-import { getLocalSession } from '@/lib/auth/local-session';
+import { getLocalProfile } from '@/lib/auth/local-profile';
 
 /**
  * Gate the app shell (ADR-0003 + ADR-0005 + ADR-0006). A local password session
@@ -13,8 +13,8 @@ import { getLocalSession } from '@/lib/auth/local-session';
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
-  const local = getLocalSession();
-  if (local?.user.mustChangePassword)
+  const local = getLocalProfile();
+  if (local?.mustChangePassword)
     return <Navigate to="/change-password" replace />;
   if (AUTH_DEV_BYPASS || isAuthenticated || local) return <>{children}</>;
   return <Navigate to="/login" replace />;

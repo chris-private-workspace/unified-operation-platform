@@ -50,6 +50,23 @@ model AppUser {
   createdAt       DateTime       @default(now())
   handledRequests Request[] // requests this operator is handling
   events          RequestEvent[]
+  refreshTokens   RefreshToken[] // AUTH-4c-B rotating refresh sessions (local accounts)
+}
+
+// ── RefreshToken (AUTH-4c-B / ADR-0006 §7) — rotating refresh session for the
+// local httpOnly-cookie session. Stores only the SHA-256 hash of the opaque
+// token; rotation revokes the prior row. NEVER store the raw token (H4).
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique // SHA-256 of the opaque refresh token
+  expiresAt DateTime
+  revokedAt DateTime? // set on rotation / logout (null = still valid)
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 // ── OpCo (company + optional cost-center; the 24 Excel columns)

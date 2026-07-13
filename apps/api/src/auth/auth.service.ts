@@ -8,7 +8,12 @@ import type { AppUser } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalJwtService } from './local-jwt.service';
-import { LoginDto, LoginResultDto } from './dto/login.dto';
+import {
+  RefreshTokenService,
+  type IssuedRefresh,
+} from './refresh-token.service';
+import { LoginDto } from './dto/login.dto';
+import { MeDto } from './dto/me.dto';
 import { ChangePasswordDto } from './dto/password.dto';
 import { validatePassword } from './password-policy';
 
@@ -17,6 +22,17 @@ import { validatePassword } from './password-policy';
 // attempt returns the same generic 401 (no enumeration).
 const LOCKOUT_THRESHOLD = 5;
 const LOCKOUT_MINUTES = 15;
+
+/**
+ * A granted local session (ADR-0006 §7). The controller sets `accessToken` +
+ * `refresh.rawToken` as httpOnly cookies and returns only `user` to the client —
+ * neither token is ever exposed to page JS.
+ */
+export interface SessionGrant {
+  accessToken: string;
+  refresh: IssuedRefresh;
+  user: MeDto;
+}
 
 /**
  * Local password authentication + lifecycle (ADR-0005 / ADR-0006). Verifies a
@@ -32,9 +48,10 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly localJwt: LocalJwtService,
+    private readonly refreshTokens: RefreshTokenService,
   ) {}
 
-  async login(dto: LoginDto): Promise<LoginResultDto> {
+  async login(dto: LoginDto): Promise<SessionGrant> {
     const invalid = () =>
       new UnauthorizedException('Invalid email or password');
 
@@ -73,33 +90,37 @@ export class AuthService {
       data: { lastLoginAt: new Date(), failedLoginCount: 0, lockedUntil: null },
     });
 
-    const { accessToken, expiresIn } = this.localJwt.sign({
+    return this.grantSession(user);
+  }
+
+  /**
+   * Exchange a valid refresh token for a fresh session (ADR-0006 §7). Rotation
+   * (revoke old + mint new) happens in RefreshTokenService; any bad token is a
+   * generic 401. The account must still be an active local user — a deactivated
+   * account can't refresh its way back in.
+   */
+  async refreshSession(rawRefresh: string): Promise<SessionGrant> {
+    const rotated = await this.refreshTokens.rotate(rawRefresh); // 401 if invalid
+    const user = await this.prisma.appUser.findFirst({
+      where: { id: rotated.userId, active: true, authProvider: 'local' },
+    });
+    if (!user) throw new UnauthorizedException('Invalid refresh token');
+
+    const { accessToken } = this.localJwt.sign({
       id: user.id,
       role: user.role,
     });
-    // H4: log the outcome only — never email / password / token.
-    this.logger.log(`Local login ok: userId=${user.id} role=${user.role}`);
-
-    const opcoScope = user.opcoScopeId
-      ? await this.prisma.opco.findUnique({
-          where: { id: user.opcoScopeId },
-          select: { code: true, displayName: true },
-        })
-      : null;
-
+    this.logger.log(`Local session refreshed: userId=${user.id}`);
     return {
       accessToken,
-      expiresIn,
-      user: {
-        id: user.id,
-        email: user.email,
-        displayName: user.displayName,
-        role: user.role,
-        opcoScopeId: user.opcoScopeId,
-        opcoScope,
-        mustChangePassword: user.mustChangePassword,
-      },
+      refresh: { rawToken: rotated.rawToken, expiresAt: rotated.expiresAt },
+      user: await this.buildSessionUser(user),
     };
+  }
+
+  /** Revoke the presented refresh token (idempotent — a missing / stale token is fine). */
+  async logout(rawRefresh: string | undefined): Promise<void> {
+    if (rawRefresh) await this.refreshTokens.revoke(rawRefresh);
   }
 
   /**
@@ -138,6 +159,39 @@ export class AuthService {
       },
     });
     this.logger.log(`Password changed: userId=${user.id}`);
+  }
+
+  /** Mint an access token + a fresh refresh token and assemble the session identity. */
+  private async grantSession(user: AppUser): Promise<SessionGrant> {
+    const { accessToken } = this.localJwt.sign({
+      id: user.id,
+      role: user.role,
+    });
+    const refresh = await this.refreshTokens.issue(user.id);
+    // H4: log the outcome only — never email / password / token.
+    this.logger.log(
+      `Local session granted: userId=${user.id} role=${user.role}`,
+    );
+    return { accessToken, refresh, user: await this.buildSessionUser(user) };
+  }
+
+  /** The signed-in identity + OpCo scope (MeDto shape), shared by login / refresh. */
+  private async buildSessionUser(user: AppUser): Promise<MeDto> {
+    const opcoScope = user.opcoScopeId
+      ? await this.prisma.opco.findUnique({
+          where: { id: user.opcoScopeId },
+          select: { code: true, displayName: true },
+        })
+      : null;
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      opcoScopeId: user.opcoScopeId,
+      opcoScope,
+      mustChangePassword: user.mustChangePassword,
+    };
   }
 
   /** Count a failed attempt; lock the account (fresh window) once the threshold is hit. */

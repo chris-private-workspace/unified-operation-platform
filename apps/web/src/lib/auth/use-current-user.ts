@@ -1,6 +1,6 @@
 import { useMsal } from '@azure/msal-react';
 import { AUTH_DEV_BYPASS } from './msal';
-import { getLocalSession } from './local-session';
+import { getLocalProfile } from './local-profile';
 
 export interface CurrentUser {
   name: string;
@@ -17,11 +17,11 @@ export interface CurrentUser {
  */
 export function useCurrentUser(): CurrentUser {
   const { accounts } = useMsal();
-  const local = getLocalSession();
+  const local = getLocalProfile();
   if (local) {
     return {
-      name: local.user.displayName,
-      email: local.user.email,
+      name: local.displayName,
+      email: local.email,
       isDevBypass: false,
       canSignOut: true,
     };

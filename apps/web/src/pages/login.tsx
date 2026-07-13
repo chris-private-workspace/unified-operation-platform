@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { API_SCOPE, msalConfigured } from '@/lib/auth/msal';
 import { apiPost, ApiError } from '@/lib/api';
-import { setLocalSession } from '@/lib/auth/local-session';
-import type { LoginResponse } from '@/lib/api-types';
+import { setLocalProfile } from '@/lib/auth/local-profile';
+import type { SessionResponse } from '@/lib/api-types';
 
 // The one multi-color mark allowed in the system (DS-6) — Microsoft's 4-square, brand colors.
 function MicrosoftLogo() {
@@ -46,11 +46,11 @@ export function Login() {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await apiPost<LoginResponse>('/auth/login', {
+      const res = await apiPost<SessionResponse>('/auth/login', {
         email,
         password,
       });
-      setLocalSession(res.accessToken, res.expiresIn, res.user);
+      setLocalProfile(res.user);
       navigate('/', { replace: true });
     } catch (err) {
       setError(

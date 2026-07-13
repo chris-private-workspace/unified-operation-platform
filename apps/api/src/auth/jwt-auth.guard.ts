@@ -13,17 +13,19 @@ import { JwksClient } from 'jwks-rsa';
 import type { AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
-import { LocalJwtService, LOCAL_JWT_ISSUER } from './local-jwt.service';
+import { LocalJwtService } from './local-jwt.service';
+import { ACCESS_COOKIE } from './cookie';
 
 /**
- * Validates the access token on every request (ADR-0002 + ADR-0005). Two issuers:
- *  • `iss = 'uop-local'` → a locally-signed HS256 token (local password login) →
- *    resolve the AppUser by `sub`.
- *  • otherwise → an Entra v2.0 token → RS256 via the tenant JWKS + aud / iss / exp
- *    → resolve/upsert the AppUser by `oid`.
- * `@Public()` routes skip validation. Entra config is optional now (a local-only
- * deployment need not set it); the guard fails fast at boot only if NO provider
- * is configured (neither Entra nor AUTH_JWT_SECRET).
+ * Validates the credential on every request (ADR-0002 + ADR-0005 + ADR-0006 §7).
+ * Two transports:
+ *  • an httpOnly `uop_access` cookie → a locally-signed HS256 token (local
+ *    password session) → verify + resolve the AppUser by `sub` + force-change gate.
+ *  • otherwise an `Authorization: Bearer` header → an Entra v2.0 token → RS256 via
+ *    the tenant JWKS + aud / iss / exp → resolve/upsert the AppUser by `oid`.
+ * `@Public()` routes skip validation (login / refresh / logout manage cookies
+ * themselves). Entra config is optional (a local-only deployment need not set it);
+ * the guard fails fast at boot only if NO provider is configured.
  *
  * Local dev can set AUTH_DEV_BYPASS=true to skip validation and run as the seed
  * ADMIN — never in production (ADR-0002 risk R-C). H4: tokens / signatures /
@@ -91,20 +93,21 @@ export class JwtAuthGuard implements CanActivate {
       return true;
     }
 
-    const token = this.extractBearer(req.headers?.authorization);
-    if (!token) throw new UnauthorizedException('Missing bearer token');
-
-    // Route by issuer: a locally-signed token (local login) vs an Entra token.
-    const unverified = jwt.decode(token) as jwt.JwtPayload | null;
-    if (unverified?.iss === LOCAL_JWT_ISSUER) {
-      const claims = this.localJwt.verify(token); // throws 401 on bad sig / exp
+    // Local session — the httpOnly access cookie (ADR-0006 §7). A cookie present
+    // means this is a local session: verify it, resolve the AppUser, and enforce
+    // the force-change gate. (Entra never sets this cookie.)
+    const accessCookie = req.cookies?.[ACCESS_COOKIE] as string | undefined;
+    if (accessCookie) {
+      const claims = this.localJwt.verify(accessCookie); // throws 401 on bad sig / exp
       const user = await this.resolveLocalUser(claims.sub);
       this.ensurePasswordChanged(user, req);
       req.user = user;
       return true;
     }
 
-    // Entra path — only if SSO is configured (ADR-0005: it is optional).
+    // Entra path — a Bearer token in the Authorization header (MSAL). Unchanged.
+    const token = this.extractBearer(req.headers?.authorization);
+    if (!token) throw new UnauthorizedException('Missing credentials');
     if (!this.jwks) throw new UnauthorizedException('SSO is not configured');
     let payload: jwt.JwtPayload;
     try {

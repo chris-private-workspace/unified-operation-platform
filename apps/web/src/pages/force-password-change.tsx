@@ -3,17 +3,17 @@ import { KeyRound } from 'lucide-react';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import {
   clearMustChangePassword,
-  getLocalSession,
-} from '@/lib/auth/local-session';
+  getLocalProfile,
+} from '@/lib/auth/local-profile';
 
 // Force-change gate (AUTH-4c-A). A local account flagged mustChangePassword (fresh
 // admin-set / reset password) can't use the app until it sets its own password.
 // RequireAuth routes such sessions here; no session → /login, already-changed → app.
 export function ForcePasswordChange() {
   const navigate = useNavigate();
-  const session = getLocalSession();
-  if (!session) return <Navigate to="/login" replace />;
-  if (!session.user.mustChangePassword) return <Navigate to="/" replace />;
+  const profile = getLocalProfile();
+  if (!profile) return <Navigate to="/login" replace />;
+  if (!profile.mustChangePassword) return <Navigate to="/" replace />;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg p-[24px]">

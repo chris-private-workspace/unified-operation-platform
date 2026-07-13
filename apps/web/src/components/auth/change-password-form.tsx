@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useChangePassword } from '@/hooks/mutations';
-import { getLocalSession } from '@/lib/auth/local-session';
+import { getLocalProfile } from '@/lib/auth/local-profile';
 import { ApiError } from '@/lib/api';
 import {
   PASSWORD_MIN_CLASSES,
@@ -24,7 +24,7 @@ export function ChangePasswordForm({
   submitLabel?: string;
 }) {
   const change = useChangePassword();
-  const email = getLocalSession()?.user.email;
+  const email = getLocalProfile()?.email;
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');

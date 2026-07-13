@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { LocalJwtService } from './local-jwt.service';
+import { RefreshTokenService } from './refresh-token.service';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { MeController } from './me.controller';
@@ -20,6 +21,7 @@ import { UserAdminController } from './user-admin.controller';
   controllers: [MeController, AuthController, UserAdminController],
   providers: [
     LocalJwtService,
+    RefreshTokenService,
     AuthService,
     UserAdminService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },

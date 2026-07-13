@@ -5,9 +5,10 @@ import * as jwt from 'jsonwebtoken';
 /** Issuer claim that marks a locally-signed token (vs an Entra one) for the guard. */
 export const LOCAL_JWT_ISSUER = 'uop-local';
 
-// 8h access token (a work day). No refresh this phase — re-login on expiry
-// (refresh tokens land in AUTH-4c, ADR-0005).
-const EXPIRES_IN_SEC = 8 * 60 * 60;
+// 15min access token (ADR-0006 §7 / AUTH-4c-B). Short-lived by design: the
+// rotating refresh token (RefreshTokenService) silently mints a new one, so a
+// leaked access token is only useful for a small window.
+const EXPIRES_IN_SEC = 15 * 60;
 
 export interface LocalJwtClaims extends jwt.JwtPayload {
   sub: string;

@@ -2,10 +2,15 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Parse Cookie headers into req.cookies — the local session's httpOnly access
+  // token rides in a cookie (ADR-0006 §7 / AUTH-4c-B). Entra Bearer path is unaffected.
+  app.use(cookieParser());
 
   // validates & strips controller DTOs
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

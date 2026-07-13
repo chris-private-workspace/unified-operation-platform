@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useUiStore, type Theme } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
-import { getLocalSession } from '@/lib/auth/local-session';
+import { getLocalProfile } from '@/lib/auth/local-profile';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
 import { UsersPanel } from '@/components/settings/users-panel';
@@ -73,7 +73,7 @@ export function Settings() {
 
   const user = useCurrentUser();
   const signOut = useSignOut();
-  const isLocalSession = Boolean(getLocalSession());
+  const isLocalSession = Boolean(getLocalProfile());
   const [pwChanged, setPwChanged] = useState(false);
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);

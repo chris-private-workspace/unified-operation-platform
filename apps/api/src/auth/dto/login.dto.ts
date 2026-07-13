@@ -14,13 +14,11 @@ export class LoginDto {
   password!: string;
 }
 
-/** POST /auth/login response — the local access token + the signed-in identity. */
-export class LoginResultDto {
-  @ApiProperty({ description: 'locally-signed HS256 JWT (Bearer)' })
-  accessToken!: string;
-
-  @ApiProperty({ description: 'token lifetime in seconds' })
-  expiresIn!: number;
-
+/**
+ * POST /auth/login & POST /auth/refresh response — only the signed-in identity.
+ * The access + refresh tokens are delivered as httpOnly cookies (ADR-0006 §7),
+ * so they never reach page JS.
+ */
+export class SessionResponseDto {
   @ApiProperty({ type: MeDto }) user!: MeDto;
 }

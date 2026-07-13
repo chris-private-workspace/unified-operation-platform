@@ -136,10 +136,12 @@ export interface TenantSkuRow {
   overAllocated: boolean; // allocatedToOpcos > owned
 }
 
-/** POST /auth/login → LoginResultDto (ADR-0005 local password login). */
-export interface LoginResponse {
-  accessToken: string;
-  expiresIn: number; // seconds
+/**
+ * POST /auth/login & POST /auth/refresh → SessionResponseDto (ADR-0006 §7). The
+ * access + refresh tokens are delivered as httpOnly cookies; the body only carries
+ * the signed-in identity.
+ */
+export interface SessionResponse {
   user: {
     id: string;
     email: string;

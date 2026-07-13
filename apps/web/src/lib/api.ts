@@ -9,20 +9,20 @@ import {
   API_SCOPE,
   AUTH_DEV_BYPASS,
 } from './auth/msal';
-import { localToken } from './auth/local-session';
+import { getLocalProfile, clearLocalProfile } from './auth/local-profile';
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 /**
- * Authorization header for an API call (ADR-0003 + ADR-0005). A local password
- * session takes priority → its Bearer. Otherwise: dev-bypass or unconfigured MSAL
- * (pre-app-reg) → no header (backend AUTH_DEV_BYPASS carries it); else acquire an
- * Entra token silently, and on interaction-required kick a redirect and send
- * unauthenticated once. H4: never log the token. Exported for unit testing.
+ * Authorization header for an API call (ADR-0003 + ADR-0005 + ADR-0006 §7). A
+ * local password session now rides in an httpOnly cookie → no header (the cookie
+ * is sent automatically with credentials:'include'). Otherwise: dev-bypass or
+ * unconfigured MSAL (pre-app-reg) → no header; else acquire an Entra token
+ * silently, and on interaction-required kick a redirect and send unauthenticated
+ * once. H4: never log the token. Exported for unit testing.
  */
 export async function authHeader(): Promise<Record<string, string>> {
-  const local = localToken();
-  if (local) return { Authorization: `Bearer ${local}` };
+  if (getLocalProfile()) return {}; // local session → httpOnly cookie carries it
   if (AUTH_DEV_BYPASS || !msalConfigured) return {};
   const account = msalInstance.getActiveAccount();
   if (!account) return {}; // not signed in — the auth gate sends the user to Login
@@ -50,9 +50,48 @@ export class ApiError extends Error {
   }
 }
 
+// Single-flight refresh (ADR-0006 §7): concurrent 401s share one /auth/refresh
+// call so the refresh token rotates exactly once. Resolves to whether a new
+// session was issued. Uses raw fetch (not doFetch) so it never recurses.
+let refreshInFlight: Promise<boolean> | null = null;
+function tryRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((r) => r.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
+/**
+ * fetch with the session cookie + a one-shot refresh-retry for local sessions
+ * (ADR-0006 §7). On a 401 for a local session we rotate via /auth/refresh once
+ * and replay the request; if refresh fails we drop the profile so the auth gate
+ * sends the user back to Login. Entra 401s are left to MSAL (no refresh here);
+ * login itself has no profile yet, so a bad-credentials 401 is returned as-is.
+ */
+async function doFetch(path: string, init: RequestInit): Promise<Response> {
+  const withCreds: RequestInit = { ...init, credentials: 'include' };
+  let res = await fetch(`${BASE}${path}`, withCreds);
+  if (res.status === 401 && getLocalProfile()) {
+    if (await tryRefresh()) {
+      res = await fetch(`${BASE}${path}`, withCreds);
+    } else {
+      clearLocalProfile();
+    }
+  }
+  return res;
+}
+
 /** GET a JSON resource; throws ApiError on a non-2xx response. */
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await doFetch(path, {
     headers: { Accept: 'application/json', ...(await authHeader()) },
   });
   if (!res.ok) {
@@ -67,7 +106,7 @@ export async function apiGet<T>(path: string): Promise<T> {
  * (e.g. "Microsoft Graph is unavailable …") rather than a generic string.
  */
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await doFetch(path, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -87,7 +126,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     }
     throw new ApiError(res.status, message);
   }
-  if (res.status === 204) return undefined as T; // No Content (e.g. password reset)
+  if (res.status === 204) return undefined as T; // No Content (e.g. logout)
   return res.json() as Promise<T>;
 }
 
@@ -97,7 +136,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
  * sync gate, …) rather than a generic string.
  */
 export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await doFetch(path, {
     method: 'PATCH',
     headers: {
       Accept: 'application/json',
