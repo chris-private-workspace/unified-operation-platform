@@ -25,6 +25,21 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split large vendors into named chunks so no single chunk exceeds Vite's
+        // 500 kB warning limit (CH-001). MSAL is a root singleton (msal.ts) needed
+        // on first paint, so it can't be lazy-loaded — it gets its own vendor chunk
+        // instead, which also lets it cache independently across app deploys.
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'msal-vendor': ['@azure/msal-browser', '@azure/msal-react'],
+          'query-vendor': ['@tanstack/react-query'],
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
