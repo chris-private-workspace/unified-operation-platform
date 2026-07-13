@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useUiStore, type Theme } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { msalConfigured } from '@/lib/auth/msal';
+import { AllocationImportPanel } from '@/components/settings/allocation-import';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
   { value: 'account', label: 'Account', Icon: User },
@@ -210,13 +211,16 @@ export function Settings() {
           )}
 
           {tab === 'integrations' && (
-            <div className="rounded-[12px] border border-border bg-card">
-              <EmptyState
-                icon={<Cable size={18} strokeWidth={2} />}
-                title="Integrations coming soon"
-                description="Connector status (Microsoft Graph, ServiceNow, DocuWare) and n8n configuration need the integration-status API."
-              />
-            </div>
+            <>
+              <AllocationImportPanel />
+              <div className="rounded-[12px] border border-border bg-card">
+                <EmptyState
+                  icon={<Cable size={18} strokeWidth={2} />}
+                  title="Connector status coming soon"
+                  description="Live status for Microsoft Graph, ServiceNow and DocuWare (and n8n config) needs the integration-status API."
+                />
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -59,14 +59,19 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 /**
- * POST a trigger endpoint (no body this phase). On a non-2xx the server's
+ * POST a trigger endpoint, optionally with a JSON body. On a non-2xx the server's
  * `message` is surfaced (same as apiPatch) so callers can toast the real reason
  * (e.g. "Microsoft Graph is unavailable …") rather than a generic string.
  */
-export async function apiPost<T>(path: string): Promise<T> {
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { Accept: 'application/json', ...(await authHeader()) },
+    headers: {
+      Accept: 'application/json',
+      ...(await authHeader()),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     let message = `POST ${path} failed (${res.status})`;

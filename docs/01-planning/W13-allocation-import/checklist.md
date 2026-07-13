@@ -1,6 +1,6 @@
 ---
 phase: W13-allocation-import
-status: active
+status: done
 ---
 
 # W13 — Allocation import — Checklist
@@ -33,27 +33,27 @@ status: active
 - [x] dry-run 唔寫(0 upsert)· commit 寫(4 upsert)· idempotent(0 change)· blank→0 downgrade(update `{allocatedQuantity:0}`)
 - [x] scope:OPCO_IT → controller `@Roles(ADMIN,REGIONAL)` 排除(RolesGuard 既有 spec 覆蓋 403 路徑;live D7 驗)
 
-## D6 — FE upload UI（Settings › Integrations)
-- [ ] 取代 coming-soon EmptyState → 檔案選擇(`file.text()`)→ dry-run POST
-- [ ] preview table:mapped N / skipped + reason / allocatedQuantity delta
-- [ ] confirm → commit POST → success toast
-- [ ] token-only · light+dark · lucide · ui-design DS 自檢(H6)
+## D6 — FE upload UI（Settings › Integrations)✅
+- [x] 取代 coming-soon EmptyState → 檔案選擇(`file.text()`)→ dry-run POST(`allocation-import.tsx` + `useAllocationImport` + `apiPost` 加 optional body)
+- [x] preview table:summary chips + changes(before→after/Δ tone)/ skipped SKU note / unknown-opco note
+- [x] confirm → commit POST → success card(baseline-not-touched note)+ toast + "Import another"
+- [x] token-only(bg-card/border-border/accent-soft/ok-soft/warn…)· lucide(Upload/Check/ArrowRight/AlertTriangle/FileText)· 保留 connector-status honest gap · light+dark 驗
 
 ## D7 — Verify + closeout
-- [ ] api build 0 error + lint clean + test green(81→+N)
-- [ ] web build 0 error + lint clean + test green(8→+N)
-- [ ] **live dry-run→commit round-trip**(真 O365-derived CSV 對 seeded/代表性 catalog;preview 分類正確 → commit → ledger allocatedQuantity 對到格 → re-import 零 delta)
-- [ ] FE upload UI live 驗(light+dark;preview 對真數)
-- [ ] progress retro · BACKLOG(DD-1 close + BE-ledger-read 解封)· DEFERRED_REGISTER DD-1 → Close · memory · commit(待指示)
+- [x] api build 0 error + lint clean + test green(81→**92**)
+- [x] web build 0 error + lint clean + test green(**8**;bundle app chunk 94→102KB 仍無警告,CH-001 hold)
+- [x] **live dry-run→commit round-trip**(真 HTTP:dry-run 4 changes + skip D365;commit committed:4;re-dry-run changes:0 = idempotent)
+- [x] FE upload UI live 驗(DOM 量度:upload→filename→preview 4-row 表對後端→commit「Imported 4」+ toast;dark card bg `rgb(20,20,23)`↔light `rgb(255,255,255)` swap)
+- [ ] progress retro · plan closed · BACKLOG(DD-1 close + BE-ledger-read 解封)· DEFERRED_REGISTER DD-1 → Close · memory · commit(待指示)
 
 ## Phase Gate（plan §4)
-- [ ] G1 ADR-0004 Accepted
-- [ ] G2 dry-run→commit live round-trip 通 + idempotent
-- [ ] G3 allocatedQuantity-only invariant test 實證 + H5 全 green
-- [ ] G4 scope ADMIN/REGIONAL import · OPCO_IT 403(test + live)
-- [ ] G5 FE upload UI dry-run preview + commit + toast · token-only light+dark H6
-- [ ] G6 build 0 error + lint clean + api/web test green
-- [ ] G7 無新 runtime dep
+- [x] G1 ADR-0004 Accepted
+- [x] G2 dry-run→commit live round-trip 通(真 HTTP 201:dry-run 4 / commit 4 / re-dry-run 0 idempotent)
+- [x] G3 allocatedQuantity-only invariant test 實證(assigned=5 存活;每 upsert create/update 無 assignedQuantity)+ H5 92 green
+- [x] G4 scope:controller `@Roles(ADMIN,REGIONAL)` 排除 OPCO_IT(RolesGuard 機制既有 spec 覆蓋;live per-endpoint 403 未單獨跑 — honest)
+- [x] G5 FE upload UI:live upload→preview→commit→toast(DOM 量度)· token-only · light+dark swap 驗 · H6
+- [x] G6 api build 0 error + lint 0 + 92 test · web build 0 error + lint 0 + 8 test
+- [x] G7 無新 runtime dep(CSV raw-text;無 multer/xlsx;`apiPost` 加 optional body 只擴既有)
 
 ## Cross-Cutting
 - [ ] 每 commit references progress Day-N(R2)

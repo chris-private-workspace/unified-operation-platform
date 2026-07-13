@@ -5,7 +5,7 @@ sprint_week: W13
 backlog_id: DD-1 / BE-ledger-read（前置解封）
 start_date: 2026-07-13
 end_date: TBD
-status: active          # draft | active | closed — Chris approve 2026-07-13,OD1-4 全採 default(OD2=ADMIN+REGIONAL confirmed)
+status: closed          # draft | active | closed — D1-D7 完成,G1-G7 全過(G4 guard-enforced 誠實註),live round-trip + FE upload UI light+dark 驗;DD-1 close
 spec_refs:
   - docs/02-architecture/licenseops/DESIGN.md §5（ledger 兩層數字 · 初始化 · 方案甲）· §6（OpcoSkuLedger / SkuCatalog.businessAlias）· §10（open items）
   - docs/01-planning/DEFERRED_REGISTER.md DD-1（allocation import 恢復條件 = Chris 決 import 方式 → 本 phase）

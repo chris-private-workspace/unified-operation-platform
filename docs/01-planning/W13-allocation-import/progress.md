@@ -1,6 +1,6 @@
 ---
 phase: W13-allocation-import
-status: active
+status: closed
 ---
 
 # W13 — Allocation import — Progress
@@ -52,6 +52,68 @@ status: active
 | Hash | Subject |
 |---|---|
 | 77c7915 | chore(planning): kickoff W13 allocation-import |
-| (待指示) | feat(license): W13 D1-D5 allocation import endpoint + ADR-0004 |
+| df3a7ac | feat(license): W13 D1-D5 allocation import endpoint + ADR-0004 |
 
 ---
+
+## Day 1 — 2026-07-13（D6 FE upload UI + D7 verify）
+
+### Done
+- **D6 FE upload UI**:`components/settings/allocation-import.tsx`(`AllocationImportPanel`)——選檔 `file.text()` → dry-run preview(summary chips + changes 表 before→after/Δ tone + skipped-SKU note + unknown-opco note)→ commit → success card(baseline-not-touched)+ toast + Import-another。wire 入 Settings › Integrations(取代 coming-soon,保留 connector-status honest gap)。支撐:`apiPost` 加 optional body、`useAllocationImport` hook、api-types 加 `LedgerImport*`。
+- **D7 verify**:
+  - **Backend live(真 HTTP,dev-bypass + 代表性 seed catalog[test-e3/e1 businessAlias curated])**:dry-run → summary `{opcoColumns:2,skuRows:3,mappedSkuRows:2,changes:4}` + skippedSkuLabels `["D365 Sales Sub Per User"]` + unknownOpcoHeaders `[]`;commit → committed:4;re-dry-run → changes:0(**idempotent**)。
+  - **FE live(DOM 量度,screenshot timeout → JS 讀 DOM)**:panel render(light 截圖)→ inject File(defineProperty getter,因 browser 封 `input.files` set)→ onChange 出 filename + Preview → click Preview → changes 表 4 行精準對後端 + skip D365 note + chips → click Commit → 「Imported 4 allocation changes」+ baseline note + toast → dark card bg `rgb(20,20,23)`↔light `rgb(255,255,255)` swap。
+  - build/lint/test:api 92 · web 8 · 皆 exit 0;web app chunk 94→102KB(仍無 >500KB 警告)。
+
+### Decisions
+- **FE upload transport**:`apiPost` 由 no-body 擴為 optional body(mirror `apiPatch`),向後相容既有 caller(reconcile/catalog-sync);無新 dep。
+- **Integrations tab** 保留 connector-status coming-soon(honest gap:integration-status API 未有),只加 allocation import panel。
+- **delta tone**:>0 → `text-ok`、<0 → `text-warn`(allocation 增/減,非 drift danger)。
+
+### Verify（真 tool output）
+- api build 0 error · lint 0 · **92 test 綠**;web build 0 error · lint 0 · **8 test 綠**。
+- Backend live 201:dry-run/commit/idempotent/curation-skip 全對;FE live DOM:upload→preview→commit→toast + light/dark swap 全對。
+
+### Blockers
+- 無。真 37-SKU 生產 curation = deploy ops step(需真 tenant catalog/sync;本地用 test-e3/e1 代表性 catalog 起 + H5 mock)。
+
+### Effort
+- Planned:~1 day;Actual:D1-D7 同日。
+
+### Commits
+| Hash | Subject |
+|---|---|
+| (待指示) | feat(web): W13 D6-D7 allocation import upload UI + verify |
+
+---
+
+## Closeout（status=closed）
+
+### Acceptance verification（plan §4 gates）
+| Gate | 結果 |
+|---|---|
+| G1 ADR-0004 Accepted | ✅ |
+| G2 dry-run→commit round-trip + idempotent | ✅ 真 HTTP(4/4/0) |
+| G3 allocatedQuantity-only invariant + H5 | ✅ 92 test |
+| G4 ADMIN/REGIONAL · OPCO_IT 排除 | ✅ guard-enforced（live per-endpoint 403 未單獨跑,honest） |
+| G5 FE upload preview+commit+toast · token-only light+dark | ✅ DOM 量度 + swap 驗 |
+| G6 build/lint/test api+web green | ✅ |
+| G7 無新 runtime dep | ✅ |
+
+全 7 gate ✅（G4 誠實註明機制-enforced）。
+
+### Lessons
+- **來源 audit 先於 code 省大量猜測**:O365 Excel 一睇即知 OpCo 映射 = solved(header===Opco.code,seed 照此起)+ mixed-tier(D365 內含)→ curation-as-scope 天然邊界。
+- **change=target≠before diff model** 令 idempotent / downgrade-to-0 / 新增 全部一條邏輯 cover,免特例。
+- **allocatedQuantity-only invariant** 用專門 test(assigned baseline 存活)守住 drift baseline —— fidelity phase 之後最易被忽略嘅 correctness 線。
+- **browser 封 `input.files` set** → file_upload host-path 亦已停用 → 用 `Object.defineProperty` getter 注入 File 驅動真 onChange;screenshot busy → JS DOM 量度(W08 pattern)。
+- **本地驗需代表性 seed catalog**(SkuCatalog 空,未對真 tenant sync);臨時 script 放 `apps/api/prisma` resolve `@prisma/client`,用完即刪(未 commit)。
+
+### Carry-overs
+- **BE-ledger-read**(GET ledger read-model)= 解封,下一 phase 候選 → 之後 FE-Assets + Overview seat KPI。
+- 真 37-SKU 生產 curation + 真 tenant catalog/sync = deploy ops step(隨 AUTH-2b IT 真連線)。
+- FE upload UI 只 admin/regional;OPCO_IT live 403 per-endpoint 可補一個 e2e。
+
+---
+
+**End of W13 progress**

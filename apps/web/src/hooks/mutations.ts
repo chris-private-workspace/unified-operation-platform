@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPatch, apiPost } from '@/lib/api';
 import type {
+  LedgerImportResult,
   LineItemStage,
   OnboardingRequest,
   ReconcileResult,
@@ -72,5 +73,18 @@ export function useReconcile() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['license', 'drift'] });
     },
+  });
+}
+
+/**
+ * POST /license/ledger/import — load the O365 allocation CSV into the ledger
+ * (ADR-0004 / W13). Same hook drives both the dry-run preview and the commit
+ * (dryRun flag). The backend enforces role + curation-as-scope; the UI shows the
+ * server's classified preview and surfaces error messages (see apiPost).
+ */
+export function useAllocationImport() {
+  return useMutation({
+    mutationFn: (vars: { csv: string; dryRun: boolean }) =>
+      apiPost<LedgerImportResult>('/license/ledger/import', vars),
   });
 }

@@ -51,6 +51,32 @@ export interface ReconcileResult {
   drift: number; // OPEN drift alerts remaining after this run
 }
 
+/** POST /license/ledger/import → LedgerImportResultDto (ADR-0004). */
+export interface LedgerImportChange {
+  opcoCode: string;
+  skuBusinessAlias: string;
+  skuPartNumber: string;
+  before: number;
+  target: number;
+  delta: number;
+}
+
+export interface LedgerImportSummary {
+  opcoColumns: number;
+  skuRows: number;
+  mappedSkuRows: number;
+  changes: number;
+}
+
+export interface LedgerImportResult {
+  dryRun: boolean;
+  committed: number;
+  summary: LedgerImportSummary;
+  changes: LedgerImportChange[];
+  skippedSkuLabels: string[];
+  unknownOpcoHeaders: string[];
+}
+
 /** GET /license/drift → DriftAlertDto[] */
 export interface DriftSkuRef {
   skuId: string;

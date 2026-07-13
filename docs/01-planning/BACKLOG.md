@@ -6,7 +6,7 @@
 >
 > **同步 = binding(PROCESS.md R7)**:phase kickoff / closeout、ADR Accept、defer/blocked 決定、新 candidate 被識別 → 必須同步本表,**唔可以 silent drift**。維護規則見文末。
 
-**最後更新**:2026-07-13(**CH-001 FE-bundle-split ✅** — `manualChunks` 拆 react/msal/query vendor,587KB 單 chunk → 最大 254KB « 500KB 警告消失,零 runtime 改;首個 Change workflow CH doc;查證 MSAL root singleton 不可 lazy 故只拆 vendor。之前:**tech-debt 清理批次** — DS-flag ✅ resolved[Avatar tokenize `--accent-deep` 消硬 hex + design-system.md DS-7 加 Avatar 例外 + SKILL.md 同步];FE-vuln → **defer DD-2**[實跑證非-force `npm audit fix` 一個都清唔到,全繫 breaking major];新登 DEFERRED DD-1[allocation-import]/DD-2[npm-vuln]+ RISK R2[dev-bypass 誤帶 prod,🟢 Mitigated]。前:**AUTH-1 ✅**[W09 後端 Entra JWT 驗證 + `@Roles(ADMIN,REGIONAL)` guard 落 11 endpoint,ADR-0002 + dev-bypass,api 56 test,401/200 wiring live 驗];**FE-Assets 被 allocation-import 卡** → 轉咗 AUTH。下一個 = AUTH-2[FE SSO,前置 IT 開 SPA app reg] / AUTH-3[OPCO_IT scope] / FE-Assets[前置 allocation import 決定])
+**最後更新**:2026-07-13(**W13 allocation-import ✅ + DD-1 Close** — Chris 決 admin CSV upload[ADR-0004];`POST /license/ledger/import`[dry-run+commit,curation-as-scope,**allocatedQuantity-only** invariant]+ FE Settings›Integrations upload UI;api 81→92 test,live round-trip[dry-run 4/commit 4/idempotent 0]+ FE upload light+dark 驗;**DD-1 close → BE-ledger-read / FE-Assets 解封**[殘留=生產 curation deploy ops step]。之前 **CH-001 FE-bundle-split ✅** — `manualChunks` 拆 react/msal/query vendor,587KB 單 chunk → 最大 254KB « 500KB 警告消失,零 runtime 改;首個 Change workflow CH doc;查證 MSAL root singleton 不可 lazy 故只拆 vendor。更前:**tech-debt 清理批次** — DS-flag ✅ resolved[Avatar tokenize `--accent-deep` 消硬 hex + design-system.md DS-7 加 Avatar 例外 + SKILL.md 同步];FE-vuln → **defer DD-2**[實跑證非-force `npm audit fix` 一個都清唔到,全繫 breaking major];新登 DEFERRED DD-1[allocation-import]/DD-2[npm-vuln]+ RISK R2[dev-bypass 誤帶 prod,🟢 Mitigated]。前:**AUTH-1 ✅**[W09 後端 Entra JWT 驗證 + `@Roles(ADMIN,REGIONAL)` guard 落 11 endpoint,ADR-0002 + dev-bypass,api 56 test,401/200 wiring live 驗];**FE-Assets 被 allocation-import 卡** → 轉咗 AUTH。下一個 = AUTH-2[FE SSO,前置 IT 開 SPA app reg] / AUTH-3[OPCO_IT scope] / FE-Assets[前置 allocation import 決定])
 
 ---
 
@@ -30,6 +30,7 @@
 
 | FE-2 | **前端畫面 2**:Requests 列表 + Request detail（讀 + **寫操作** advance/assign/sync;OD1=B）——首個寫操作 UI,接 `/fulfilment/requests*` | ✅ **完成**（2026-07-09；G1–G6 pass;advance/mark-synced round-trip 端到端驗;light+dark） | — | `W07-fe-requests/`（retro 已寫） |
 | FE-3 | **前端畫面 3**:Drift Alerts（接 `GET /license/drift` 真數 + `POST /license/reconcile`;OD1=A 只 Drift,Settings/Login 隨 AUTH defer）——含 **BE-graph-harden**（reconcile/catalog `getSubscribedSkus` wrap→503,OD2=A） | ✅ **完成**（2026-07-10；G1–G7 全 pass;light+dark 對 prototype;harden round-trip[503 toast + API 唔 crash] live 驗;api 42 test 綠） | — | `W08-fe-drift-harden/` |
+| W13 | **Allocation import**（O365 Excel matrix → `OpcoSkuLedger.allocatedQuantity`;`POST /license/ledger/import` dry-run+commit,curation-as-scope,**allocatedQuantity-only** invariant + FE Settings›Integrations upload UI） | ✅ **完成**（2026-07-13;G1–G7 全 pass;ADR-0004;api 81→92 test;live round-trip[dry-run 4/commit 4/idempotent 0]+ FE upload light+dark 驗;**DD-1 close**） | — | `W13-allocation-import/` · `docs/adr/0004-*` |
 
 > **開發路線（2026-07-10）**:W02 C ✅ → W03 D-1 ✅ → W04 D-2 ✅（後端業務層）→ **W05 FE-scaffold ✅ → FE-1 ✅**（W06）→ **FE-2 ✅**（W07）→ **FE-3 ✅**（W08,Drift + BE-graph-harden）→ **AUTH-1 ✅**（W09,後端 JWT 驗證 + role guard）。**路線調整**:原打算 FE-Assets,但 discovery 揭 **FE-Assets 被 allocation-import[deferred Excel data 決定]卡死**（seed 唔播 ledger、`allocatedQuantity`=0 → owned/utilization 無真數）→ Chris 轉做 AUTH。下一個:**AUTH-2**（FE SSO,前置 IT 開 SPA app reg）→ **AUTH-3**（OPCO_IT scope）/ **FE-Assets**（前置 allocation import 決定）→ Settings/Login（隨 AUTH-2）→ DEPLOY。**BUG-002 ✅ / BE-graph-harden ✅ / AUTH-1 ✅**。
 
@@ -47,8 +48,8 @@
 | FE-vuln | **npm dev/build-chain vulnerabilities**（monorepo root 32:apps/web 7[vite/vitest/esbuild/js-yaml/picomatch]+ apps/api 側 uuid/webpack/nest CLI;**全 dev-only 唔入 production bundle**） | 🚧 **defer → DD-2**（2026-07-10;實跑證非-force `npm audit fix`[root+`-w`]一個都清唔到,全繫 breaking major） | vite@8 生態 stabilize → 專門 phase 一次過升 + revalidate（H2,需 ADR） | `DEFERRED_REGISTER.md` DD-2 |
 | FE-bundle-split | **前端 bundle > 500KB warning**（AUTH-2a 引入 MSAL 後 587KB;ADR-0003 已知） | ✅ **完成**（2026-07-13,CH-001;`manualChunks` 拆 react/msal/query vendor → 最大 chunk 254KB « 500KB,警告消失;零 runtime 改;lint/8 test/build + preview live 驗;**MSAL 不可 lazy 已查證**故只拆 vendor,route-lazy out） | — | `docs/03-implementation/changes/CH-001-fe-bundle-split/` |
 | FE-fidelity | **全站 UI fidelity audit + harden**（shell topbar/sidebar + Login + Overview/Requests/Settings/Drift 對 prototype） | ✅ **完成**（2026-07-11,W12;Chris 報 UI 未跟 mockup → 全站 audit → 修 Tier1-3 🔧 真 drift:topbar collapse/⌘K/divider/tenant pill/user menu · sidebar CATALOG/admin nav/D365 · Login copy/footer/副標 · Settings 左 sub-nav + role block · Requests pill filter · Overview links/label · Drift 時間;token-only,web 8 test 綠,light+dark live 驗） | 🚧 **honest gap 未做（唔造假）** → 各自 phase:Licenses-assigned/activity=BE-ledger-read+events endpoint · My-queue/handler/真 role=AUTH-3b · Drift Resolve/per-OpCo=DESIGN 方案甲/endpoint · AI-Assist=DESIGN §6 · Users 表=admin endpoint | `W12-fe-fidelity-harden/AUDIT.md` |
-| BE-ledger-read | **後端 read-model:per-OpCo ledger + SKU 用量 stats endpoint**（FE-1 OD1-A carry — **License Assets 前端整個畫面** + Overview seat KPI 需此） | 候選（FE-1 kickoff 產生） | 後端 mini-phase:`GET /license/ledger`（每 OpCo 每 SKU owned/allocated/assigned）+ stats 聚合;注意 prepaid `allocatedQuantity` import 仍 deferred（utilization 需埋佢） | `W06-fe-overview-assets/plan.md §1.1` |
-| FE-Assets | **前端 License Assets 畫面**（owned/allocated/assigned ledger 數量表 + utilization bar + Headroom/Over-allocated + Manage）—— FE-1 deviation 移出 | 候選（等 BE-ledger-read） | **前置 BE-ledger-read**（+ allocation import 先有 allocated/utilization 真數）→ 之後一個前端 phase 砌,對 prototype License Assets view | `design_handoff .../full-console.html`（License Assets view） |
+| BE-ledger-read | **後端 read-model:per-OpCo ledger + SKU 用量 stats endpoint**（FE-1 OD1-A carry — **License Assets 前端整個畫面** + Overview seat KPI 需此） | 候選（**DD-1 已 close → 解封**;W13 allocation import 已灌 `allocatedQuantity`） | 後端 mini-phase:`GET /license/ledger`（每 OpCo 每 SKU owned/allocated/assigned）+ stats 聚合;套 `opco-scope` helper（AUTH-3a）;utilization 需生產真數(deploy curation) | `W06-fe-overview-assets/plan.md §1.1` · `W13-allocation-import/` |
+| FE-Assets | **前端 License Assets 畫面**（owned/allocated/assigned ledger 數量表 + utilization bar + Headroom/Over-allocated + Manage）—— FE-1 deviation 移出 | 候選（**DD-1 已 close;前置改為 BE-ledger-read**） | **前置 BE-ledger-read**（allocation import[W13]已提供 allocated 真數路徑）→ 之後一個前端 phase 砌,對 prototype License Assets view | `design_handoff .../full-console.html`（License Assets view） |
 
 ---
 
@@ -81,7 +82,7 @@
 
 | DD | 類別 | 狀態 |
 |---|---|---|
-| DD-1 | Prepaid `allocatedQuantity` Excel import 未定 → 卡 FE-Assets / ledger utilization 真數 | defer（等 Chris 決 import 方式） |
+| DD-1 | Prepaid `allocatedQuantity` Excel import 方式未定 → 卡 BE-ledger-read / FE-Assets | ✅ **Close**（2026-07-13,W13;admin CSV upload ADR-0004 建成;殘留生產 curation = deploy ops step） |
 | DD-2 | npm dev/build-chain vulns 需 breaking major 先清（全 dev-only 唔入 production） | defer（等 vite@8 生態 stabilize + 專門升級 phase） |
 
 ---
