@@ -149,6 +149,49 @@ export interface LoginResponse {
   };
 }
 
+/** App roles (Prisma Role enum). */
+export type Role = 'ADMIN' | 'REGIONAL' | 'OPCO_IT';
+
+/**
+ * GET /admin/users → AdminUserDto[] (AUTH-4b). Covers both providers; the
+ * backend never serialises passwordHash. ADMIN-only — a non-admin caller gets
+ * 403 (the Users & roles tab degrades to a restricted state).
+ */
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  opcoScopeId: string | null;
+  opcoScope: OpcoRef | null; // { code, displayName }
+  authProvider: string; // 'entra' | 'local'
+  active: boolean;
+  lastLoginAt: string | null;
+}
+
+/** GET /admin/opcos → AdminOpcoDto[] (create-user scope selector). */
+export interface AdminOpco {
+  id: string;
+  code: string;
+  displayName: string;
+}
+
+/** POST /admin/users body — create a local account (admin sets the password). */
+export interface CreateUserBody {
+  email: string;
+  displayName: string;
+  role: Role;
+  opcoScopeId?: string | null;
+  initialPassword: string;
+}
+
+/** PATCH /admin/users/:id body — change role / scope / active. */
+export interface UpdateUserBody {
+  role?: Role;
+  opcoScopeId?: string | null;
+  active?: boolean;
+}
+
 /** GET /license/tenant-skus/stats → TenantSkuStatsDto (Platform recon tiles). */
 export interface TenantSkuStats {
   totalOwned: number;

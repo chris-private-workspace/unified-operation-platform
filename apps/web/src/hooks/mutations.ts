@@ -1,11 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPatch, apiPost } from '@/lib/api';
 import type {
+  AdminUser,
+  CreateUserBody,
   LedgerImportResult,
   LineItemStage,
   OnboardingRequest,
   ReconcileResult,
   RequestLineItem,
+  UpdateUserBody,
 } from '@/lib/api-types';
 
 // Write hooks for the request detail (OD1=B). Each does query invalidation in
@@ -86,5 +89,29 @@ export function useAllocationImport() {
   return useMutation({
     mutationFn: (vars: { csv: string; dryRun: boolean }) =>
       apiPost<LedgerImportResult>('/license/ledger/import', vars),
+  });
+}
+
+// User admin (AUTH-4b). ADMIN-only endpoints; the backend enforces every rule
+// (email uniqueness, role↔scope, last-admin / self safety) and its message is
+// surfaced by apiPost/apiPatch for the caller's toast.
+
+/** POST /admin/users — create a local account with an admin-set password. */
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateUserBody) =>
+      apiPost<AdminUser>('/admin/users', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  });
+}
+
+/** PATCH /admin/users/:id — change role / OpCo scope / active. */
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: UpdateUserBody }) =>
+      apiPatch<AdminUser>(`/admin/users/${vars.id}`, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
   });
 }

@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, ApiError } from '@/lib/api';
 import type {
+  AdminOpco,
+  AdminUser,
   DriftAlert,
   LedgerRow,
   LedgerStats,
@@ -72,6 +74,28 @@ export function useTenantSkuStats(enabled: boolean) {
     queryKey: ['license', 'tenant-skus', 'stats'],
     queryFn: () => apiGet<TenantSkuStats>('/license/tenant-skus/stats'),
     enabled,
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /admin/users — all users for the admin console (AUTH-4b). ADMIN-only; a
+ * 403 (non-admin) is authoritative (retryUnless403) so the Users & roles tab can
+ * show a restricted state instead of spinning. Only mounts when the tab is open.
+ */
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: ['admin', 'users'],
+    queryFn: () => apiGet<AdminUser[]>('/admin/users'),
+    retry: retryUnless403,
+  });
+}
+
+/** GET /admin/opcos — active OpCos for the create-user scope selector. */
+export function useAdminOpcos() {
+  return useQuery({
+    queryKey: ['admin', 'opcos'],
+    queryFn: () => apiGet<AdminOpco[]>('/admin/opcos'),
     retry: retryUnless403,
   });
 }

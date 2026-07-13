@@ -2,6 +2,7 @@ import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 import { LicenseController } from '../license/license.controller';
 import { FulfilmentController } from '../fulfilment/fulfilment.controller';
+import { UserAdminController } from './user-admin.controller';
 import { ROLES_KEY } from './roles.decorator';
 
 /**
@@ -25,6 +26,14 @@ describe('operational controllers are role-guarded', () => {
       Role.ADMIN,
       Role.REGIONAL,
       Role.OPCO_IT,
+    ]);
+  });
+
+  // AUTH-4b: the user admin console is ADMIN-only (RolesGuard rejects the rest);
+  // the frontend Users & roles tab handles the resulting 403 gracefully.
+  it('UserAdminController = ADMIN only', () => {
+    expect(reflector.get<Role[]>(ROLES_KEY, UserAdminController)).toEqual([
+      Role.ADMIN,
     ]);
   });
 

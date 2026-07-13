@@ -1,5 +1,4 @@
 import { useSearchParams } from 'react-router-dom';
-import { useMsal } from '@azure/msal-react';
 import {
   Cable,
   LogOut,
@@ -15,8 +14,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { cn } from '@/lib/utils';
 import { useUiStore, type Theme } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
-import { msalConfigured } from '@/lib/auth/msal';
+import { useSignOut } from '@/lib/auth/use-sign-out';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
+import { UsersPanel } from '@/components/settings/users-panel';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
   { value: 'account', label: 'Account', Icon: User },
@@ -26,23 +26,6 @@ const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
 ];
 
 const THEMES: readonly Theme[] = ['light', 'dark'];
-
-// App roles + what they can see/do (prototype Users & roles). Static reference —
-// the live user table needs the AppUser admin API (honest gap, see below).
-const ROLE_DEFS = [
-  {
-    name: 'Regional operator',
-    desc: 'Full access to all OpCos. Runs fulfilment, assignment and reconciliation.',
-  },
-  {
-    name: 'OpCo admin',
-    desc: "Sees and manages only their own OpCo's licenses and requests.",
-  },
-  {
-    name: 'Read-only auditor',
-    desc: 'View-only across all OpCos. No assignment or config actions.',
-  },
-];
 
 // Card-like section (handoff card: 12px radius + 1px border + surface tint, DS-7).
 function Section({
@@ -86,10 +69,9 @@ export function Settings() {
   const setTab = (value: string) => setParams({ tab: value });
 
   const user = useCurrentUser();
-  const { instance } = useMsal();
+  const signOut = useSignOut();
   const theme = useUiStore((s) => s.theme);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
-  const signOut = () => void instance.logoutRedirect();
 
   return (
     <div className="flex flex-col gap-[18px] p-[24px]">
@@ -142,21 +124,20 @@ export function Settings() {
                     readOnly
                   />
                 </Field>
-                {user.isDevBypass ? (
-                  <p className="text-[11.5px] text-fg-subtle">
-                    Running under local dev-bypass — no real session to sign out
-                    of.
-                  </p>
-                ) : (
+                {user.canSignOut ? (
                   <Button
                     variant="secondary"
                     icon={<LogOut size={15} strokeWidth={2} />}
                     onClick={signOut}
-                    disabled={!msalConfigured}
                     className="self-start"
                   >
                     Sign out
                   </Button>
+                ) : (
+                  <p className="text-[11.5px] text-fg-subtle">
+                    Running under local dev-bypass — no real session to sign out
+                    of.
+                  </p>
                 )}
               </Section>
             </>
@@ -184,31 +165,7 @@ export function Settings() {
             </>
           )}
 
-          {tab === 'users' && (
-            <>
-              <div className="rounded-[12px] border border-border bg-card">
-                <EmptyState
-                  icon={<Users size={18} strokeWidth={2} />}
-                  title="User management coming soon"
-                  description="Managing users, roles, and invites needs the AppUser admin API — planned with per-OpCo scope (AUTH-3)."
-                />
-              </div>
-              <Section title="Roles">
-                <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-3">
-                  {ROLE_DEFS.map((r) => (
-                    <div key={r.name} className="flex flex-col gap-[4px]">
-                      <span className="text-[12.5px] font-semibold text-accent">
-                        {r.name}
-                      </span>
-                      <span className="text-[11.5px] leading-[1.5] text-fg-subtle">
-                        {r.desc}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            </>
-          )}
+          {tab === 'users' && <UsersPanel />}
 
           {tab === 'integrations' && (
             <>

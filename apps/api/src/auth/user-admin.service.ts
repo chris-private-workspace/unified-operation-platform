@@ -1,0 +1,171 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { Role } from '@prisma/client';
+import type { AppUser, Opco } from '@prisma/client';
+import * as argon2 from 'argon2';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  AdminOpcoDto,
+  AdminUserDto,
+  CreateUserDto,
+  UpdateUserDto,
+} from './dto/user-admin.dto';
+
+// Prisma row shape with the opcoScope relation we select for the console.
+type UserWithScope = AppUser & {
+  opcoScope: Pick<Opco, 'code' | 'displayName'> | null;
+};
+const SCOPE_INCLUDE = {
+  opcoScope: { select: { code: true, displayName: true } },
+} as const;
+
+/**
+ * Local user administration (ADR-0005 §6 / AUTH-4b). Admin-only (guarded at the
+ * controller). Creates local-provider accounts (argon2 hash) and edits role /
+ * OpCo scope / active for BOTH providers. H4: passwordHash is never serialised
+ * (toAdminUser strips it) and passwords / hashes are never logged. Deactivation
+ * (active=false) replaces deletion — AppUser is referenced by requests / events,
+ * and we never hard-delete (D-c).
+ */
+@Injectable()
+export class UserAdminService {
+  private readonly logger = new Logger(UserAdminService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** All users, active first — for the Users & roles table. */
+  async list(): Promise<AdminUserDto[]> {
+    const users = await this.prisma.appUser.findMany({
+      orderBy: [{ active: 'desc' }, { createdAt: 'asc' }],
+      include: SCOPE_INCLUDE,
+    });
+    return users.map(toAdminUser);
+  }
+
+  /** Active OpCos for the create-user scope selector. */
+  listOpcos(): Promise<AdminOpcoDto[]> {
+    return this.prisma.opco.findMany({
+      where: { active: true },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, displayName: true },
+    });
+  }
+
+  async create(actor: AppUser, dto: CreateUserDto): Promise<AdminUserDto> {
+    const opcoScopeId = await this.normaliseScope(dto.role, dto.opcoScopeId);
+
+    const clash = await this.prisma.appUser.findUnique({
+      where: { email: dto.email },
+      select: { id: true },
+    });
+    if (clash)
+      throw new ConflictException('A user with this email already exists');
+
+    const passwordHash = await argon2.hash(dto.initialPassword);
+
+    const user = await this.prisma.appUser.create({
+      data: {
+        email: dto.email,
+        displayName: dto.displayName,
+        role: dto.role,
+        opcoScopeId,
+        passwordHash,
+        authProvider: 'local',
+      },
+      include: SCOPE_INCLUDE,
+    });
+    // H4: log ids + role only — never email (PII) / password / hash.
+    this.logger.log(
+      `Local user created: id=${user.id} role=${user.role} by=${actor.id}`,
+    );
+    return toAdminUser(user);
+  }
+
+  async update(
+    actor: AppUser,
+    id: string,
+    dto: UpdateUserDto,
+  ): Promise<AdminUserDto> {
+    const target = await this.prisma.appUser.findUnique({ where: { id } });
+    if (!target) throw new NotFoundException('User not found');
+
+    const nextRole = dto.role ?? target.role;
+    const nextActive = dto.active ?? target.active;
+
+    // D-e safety: never lock everyone out. Block removing the last active ADMIN
+    // (by demotion or deactivation), and block deactivating your own account.
+    const losingAdmin =
+      target.role === Role.ADMIN &&
+      target.active &&
+      (nextRole !== Role.ADMIN || nextActive === false);
+    if (losingAdmin) {
+      const otherAdmins = await this.prisma.appUser.count({
+        where: { role: Role.ADMIN, active: true, id: { not: id } },
+      });
+      if (otherAdmins === 0) {
+        throw new BadRequestException(
+          'Cannot demote or deactivate the last active admin',
+        );
+      }
+    }
+    if (id === actor.id && nextActive === false) {
+      throw new BadRequestException('Cannot deactivate your own account');
+    }
+
+    // Recompute scope whenever role or scope is touched, so role↔scope stays
+    // consistent (clears a stale scope on demotion, requires one on promotion).
+    const rawScope =
+      dto.opcoScopeId !== undefined ? dto.opcoScopeId : target.opcoScopeId;
+    const opcoScopeId = await this.normaliseScope(nextRole, rawScope);
+
+    const user = await this.prisma.appUser.update({
+      where: { id },
+      data: { role: nextRole, active: nextActive, opcoScopeId },
+      include: SCOPE_INCLUDE,
+    });
+    this.logger.log(
+      `User updated: id=${user.id} role=${user.role} active=${user.active} by=${actor.id}`,
+    );
+    return toAdminUser(user);
+  }
+
+  /**
+   * Enforce role↔scope consistency and verify the OpCo exists.
+   * OPCO_IT → a scope is required; ADMIN / REGIONAL → forced null (they see all).
+   */
+  private async normaliseScope(
+    role: Role,
+    opcoScopeId?: string | null,
+  ): Promise<string | null> {
+    if (role !== Role.OPCO_IT) return null;
+    if (!opcoScopeId) {
+      throw new BadRequestException('OPCO_IT requires an OpCo scope');
+    }
+    const opco = await this.prisma.opco.findFirst({
+      where: { id: opcoScopeId, active: true },
+      select: { id: true },
+    });
+    if (!opco) throw new BadRequestException('OpCo scope not found');
+    return opcoScopeId;
+  }
+}
+
+/** Map a Prisma AppUser (+opcoScope) to the wire shape, dropping passwordHash (H4). */
+function toAdminUser(user: UserWithScope): AdminUserDto {
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    role: user.role,
+    opcoScopeId: user.opcoScopeId,
+    opcoScope: user.opcoScope,
+    authProvider: user.authProvider,
+    active: user.active,
+    lastLoginAt: user.lastLoginAt,
+  };
+}
