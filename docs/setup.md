@@ -15,7 +15,8 @@
 2. `npm install`(root workspace,一次裝 `apps/*`)。
 3. `docker compose up -d` —— 起 Postgres(host **5433**)+ Redis(6379)。
 4. `apps/api/.env`:copy `apps/api/.env.example` 做 `apps/api/.env`,填 Graph / ServiceNow(boot 可用佔位值)+ `DATABASE_URL`(已對齊 5433)。**唔好 commit `.env`**;Graph 權限見 `docs/05-usage/INTEGRATION_SETUP.md`。
-5. `npm run prisma:generate` → `npm run prisma:migrate`(建表)→ `npm run seed`(23 OpCos + admin)。
+   - **Auth env(ADR-0005 / AUTH-4a)**:本地登入需 `AUTH_JWT_SECRET`(本地 JWT HS256 簽名 secret,強隨機、**絕不 commit**;缺則本地登入 fail)。`seed` 建本地 admin 需 `LOCAL_ADMIN_INITIAL_PASSWORD`(未設則 skip)。純本地捷徑仍可用 `AUTH_DEV_BYPASS=true`(免登入,注入 seed ADMIN;`AUTH_DEV_USER_EMAIL` 扮特定 user)。三者皆 inline / `.env`,**唔入 git**。無 dev-bypass 時登入 `admin@uop.local`(= `LOCAL_ADMIN_INITIAL_PASSWORD`)。
+5. `npm run prisma:generate` → `npm run prisma:migrate`(建表)→ `npm run seed`(23 OpCos + admin + 本地 admin(若設 env))。
    - ⚠️ 若 `binaries.prisma.sh` 回 **503**(公司 proxy 封 Prisma engine CDN):轉**流動網路**跑一次 generate/migrate cache engine(見「常見坑」)。
 6. `npm run start:dev` → OpenAPI UI(本機 `PORT=3100`,見下)`http://localhost:3100/docs/api`。
 

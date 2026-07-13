@@ -13,12 +13,11 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useMsal } from '@azure/msal-react';
 import { NavItem } from '@/components/ui/nav-item';
 import { Avatar } from '@/components/ui/avatar';
 import { IconButton } from '@/components/ui/icon-button';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
-import { msalConfigured } from '@/lib/auth/msal';
+import { useSignOut } from '@/lib/auth/use-sign-out';
 import { useUiStore } from '@/store/ui';
 import { useDrift } from '@/hooks/queries';
 
@@ -85,9 +84,8 @@ export function Sidebar() {
   const { pathname } = useLocation();
   const [params] = useSearchParams();
   const user = useCurrentUser();
-  const { instance } = useMsal();
+  const signOut = useSignOut();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
-  const signOut = () => void instance.logoutRedirect();
   // Drift Alerts badge reflects the live open-alert count (shared query cache
   // with the Drift screen). Other nav counts stay placeholder until their phase.
   const { data: drift } = useDrift();
@@ -201,7 +199,7 @@ export function Sidebar() {
                   {user.email}
                 </span>
               </div>
-              {!user.isDevBypass && msalConfigured && (
+              {user.canSignOut && (
                 <IconButton title="Sign out" onClick={signOut}>
                   <LogOut size={15} strokeWidth={2} />
                 </IconButton>

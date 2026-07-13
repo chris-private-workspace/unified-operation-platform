@@ -9,14 +9,13 @@ import {
   Settings as SettingsIcon,
   Sun,
 } from 'lucide-react';
-import { useMsal } from '@azure/msal-react';
 import { Input } from '@/components/ui/input';
 import { IconButton } from '@/components/ui/icon-button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Avatar } from '@/components/ui/avatar';
 import { useUiStore, type Role } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
-import { msalConfigured } from '@/lib/auth/msal';
+import { useSignOut } from '@/lib/auth/use-sign-out';
 
 const TITLES: Record<string, string> = {
   '/': 'Overview',
@@ -38,7 +37,7 @@ const TENANT = 'ricoh.onmicrosoft.com';
 function UserMenu() {
   const navigate = useNavigate();
   const user = useCurrentUser();
-  const { instance } = useMsal();
+  const signOut = useSignOut();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -52,7 +51,7 @@ function UserMenu() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  const canSignOut = !user.isDevBypass && msalConfigured;
+  const canSignOut = user.canSignOut;
 
   return (
     <div className="relative" ref={ref}>
@@ -90,7 +89,7 @@ function UserMenu() {
           {canSignOut ? (
             <button
               type="button"
-              onClick={() => void instance.logoutRedirect()}
+              onClick={signOut}
               className="flex w-full cursor-pointer items-center gap-[8px] rounded-md px-[8px] py-[7px] text-[12.5px] text-fg-muted hover:bg-hover"
             >
               <LogOut size={15} strokeWidth={2} />

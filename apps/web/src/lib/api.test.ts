@@ -8,8 +8,14 @@ const m = vi.hoisted(() => ({
   devBypass: false,
   configured: true,
   account: null as { username: string } | null,
+  localToken: null as string | null,
   acquireTokenSilent: vi.fn(),
   acquireTokenRedirect: vi.fn(),
+}));
+
+// Local password session (ADR-0005) — controllable per test.
+vi.mock('@/lib/auth/local-session', () => ({
+  localToken: () => m.localToken,
 }));
 
 vi.mock('@/lib/auth/msal', () => ({
@@ -37,11 +43,22 @@ beforeEach(() => {
   m.devBypass = false;
   m.configured = true;
   m.account = null;
+  m.localToken = null;
   m.acquireTokenSilent.mockReset();
   m.acquireTokenRedirect.mockReset();
 });
 
 describe('authHeader (ADR-0003 token attach)', () => {
+  it('local session token wins → local Bearer, no MSAL call (ADR-0005)', async () => {
+    m.localToken = 'local.jwt.tok';
+    m.devBypass = true; // even dev-bypass yields to a real local session
+    m.account = ACCOUNT;
+    expect(await authHeader()).toEqual({
+      Authorization: 'Bearer local.jwt.tok',
+    });
+    expect(m.acquireTokenSilent).not.toHaveBeenCalled();
+  });
+
   it('dev-bypass → no header, no token acquired (backend AUTH_DEV_BYPASS carries it)', async () => {
     m.devBypass = true;
     m.account = ACCOUNT; // even with an account present, dev-bypass wins

@@ -20,7 +20,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ── Identity & access (Entra SSO → app roles) ────────────────
+// ── Identity & access (Entra SSO + local password → app roles) ─
+// Dual-provider (ADR-0005): SSO users have entraOid; local users have
+// passwordHash. email is the shared login identifier. authProvider disambiguates.
 
 enum Role {
   ADMIN    // platform admin
@@ -30,9 +32,11 @@ enum Role {
 
 model AppUser {
   id              String         @id @default(cuid())
-  entraOid        String         @unique // Entra object id from the SSO token
-  email           String         @unique
+  entraOid        String?        @unique // Entra object id (SSO users; null for local accounts)
+  email           String         @unique // login identifier for both providers
   displayName     String
+  passwordHash    String? // argon2id hash (local accounts; null for SSO) — NEVER serialised
+  authProvider    String         @default("entra") // 'entra' | 'local'
   role            Role           @default(REGIONAL)
   opcoScopeId     String? // set for OPCO_IT; null = all (REGIONAL / ADMIN)
   opcoScope       Opco?          @relation(fields: [opcoScopeId], references: [id])

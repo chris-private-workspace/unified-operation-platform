@@ -3,10 +3,11 @@ import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { LocalJwtService, LOCAL_JWT_ISSUER } from './local-jwt.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
-// jwks-rsa must open no network in tests; jsonwebtoken.verify is stubbed per-case.
+// jwks-rsa must open no network in tests; jsonwebtoken.verify/decode are stubbed.
 jest.mock('jwks-rsa', () => ({
   JwksClient: jest.fn(() => ({ getSigningKey: jest.fn() })),
 }));
@@ -30,6 +31,17 @@ const OPCO_IT = {
   role: 'OPCO_IT',
   opcoScopeId: 'rhk-id',
   active: true,
+} as never;
+
+const LOCAL_ADMIN = {
+  id: 'u-local',
+  entraOid: null,
+  email: 'admin@uop.local',
+  displayName: 'Local Admin',
+  role: 'ADMIN',
+  opcoScopeId: null,
+  active: true,
+  authProvider: 'local',
 } as never;
 
 function reflectorFor(isPublic: boolean): Reflector {
@@ -58,6 +70,19 @@ function config(values: Record<string, string>): ConfigService {
   } as unknown as ConfigService;
 }
 
+// LocalJwtService stub: verify() returns `claims`, or throws 401 when null.
+function localJwt(
+  claims: { sub: string; role: string } | null,
+): LocalJwtService {
+  return {
+    sign: jest.fn(),
+    verify: jest.fn(() => {
+      if (!claims) throw new UnauthorizedException('Invalid or expired token');
+      return claims;
+    }),
+  } as unknown as LocalJwtService;
+}
+
 const PROD_CFG = {
   ENTRA_TENANT_ID: '11111111-1111-1111-1111-111111111111',
   ENTRA_API_AUDIENCE: 'api://uop',
@@ -74,6 +99,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prisma,
+        localJwt(null),
         config({ AUTH_DEV_BYPASS: 'true' }),
       );
       const req: Record<string, unknown> = { headers: {} };
@@ -88,6 +114,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prisma,
+        localJwt(null),
         config({ AUTH_DEV_BYPASS: 'true' }),
       );
       await expect(
@@ -103,6 +130,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prisma,
+        localJwt(null),
         config({
           AUTH_DEV_BYPASS: 'true',
           AUTH_DEV_USER_EMAIL: 'opco.it.rhk@rapo.com.hk',
@@ -127,6 +155,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prisma,
+        localJwt(null),
         config({
           AUTH_DEV_BYPASS: 'true',
           AUTH_DEV_USER_EMAIL: 'ghost@nowhere',
@@ -143,6 +172,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(true),
         {} as PrismaService,
+        localJwt(null),
         config(PROD_CFG),
       );
       await expect(guard.canActivate(ctxWith({ headers: {} }))).resolves.toBe(
@@ -151,7 +181,49 @@ describe('JwtAuthGuard', () => {
     });
   });
 
-  describe('prod token path', () => {
+  describe('local-issuer token path (ADR-0005)', () => {
+    it('resolves a uop-local token by sub (authProvider=local, active)', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({
+        iss: LOCAL_JWT_ISSUER,
+        sub: 'u-local',
+      });
+      const findFirst = jest.fn().mockResolvedValue(LOCAL_ADMIN);
+      const prisma = { appUser: { findFirst } } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        localJwt({ sub: 'u-local', role: 'ADMIN' }),
+        config(PROD_CFG),
+      );
+      const req: Record<string, unknown> = {
+        headers: { authorization: 'Bearer local.tok' },
+      };
+      await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      expect(findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'u-local', active: true, authProvider: 'local' },
+        }),
+      );
+      expect(req.user).toBe(LOCAL_ADMIN);
+    });
+
+    it('401 when the local token fails verification', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({ iss: LOCAL_JWT_ISSUER });
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        {} as PrismaService,
+        localJwt(null), // verify throws
+        config(PROD_CFG),
+      );
+      await expect(
+        guard.canActivate(
+          ctxWith({ headers: { authorization: 'Bearer bad.local' } }),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('Entra token path', () => {
     const prismaWith = (upsert: jest.Mock) =>
       ({ appUser: { upsert } }) as unknown as PrismaService;
 
@@ -159,6 +231,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         {} as PrismaService,
+        localJwt(null),
         config(PROD_CFG),
       );
       await expect(
@@ -167,6 +240,8 @@ describe('JwtAuthGuard', () => {
     });
 
     it('upserts the AppUser by oid and attaches it on a valid token', async () => {
+      // Non-local issuer → Entra path.
+      (jwt.decode as jest.Mock).mockReturnValue({ iss: 'https://login…' });
       (jwt.verify as unknown as jest.Mock).mockImplementation(
         (_t, _k, _o, cb) =>
           cb(null, { oid: 'oid-123', email: 'jo@x', name: 'Jo' }),
@@ -184,6 +259,7 @@ describe('JwtAuthGuard', () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prismaWith(upsert),
+        localJwt(null),
         config(PROD_CFG),
       );
       const req: Record<string, unknown> = {
@@ -197,12 +273,14 @@ describe('JwtAuthGuard', () => {
     });
 
     it('401 when the token fails verification', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({ iss: 'https://login…' });
       (jwt.verify as unknown as jest.Mock).mockImplementation(
         (_t, _k, _o, cb) => cb(new Error('jwt expired')),
       );
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prismaWith(jest.fn()),
+        localJwt(null),
         config(PROD_CFG),
       );
       await expect(
@@ -213,12 +291,14 @@ describe('JwtAuthGuard', () => {
     });
 
     it('401 when a valid token carries no oid claim', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({ iss: 'https://login…' });
       (jwt.verify as unknown as jest.Mock).mockImplementation(
         (_t, _k, _o, cb) => cb(null, { email: 'no-oid@x' }),
       );
       const guard = new JwtAuthGuard(
         reflectorFor(false),
         prismaWith(jest.fn()),
+        localJwt(null),
         config(PROD_CFG),
       );
       await expect(
@@ -227,5 +307,32 @@ describe('JwtAuthGuard', () => {
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
+
+    it('401 when an Entra token arrives but SSO is not configured', async () => {
+      (jwt.decode as jest.Mock).mockReturnValue({ iss: 'https://login…' });
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        {} as PrismaService,
+        localJwt(null),
+        config({ AUTH_JWT_SECRET: 'local-secret' }), // local only, no Entra
+      );
+      await expect(
+        guard.canActivate(
+          ctxWith({ headers: { authorization: 'Bearer entra.tok' } }),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  it('fails fast at boot when no auth provider is configured', () => {
+    expect(
+      () =>
+        new JwtAuthGuard(
+          reflectorFor(false),
+          {} as PrismaService,
+          localJwt(null),
+          config({}), // no dev-bypass, no Entra, no local secret
+        ),
+    ).toThrow(/No auth provider configured/);
   });
 });

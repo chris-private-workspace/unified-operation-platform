@@ -136,6 +136,19 @@ export interface TenantSkuRow {
   overAllocated: boolean; // allocatedToOpcos > owned
 }
 
+/** POST /auth/login → LoginResultDto (ADR-0005 local password login). */
+export interface LoginResponse {
+  accessToken: string;
+  expiresIn: number; // seconds
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    role: string;
+    opcoScopeId: string | null;
+  };
+}
+
 /** GET /license/tenant-skus/stats → TenantSkuStatsDto (Platform recon tiles). */
 export interface TenantSkuStats {
   totalOwned: number;

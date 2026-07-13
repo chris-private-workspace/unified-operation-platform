@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
@@ -73,6 +74,31 @@ async function main() {
       },
       update: { role: 'OPCO_IT', opcoScopeId: rhk.id },
     });
+  }
+
+  // ── Local admin (ADR-0005 / AUTH-4a). Only seeded when the initial password is
+  //    provided via env — H4: never a hardcoded password. Lets local dev + break-
+  //    glass log in without SSO (authProvider='local', entraOid=null). Upsert by
+  //    email since local accounts have no entraOid.
+  const localPw = process.env.LOCAL_ADMIN_INITIAL_PASSWORD;
+  if (localPw) {
+    const passwordHash = await argon2.hash(localPw, { type: argon2.argon2id });
+    await prisma.appUser.upsert({
+      where: { email: 'admin@uop.local' },
+      create: {
+        email: 'admin@uop.local',
+        displayName: 'Local Admin',
+        role: 'ADMIN',
+        authProvider: 'local',
+        passwordHash,
+      },
+      update: { authProvider: 'local', passwordHash, role: 'ADMIN' },
+    });
+    console.log('Seeded local admin (admin@uop.local).');
+  } else {
+    console.log(
+      'LOCAL_ADMIN_INITIAL_PASSWORD not set — skipping local admin seed.',
+    );
   }
 
   console.log(`Seeded ${OPCOS.length} OpCos + admin + RHK OPCO_IT user.`);

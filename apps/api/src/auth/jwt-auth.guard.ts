@@ -12,15 +12,21 @@ import { JwksClient } from 'jwks-rsa';
 import type { AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
+import { LocalJwtService, LOCAL_JWT_ISSUER } from './local-jwt.service';
 
 /**
- * Validates the Entra v2.0 access token on every request (ADR-0002): RS256
- * signature via the tenant JWKS, then aud / iss / exp, then resolves the AppUser
- * by the token's `oid` claim. `@Public()` routes skip validation.
+ * Validates the access token on every request (ADR-0002 + ADR-0005). Two issuers:
+ *  • `iss = 'uop-local'` → a locally-signed HS256 token (local password login) →
+ *    resolve the AppUser by `sub`.
+ *  • otherwise → an Entra v2.0 token → RS256 via the tenant JWKS + aud / iss / exp
+ *    → resolve/upsert the AppUser by `oid`.
+ * `@Public()` routes skip validation. Entra config is optional now (a local-only
+ * deployment need not set it); the guard fails fast at boot only if NO provider
+ * is configured (neither Entra nor AUTH_JWT_SECRET).
  *
- * Local dev can set AUTH_DEV_BYPASS=true to skip token validation and run as the
- * seed ADMIN — never enable in production (ADR-0002 risk R-C). H4: the token /
- * signature / secrets are never logged, only the failure reason.
+ * Local dev can set AUTH_DEV_BYPASS=true to skip validation and run as the seed
+ * ADMIN — never in production (ADR-0002 risk R-C). H4: tokens / signatures /
+ * secrets are never logged, only the failure reason.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -35,6 +41,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
+    private readonly localJwt: LocalJwtService,
     config: ConfigService,
   ) {
     this.devBypass = config.get<string>('AUTH_DEV_BYPASS') === 'true';
@@ -48,15 +55,25 @@ export class JwtAuthGuard implements CanActivate {
       );
       return;
     }
-    // Prod path: Entra config is required (fail fast at boot if missing).
-    const tenantId = config.getOrThrow<string>('ENTRA_TENANT_ID');
-    this.audience = config.getOrThrow<string>('ENTRA_API_AUDIENCE');
-    this.issuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
-    this.jwks = new JwksClient({
-      jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
-      cache: true,
-      rateLimit: true,
-    });
+    // Entra is optional (ADR-0005 dual-provider): set it up only if configured.
+    const tenantId = config.get<string>('ENTRA_TENANT_ID');
+    const audience = config.get<string>('ENTRA_API_AUDIENCE');
+    if (tenantId && audience) {
+      this.audience = audience;
+      this.issuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
+      this.jwks = new JwksClient({
+        jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
+        cache: true,
+        rateLimit: true,
+      });
+    }
+    // Fail fast at boot if there is NO way to authenticate a request.
+    const hasLocal = Boolean(config.get<string>('AUTH_JWT_SECRET'));
+    if (!this.jwks && !hasLocal) {
+      throw new Error(
+        'No auth provider configured: set ENTRA_TENANT_ID + ENTRA_API_AUDIENCE (SSO) and/or AUTH_JWT_SECRET (local login).',
+      );
+    }
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -76,6 +93,16 @@ export class JwtAuthGuard implements CanActivate {
     const token = this.extractBearer(req.headers?.authorization);
     if (!token) throw new UnauthorizedException('Missing bearer token');
 
+    // Route by issuer: a locally-signed token (local login) vs an Entra token.
+    const unverified = jwt.decode(token) as jwt.JwtPayload | null;
+    if (unverified?.iss === LOCAL_JWT_ISSUER) {
+      const claims = this.localJwt.verify(token); // throws 401 on bad sig / exp
+      req.user = await this.resolveLocalUser(claims.sub);
+      return true;
+    }
+
+    // Entra path — only if SSO is configured (ADR-0005: it is optional).
+    if (!this.jwks) throw new UnauthorizedException('SSO is not configured');
     let payload: jwt.JwtPayload;
     try {
       payload = await this.verify(token);
@@ -87,6 +114,15 @@ export class JwtAuthGuard implements CanActivate {
 
     req.user = await this.resolveUser(payload);
     return true;
+  }
+
+  /** Resolve the AppUser a local token was issued for (by `sub` = AppUser.id). */
+  private async resolveLocalUser(id: string): Promise<AppUser> {
+    const user = await this.prisma.appUser.findFirst({
+      where: { id, active: true, authProvider: 'local' },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+    return user;
   }
 
   private extractBearer(header?: string): string | null {

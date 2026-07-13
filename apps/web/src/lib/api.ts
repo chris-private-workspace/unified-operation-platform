@@ -9,17 +9,20 @@ import {
   API_SCOPE,
   AUTH_DEV_BYPASS,
 } from './auth/msal';
+import { localToken } from './auth/local-session';
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 /**
- * Authorization header for an API call (ADR-0003). Dev-bypass or unconfigured MSAL
- * (pre-app-reg) → no header; the backend AUTH_DEV_BYPASS carries it. Otherwise acquire
- * a token silently; on interaction-required kick a redirect and send unauthenticated
- * this once (the redirect takes over / the 401 surfaces). H4: never log the token.
- * Exported for unit testing (api.test.ts) — the branch logic is auth-adjacent (H5).
+ * Authorization header for an API call (ADR-0003 + ADR-0005). A local password
+ * session takes priority → its Bearer. Otherwise: dev-bypass or unconfigured MSAL
+ * (pre-app-reg) → no header (backend AUTH_DEV_BYPASS carries it); else acquire an
+ * Entra token silently, and on interaction-required kick a redirect and send
+ * unauthenticated once. H4: never log the token. Exported for unit testing.
  */
 export async function authHeader(): Promise<Record<string, string>> {
+  const local = localToken();
+  if (local) return { Authorization: `Bearer ${local}` };
   if (AUTH_DEV_BYPASS || !msalConfigured) return {};
   const account = msalInstance.getActiveAccount();
   if (!account) return {}; // not signed in — the auth gate sends the user to Login

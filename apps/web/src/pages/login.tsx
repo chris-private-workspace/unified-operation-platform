@@ -1,8 +1,13 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMsal } from '@azure/msal-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { API_SCOPE, msalConfigured } from '@/lib/auth/msal';
+import { apiPost, ApiError } from '@/lib/api';
+import { setLocalSession } from '@/lib/auth/local-session';
+import type { LoginResponse } from '@/lib/api-types';
 
 // The one multi-color mark allowed in the system (DS-6) — Microsoft's 4-square, brand colors.
 function MicrosoftLogo() {
@@ -22,6 +27,11 @@ function MicrosoftLogo() {
 // fields are the mockup's visual — reproduced but never wired (no fake password form).
 export function Login() {
   const { instance } = useMsal();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const signIn = () => {
     // Scope empty until the app registration exists; msalConfigured gates the button.
@@ -29,6 +39,29 @@ export function Login() {
       .loginRedirect({ scopes: API_SCOPE ? [API_SCOPE] : [] })
       .catch(() => {});
   };
+
+  // Local password login (ADR-0005): POST /auth/login → store the session → app.
+  async function onLocalLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const res = await apiPost<LoginResponse>('/auth/login', {
+        email,
+        password,
+      });
+      setLocalSession(res.accessToken, res.expiresIn, res.user);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? 'Invalid email or password.'
+          : 'Sign-in failed. Please try again.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="flex h-screen w-full">
@@ -133,44 +166,59 @@ export function Login() {
 
           <div className="my-[18px] flex items-center gap-[10px] text-[11px] text-fg-subtle">
             <span className="h-px flex-1 bg-border" />
-            or
+            or with a local account
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          {/* Visual-only (mockup fidelity); SSO does not collect a password here. */}
-          <label className="text-[12px] text-fg-muted">Email</label>
-          <Input
-            type="email"
-            placeholder="you@opco.com"
-            disabled
-            className="mt-[6px]"
-          />
-          <label className="mt-[12px] block text-[12px] text-fg-muted">
-            Password
-          </label>
-          <Input
-            type="password"
-            placeholder="••••••••"
-            disabled
-            className="mt-[6px]"
-          />
+          {/* Local password login (ADR-0005) — real form. */}
+          <form onSubmit={onLocalLogin}>
+            <label className="text-[12px] text-fg-muted">Email</label>
+            <Input
+              type="email"
+              placeholder="you@opco.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
+              required
+              className="mt-[6px]"
+            />
+            <label className="mt-[12px] block text-[12px] text-fg-muted">
+              Password
+            </label>
+            <Input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              className="mt-[6px]"
+            />
 
-          <div className="mt-[14px] flex items-center justify-between">
-            <Checkbox label="Keep me signed in" disabled />
-          </div>
+            <div className="mt-[14px] flex items-center justify-between">
+              <Checkbox label="Keep me signed in" disabled />
+            </div>
 
-          <Button
-            variant="primary"
-            size="lg"
-            disabled
-            className="mt-[16px] w-full"
-          >
-            Sign in
-          </Button>
+            {error && (
+              <p className="mt-[12px] rounded-md bg-danger-soft px-[10px] py-[7px] text-[11.5px] text-danger">
+                {error}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              disabled={submitting || !email || !password}
+              className="mt-[16px] w-full"
+            >
+              {submitting ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
 
           <p className="mt-[18px] text-[11.5px] leading-[1.5] text-fg-subtle">
-            Signing in uses your organization’s Microsoft Entra ID. Contact IT
-            if you need access.
+            SSO uses your organization’s Microsoft Entra ID. Local accounts are
+            provisioned by IT — contact them if you need access.
           </p>
         </div>
       </div>
