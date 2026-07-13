@@ -118,6 +118,33 @@ export interface LedgerStats {
   overAllocatedCount: number;
 }
 
+/**
+ * GET /license/tenant-skus → TenantSkuRowDto[] (W16). Tenant three-layer view
+ * (DESIGN §5): owned (M365 prepaidUnits.enabled) → allocatedToOpcos (Σ OpCo
+ * budget) → assignedToUsers. owned / tenantConsumed / unallocated are null when
+ * a SKU is allocated but never synced from tenant. ADMIN / REGIONAL only — a
+ * GET by OPCO_IT returns 403 (Platform view is a tenant-wide admin surface).
+ */
+export interface TenantSkuRow {
+  skuCatalogId: string;
+  sku: LedgerSkuRef;
+  owned: number | null;
+  tenantConsumed: number | null;
+  allocatedToOpcos: number;
+  assignedToUsers: number;
+  unallocated: number | null; // owned - allocatedToOpcos
+  overAllocated: boolean; // allocatedToOpcos > owned
+}
+
+/** GET /license/tenant-skus/stats → TenantSkuStatsDto (Platform recon tiles). */
+export interface TenantSkuStats {
+  totalOwned: number;
+  totalAllocated: number;
+  totalAssigned: number;
+  totalUnallocated: number; // totalOwned - totalAllocated (may be negative)
+  skusOverAllocated: number;
+}
+
 /** GET /license/drift → DriftAlertDto[] */
 export interface DriftSkuRef {
   skuId: string;

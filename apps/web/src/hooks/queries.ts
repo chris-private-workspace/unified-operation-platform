@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '@/lib/api';
+import { apiGet, ApiError } from '@/lib/api';
 import type {
   DriftAlert,
   LedgerRow,
@@ -7,7 +7,14 @@ import type {
   OnboardingRequest,
   RequestDetail,
   SkuCatalog,
+  TenantSkuRow,
+  TenantSkuStats,
 } from '@/lib/api-types';
+
+// A 403 (OPCO_IT hitting a tenant-admin surface) is authoritative — never retry
+// it; still retry transient failures a couple of times.
+const retryUnless403 = (count: number, err: unknown) =>
+  !(err instanceof ApiError && err.status === 403) && count < 2;
 
 // Read-only TanStack Query hooks over the existing API surface (FE-1 consumes
 // GET only; write flows land in later screen phases). Query keys are namespaced
@@ -42,6 +49,30 @@ export function useLedgerStats() {
   return useQuery({
     queryKey: ['license', 'ledger', 'stats'],
     queryFn: () => apiGet<LedgerStats>('/license/ledger/stats'),
+  });
+}
+
+/**
+ * GET /license/tenant-skus — tenant-level per-SKU rows (Platform mode). Lazy:
+ * only fires when `enabled` (the Platform tab is active), so By-OpCo users never
+ * trigger the 403. ADMIN / REGIONAL only.
+ */
+export function useTenantSkus(enabled: boolean) {
+  return useQuery({
+    queryKey: ['license', 'tenant-skus'],
+    queryFn: () => apiGet<TenantSkuRow[]>('/license/tenant-skus'),
+    enabled,
+    retry: retryUnless403,
+  });
+}
+
+/** GET /license/tenant-skus/stats — tenant aggregate for the Platform recon tiles. */
+export function useTenantSkuStats(enabled: boolean) {
+  return useQuery({
+    queryKey: ['license', 'tenant-skus', 'stats'],
+    queryFn: () => apiGet<TenantSkuStats>('/license/tenant-skus/stats'),
+    enabled,
+    retry: retryUnless403,
   });
 }
 
