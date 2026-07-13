@@ -2,15 +2,18 @@ import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
+import { LedgerReadService } from './ledger-read.service';
 import { CatalogSyncResultDto, SkuCatalogDto } from './dto/catalog.dto';
 import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
 import {
   LedgerImportRequestDto,
   LedgerImportResultDto,
 } from './dto/ledger-import.dto';
+import { LedgerRowDto, LedgerStatsDto } from './dto/ledger-read.dto';
 
 /**
  * Module C surface — SKU catalog + total-level reconciliation.
@@ -28,6 +31,7 @@ export class LicenseController {
     private readonly catalog: CatalogService,
     private readonly reconcile: ReconcileService,
     private readonly allocationImport: AllocationImportService,
+    private readonly ledgerRead: LedgerReadService,
   ) {}
 
   @Post('catalog/sync')
@@ -67,5 +71,23 @@ export class LicenseController {
     @Body() dto: LedgerImportRequestDto,
   ): Promise<LedgerImportResultDto> {
     return this.allocationImport.import(dto);
+  }
+
+  /**
+   * Per-OpCo ledger read-model (BE-ledger-read / W14). Read GET → also allows
+   * OPCO_IT; scopeWhere restricts OPCO_IT to its own OpCo (AUTH-3a).
+   */
+  @Get('ledger')
+  @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
+  @ApiOkResponse({ type: [LedgerRowDto] })
+  listLedger(@CurrentUser() actor: AuthUser): Promise<LedgerRowDto[]> {
+    return this.ledgerRead.listLedger(actor);
+  }
+
+  @Get('ledger/stats')
+  @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
+  @ApiOkResponse({ type: LedgerStatsDto })
+  ledgerStats(@CurrentUser() actor: AuthUser): Promise<LedgerStatsDto> {
+    return this.ledgerRead.ledgerStats(actor);
   }
 }
