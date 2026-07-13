@@ -6,9 +6,9 @@ import {
   CircleAlert,
   ClipboardList,
   Inbox,
+  KeyRound,
   LineChart,
   Lightbulb,
-  Package,
   TriangleAlert,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -16,7 +16,7 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
-import { useCatalog, useDrift, useRequests } from '@/hooks/queries';
+import { useDrift, useLedgerStats, useRequests } from '@/hooks/queries';
 import { matchesFilter } from '@/lib/requests';
 import type { RequestStatus } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
@@ -96,7 +96,7 @@ export function Overview() {
   const [tab, setTab] = useState<'summary' | 'analytics'>('summary');
   const requests = useRequests();
   const drift = useDrift();
-  const catalog = useCatalog();
+  const stats = useLedgerStats();
 
   const openReqs = (requests.data ?? []).filter(
     (r) => r.status !== 'COMPLETED' && r.status !== 'CANCELLED',
@@ -106,7 +106,6 @@ export function Overview() {
     matchesFilter(r, 'procurement'),
   ).length;
   const openDrift = (drift.data ?? []).filter((d) => d.status === 'OPEN');
-  const activeSkus = (catalog.data ?? []).filter((s) => s.active).length;
   // Honest "last checked" proxy: the most recent alert detection (no separate
   // reconcile-run timestamp is stored). Undefined until data loads.
   const lastChecked = openDrift
@@ -175,11 +174,11 @@ export function Overview() {
               sub="ledger vs tenant"
             />
             <StatCard
-              label="Tracked SKUs"
-              value={kpi(catalog, activeSkus)}
-              tone="neutral"
-              icon={<Package size={16} strokeWidth={2} />}
-              sub="active in catalog"
+              label="Licenses assigned"
+              value={kpi(stats, stats.data?.totalAssigned ?? 0)}
+              tone="ok"
+              icon={<KeyRound size={16} strokeWidth={2} />}
+              sub="in active use"
             />
           </div>
 

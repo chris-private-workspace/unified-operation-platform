@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api';
 import type {
   DriftAlert,
+  LedgerRow,
+  LedgerStats,
   OnboardingRequest,
   RequestDetail,
   SkuCatalog,
@@ -24,6 +26,22 @@ export function useDrift() {
   return useQuery({
     queryKey: ['license', 'drift'],
     queryFn: () => apiGet<DriftAlert[]>('/license/drift'),
+  });
+}
+
+/** GET /license/ledger — per-OpCo per-SKU ledger rows (opco-scoped, active-only). */
+export function useLedger() {
+  return useQuery({
+    queryKey: ['license', 'ledger'],
+    queryFn: () => apiGet<LedgerRow[]>('/license/ledger'),
+  });
+}
+
+/** GET /license/ledger/stats — scoped aggregate for the Assets + Overview KPIs. */
+export function useLedgerStats() {
+  return useQuery({
+    queryKey: ['license', 'ledger', 'stats'],
+    queryFn: () => apiGet<LedgerStats>('/license/ledger/stats'),
   });
 }
 

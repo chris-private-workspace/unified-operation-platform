@@ -77,6 +77,47 @@ export interface LedgerImportResult {
   unknownOpcoHeaders: string[];
 }
 
+/** OpCo reference embedded in a ledger row (GET /license/ledger). */
+export interface LedgerOpcoRef {
+  code: string;
+  displayName: string;
+}
+
+/** SKU reference embedded in a ledger row. */
+export interface LedgerSkuRef {
+  skuId: string;
+  skuPartNumber: string;
+  displayName: string;
+  category: string | null;
+}
+
+/**
+ * GET /license/ledger → LedgerRowDto[] (W14). Two-layer numbers per DESIGN §5:
+ * allocatedQuantity = owned/budget, assignedQuantity = assigned. headroom /
+ * overAllocated are backend-derived; utilization % is a display-layer concern.
+ */
+export interface LedgerRow {
+  id: string;
+  opcoId: string;
+  skuCatalogId: string;
+  allocatedQuantity: number;
+  assignedQuantity: number;
+  headroom: number; // allocatedQuantity - assignedQuantity
+  overAllocated: boolean; // assignedQuantity > allocatedQuantity
+  opco: LedgerOpcoRef;
+  sku: LedgerSkuRef;
+}
+
+/** GET /license/ledger/stats → LedgerStatsDto (scoped aggregate for the KPIs). */
+export interface LedgerStats {
+  totalAllocated: number;
+  totalAssigned: number;
+  totalHeadroom: number;
+  skusTracked: number;
+  opcosTracked: number;
+  overAllocatedCount: number;
+}
+
 /** GET /license/drift → DriftAlertDto[] */
 export interface DriftSkuRef {
   skuId: string;
