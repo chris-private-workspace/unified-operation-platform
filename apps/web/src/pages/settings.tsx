@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useUiStore, type Theme } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
@@ -20,6 +21,7 @@ import { getLocalProfile } from '@/lib/auth/local-profile';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
 import { UsersPanel } from '@/components/settings/users-panel';
+import { roleLabel, roleTone } from '@/lib/user-admin';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
   { value: 'account', label: 'Account', Icon: User },
@@ -116,15 +118,30 @@ export function Settings() {
                 <Field label="Email">
                   <Input value={user.email} disabled readOnly />
                 </Field>
+                <Field label="Role">
+                  {user.role ? (
+                    <span className="self-start">
+                      <Badge tone={roleTone(user.role)}>
+                        {roleLabel(user.role)}
+                      </Badge>
+                    </span>
+                  ) : (
+                    <Input value="…" disabled readOnly />
+                  )}
+                </Field>
                 <p className="text-[11.5px] text-fg-subtle">
-                  Your profile is managed by Microsoft Entra ID and can’t be
-                  edited here.
+                  Your profile and role are managed by IT and can’t be edited
+                  here.
                 </p>
               </Section>
               <Section title="Sign-in &amp; access">
                 <Field label="Sign-in method">
                   <Input
-                    value="Microsoft Entra ID (single sign-on)"
+                    value={
+                      isLocalSession
+                        ? 'Local account (password)'
+                        : 'Microsoft Entra ID (single sign-on)'
+                    }
                     disabled
                     readOnly
                   />

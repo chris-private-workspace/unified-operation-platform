@@ -152,6 +152,20 @@ export interface SessionResponse {
   };
 }
 
+/**
+ * GET /me → MeDto (AUTH-3a/3b) — the signed-in operator's real identity + role +
+ * OpCo scope. The SSOT the frontend consumes for role display / gating.
+ */
+export interface MeResponse {
+  id: string;
+  email: string;
+  displayName: string;
+  role: Role;
+  opcoScopeId: string | null;
+  opcoScope: OpcoRef | null; // { code, displayName } — set for OPCO_IT
+  mustChangePassword: boolean;
+}
+
 /** PATCH /me/password body (AUTH-4c-A self-service change). */
 export interface ChangePasswordBody {
   currentPassword: string;

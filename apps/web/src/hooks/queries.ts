@@ -6,12 +6,15 @@ import type {
   DriftAlert,
   LedgerRow,
   LedgerStats,
+  MeResponse,
   OnboardingRequest,
   RequestDetail,
+  Role,
   SkuCatalog,
   TenantSkuRow,
   TenantSkuStats,
 } from '@/lib/api-types';
+import { getLocalProfile } from '@/lib/auth/local-profile';
 
 // A 403 (OPCO_IT hitting a tenant-admin surface) is authoritative — never retry
 // it; still retry transient failures a couple of times.
@@ -21,6 +24,33 @@ const retryUnless403 = (count: number, err: unknown) =>
 // Read-only TanStack Query hooks over the existing API surface (FE-1 consumes
 // GET only; write flows land in later screen phases). Query keys are namespaced
 // so later mutations can invalidate them.
+
+/**
+ * GET /me — the signed-in operator's real identity + role/scope (AUTH-3b). The
+ * SSOT for role across every session type (local cookie / Entra Bearer / dev-
+ * bypass). A local session seeds initialData from its stored profile so the real
+ * role is available instantly (no loading flash); opcoScope (code/displayName) is
+ * only in the /me payload, so it fills in on the first fetch. Never retried past a
+ * 401 — the refresh-retry in api.ts already handles that.
+ */
+export function useMe() {
+  const profile = getLocalProfile();
+  return useQuery({
+    queryKey: ['me'],
+    queryFn: () => apiGet<MeResponse>('/me'),
+    initialData: profile
+      ? {
+          id: profile.id,
+          email: profile.email,
+          displayName: profile.displayName,
+          role: profile.role as Role,
+          opcoScopeId: profile.opcoScopeId,
+          opcoScope: null, // not in the profile; the /me fetch fills it in
+          mustChangePassword: profile.mustChangePassword,
+        }
+      : undefined,
+  });
+}
 
 /** GET /license/catalog — SKU dictionary. */
 export function useCatalog() {

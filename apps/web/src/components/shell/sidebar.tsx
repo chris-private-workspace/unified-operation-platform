@@ -15,11 +15,14 @@ import {
 } from 'lucide-react';
 import { NavItem } from '@/components/ui/nav-item';
 import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { IconButton } from '@/components/ui/icon-button';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
 import { useUiStore } from '@/store/ui';
 import { useDrift } from '@/hooks/queries';
+import { canSeeAdminNav } from '@/lib/roles';
+import { roleLabel, roleTone } from '@/lib/user-admin';
 
 interface NavEntry {
   path: string;
@@ -143,18 +146,22 @@ export function Sidebar() {
         {!collapsed && <SectionLabel>Catalog</SectionLabel>}
         {renderNav(CATALOG)}
 
-        <div className="pt-[6px]" />
-        {!collapsed && <SectionLabel>Administration</SectionLabel>}
-        {ADMIN.map(({ tab, label, Icon }) => (
-          <NavItem
-            key={tab}
-            icon={<Icon size={16} strokeWidth={2} />}
-            label={label}
-            collapsed={collapsed}
-            active={pathname === '/settings' && params.get('tab') === tab}
-            onClick={() => navigate(`/settings?tab=${tab}`)}
-          />
-        ))}
+        {canSeeAdminNav(user.role) && (
+          <>
+            <div className="pt-[6px]" />
+            {!collapsed && <SectionLabel>Administration</SectionLabel>}
+            {ADMIN.map(({ tab, label, Icon }) => (
+              <NavItem
+                key={tab}
+                icon={<Icon size={16} strokeWidth={2} />}
+                label={label}
+                collapsed={collapsed}
+                active={pathname === '/settings' && params.get('tab') === tab}
+                onClick={() => navigate(`/settings?tab=${tab}`)}
+              />
+            ))}
+          </>
+        )}
 
         <div className="pt-[6px]" />
         {!collapsed && <SectionLabel>Roadmap</SectionLabel>}
@@ -191,13 +198,20 @@ export function Sidebar() {
           <Avatar name={user.name} variant="brand" />
           {!collapsed && (
             <>
-              <div className="flex min-w-0 flex-1 flex-col leading-[1.2]">
+              <div className="flex min-w-0 flex-1 flex-col gap-[3px] leading-[1.2]">
                 <span className="truncate text-[12.5px] font-medium">
                   {user.name}
                 </span>
                 <span className="truncate text-[11px] text-fg-subtle">
                   {user.email}
                 </span>
+                {user.role && (
+                  <span className="self-start">
+                    <Badge tone={roleTone(user.role)}>
+                      {roleLabel(user.role)}
+                    </Badge>
+                  </span>
+                )}
               </div>
               {user.canSignOut && (
                 <IconButton title="Sign out" onClick={signOut}>

@@ -5,7 +5,7 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { Inbox } from 'lucide-react';
-import { useRequests } from '@/hooks/queries';
+import { useMe, useRequests } from '@/hooks/queries';
 import {
   deriveStatus,
   matchesFilter,
@@ -34,6 +34,7 @@ const TD = 'px-[16px] py-[12px] align-middle';
 
 const FILTERS: { value: RequestFilter; label: string }[] = [
   { value: 'all', label: 'All' },
+  { value: 'mine', label: 'My queue' },
   { value: 'attention', label: 'Needs attention' },
   { value: 'procurement', label: 'Procurement' },
   { value: 'blocked', label: 'Blocked' },
@@ -42,6 +43,7 @@ const FILTERS: { value: RequestFilter; label: string }[] = [
 export function Requests() {
   const navigate = useNavigate();
   const requests = useRequests();
+  const meId = useMe().data?.id ?? null;
   const [filter, setFilter] = useState<RequestFilter>('all');
   const [page, setPage] = useState(0);
 
@@ -51,12 +53,13 @@ export function Requests() {
       Object.fromEntries(
         FILTERS.map((f) => [
           f.value,
-          (requests.data ?? []).filter((r) => matchesFilter(r, f.value)).length,
+          (requests.data ?? []).filter((r) => matchesFilter(r, f.value, meId))
+            .length,
         ]),
       ) as Record<RequestFilter, number>,
-    [requests.data],
+    [requests.data, meId],
   );
-  const rows = all.filter((r) => matchesFilter(r, filter));
+  const rows = all.filter((r) => matchesFilter(r, filter, meId));
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(

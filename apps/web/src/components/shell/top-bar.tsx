@@ -11,11 +11,13 @@ import {
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { IconButton } from '@/components/ui/icon-button';
-import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Avatar } from '@/components/ui/avatar';
-import { useUiStore, type Role } from '@/store/ui';
+import { Badge } from '@/components/ui/badge';
+import { useUiStore } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
+import { roleScopeLabel } from '@/lib/roles';
+import { roleLabel, roleTone } from '@/lib/user-admin';
 
 const TITLES: Record<string, string> = {
   '/': 'Overview',
@@ -25,8 +27,6 @@ const TITLES: Record<string, string> = {
   '/catalog': 'SKU Catalog',
   '/settings': 'Settings',
 };
-
-const ROLES: readonly Role[] = ['Regional', 'RHK IT'];
 
 // The single tenant the console operates against (ADR-0002). Display-only — the
 // prototype shows the connected tenant next to a green status dot.
@@ -66,13 +66,18 @@ function UserMenu() {
       </button>
       {open && (
         <div className="absolute right-0 top-[calc(100%+6px)] z-20 w-[212px] rounded-[10px] border border-border bg-panel p-[6px] shadow-overlay">
-          <div className="flex flex-col px-[8px] py-[6px] leading-[1.3]">
+          <div className="flex flex-col gap-[5px] px-[8px] py-[6px] leading-[1.3]">
             <span className="truncate text-[12.5px] font-medium text-fg">
               {user.name}
             </span>
             <span className="truncate text-[11px] text-fg-subtle">
               {user.email}
             </span>
+            {user.role && (
+              <span className="self-start">
+                <Badge tone={roleTone(user.role)}>{roleLabel(user.role)}</Badge>
+              </span>
+            )}
           </div>
           <div className="my-[4px] h-px bg-border" />
           <button
@@ -110,13 +115,13 @@ function UserMenu() {
 
 export function TopBar() {
   const { pathname } = useLocation();
-  const { theme, role, toggleTheme, setRole, toggleSidebar } = useUiStore();
+  const { theme, toggleTheme, toggleSidebar } = useUiStore();
+  const { role, opcoScope } = useCurrentUser();
   // Nested request detail (/requests/:id) has its own title.
   const title =
     TITLES[pathname] ??
     (pathname.startsWith('/requests/') ? 'Request detail' : 'LicenseOps');
-  const context =
-    role === 'Regional' ? 'Regional — all OpCos' : 'RHK IT — RHK only';
+  const context = roleScopeLabel(role, opcoScope);
 
   return (
     <header className="flex h-[56px] shrink-0 items-center gap-[14px] border-b border-border bg-panel px-[18px]">
@@ -146,7 +151,6 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-[12px]">
-        <SegmentedControl options={ROLES} value={role} onChange={setRole} />
         <IconButton title="Toggle theme" onClick={toggleTheme}>
           {theme === 'dark' ? (
             <Sun size={16} strokeWidth={2} />
