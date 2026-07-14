@@ -1,19 +1,32 @@
 import { useMemo, useState } from 'react';
 import {
+  Check,
   Gauge,
   Info,
   KeyRound,
   Layers,
+  Pencil,
   Search,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
+import { Toast } from '@/components/ui/toast';
 import { useLedger, useLedgerStats } from '@/hooks/queries';
-import { assetStatus, distinctOpcos, utilizationPct } from '@/lib/ledger';
+import { useUpdateLedger } from '@/hooks/mutations';
+import {
+  assetStatus,
+  distinctOpcos,
+  evaluateLedgerDraft,
+  initLedgerDraft,
+  utilizationPct,
+  type LedgerEditDraft,
+} from '@/lib/ledger';
 import type { LedgerRow } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +35,8 @@ const PAGE_SIZE = 10;
 const TH =
   'px-[16px] py-[10px] text-left text-[10.5px] font-semibold uppercase tracking-[.06em] text-fg-subtle';
 const TD = 'px-[16px] py-[12px] align-middle';
+const NUM_INPUT =
+  'ml-auto h-[30px] w-[72px] rounded-md border border-border bg-card px-[8px] text-right font-mono text-[12.5px] text-fg outline-none focus:border-border-strong';
 
 // Data-driven utilization bar: assigned-of-allocated. The width % is DATA (not a
 // hardcoded design value), so an inline style is correct here — the prototype's
@@ -46,13 +61,193 @@ function UtilBar({ row }: { row: LedgerRow }) {
   );
 }
 
-/** By-OpCo assets view (W15) — per-(OpCo,SKU) ledger rows, opco-scoped by the API. */
+/**
+ * One ledger row — read-only display, or the inline edit form (Row edit mode,
+ * W23-B / ADR-0007). In edit mode Allocated/Assigned become number inputs, the
+ * derived Available/Utilization/Status show '—' (recomputed from the server on
+ * save, never front-invented), and Save/Cancel replace the ✎ action.
+ */
+function LedgerTableRow({
+  row,
+  editing,
+  draft,
+  setDraft,
+  onEdit,
+  onCancel,
+  onSave,
+  saving,
+}: {
+  row: LedgerRow;
+  editing: boolean;
+  draft: LedgerEditDraft;
+  setDraft: (d: LedgerEditDraft) => void;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  if (!editing) {
+    const status = assetStatus(row);
+    return (
+      <tr className="border-b border-border last:border-0 hover:bg-hover">
+        <td className={cn(TD, 'font-mono text-[12px]')}>{row.opco.code}</td>
+        <td className={TD}>
+          <div className="flex flex-col leading-[1.3]">
+            <span className="font-medium">{row.sku.displayName}</span>
+            <span className="font-mono text-[11px] text-fg-subtle">
+              {row.sku.skuPartNumber}
+            </span>
+          </div>
+        </td>
+        <td className={cn(TD, 'text-right font-mono text-[12.5px]')}>
+          {row.allocatedQuantity}
+        </td>
+        <td className={cn(TD, 'text-right font-mono text-[12.5px] text-info')}>
+          {row.assignedQuantity}
+        </td>
+        <td
+          className={cn(
+            TD,
+            'text-right font-mono text-[12.5px]',
+            row.headroom < 0 ? 'text-danger' : 'text-fg-muted',
+          )}
+        >
+          {row.headroom}
+        </td>
+        <td className={TD}>
+          <UtilBar row={row} />
+        </td>
+        <td className={cn(TD, 'text-center')}>
+          <Badge tone={status.tone}>{status.label}</Badge>
+        </td>
+        <td className={cn(TD, 'text-right')}>
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Edit ${row.opco.code} ${row.sku.skuPartNumber}`}
+            className="inline-flex h-[28px] w-[28px] items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-hover hover:text-fg"
+          >
+            <Pencil size={14} strokeWidth={2} />
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  const evaln = evaluateLedgerDraft(draft, row);
+  const canSave = evaln.ok && !saving;
+  const invalid = !evaln.ok && evaln.reason === 'invalid';
+
+  return (
+    <tr className="border-b border-border bg-panel last:border-0">
+      <td className={cn(TD, 'font-mono text-[12px]')}>{row.opco.code}</td>
+      <td className={TD}>
+        <div className="flex flex-col gap-[6px]">
+          <div className="flex flex-col leading-[1.3]">
+            <span className="font-medium">{row.sku.displayName}</span>
+            <span className="font-mono text-[11px] text-fg-subtle">
+              {row.sku.skuPartNumber}
+            </span>
+          </div>
+          <input
+            value={draft.reason}
+            onChange={(e) => setDraft({ ...draft, reason: e.target.value })}
+            placeholder="Reason (optional)"
+            maxLength={500}
+            className="h-[28px] w-full max-w-[240px] rounded-md border border-border bg-card px-[8px] text-[11.5px] text-fg outline-none placeholder:text-fg-subtle focus:border-border-strong"
+          />
+        </div>
+      </td>
+      <td className={cn(TD, 'text-right')}>
+        <input
+          type="number"
+          min={0}
+          inputMode="numeric"
+          value={draft.allocatedQuantity}
+          onChange={(e) =>
+            setDraft({ ...draft, allocatedQuantity: e.target.value })
+          }
+          aria-label="Allocated"
+          className={NUM_INPUT}
+        />
+      </td>
+      <td className={cn(TD, 'text-right')}>
+        <input
+          type="number"
+          min={0}
+          inputMode="numeric"
+          value={draft.assignedQuantity}
+          onChange={(e) =>
+            setDraft({ ...draft, assignedQuantity: e.target.value })
+          }
+          aria-label="Assigned"
+          className={NUM_INPUT}
+        />
+      </td>
+      <td className={cn(TD, 'text-right font-mono text-[12px] text-fg-subtle')}>
+        —
+      </td>
+      <td className={cn(TD, 'text-[11px]')}>
+        <span className={invalid ? 'text-danger' : 'text-fg-subtle'}>
+          {invalid ? 'Enter 0 or more' : 'Recalculated on save'}
+        </span>
+      </td>
+      <td
+        className={cn(TD, 'text-center font-mono text-[12px] text-fg-subtle')}
+      >
+        —
+      </td>
+      <td className={cn(TD, 'text-right')}>
+        <div className="flex items-center justify-end gap-[6px]">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            disabled={saving}
+            icon={<X size={13} strokeWidth={2} />}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSave}
+            disabled={!canSave}
+            icon={<Check size={13} strokeWidth={2.2} />}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/** By-OpCo assets view (W15) — per-(OpCo,SKU) ledger rows, opco-scoped by the API.
+ *  Inline manual edit of allocated/assigned (W23-B / ADR-0007). */
 export function ByOpcoView() {
   const ledger = useLedger();
   const stats = useLedgerStats();
+  const update = useUpdateLedger();
   const [opco, setOpco] = useState<string>('all'); // OpCo code, or 'all'
   const [q, setQ] = useState('');
   const [page, setPage] = useState(0);
+
+  // Row edit mode: one row at a time. draft holds the controlled input strings.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<LedgerEditDraft>({
+    allocatedQuantity: '',
+    assignedQuantity: '',
+    reason: '',
+  });
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: 'ok' | 'danger';
+  } | null>(null);
+  function flash(message: string, tone: 'ok' | 'danger') {
+    setToast({ message, tone });
+    window.setTimeout(() => setToast(null), 2600);
+  }
 
   const rows = ledger.data ?? [];
   // Depend on ledger.data (not `rows`): `?? []` makes a fresh array each render,
@@ -86,6 +281,27 @@ export function ByOpcoView() {
   function pickOpco(code: string) {
     setOpco(code);
     setPage(0);
+    setEditingId(null);
+  }
+
+  function startEdit(row: LedgerRow) {
+    setEditingId(row.id);
+    setDraft(initLedgerDraft(row));
+  }
+
+  function saveEdit(row: LedgerRow) {
+    const evaln = evaluateLedgerDraft(draft, row);
+    if (!evaln.ok) return; // Save is disabled in this state anyway
+    update.mutate(
+      { id: row.id, body: evaln.body },
+      {
+        onSuccess: () => {
+          flash(`Updated ${row.opco.code} · ${row.sku.skuPartNumber}`, 'ok');
+          setEditingId(null);
+        },
+        onError: (err) => flash((err as Error).message, 'danger'),
+      },
+    );
   }
 
   return (
@@ -203,63 +419,23 @@ export function ByOpcoView() {
                     <th className={cn(TH, 'text-right')}>Available</th>
                     <th className={TH}>Utilization</th>
                     <th className={cn(TH, 'text-center')}>Status</th>
+                    <th className={cn(TH, 'text-right')}>Edit</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pageRows.map((r) => {
-                    const status = assetStatus(r);
-                    return (
-                      <tr
-                        key={r.id}
-                        className="border-b border-border last:border-0"
-                      >
-                        <td className={cn(TD, 'font-mono text-[12px]')}>
-                          {r.opco.code}
-                        </td>
-                        <td className={TD}>
-                          <div className="flex flex-col leading-[1.3]">
-                            <span className="font-medium">
-                              {r.sku.displayName}
-                            </span>
-                            <span className="font-mono text-[11px] text-fg-subtle">
-                              {r.sku.skuPartNumber}
-                            </span>
-                          </div>
-                        </td>
-                        <td
-                          className={cn(
-                            TD,
-                            'text-right font-mono text-[12.5px]',
-                          )}
-                        >
-                          {r.allocatedQuantity}
-                        </td>
-                        <td
-                          className={cn(
-                            TD,
-                            'text-right font-mono text-[12.5px] text-info',
-                          )}
-                        >
-                          {r.assignedQuantity}
-                        </td>
-                        <td
-                          className={cn(
-                            TD,
-                            'text-right font-mono text-[12.5px]',
-                            r.headroom < 0 ? 'text-danger' : 'text-fg-muted',
-                          )}
-                        >
-                          {r.headroom}
-                        </td>
-                        <td className={TD}>
-                          <UtilBar row={r} />
-                        </td>
-                        <td className={cn(TD, 'text-center')}>
-                          <Badge tone={status.tone}>{status.label}</Badge>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {pageRows.map((r) => (
+                    <LedgerTableRow
+                      key={r.id}
+                      row={r}
+                      editing={editingId === r.id}
+                      draft={draft}
+                      setDraft={setDraft}
+                      onEdit={() => startEdit(r)}
+                      onCancel={() => setEditingId(null)}
+                      onSave={() => saveEdit(r)}
+                      saving={update.isPending && editingId === r.id}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -273,7 +449,10 @@ export function ByOpcoView() {
                   {Array.from({ length: pageCount }, (_, i) => (
                     <button
                       key={i}
-                      onClick={() => setPage(i)}
+                      onClick={() => {
+                        setPage(i);
+                        setEditingId(null);
+                      }}
                       className={cn(
                         'h-[28px] min-w-[28px] rounded-md px-[9px] text-[12px] font-medium',
                         i === safePage
@@ -295,10 +474,13 @@ export function ByOpcoView() {
       <p className="flex items-start gap-[7px] text-[11.5px] leading-[1.5] text-fg-subtle">
         <Info size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
         <span>
-          Allocations are set in Settings › Integrations → Import. The
-          tenant-level owned / unallocated view is under Platform.
+          Allocations import in bulk from Settings › Integrations → Import; edit
+          a row here to correct a single OpCo. The tenant-level owned /
+          unallocated view is under Platform.
         </span>
       </p>
+
+      <Toast message={toast?.message} tone={toast?.tone} />
     </div>
   );
 }

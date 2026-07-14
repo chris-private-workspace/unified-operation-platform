@@ -4,6 +4,7 @@ import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { LedgerReadService } from './ledger-read.service';
+import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
 import { LicenseController } from './license.controller';
 
@@ -21,6 +22,7 @@ import { LicenseController } from './license.controller';
     ReconcileService,
     AllocationImportService,
     LedgerReadService,
+    LedgerWriteService,
     TenantOwnedService,
   ],
   exports: [
@@ -28,6 +30,7 @@ import { LicenseController } from './license.controller';
     ReconcileService,
     AllocationImportService,
     LedgerReadService,
+    LedgerWriteService,
     TenantOwnedService,
   ],
 })

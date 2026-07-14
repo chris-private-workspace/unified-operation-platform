@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assetStatus, distinctOpcos, utilizationPct } from './ledger';
+import {
+  assetStatus,
+  distinctOpcos,
+  evaluateLedgerDraft,
+  initLedgerDraft,
+  utilizationPct,
+} from './ledger';
 import type { LedgerRow } from './api-types';
 
 // Minimal row factory — only the fields the derivations read need to be real.
@@ -94,5 +100,122 @@ describe('distinctOpcos', () => {
 
   it('empty rows → empty list', () => {
     expect(distinctOpcos([])).toEqual([]);
+  });
+});
+
+describe('initLedgerDraft', () => {
+  it('seeds the inputs from the row, reason blank', () => {
+    const r = row({ code: 'RHK', allocatedQuantity: 80, assignedQuantity: 6 });
+    expect(initLedgerDraft(r)).toEqual({
+      allocatedQuantity: '80',
+      assignedQuantity: '6',
+      reason: '',
+    });
+  });
+});
+
+describe('evaluateLedgerDraft (W23-B inline edit)', () => {
+  const r = row({ code: 'RHK', allocatedQuantity: 80, assignedQuantity: 6 });
+
+  it('changing allocated only → body carries just allocatedQuantity', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '100', assignedQuantity: '6', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: true, body: { allocatedQuantity: 100 } });
+  });
+
+  it('changing assigned only (對回) → body carries just assignedQuantity', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '80', assignedQuantity: '9', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: true, body: { assignedQuantity: 9 } });
+  });
+
+  it('changing both → body carries both', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '90', assignedQuantity: '9', reason: '' },
+        r,
+      ),
+    ).toEqual({
+      ok: true,
+      body: { allocatedQuantity: 90, assignedQuantity: 9 },
+    });
+  });
+
+  it('non-empty reason is trimmed into the body', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '100', assignedQuantity: '6', reason: '  fix  ' },
+        r,
+      ),
+    ).toEqual({ ok: true, body: { allocatedQuantity: 100, reason: 'fix' } });
+  });
+
+  it('blank reason is omitted from the body', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '100', assignedQuantity: '6', reason: '   ' },
+        r,
+      ),
+    ).toEqual({ ok: true, body: { allocatedQuantity: 100 } });
+  });
+
+  it('zero is valid (allocated → 0)', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '0', assignedQuantity: '6', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: true, body: { allocatedQuantity: 0 } });
+  });
+
+  it('no change → nochange (Save blocked)', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '80', assignedQuantity: '6', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: false, reason: 'nochange' });
+  });
+
+  it('reason-only edit with no number change → nochange', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '80', assignedQuantity: '6', reason: 'note' },
+        r,
+      ),
+    ).toEqual({ ok: false, reason: 'nochange' });
+  });
+
+  it('negative → invalid', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '-1', assignedQuantity: '6', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('empty field → invalid', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '', assignedQuantity: '6', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('non-integer (decimal) → invalid', () => {
+    expect(
+      evaluateLedgerDraft(
+        { allocatedQuantity: '3.5', assignedQuantity: '6', reason: '' },
+        r,
+      ),
+    ).toEqual({ ok: false, reason: 'invalid' });
   });
 });

@@ -20,3 +20,4 @@
 | [0004](./0004-allocation-import-mechanism.md) | Allocation import 機制(admin CSV upload + dry-run + `businessAlias` 對映 + curation-as-scope + allocatedQuantity-only) | Accepted | 2026-07-13 | 用戶 approval(H1/R5);W13 allocation-import |
 | [0005](./0005-local-password-auth.md) | 本地密碼認證,與 Entra SSO 並存(dual-provider AppUser · argon2 · 本地簽發 JWT · dual-issuer guard;分階段 AUTH-4a/b/c) | Accepted | 2026-07-13 | 用戶 approval(H1/H2/H4);AUTH-4a(W18)起 |
 | [0006](./0006-password-lifecycle-session-hardening.md) | AUTH-4c 密碼生命週期 + session hardening(嚴格 policy · force-change · lockout · admin-reset · refresh + httpOnly cookie;分階段 4c-A/4c-B/4c-C) | Accepted | 2026-07-13 | 用戶 approval(H1/H4);AUTH-4c-A(W20)起 |
+| [0007](./0007-opco-ledger-manual-management.md) | OpCo ledger 手動管理(逐格校正 allocated/assigned · `PATCH /license/ledger/:id` · `LedgerAdjustment` audit · 對回機制啟動 · assigned 語意擴展) | Accepted | 2026-07-14 | 用戶 approval(H1);W23-assets-manual-ledger |
