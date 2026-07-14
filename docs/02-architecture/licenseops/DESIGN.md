@@ -91,10 +91,11 @@
 - **M365 tenant = 總量的唯一 source of truth**(單一 tenant,`subscribedSkus` 給 `prepaidUnits.enabled` vs `consumedUnits`)。
 - **初始化流程**:上線前 → 建 per-OpCo ledger → 跟 M365 實際總數比對 → 把差異**全部清乾淨**建立 baseline → 才開始用。
 - **SKU 唯一主鍵 = `skuId`(GUID)**。需要一張字典 `skuId ⇄ skuPartNumber ⇄ 業務別名`。**別信 Excel 的名稱、也別信記憶中的 part number**;初始化時直接從 tenant 拉真實 `subscribedSkus` 反向對業務名。(Excel 的名稱是同事網上找的 friendly name,對不上 API。)
-- **對帳方式 = 方案甲**:平台維護 per-OpCo 手動 ledger(onboarding +1 並同時 assign);偵測只在**每個 SKU 的總量層**:`sum(所有 OpCo 的 assignedQuantity) vs M365 tenant consumedUnits`,對不上就 `DriftAlert`。差異落在哪個 OpCo 要人去查(對回機制 deferred,後面再談)。
-- **兩層數字分開**:
-  - `allocatedQuantity` = OpCo budget / 擁有(對應 Excel 格子,OpCo 自己管)→ **顯示/反映**,不參與 drift
-  - `assignedQuantity` = 實際已指派 baseline → **只有這個**拿去對帳
+- **對帳方式 = 方案甲**:平台維護 per-OpCo 手動 ledger(onboarding +1 並同時 assign);偵測只在**每個 SKU 的總量層**:`sum(所有 OpCo 的 assignedQuantity) vs M365 tenant consumedUnits`,對不上就 `DriftAlert`。差異落在哪個 OpCo 要人去查 —— **對回機制 = 手動編輯 by-OpCo `assignedQuantity`(ADR-0007 / W23-A activated;配 `LedgerAdjustment` audit)**。
+- **兩層數字分開**(By-OpCo 內部帳 = 人手管理;寫入路徑見 ADR-0007):
+  - `allocatedQuantity` = OpCo budget / 擁有(對應 Excel 格子,OpCo 自己管)→ **顯示/反映**,不參與 drift。**寫入**:allocation import(W13)+ 手動逐格編輯(W23-A `PATCH /license/ledger/:id`)。
+  - `assignedQuantity` = 實際已指派 baseline → **只有這個**拿去對帳。**寫入**:fulfilment assign 自動 +1(W04)+ **手動校正 / 對回**(W23-A,ADR-0007)。對帳邏輯不變 —— 手動編輯正是把 drift 差異對回落某 OpCo。
+- **分層真相(ADR-0007)**:Platform 層 = tenant 真相(`owned`=prepaidEnabled + `consumed`=consumedUnits,Graph 自動、唯讀);By-OpCo 層 = 內部管理帳(上述兩數,人手維護)。Graph 唔知 OpCo 劃分,故 By-OpCo 靠人手。
 - **baseline vs in-flight**:baseline(已 assign)要 reconcile 到準;在途(報價 / 等批 / 等 vendor / ready 未 assign)是浮動 overlay,由 request 的 line item 狀態算出來,不落進 ledger baseline。兩層分開。
 
 ---
@@ -113,7 +114,8 @@
 
 **欄位增補(對著 ops portal 實際需要)**:`SkuCatalog.category`、`SkuCatalog.lastSyncedAt`、`Request.requesterEmail`、`Request.handledById`(+relation)、`RequestLineItem.quoteRef/poRef`、`AppUser.lastLoginAt`。保留 `isBaseLicense`(驅動 triage UI 預設,非硬 gate)。
 
-**刻意排除(守 scope)**:成本/發票金額(DocuWare 的地盤,平台只記 `quoteRef`/`poRef` 指標,不記錢)、ledger 逐次修改的獨立 audit 表(先靠 `RequestEvent`,將來需要再加 `LedgerAdjustment`)、ServiceNow priority/category 鏡像(v1 用不上)。
+**刻意排除(守 scope)**:成本/發票金額(DocuWare 的地盤,平台只記 `quoteRef`/`poRef` 指標,不記錢)、ServiceNow priority/category 鏡像(v1 用不上)。
+> **已補(W23-A / ADR-0007)**:`LedgerAdjustment` model 已加 —— 逐格人手編輯 ledger(`PATCH /license/ledger/:id`)必記 who/when/field/before→after/reason;import(W13)/ assign(W04)仍靠 import summary / `RequestEvent`,不入此表。
 
 ---
 
@@ -162,7 +164,7 @@
 - **成本可見度**:要不要在平台上至少「看到」每單花多少(哪怕人手填)?若要,需補回幾個欄位(現在補還來得及)。
 - **`isBaseLicense`**:保留中;若確認 base/add-on 界線不需進資料模型,可移除。
 - **ServiceNow 實際 table / field**:要對齊 Phase 1(table 名、狀態欄、work note 欄)。
-- **Reconciliation 對回機制**:差異落到哪個 OpCo、怎樣協助同步 —— deferred,後面再設計。
+- **Reconciliation 對回機制**:差異落到哪個 OpCo —— **W23-A(ADR-0007)activated**:手動編輯 by-OpCo `assignedQuantity`(`PATCH /license/ledger/:id`)把差異對回,配 `LedgerAdjustment` audit。「怎樣**自動協助**同步(而非純人手對回)」仍 later。
 - **OpCo self-service 開放時機**:role-based scoping 已在 model(`AppUser.role` + `opcoScope`),但何時對外開放未定。
 
 ---

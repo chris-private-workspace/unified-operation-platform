@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
@@ -7,6 +7,7 @@ import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { LedgerReadService } from './ledger-read.service';
+import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
 import { CatalogSyncResultDto, SkuCatalogDto } from './dto/catalog.dto';
 import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
@@ -15,6 +16,7 @@ import {
   LedgerImportResultDto,
 } from './dto/ledger-import.dto';
 import { LedgerRowDto, LedgerStatsDto } from './dto/ledger-read.dto';
+import { UpdateLedgerDto } from './dto/ledger-write.dto';
 import { TenantSkuRowDto, TenantSkuStatsDto } from './dto/tenant-owned.dto';
 
 /**
@@ -34,6 +36,7 @@ export class LicenseController {
     private readonly reconcile: ReconcileService,
     private readonly allocationImport: AllocationImportService,
     private readonly ledgerRead: LedgerReadService,
+    private readonly ledgerWrite: LedgerWriteService,
     private readonly tenantOwned: TenantOwnedService,
   ) {}
 
@@ -92,6 +95,23 @@ export class LicenseController {
   @ApiOkResponse({ type: LedgerStatsDto })
   ledgerStats(@CurrentUser() actor: AuthUser): Promise<LedgerStatsDto> {
     return this.ledgerRead.ledgerStats(actor);
+  }
+
+  /**
+   * Manual per-row ledger correction (ADR-0007 / W23-A). The only per-cell
+   * hand-edit path (import = bulk allocated; assign = +1 assigned). OPCO_IT is
+   * allowed but scope-gated in the service (assertOpcoScope → own OpCo only,
+   * 403 otherwise); each changed field is audited in LedgerAdjustment.
+   */
+  @Patch('ledger/:id')
+  @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
+  @ApiOkResponse({ type: LedgerRowDto })
+  updateLedger(
+    @Param('id') id: string,
+    @Body() dto: UpdateLedgerDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<LedgerRowDto> {
+    return this.ledgerWrite.updateLedgerRow(actor, id, dto);
   }
 
   /**

@@ -51,6 +51,7 @@ model AppUser {
   handledRequests Request[] // requests this operator is handling
   events          RequestEvent[]
   refreshTokens   RefreshToken[] // AUTH-4c-B rotating refresh sessions (local accounts)
+  ledgerAdjustments LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
 }
 
 // ── RefreshToken (AUTH-4c-B / ADR-0006 §7) — rotating refresh session for the
@@ -116,10 +117,32 @@ model OpcoSkuLedger {
   skuCatalogId      String
   sku               SkuCatalog @relation(fields: [skuCatalogId], references: [id])
   allocatedQuantity Int        @default(0) // budget / owned (OpCo-managed)
-  assignedQuantity  Int        @default(0) // baseline assigned (+1 on assign)
+  assignedQuantity  Int        @default(0) // baseline assigned (+1 on assign, OR manual correction — ADR-0007)
   updatedAt         DateTime   @updatedAt
+  adjustments       LedgerAdjustment[] // hand-edit audit trail (ADR-0007 / W23-A)
 
   @@unique([opcoId, skuCatalogId])
+}
+
+// ── Ledger manual-adjustment audit (ADR-0007 / W23-A) ────────
+// One row per hand-edited ledger FIELD (allocatedQuantity / assignedQuantity)
+// via PATCH /license/ledger/:id. import (W13) + assign (W04) do NOT write here —
+// they keep their own audit (import summary / RequestEvent). Only per-cell manual
+// edits land here. H4: actor is an AppUser id, never PII (no email / UPN).
+
+model LedgerAdjustment {
+  id          String        @id @default(cuid())
+  ledgerId    String
+  ledger      OpcoSkuLedger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  field       String // 'allocatedQuantity' | 'assignedQuantity'
+  beforeValue Int
+  afterValue  Int
+  reason      String?
+  actorId     String?
+  actor       AppUser?      @relation(fields: [actorId], references: [id])
+  createdAt   DateTime      @default(now())
+
+  @@index([ledgerId, createdAt])
 }
 
 // ── Live M365 tenant state (from subscribedSkus) — total truth
