@@ -1,5 +1,5 @@
 import type { BadgeTone } from '@/components/ui/badge';
-import type { LedgerOpcoRef, LedgerRow } from './api-types';
+import type { LedgerOpcoRef, LedgerRow, UpdateLedgerBody } from './api-types';
 
 // Pure display-layer derivations for the License Assets table. Kept out of the
 // component so they are unit-testable (W15 D4). The backend (W14) leaves the
@@ -47,4 +47,66 @@ export function distinctOpcos(rows: LedgerRow[]): LedgerOpcoRef[] {
     if (!seen.has(r.opco.code)) seen.set(r.opco.code, r.opco);
   }
   return [...seen.values()].sort((a, b) => a.code.localeCompare(b.code));
+}
+
+// ── Inline edit (W23-B / ADR-0007) ───────────────────────────────
+// Row edit mode: a draft holds the controlled input strings while a row is edited;
+// evaluateLedgerDraft turns it into a PATCH body (changed fields only) or a reason
+// why Save is blocked. Kept pure here so it is unit-testable (D3).
+
+/** The controlled draft while a ledger row is in edit mode. */
+export interface LedgerEditDraft {
+  allocatedQuantity: string;
+  assignedQuantity: string;
+  reason: string;
+}
+
+/** Seed a draft from a row's current values (reason starts blank). */
+export function initLedgerDraft(row: LedgerRow): LedgerEditDraft {
+  return {
+    allocatedQuantity: String(row.allocatedQuantity),
+    assignedQuantity: String(row.assignedQuantity),
+    reason: '',
+  };
+}
+
+export type DraftEvaluation =
+  | { ok: true; body: UpdateLedgerBody }
+  | { ok: false; reason: 'nochange' | 'invalid' };
+
+/**
+ * Evaluate an edit draft against the current row. Non-negative integers only — a
+ * blank / negative / non-integer field → 'invalid' (Save blocked). When both are
+ * valid, the body carries ONLY the changed quantities (+ a non-empty reason); no
+ * change → 'nochange' (Save blocked). Mirrors the backend, which also ignores
+ * unchanged fields and rejects negatives.
+ */
+export function evaluateLedgerDraft(
+  draft: LedgerEditDraft,
+  row: LedgerRow,
+): DraftEvaluation {
+  const alloc = parseQty(draft.allocatedQuantity);
+  const assigned = parseQty(draft.assignedQuantity);
+  if (alloc === null || assigned === null)
+    return { ok: false, reason: 'invalid' };
+
+  const body: UpdateLedgerBody = {};
+  if (alloc !== row.allocatedQuantity) body.allocatedQuantity = alloc;
+  if (assigned !== row.assignedQuantity) body.assignedQuantity = assigned;
+  if (
+    body.allocatedQuantity === undefined &&
+    body.assignedQuantity === undefined
+  )
+    return { ok: false, reason: 'nochange' };
+
+  const reason = draft.reason.trim();
+  if (reason) body.reason = reason;
+  return { ok: true, body };
+}
+
+/** A non-negative integer string → number, else null (blank / negative / decimal). */
+function parseQty(s: string): number | null {
+  const t = s.trim();
+  if (!/^\d+$/.test(t)) return null;
+  return parseInt(t, 10);
 }

@@ -108,6 +108,17 @@ export interface LedgerRow {
   sku: LedgerSkuRef;
 }
 
+/**
+ * PATCH /license/ledger/:id body (W23-B / ADR-0007) — manual set of one or both
+ * ABSOLUTE quantities + an optional audited reason. At least one quantity must be
+ * supplied; non-negative ints (the backend also enforces both).
+ */
+export interface UpdateLedgerBody {
+  allocatedQuantity?: number;
+  assignedQuantity?: number;
+  reason?: string;
+}
+
 /** GET /license/ledger/stats → LedgerStatsDto (scoped aggregate for the KPIs). */
 export interface LedgerStats {
   totalAllocated: number;

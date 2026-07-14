@@ -5,11 +5,13 @@ import type {
   ChangePasswordBody,
   CreateUserBody,
   LedgerImportResult,
+  LedgerRow,
   LineItemStage,
   OnboardingRequest,
   ReconcileResult,
   RequestLineItem,
   ResetPasswordBody,
+  UpdateLedgerBody,
   UpdateUserBody,
 } from '@/lib/api-types';
 
@@ -91,6 +93,26 @@ export function useAllocationImport() {
   return useMutation({
     mutationFn: (vars: { csv: string; dryRun: boolean }) =>
       apiPost<LedgerImportResult>('/license/ledger/import', vars),
+  });
+}
+
+/**
+ * PATCH /license/ledger/:id — manual per-row ledger correction (W23-B / ADR-0007).
+ * Returns the updated row. Invalidates the ledger + its stats (['license','ledger']
+ * prefix covers both), the tenant-skus Platform totals (Σ of the ledger), and drift
+ * (Σ assigned feeds reconciliation). The backend enforces scope (assertOpcoScope →
+ * 403) + non-negative; the UI surfaces its error message.
+ */
+export function useUpdateLedger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: UpdateLedgerBody }) =>
+      apiPatch<LedgerRow>(`/license/ledger/${vars.id}`, vars.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
+      qc.invalidateQueries({ queryKey: ['license', 'tenant-skus'] });
+      qc.invalidateQueries({ queryKey: ['license', 'drift'] });
+    },
   });
 }
 
