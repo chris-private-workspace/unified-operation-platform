@@ -30,6 +30,9 @@
 
 **In scope**
 - onboarding 當下的 M365 加 license 需求
+- **獨立(非 onboarding)license request 建單** — IT 同事代開 → create ServiceNow `sc_request`/`sc_req_item`(thin action,不建 form/catalog/審批;ADR-0008)
+- **M365 + D365** license — D365 = Entra `subscribedSku`,同一 Graph `assignLicense`;catalog / ledger / 對帳一視同仁(ADR-0008)
+- **n8n 雙向整合** — inbound(接 onboarding push,帶 sync gate 狀態)+ outbound(建單,direct/n8n 兩路)(ADR-0008)
 - 消費 ServiceNow request、回寫狀態
 - per-OpCo license ledger + 總量層對帳 + drift alert
 - 指派 license(Graph)、更新 ledger
@@ -37,9 +40,10 @@
 **Out of scope(本版,將來再議)**
 - 日常 license change / 升級 / 加購
 - offboarding / license 回收
-- D365(Finance/Sales、Annata、Experlogix 等 ISV)
-- 非 onboarding 的獨立 license request(走另一條既有流程)
+- **D365-side provisioning**(security role / legal entity,喺 D365 admin、Graph 掂唔到 — ADR-0008 D5:只做 Entra license 那層)
 - license 成本 / 發票金額(走 DocuWare,見 §6)
+
+> **ADR-0008(2026-07-15)更新**:原 out-of-scope「D365」「非 onboarding 的獨立 license request」已納入 in scope(見上)。此處 D365 指 **license SKU 層**;D365 作為**業務應用模組**(F&O 工作流等)仍屬未來 tier。
 
 ---
 
@@ -149,7 +153,7 @@
 2. Regional = reflector + executor,非 owner。
 3. Phase 2 不做成 n8n workflow;自建完整 admin portal。
 4. 技術棧:NestJS(後端)+ React/Vite/Tailwind/shadcn(前端)分開;Postgres+Prisma;Redis+BullMQ;Entra SSO;Docker Compose;REST+OpenAPI。
-5. Scope:只做 onboarding M365 加 license;不含 change/offboarding;M365 only。
+5. Scope:onboarding **+ 獨立 license request 建單**(thin action;ADR-0008);**M365 + D365** license(D365 = Entra subscribedSku,同一 Graph `assignLicense`;catalog/ledger/對帳一視同仁);不含 change/offboarding;不含 D365-side provisioning。〔ADR-0008 更新原「M365 only」〕
 6. M365 tenant = 總量真相;SKU 主鍵 = `skuId` GUID;需 SKU 字典;不信 Excel 名稱。
 7. 對帳 = 方案甲(手動 ledger + SKU 總量層 drift + alert)。
 8. ledger 兩層:`allocatedQuantity`(budget,不對帳)/ `assignedQuantity`(baseline,對帳)。

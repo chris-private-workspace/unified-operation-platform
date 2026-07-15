@@ -25,11 +25,11 @@ Unified Operation Platform 係一個自建嘅 **admin portal**,統一管理 IT o
 
 - **In scope(當前)**:
   - 平台四層地基(見 §3)+ integration layer。
-  - **LicenseOps 模組**:onboarding 當下 M365 加 license、消費 ServiceNow request 回寫、per-OpCo ledger + 總量層對帳 + drift alert、指派 license。
+  - **LicenseOps 模組**:onboarding 當下 **M365/D365** 加 license、**獨立 license request 建單(ADR-0008)**、消費 ServiceNow request 回寫、per-OpCo ledger + 總量層對帳 + drift alert、指派 license、**n8n 雙向 intake/建單(ADR-0008)**。
   - **LicenseOps 前端**(`apps/web`,ADR-0001)—— 由 `design_handoff_licenseops/` hifi 設計還原,受 CLAUDE.md §5 H6 保護。
 - **Out of scope / 未來 Tier**(對應 CLAUDE.md §5 H3):
-  - 平台層:其他 IT ops 模組(offboarding / cost insights / D365 / 其他 support 工作流)—— 未 approve 前唔起。
-  - LicenseOps 層排除項(ticket 表單 / 審批鏈 / SLA / 成本發票 / offboarding / D365 …)見 module spec §2。
+  - 平台層:其他 IT ops 模組(offboarding / cost insights / D365 業務工作流 / 其他 support 工作流)—— 未 approve 前唔起。
+  - LicenseOps 層排除項(ticket 表單 / 審批鏈 / SLA / 成本發票 / offboarding …)見 module spec §2。(**D365 license** 已由 ADR-0008 納入;D365 **業務模組**仍屬未來 tier)
 
 ## 3. Core Architecture — 四層地基
 
@@ -75,7 +75,7 @@ Rolling / JIT phases —— 每 phase kickoff 建 `docs/01-planning/W{NN}-{name}
 
 ## 11. Tier 2 / Future Trigger Matrix
 
-其他 IT ops 模組(offboarding / cost insights / D365 / support 工作流)= 未來 tier;開新模組前必須 STOP + approval + 平台級 ADR(H1/H3)。
+其他 IT ops 模組(offboarding / cost insights / D365 業務工作流[F&O 等] / support 工作流)= 未來 tier;開新模組前必須 STOP + approval + 平台級 ADR(H1/H3)。**註**:D365 **license**(Entra SKU 層)已由 ADR-0008 納入 LicenseOps,與此處 D365 **業務模組**不同,勿混。
 
 ---
 
