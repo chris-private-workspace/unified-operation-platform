@@ -1,0 +1,16 @@
+# Normalize line endings to LF for all text files. Fixes the local mix caused by
+# core.autocrlf=true + prettier's default endOfLine:lf (eslint was flagging CRLF
+# on Write-created files). Committed content is LF; checkouts (incl. CI) are LF.
+* text=auto eol=lf
+
+# Binary files — never normalize / diff.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.xlsx binary
+*.pdf  binary
+*.node binary
+*.dll  binary
