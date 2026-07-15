@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { type AppUser, LineItemStage, RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +11,7 @@ import { assertOpcoScope } from '../auth/opco-scope';
 import {
   RequestSubmissionProvider,
   SubmitLineItem,
+  SubmittedRequest,
 } from './request-submission.provider';
 import { CreateRequestDto } from './dto/create-request.dto';
 
@@ -60,14 +62,29 @@ export class OutboundRequestService {
     }
 
     // 3. Create the ServiceNow ticket via the provider (external side-effect
-    // FIRST). Throws → nothing written locally (fail-closed).
-    const submitted = await this.provider.submit({
-      targetUpn: dto.targetUpn,
-      opcoCode: dto.opcoCode,
-      requesterEmail: dto.requesterEmail,
-      remark: dto.remark,
-      lineItems: submitLines,
-    });
+    // FIRST). Throws → nothing written locally (fail-closed). A raw integration
+    // failure (Table API `fetch failed` / n8n webhook down / SN 5xx) is not an
+    // HttpException → wrap it as a clean 503 so the operator gets a meaningful,
+    // retryable error instead of an opaque 500 (BUG-003; same intent as
+    // graphUnavailable for the assign path).
+    let submitted: SubmittedRequest;
+    try {
+      submitted = await this.provider.submit({
+        targetUpn: dto.targetUpn,
+        opcoCode: dto.opcoCode,
+        requesterEmail: dto.requesterEmail,
+        remark: dto.remark,
+        lineItems: submitLines,
+      });
+    } catch (err) {
+      // H4: log the action + message only, never the target UPN (PII).
+      this.logger.error(
+        `Request submission to ServiceNow failed: ${(err as Error)?.message}`,
+      );
+      throw new ServiceUnavailableException(
+        'ServiceNow is unavailable — the request could not be submitted. Please retry.',
+      );
+    }
 
     // 4. Build the local mirror (D4). resolved[i] and submitted.lineItems[i]
     // share the payload order → zip by index.

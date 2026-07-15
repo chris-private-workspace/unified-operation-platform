@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AppUser } from '@prisma/client';
 import { OutboundRequestService } from './outbound-request.service';
@@ -158,11 +159,16 @@ describe('OutboundRequestService', () => {
     expect(provider.submit).not.toHaveBeenCalled();
   });
 
-  it('ServiceNow create fails → fail-closed, no local mirror', async () => {
+  it('provider failure → clean 503 (not opaque 500), fail-closed, no local mirror', async () => {
+    // BUG-003: a raw integration error ("fetch failed" / webhook down) must
+    // surface as a 503 ServiceUnavailable with a meaningful message, not a raw
+    // Error that Nest renders as a generic 500. Mirror is still never written.
     arrangeResolves();
-    provider.submit.mockRejectedValue(new Error('SN down'));
+    provider.submit.mockRejectedValue(new Error('fetch failed'));
 
-    await expect(service.create(payload(), ADMIN)).rejects.toThrow('SN down');
+    await expect(service.create(payload(), ADMIN)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
     expect(prisma.request.create).not.toHaveBeenCalled();
   });
 });
