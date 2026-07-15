@@ -46,6 +46,8 @@ prior_phase: W23-B-assets-inline-edit
 - **驗證**:build/lint/test + live curl(帶/唔帶 key、重推同 ticket、sync 狀態)。
 
 ## 3. Deliverables
+
+> **命名注意**:本 phase 嘅 **D0–D4 = 交付項編號**,與 **ADR-0008 嘅 D1–D6(decision 編號)唔同**;引用 ADR 決定一律寫全稱「ADR-0008 D2」。
 - **D0** — doc-sync(§0 前置 gate)。
 - **D1** — m2m auth 方式拍板 + intake DTO/合約定義。
 - **D2** — intake endpoint + m2m guard + 建 mirror service + module 註冊。

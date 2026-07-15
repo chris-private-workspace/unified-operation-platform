@@ -4,11 +4,13 @@
 // Positioning : System of Action.  ServiceNow (System of Record)
 //               fields are MIRROR / REFERENCE only — the platform
 //               does not own intake, approval or SLA.
-// Scope       : onboarding-time M365 license fulfilment only.
-//               No license change, no offboarding, M365 only.
+// Scope       : M365 + D365 license fulfilment (onboarding + standalone
+//               request). D365 = Entra subscribedSku, same Graph
+//               assignLicense (ADR-0008). No license change / offboarding.
 // Reconcile   : Option (甲) manual ledger + SKU TOTAL-level drift.
 // Out of scope (by design): license cost/invoice (DocuWare owns it),
-//               per-user auto-attribution, D365.
+//               per-user auto-attribution, D365-side provisioning
+//               (security role / legal entity). See ADR-0008.
 // ─────────────────────────────────────────────────────────────
 
 generator client {

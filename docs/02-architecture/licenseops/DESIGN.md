@@ -129,6 +129,7 @@
 - **需加購(procurement,人手推進)**:`REQUESTED → QUOTING → OPCO_APPROVED → AWAITING_VENDOR → READY → ASSIGNED`
 - **疊 Phase 1**:`account created → synced`(`azureSyncedAt`),指派要等 synced 才做。
 - stage 在**每條 line item** 上獨立推進;採購段(quote/approval/vendor)是**人手更新狀態**,以便往下一個 stage,直至完成。
+- **n8n inbound intake(來源,ADR-0008 Phase 甲)**:onboarding 由 n8n workflow 跑(建 AD),AD 建好後 **non-blocking push** 入平台建 `Request` + line item mirror(status OPEN / stage REQUESTED / `handledById`=null → 入 Regional queue 人手認領後先 assign,**非自動觸發**)。sync gate 時序真相:n8n 建 **on-prem AD** → 經 Azure AD Connect sync 落 Entra **有延遲**,故 push 帶嘅 `azureSyncedAt`(n8n 聲稱)**唔等於** Graph 即刻見到;指派前仍以 `findUser(upn)` 真命中為準,必要時 retry(見 RISK R3)。
 
 ---
 
@@ -190,7 +191,7 @@
 - 採購 stage 追蹤 UI
 - OpCo IT self-service 開放
 - AI 抽 free-text remark 成結構化 license 清單
-- D365 license 管理
+- D365 **業務應用模組**(F&O 工作流等) — 註:D365 **license** 已由 ADR-0008 納入 in-scope(§2 / §9 #5),此處僅指業務模組
 
 ---
 

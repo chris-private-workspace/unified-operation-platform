@@ -11,11 +11,12 @@ phase: W24-request-intake
 - [x] `architecture.md §11` D365 license(納入)vs D365 業務模組(future)澄清
 - [x] `BACKLOG` R7 同步(Active 表 W24 行 + 頭部 + 路線)
 - [x] memory 更新(新 `project_adr-0008-request-intake-d365` + MEMORY.md 索引)
+- [x] **doc-review 後補齊 scope-sync 缺口**(2026-07-15,root cause 5 條同源 batch 補):BACKLOG §F · DESIGN §11 · architecture header/Decision Log · `schema.prisma` banner · ADR README(ADR-0004 適用範圍註)
 
 ## D1 — m2m auth + intake 合約(→ `CONTRACT.md`)
 - [x] m2m auth 方式拍板(**static API key** `X-Intake-Key`,fail-closed;CONTRACT §2)
 - [x] intake DTO / payload 合約定義(代表性 `N8nIntakeRequestDto` + 對映 + 為何新 endpoint;CONTRACT §1/§3/§4)
-- [ ] 🔶 (協調·外部)同 n8n / Phase 1 team 對真實 payload field 名 — CONTRACT §5 六項待確認(lock 前必對;不阻 D2 用代表性推進)
+- [x] 🔶 (協調·外部→內部)同 n8n / Phase 1 team 對 → **`N8N-AGENDA.md`** ✅ **Chris = workflow 管理者本人,2026-07-15 即場答齊 10 條**(A1 只 push · A2 人手 queue[唔觸 ADR]· A3 non-blocking · A4 on-prem 延遲 · B1 GUID · B2 code · B3 REQ+RITM 齊 · B6 unassigned;B4/B5 推導預設)→ 已回寫 AGENDA 決定總結 + CONTRACT lock + DESIGN §7 + RISK R3
 
 ## D2 — intake endpoint + 建 mirror
 - [ ] intake endpoint(`POST /requests/intake`)+ DTO validation

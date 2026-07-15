@@ -12,6 +12,9 @@
 
 # === 依賴 / build（NestJS / TypeScript）===
 node_modules/
+
+# === 真實 license 參考數據（H4 敏感 · 唔入 repo）===
+docs/06-reference/02-doc-sample/*.xlsx
 dist/
 build/
 coverage/

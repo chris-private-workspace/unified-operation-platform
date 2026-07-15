@@ -83,3 +83,14 @@ Chris 已確認優先次序:
 - ADR-0002(Graph JWT / `assignLicense`)· ADR-0004(allocation import / curation-as-scope,適用範圍隨本 ADR 擴至含 D365)· ADR-0007(ledger 手動管理)
 - `apps/api/src/integration/servicenow/servicenow.service.ts`(現有讀寫,待加 `createRecord`)
 - Rollout phases:W24+(甲 inbound / 乙 outbound-direct / 丙 n8n-outbound / 丁 D365-scope)— Accepted 後 rolling kickoff
+
+---
+
+## Errata(2026-07-15,post-Accept 勘誤 — 只更正事實/引用,不改任何決策)
+
+> 依 CLAUDE.md §6:Accepted ADR 決策內文不改;以下純事實/引用筆誤,以勘誤註記正,決策本身不變(W24 doc-review 揪出)。
+
+1. **D5 + References 誤引 ADR-0002 做 `assignLicense` 出處** — ADR-0002 係「後端 Entra JWT 驗證」(驗 incoming API JWT),同 Microsoft Graph `assignLicense` **無關**。`assignLicense` 正確出處 = **DESIGN §8 + `apps/api/src/integration/graph/graph.service.ts`**(References 已另行 cite,故 ADR-0002 於此屬誤植)。
+2. **Rollout Phase 甲 endpoint `POST /requests`** = 簡寫;正式路徑 **`POST /requests/intake`**,以 `docs/01-planning/W24-request-intake/CONTRACT.md §6` 為 endpoint SSOT。
+3. **Context 內 `ServiceNowService` method 清單漏 `getRecordByNumber`**(實際 5 個:getRecord / getRecordByNumber / query / updateRecord / addWorkNote);承載論點「冇 `createRecord`」不變。
+4. **D6 REQ/RITM 語意 clarify(Chris 2026-07-15,option a)**:`Request.serviceNow*` = REQ(`sc_request`)、`RequestLineItem.serviceNow*` = RITM(`sc_req_item`)。現有 W03 user-facing intake + `assign.service` 回寫一直當 RITM 用,決定**兩條 intake 一齊升 two-level、回寫改逐 line item**(seed 零 SN,零 migration)。屬 D6 落地細節,不改 D6 決策;SSOT = `CONTRACT.md §4`。

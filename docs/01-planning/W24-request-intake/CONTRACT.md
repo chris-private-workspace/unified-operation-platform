@@ -1,12 +1,12 @@
 ---
 phase: W24-request-intake
 deliverable: D1
-status: draft-representative   # 代表性合約,待 n8n / Phase 1 team 確認真實欄位後 lock
+status: locked   # AGENDA 10 條 2026-07-15 Chris(= n8n workflow 管理者本人)自答齊 → lock;D2 據此落 code
 ---
 
 # W24 Phase 甲 — Inbound Intake 合約(D1,代表性)
 
-> **用途**:定義 n8n onboarding workflow → 平台嘅 inbound intake 合約。**代表性** = 欄位形狀依現有 `Request`/`RequestLineItem` schema + ADR-0008 推導,真實 field 名 / 值格式待同 n8n + Phase 1 team 對齊(見 §5 待確認)。D2 據此落成真 DTO + endpoint + guard + service。
+> **用途**:定義 n8n onboarding workflow → 平台嘅 inbound intake 合約。**代表性** = 欄位形狀依現有 `Request`/`RequestLineItem` schema + ADR-0008 推導,真實 field 名 / 值格式待同 n8n + Phase 1 team 對齊(見 §5 待確認)。D2 據此落成真 DTO + endpoint + guard + service。**2026-07-15 LOCK**:Chris = onboarding workflow 管理者本人,AGENDA 10 條答齊,§5 由「待確認」轉「已確認」,合約定案。
 
 ## 1. 為何係新 endpoint(唔重用現有 user-facing intake)
 
@@ -34,9 +34,9 @@ status: draft-representative   # 代表性合約,待 n8n / Phase 1 team 確認�
 
 class N8nIntakeLineItemDto {
   @IsString() skuId!: string;              // SkuCatalog.skuId GUID(§13 主鍵,M365/D365 一視同仁)
-                                           //  ⚠️ 待確認:n8n 傳 GUID 定 skuPartNumber?(見 §5)
+                                           //  ✅ AGENDA B1:n8n 傳 GUID(skuId)→ 直接對主鍵,零 map
   @IsInt() @Min(1) quantity!: number;
-  @IsOptional() @IsString() serviceNowRitmSysId?: string;   // sc_req_item sysId(ADR-0008 D6,per-line)
+  @IsOptional() @IsString() serviceNowRitmSysId?: string;   // sc_req_item sysId(ADR-0008 D6,per-line)— ✅ AGENDA B3:每 line 有 RITM(sysId+number),two-level 確立
   @IsOptional() @IsString() serviceNowRitmNumber?: string;  // e.g. "RITM0012345"
 }
 
@@ -45,18 +45,19 @@ class N8nIntakeRequestDto {
   @IsString() @MinLength(1) targetUpn!: string;             // → Request.targetUpn(必)
   @IsOptional() @IsString() targetDisplayName?: string;
   @IsString() @MinLength(1) opcoCode!: string;              // Opco.code("RHK")→ 平台 map 成 opcoId
-                                                            //  ⚠️ n8n 較可能有 code 而非內部 cuid(見 §5)
+                                                            //  ✅ AGENDA B2:n8n 傳 Opco.code(如 "RHK"),同 seed 一致
   @IsOptional() @IsEmail() requesterEmail?: string;
   @IsOptional() @IsString() rawRequestText?: string;        // 原始 remark(DESIGN §6,不 auto-parse)
 
   // ── ServiceNow sc_request(REQ)linkage ──
-  @IsOptional() @IsString() serviceNowSysId?: string;       // sc_request sysId → Request.serviceNowSysId
+  @IsString() serviceNowSysId!: string;                     // sc_request sysId → Request.serviceNowSysId(REQ)
+                                                            //  ✅ AGENDA B3/B5:REQ 必有 → 收緊為必填,做 idempotency key(@unique upsert-or-skip)
   @IsOptional() @IsString() serviceNowNumber?: string;      // e.g. "REQ0012345" → Request.serviceNowNumber
 
   // ── Phase 1 n8n linkage(sync gate,DESIGN §6)──
   @IsOptional() @IsDateString() accountCreatedAt?: string;  // AD 帳號建立時點 → Request.accountCreatedAt
   @IsOptional() @IsDateString() azureSyncedAt?: string;     // n8n 確認 AD synced → Request.azureSyncedAt
-                                                            //  ★ 帶咗即過 assign sync gate,免平台再 poll/mark
+                                                            //  ✅ AGENDA A4:on-prem AD → Entra Connect 有延遲,故此值=n8n 聲稱 synced,≠Graph 即見;assign 以 findUser(upn) 真命中為 gate + retry(RISK R3)
 
   // ── line items(一次過完整清單)──
   @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true })
@@ -80,17 +81,25 @@ class N8nIntakeRequestDto {
 | — | `Request.status` = OPEN(default)· line `stage` = REQUESTED(default) | intake 唔定 stage,triage 先定 `procurementRequired` |
 | — | `Request.handledById` = **null**(unassigned queue,待 Regional pick up) | ⚠️ 待確認要唔要 default operator |
 
-## 5. 待 n8n / Phase 1 team 確認(lock 前必對)
+> **REQ/RITM 語意 — two-level 統一(Chris 拍板 2026-07-15,option a)**:`Request.serviceNow*` = **REQ**(`sc_request` 父)、`RequestLineItem.serviceNow*` = **RITM**(`sc_req_item` 子)。
+> **⚠️ 遷移現實**:現有 W03 user-facing intake + schema 一直將 `Request.serviceNow*` 當 **RITM** 用(`assign.service` 回寫 `addWorkNote(request.serviceNowSysId)` 打 `sc_req_item`;`intake.dto` desc 寫「RITM」)。**(a) 決定 = 兩條 intake(n8n + user-facing)一齊升 two-level**:`Request` 改存 REQ、RITM 落 line item、**回寫改逐 line item 打自己 RITM**(`servicenow.service` 加 table 參數,**touch W04 assign critical path → H5 test 必跟**)。
+> 因 **seed 零 SN 數據**(已驗),**零 migration 包袱**;schema 兩層 SN 欄皆 nullable。詳細 reconcile 分析見對話記錄 / 待補入 Phase 甲(n8n)+ Phase 乙(user-facing)plan。
 
-1. **SKU 識別**:n8n push `skuId`(GUID,理想,§13)定 `skuPartNumber`/business name?若後者 → 平台經 `SkuCatalog.skuPartNumber`/`businessAlias` map(容錯設計)。
-2. **OpCo 識別**:`opcoCode`(=`Opco.code`)定其他?確認值格式(seed code 如 "RHK"/"RAPO/IT")。
-3. **REQ vs RITM**:`sc_request` sysId/number 一定有?每個 line 對一個 `sc_req_item`?(ADR-0008 目標建 REQ+RITM,intake 反向要接返)。
-4. **sync gate 語意**:`azureSyncedAt` 由 n8n 帶 = AD 真 synced?抑或只係 accountCreated?(決定 assign gate 準確性)。
-5. **idempotency key**:重推同 onboarding 用 `serviceNowSysId`(REQ sysId,`@unique`)做 upsert-or-skip?確認 n8n 重試行為。
-6. **handledById**:intake 入嚟 unassigned(null)定指定 Regional default?
+## 5. ✅ 已確認(AGENDA 2026-07-15,Chris = n8n workflow 管理者本人自答)
+
+> 原「待 n8n / Phase 1 team 確認」6 條全部 close。決定總結表見 `N8N-AGENDA.md` 頂部。
+
+1. **SKU 識別**(B1):n8n 傳 **GUID `skuId`** → 直接對 `SkuCatalog.skuId` 主鍵,零 map。
+2. **OpCo 識別**(B2):傳 **`Opco.code`**(如 "RHK"),同 seed 一致 → resolve `opcoId`;code 唔存在 → 404。
+3. **REQ vs RITM**(B3):onboarding **REQ 必有**(sysId+number)+ **每 line 一個 RITM**(sysId+number)→ **two-level 確立**(`Request`=REQ / `RequestLineItem`=RITM,§4)。
+4. **sync gate 語意**(A4):n8n 建 **on-prem AD**,經 Entra Connect **有延遲** → `azureSyncedAt`=n8n 聲稱,**≠**Graph 即見;assign 以 `findUser(upn)` 命中為 gate + retry(**RISK R3**)。
+5. **idempotency key**(B5/A1):intake **只走 n8n push**(唔 poll SN);**REQ sysId**(`@unique`)做 **upsert-or-skip**,重推唔 double。
+6. **handledById**(B6/A2):intake 入嚟 **unassigned**(null)→ 入 Regional queue **人手** assign(**非自動**;A2 唔觸 auto-assign orchestration → 唔觸 H1/ADR)。
+
+**A3(push 位置,補)**:AD 建好後 **non-blocking push**(fire-and-forget,失敗只 log 唔中斷 onboarding)→ 平台唔做 onboarding single point of failure。記入 `DESIGN §7`。
 
 ## 6. D1 產出 / 下一步
 
-- **D1 完成**:m2m auth 拍板(static key)+ 代表性 DTO 合約 + 對映 + 待確認清單 ✅(本檔)。
+- **D1 完成 + LOCK**(2026-07-15):m2m auth 拍板(static key)+ DTO 合約 + 對映 + **AGENDA 10 條答齊**(§5 已確認)✅。合約 lock,D2 據此落 code。
 - **D2**(下一)据本合約落地:`n8n-intake.dto.ts` + `IntakeKeyGuard` + intake service(resolve opcoCode/skuId → 建 `Request`+lineItems mirror,set sync gate)+ additive migration(line item SN 欄位)+ endpoint `POST /requests/intake`。
 - **D3** H5 test(happy / 401 fail-closed / validation / sync gate / idempotent)。

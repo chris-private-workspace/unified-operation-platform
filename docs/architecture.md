@@ -4,7 +4,7 @@
 > **模組級決策**(LicenseOps 定位 / scope / 對帳 / domain model / request 生命週期)唔喺呢度重複 —— 睇 `docs/02-architecture/licenseops/DESIGN.md`(決策 SSOT)。
 > **Frozen 慣例**:核心 section lock 後只有 owner approve 先 increment version;改架構經 ADR(CLAUDE.md §5 H1)。
 
-**Version**: 0.2(draft) · **Status**: draft · **Owner**: Chris Lai · **Last Updated**: 2026-07-09 · **ADRs**: [ADR-0001](adr/0001-frontend-in-repo-monorepo.md)
+**Version**: 0.2(draft) · **Status**: draft · **Owner**: Chris Lai · **Last Updated**: 2026-07-15 · **ADRs**: [ADR-0001](adr/0001-frontend-in-repo-monorepo.md) · [ADR-0008](adr/0008-request-creation-n8n-d365-scope.md)
 
 ---
 
@@ -82,6 +82,7 @@ Rolling / JIT phases —— 每 phase kickoff 建 `docs/01-planning/W{NN}-{name}
 ## Decision Log
 
 - **2026-07-09 · ADR-0001** — 前端納入本 repo,採 monorepo(`apps/api` + `apps/web`);新增 H6 Design Fidelity。
+- **2026-07-15 · ADR-0008** — 獨立 license request 建單 + n8n 雙向整合啟用 + D365 完整納入 scope(§2 / §11 更新;推翻原「M365 only」)。
 - 重大平台決定促成後 promote 做 ADR(`docs/adr/`)。LicenseOps 已鎖定決策清單見 module spec §9。
 
 ---
