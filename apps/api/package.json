@@ -12,7 +12,10 @@
     "test": "jest --passWithNoTests",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts",
+    "demo:mock-sn": "node scripts/demo-harness/mock-servicenow.js",
+    "demo:mock-n8n": "node scripts/demo-harness/mock-n8n.js",
+    "demo:cleanup": "node scripts/demo-harness/cleanup-demo.js"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
