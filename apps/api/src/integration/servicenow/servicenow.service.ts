@@ -8,6 +8,9 @@ import { ConfigService } from '@nestjs/config';
 // it cares about — align these with what Phase 1 already reads/writes.
 export type ServiceNowRecord = Record<string, any>;
 export type ServiceNowUpdate = Record<string, string>;
+// Create payload — allows numbers (e.g. sc_req_item quantity) alongside string
+// values / reference sysIds. ServiceNow Table API accepts either (ADR-0008 D3).
+export type ServiceNowCreate = Record<string, string | number>;
 
 @Injectable()
 export class ServiceNowService {
@@ -96,6 +99,23 @@ export class ServiceNowService {
       )}&sysparm_limit=${limit}`,
     );
     return data.result ?? [];
+  }
+
+  /**
+   * Create a record (POST). Returns the created record including its sys_id and
+   * number. Used by the outbound path to open sc_request (REQ) / sc_req_item
+   * (RITM) tickets from the platform (ADR-0008 D3 / Phase 乙 outbound direct).
+   */
+  async createRecord(
+    fields: ServiceNowCreate,
+    table = this.defaultTable,
+  ): Promise<ServiceNowRecord> {
+    const data = await this.request<{ result: ServiceNowRecord }>(
+      'POST',
+      `/api/now/table/${table}`,
+      fields,
+    );
+    return data.result;
   }
 
   /** Update fields on a record — used to write fulfilment status back. */

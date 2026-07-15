@@ -7,6 +7,10 @@ import { FulfilmentController } from './fulfilment.controller';
 import { IntakeController } from './intake.controller';
 import { IntakeService } from './intake.service';
 import { IntakeKeyGuard } from './intake-key.guard';
+import { OutboundRequestController } from './outbound-request.controller';
+import { OutboundRequestService } from './outbound-request.service';
+import { RequestSubmissionProvider } from './request-submission.provider';
+import { DirectServiceNowProvider } from './direct-servicenow.provider';
 
 /**
  * Module D — onboarding request lifecycle.
@@ -19,13 +23,21 @@ import { IntakeKeyGuard } from './intake-key.guard';
  */
 @Module({
   imports: [IntegrationModule], // GraphService + ServiceNowService
-  controllers: [FulfilmentController, IntakeController],
+  controllers: [
+    FulfilmentController,
+    IntakeController,
+    OutboundRequestController,
+  ],
   providers: [
     RequestService,
     StageService,
     AssignService,
     IntakeService,
     IntakeKeyGuard,
+    OutboundRequestService,
+    // ADR-0008 D3: pluggable write-integration → Direct (Table API) impl now;
+    // N8nWorkflowProvider (Phase 丙) swaps at this binding.
+    { provide: RequestSubmissionProvider, useClass: DirectServiceNowProvider },
   ],
   exports: [RequestService, StageService, AssignService],
 })

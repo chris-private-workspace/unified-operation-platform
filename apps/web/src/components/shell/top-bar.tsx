@@ -22,6 +22,7 @@ import { roleLabel, roleTone } from '@/lib/user-admin';
 const TITLES: Record<string, string> = {
   '/': 'Overview',
   '/requests': 'Requests',
+  '/requests/new': 'New request',
   '/assets': 'License Assets',
   '/drift': 'Drift Alerts',
   '/catalog': 'SKU Catalog',

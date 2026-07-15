@@ -196,6 +196,7 @@ model Request {
   serviceNowNumber  String? // e.g. REQ0012345 (parent REQ)
   serviceNowStatus  String? // mirrored for display, not owned
   rawRequestText    String? // free-text remark → source for human / future-AI interpretation
+  origin            String            @default("onboarding-intake") // 'onboarding-intake' (W03/n8n) | 'platform-created' (Phase 乙 outbound) — ADR-0008 D6
   requesterEmail    String? // who filed the ticket (may differ from the new user)
   targetUpn         String // the new user being onboarded
   targetDisplayName String?

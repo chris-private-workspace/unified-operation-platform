@@ -337,3 +337,24 @@ export interface RequestDetail extends OnboardingRequest {
   lineItems: RequestLineItem[];
   events: RequestEvent[];
 }
+
+/** GET /opcos → active OpCos for picker selectors (same shape as AdminOpco). */
+export type OpcoOption = AdminOpco;
+
+/**
+ * POST /requests body (Phase 乙 outbound — ADR-0008 D1). IT opens a standalone
+ * (non-onboarding) M365/D365 license request; the platform creates the
+ * ServiceNow ticket then a local mirror. Mirrors apps/api create-request.dto.ts.
+ */
+export interface CreateRequestLine {
+  skuId: string; // SkuCatalog.skuId GUID
+  quantity: number;
+}
+export interface CreateRequestBody {
+  targetUpn: string;
+  targetDisplayName?: string;
+  opcoCode: string;
+  requesterEmail?: string;
+  remark?: string;
+  lineItems: CreateRequestLine[];
+}

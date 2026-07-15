@@ -130,6 +130,14 @@ export function useAdminOpcos() {
   });
 }
 
+/** GET /opcos — active OpCos for picker selectors (ADMIN / REGIONAL / OPCO_IT). */
+export function useOpcos() {
+  return useQuery({
+    queryKey: ['opcos'],
+    queryFn: () => apiGet<AdminOpco[]>('/opcos'),
+  });
+}
+
 /** GET /fulfilment/requests — onboarding requests (with opco + lineItems). */
 export function useRequests() {
   return useQuery({

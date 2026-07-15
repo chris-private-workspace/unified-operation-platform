@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
-import { Inbox } from 'lucide-react';
+import { Inbox, Plus } from 'lucide-react';
 import { useMe, useRequests } from '@/hooks/queries';
 import {
   deriveStatus,
@@ -105,11 +106,21 @@ export function Requests() {
             );
           })}
         </div>
-        {requests.data && (
-          <span className="shrink-0 text-[11.5px] text-fg-subtle">
-            {rows.length} of {all.length} requests
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-[12px]">
+          {requests.data && (
+            <span className="text-[11.5px] text-fg-subtle">
+              {rows.length} of {all.length} requests
+            </span>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus size={14} strokeWidth={2} />}
+            onClick={() => navigate('/requests/new')}
+          >
+            New request
+          </Button>
+        </div>
       </div>
 
       <Card padded={false}>

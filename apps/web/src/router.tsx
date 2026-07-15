@@ -7,6 +7,7 @@ import { Settings } from '@/pages/settings';
 import { Overview } from '@/pages/overview';
 import { Catalog } from '@/pages/catalog';
 import { Requests } from '@/pages/requests';
+import { NewRequest } from '@/pages/new-request';
 import { RequestDetail } from '@/pages/request-detail';
 import { Drift } from '@/pages/drift';
 import { Assets } from '@/pages/assets';
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Overview /> },
       { path: 'requests', element: <Requests /> },
+      { path: 'requests/new', element: <NewRequest /> },
       { path: 'requests/:id', element: <RequestDetail /> },
       { path: 'assets', element: <Assets /> },
       { path: 'drift', element: <Drift /> },

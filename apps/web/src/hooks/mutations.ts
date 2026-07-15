@@ -3,6 +3,7 @@ import { apiPatch, apiPost } from '@/lib/api';
 import type {
   AdminUser,
   ChangePasswordBody,
+  CreateRequestBody,
   CreateUserBody,
   LedgerImportResult,
   LedgerRow,
@@ -65,6 +66,22 @@ export function useMarkSynced(requestId: string) {
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
     },
+  });
+}
+
+/**
+ * POST /requests — IT opens a standalone license request (Phase 乙 outbound,
+ * ADR-0008 D1). The backend creates the ServiceNow ticket via the provider then
+ * a local mirror (fail-closed); it enforces OpCo scope + SKU validity and its
+ * error message is surfaced by apiPost. Invalidates the requests list.
+ */
+export function useCreateRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateRequestBody) =>
+      apiPost<OnboardingRequest>('/requests', body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] }),
   });
 }
 
