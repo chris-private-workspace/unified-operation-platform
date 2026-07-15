@@ -4,8 +4,8 @@ name: "Phase 甲(inbound intake)— n8n onboarding request push → 平台接收
 sprint_week: W24
 backlog_id: REQ-INTAKE (ADR-0008 Phase 甲)
 start_date: 2026-07-15
-end_date: TBD
-status: active            # draft → active(Chris approve ADR-0008 Accepted + 開 Phase 甲)→ closed
+end_date: 2026-07-15
+status: closed            # draft → active → closed(D0-D4 完成,code+test+curl 全綠 2026-07-15)
 adr: ADR-0008 (Accepted)
 spec_refs:
   - docs/adr/0008-request-creation-n8n-d365-scope.md（D2 inbound · D4 mirror · D6 對映,Accepted）
@@ -69,3 +69,4 @@ prior_phase: W23-B-assets-inline-edit
 
 ## 6. Changelog
 - 1.0(2026-07-15)— **active**;ADR-0008 Accepted + Chris 開 Phase 甲。inbound intake(endpoint + m2m auth + 建 mirror)。開 D0 doc-sync。
+- 1.1(2026-07-15)— **closed**;D0 doc-sync + D1 合約 lock(AGENDA 10 條 Chris 自答,n8n=Chris 本人)+ D2 code(`POST /requests/intake` + `IntakeKeyGuard` + `IntakeService` two-level mirror + additive migration)+ D3 H5 test(api 176)+ D4 verify(build/lint/test + 端到端 curl 4 case 全綠)。Phase 甲完成,carry Phase 乙(outbound-direct 建單)。

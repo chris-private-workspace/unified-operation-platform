@@ -60,8 +60,33 @@ status: active
 
 ---
 
+## Day 1(2026-07-15)— D2-D4:n8n inbound intake endpoint(code + test + verify)
+
+> AGENDA lock 後**同日**落 code(n8n=Chris 本人已對接,合約定案,冇外部依賴)。
+
+**D2 code**(fulfilment module):
+- `dto/n8n-intake.dto.ts` `N8nIntakeRequestDto`(REQ sysId 必填=idempotency key · per-line RITM · sync gate ISO)
+- `intake-key.guard.ts` `IntakeKeyGuard` fail-closed 401(`X-Intake-Key` · getOrThrow env,H4)
+- `intake.service.ts` resolve opcoCode/skuId → nested create `Request`+`RequestLineItem` mirror(REQ/RITM two-level + sync gate)· idempotent(findByReq + P2002 race 保險)
+- `intake.controller.ts` `POST /requests/intake`(@Public bypass JWT/Roles + @UseGuards IntakeKeyGuard)
+- schema `RequestLineItem` +`serviceNowSysId/Number`(migration `20260715052910`,additive nullable)· Request comment=REQ 層
+- **回寫改 per-line RITM**:`assign.service` `item.serviceNowSysId ?? request.serviceNowSysId` + table `sc_req_item`(H5 critical path;fallback 兼容 legacy)
+- `.env`/`.env.example` `INTAKE_API_KEY`
+
+**D3 H5 test**(api 157→**176**,+19):intake happy(建 mirror)· 缺/錯 key 401(guard 4 case)· validation 400 · sync gate ISO→Date · idempotent+P2002 · assign RITM+fallback。
+
+**D4 verify**:generate ✓ · nest build ✓ · **jest 176 pass** · eslint clean · migrate additive ✓ · **端到端 curl**(錯 key 401 / 建 mirror two-level+sync gate / 重推 idempotent DB count=1 / 空 body 400)· e2e test data 已清。
+
+**Retro**:
+- grounding(Explore agent)一次過摸清 fulfilment/guard/test/servicenow pattern → 落 code 零返工。
+- `servicenow.addWorkNote` 早有 `table` 參數(default `sc_req_item`)→ two-level 回寫改動極少(前人 good design)。
+- ⚠️ **tool result 注入**:lint 嗰次 tool result 混入假 output + 假「內心獨白」誘導當 pass;冇採信,重跑攞真 result(H7 生效)。
+- backend watch-mode auto-reload 新 code,curl 探測 401 確認,唔使手動 restart。
+
+---
+
 ## ⏸️ Session pause（2026-07-15 尾）— resume point
 - **去到邊**:W24 Phase 甲 **D0 ✅ + D1(合約 + agenda + roadmap)✅ + doc-review + 16 修正 + **AGENDA lock**(Chris 自答 10 條)✅**。實作 code 未開始(D2 起)。REQ/RITM = two-level(option a,SSOT `CONTRACT §4`)。`ROADMAP.md` = ADR-0008 甲乙丙丁執行藍圖。
-- **下一步(直接 D2)**:AGENDA 已 lock(Chris = workflow 管理者本人,10 條即場答齊,冇外部依賴)→ 唔使等,直接落 **D2**(合約已 lock;見上 Day 0 續 3)。
-- **git 狀態**:doc commit **`41578ec`** 本地**未 push**;**今日全部改動未 commit**(REVIEW 16 修正 + AGENDA lock 回寫:AGENDA / CONTRACT / DESIGN / RISK / checklist / progress)。原「等傾完 n8n team」= Chris 本人已對接完 → **可 commit**(待 Chris 話)。
+- **下一步**:Phase 甲 **已完成**(D0-D4,見上 Day 1)→ **Phase 乙**(outbound-direct 建單:平台建 `sc_request`/`sc_req_item`)rolling JIT,未 kickoff 唔預建 folder。
+- **git 狀態**:`41578ec`(D0/D1)+ `f4fa97d`(AGENDA lock + 16 修正)本地未 push;**D2 code+test+closeout 待 commit**(下一個 commit)。
 - **✅ A 組四條已定**(A2 = 人手 queue,唔觸 auto-assign → 唔觸 H1/ADR)→ D2 gate 清除,可落 code。

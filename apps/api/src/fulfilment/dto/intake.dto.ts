@@ -14,7 +14,8 @@ export class IntakeRequestDto {
   opcoId!: string;
 
   @ApiPropertyOptional({
-    description: 'ServiceNow RITM number — pulls mirror fields when present',
+    description:
+      'ServiceNow reference number (REQ/RITM) — pulls mirror fields when present',
   })
   @IsOptional()
   @IsString()

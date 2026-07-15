@@ -123,9 +123,27 @@ describe('AssignService', () => {
         where: { id: 'r1' },
         data: { status: 'COMPLETED' },
       });
+      // fallback: this line has no RITM → write back to the parent REQ mirror,
+      // still targeting the sc_req_item table (two-level, ADR-0008 / CONTRACT §4).
       expect(snow.addWorkNote).toHaveBeenCalledWith(
         'sys1',
         expect.stringContaining('SPE_E3'),
+        'sc_req_item',
+      );
+    });
+
+    it('writes back to THIS line item RITM when present (two-level), not the parent REQ', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1' }),
+      );
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(snow.addWorkNote).toHaveBeenCalledWith(
+        'ritm-1',
+        expect.stringContaining('SPE_E3'),
+        'sc_req_item',
       );
     });
 

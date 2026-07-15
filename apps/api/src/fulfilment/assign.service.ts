@@ -184,11 +184,15 @@ export class AssignService {
     });
 
     // ── ServiceNow write-back (mirror only, non-fatal — OD4) ──
-    if (request.serviceNowSysId) {
+    // Two-level (ADR-0008 / CONTRACT §4): prefer THIS line's RITM (sc_req_item);
+    // fall back to the parent REQ mirror for legacy rows without a per-line RITM.
+    const snTarget = item.serviceNowSysId ?? request.serviceNowSysId;
+    if (snTarget) {
       try {
         await this.snow.addWorkNote(
-          request.serviceNowSysId,
+          snTarget,
           `License ${item.sku.skuPartNumber} assigned via platform.`,
+          'sc_req_item',
         );
       } catch (err) {
         this.logger.warn(

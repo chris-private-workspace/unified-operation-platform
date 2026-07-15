@@ -192,8 +192,8 @@ enum RequestStatus {
 
 model Request {
   id                String            @id @default(cuid())
-  serviceNowSysId   String?           @unique // reference to the SNOW record
-  serviceNowNumber  String? // e.g. RITM0012345
+  serviceNowSysId   String?           @unique // parent REQ (sc_request) sysId — two-level (ADR-0008); per-line RITM lives on RequestLineItem
+  serviceNowNumber  String? // e.g. REQ0012345 (parent REQ)
   serviceNowStatus  String? // mirrored for display, not owned
   rawRequestText    String? // free-text remark → source for human / future-AI interpretation
   requesterEmail    String? // who filed the ticket (may differ from the new user)
@@ -242,6 +242,12 @@ model RequestLineItem {
   quantity            Int            @default(1)
   procurementRequired Boolean        @default(false) // set at triage: false = short path, true = procurement path
   stage               LineItemStage  @default(REQUESTED)
+
+  // ServiceNow sc_req_item (RITM) — two-level linkage (ADR-0008 D6 / CONTRACT §4).
+  // Request.serviceNow* = parent REQ (sc_request); these = THIS line's RITM.
+  // Nullable: legacy rows + user-facing intake without a per-line RITM.
+  serviceNowSysId     String?
+  serviceNowNumber    String?
 
   // procurement references (recorded during manual stage tracking)
   quoteRef            String? // vendor quotation reference
