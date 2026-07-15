@@ -49,3 +49,14 @@ status: active
 - ✅ 誠實落差全部標明:SSO button disabled + note、email/password 唔 wire、role 顯示留 AUTH-3、"My queue" 留後端 mini-phase、真 token e2e 留 2b。
 - ⚠️ 技術債:bundle 578KB > 500KB（ADR-0003 預期）→ 之後 code-split Login/MSAL chunk（BACKLOG 記）。
 - **下一步（待 IT）**:IT 開 SPA app registration（plan §7 checklist)→ 填 `VITE_ENTRA_*` env → AUTH-2b:真 sign-in → token → API 200 → identity → sign-out 一條 live 驗（G7)→ 之後正式 close W10。**未經 Chris 指示唔自行開 2b/AUTH-3。**
+
+---
+
+## Day N — 2026-07-15（AUTH-2b readiness prep — Chris kickoff「開始 AUTH-2b」）
+- **狀態確認(Chris,AskUserQuestion)**:IT SPA app registration = **未開 / 仍等 IT** → G7 live e2e **仍 blocked**,誠實唔當 done(H7）。
+- **本輪 = readiness 準備**(唔寫新 code — AUTH-2a 前端已全交付;兩件 AI 做唔到:創建/consent app reg + 真 sign-in 輸帳密):
+  - **前端 wiring 就緒驗證(第一手)**:`lib/auth/msal.ts`(env-driven + `msalConfigured` gate + `initMsal` redirect + dev-bypass + H4 logger)· `lib/api.ts authHeader`(local-cookie/dev-bypass/unconfigured→無 header;否則 `acquireTokenSilent→Bearer`;interaction→`acquireTokenRedirect`;H4 唔 log)—— 真值一填即啟真 SSO。**web build ✓(tsc+vite,msal-vendor 254KB)· vitest 85 綠**。
+  - **新 `apps/web/.env.example`**(原本連 .env 都冇):列齊 5 個 key(`VITE_ENTRA_CLIENT_ID/TENANT_ID/API_SCOPE/REDIRECT_URI` + `VITE_AUTH_DEV_BYPASS`),全非 secret(SPA PKCE 無 client secret),註明來源。
+  - **新 `AUTH-2b-RUNBOOK.md`**:self-contained ①IT app-reg handoff(兩個 app reg 精確設定 + 5 回傳值,可直接交 IT)②值到後 config 步驟(web + 後端 audience,關 dev-bypass)③live-run + G7 驗證清單(6 步)④readiness 驗證結果 ⑤常見坑(scope/audience 401、第三方 cookie、redirect URI 逐字、dev-bypass leak)。
+- **產出**:`apps/web/.env.example` + `AUTH-2b-RUNBOOK.md`。值齊後 Part C 約 10 分鐘跑完 G7。
+- **仍 blocked**:G7 未驗 = W10 仍 `active`;等 IT app reg。**真 sign-in 輸帳密 = 人手**(AI 唔代入 credential);AI 可 sign-in 後幫驗 token attach / API 200 / identity / sign-out。
