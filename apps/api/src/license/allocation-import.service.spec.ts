@@ -209,4 +209,41 @@ describe('AllocationImportService', () => {
     expect(res.unknownOpcoHeaders).toEqual(['BOGUS']);
     expect(res.summary.opcoColumns).toBe(1); // only RHK mapped
   });
+
+  // ADR-0008 D5 (Phase 丁): D365 licence is in scope. The ONLY thing that kept
+  // the D365 row out was a missing businessAlias (curation-as-scope) — give it
+  // one and the same code path imports it like any M365 SKU. Counterpart to the
+  // uncurated-D365 skip above; proves widening scope to D365 is pure curation.
+  it('imports a curated D365 SKU (businessAlias set) — no code change, curation only', async () => {
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      ...CATALOG,
+      {
+        id: 'sku-d365',
+        skuPartNumber: 'DYN365_ENTERPRISE_SALES',
+        businessAlias: 'D365 Sales Sub Per User', // now curated → in scope
+        active: true,
+      },
+    ]);
+
+    const res = await service.import({ csv: CSV, dryRun: false });
+
+    // D365 row is no longer skipped; RTH=175 (RHK blank → no-op) becomes a change.
+    expect(res.skippedSkuLabels).toEqual([]);
+    expect(res.changes).toContainEqual({
+      opcoCode: 'RTH',
+      skuBusinessAlias: 'D365 Sales Sub Per User',
+      skuPartNumber: 'DYN365_ENTERPRISE_SALES',
+      before: 0,
+      target: 175,
+      delta: 175,
+    });
+    // and it is written to the ledger exactly like a curated M365 SKU.
+    const d365 = prisma.opcoSkuLedger.upsert.mock.calls.find(
+      (c) => c[0].where.opcoId_skuCatalogId.skuCatalogId === 'sku-d365',
+    );
+    expect(d365[0].create).toMatchObject({
+      skuCatalogId: 'sku-d365',
+      allocatedQuantity: 175,
+    });
+  });
 });

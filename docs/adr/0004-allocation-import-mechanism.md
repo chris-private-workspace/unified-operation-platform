@@ -4,6 +4,8 @@
 **Status**: Accepted
 **Approver**: Chris Lai
 
+> **範圍註記(2026-07-15,ADR-0008 Phase 丁 W27)**:本 ADR 嘅 **curation-as-scope 機制不變**,但**適用範圍隨 [ADR-0008](0008-request-creation-n8n-d365-scope.md) D5 擴至含 D365 SKU** —— 即 curation set 可 curate D365(set `businessAlias`),D365 row 就會同 M365 一樣經 import 入 ledger(見 Decision #3「Curation-as-scope」原將 D365 列為 out-of-scope example,現 D365 已 in-scope,排除純由「未 curate」而非 SKU 類型)。**決策內文不改**(§6);此為事實範圍註。
+
 ## Context
 
 `OpcoSkuLedger.allocatedQuantity`（OpCo budget / owned，對應手動 Excel 格子，DESIGN §5/§6）一直 = 0：seed 唔播 ledger，import 方式未定。此 gap 登記為 **DD-1**，已兩次卡死 License Assets 前端與 BE-ledger-read（FE-1 deviation W06、AUTH pivot W09）。

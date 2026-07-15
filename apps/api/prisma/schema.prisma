@@ -93,7 +93,7 @@ model Opco {
 
 model SkuCatalog {
   id            String              @id @default(cuid())
-  skuId         String              @unique // M365 GUID (subscribedSkus.skuId) — source of truth
+  skuId         String              @unique // M365/D365 GUID (subscribedSkus.skuId) — source of truth (ADR-0008 D5)
   skuPartNumber String // e.g. "SPE_E3", "ENTERPRISEPACK"
   displayName   String // human-friendly official name
   businessAlias String? // old Excel label — for mapping / reconciliation only
@@ -110,7 +110,7 @@ model SkuCatalog {
 
 // ── Per-OpCo per-SKU ledger (Option 甲: manual) ──────────────
 // allocatedQuantity = OpCo budget / owned (the Excel cell, OpCo-managed) → display
-// assignedQuantity  = actually assigned baseline → THIS reconciles vs M365 total
+// assignedQuantity  = actually assigned baseline → THIS reconciles vs tenant total (M365 + D365, ADR-0008 D5)
 
 model OpcoSkuLedger {
   id                String     @id @default(cuid())
@@ -173,7 +173,7 @@ model DriftAlert {
   skuCatalogId      String
   sku               SkuCatalog  @relation(fields: [skuCatalogId], references: [id])
   ledgerAssignedSum Int // sum of assignedQuantity across OpCos
-  tenantConsumed    Int // M365 consumedUnits at detection
+  tenantConsumed    Int // tenant consumedUnits at detection (M365 + D365, ADR-0008 D5)
   delta             Int // tenantConsumed - ledgerAssignedSum
   status            DriftStatus @default(OPEN)
   note              String?

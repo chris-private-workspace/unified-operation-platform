@@ -126,6 +126,35 @@ describe('TenantOwnedService', () => {
     });
   });
 
+  // ADR-0008 D5 (Phase 丁): D365 licence is in scope. tenant-owned filters SKUs
+  // only on active + data-presence (category is display-only, never a gate), so a
+  // Dynamics 365 SKU flows through owned / allocated / total exactly like M365.
+  it('includes a D365 SKU in owned/total identically (category is not a gate)', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      { skuCatalogId: 'sku-d365', prepaidEnabled: 500, consumedUnits: 300 },
+    ]);
+    prisma.opcoSkuLedger.groupBy.mockResolvedValue([
+      {
+        skuCatalogId: 'sku-d365',
+        _sum: { allocatedQuantity: 400, assignedQuantity: 0 },
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-d365', 'DYN365_ENTERPRISE_SALES', 'Dynamics 365'),
+    ]);
+
+    const [row] = await service.listTenantSkus();
+    expect(row).toMatchObject({
+      skuCatalogId: 'sku-d365',
+      owned: 500,
+      allocatedToOpcos: 400,
+      unallocated: 100,
+    });
+    const stats = await service.tenantSkuStats();
+    expect(stats.totalOwned).toBe(500);
+    expect(stats.totalAllocated).toBe(400);
+  });
+
   it('handles an empty tenant (no SKUs)', async () => {
     const rows = await service.listTenantSkus();
     const stats = await service.tenantSkuStats();

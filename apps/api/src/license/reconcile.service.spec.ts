@@ -151,6 +151,42 @@ describe('ReconcileService', () => {
     expect(res).toMatchObject({ opened: 0, updated: 0, resolved: 0 });
   });
 
+  // ADR-0008 D5 (Phase 丁): D365 licence = subscribedSku. reconcile filters SKUs
+  // only on active (no SKU-type gate), so a D365 SKU drives total-layer drift
+  // (Σ assigned vs tenant consumed) exactly like M365. Lock-in against a future
+  // "M365 only" special-case creeping into reconcile.
+  it('reconciles a D365 SKU identically — no SKU-type filter', async () => {
+    graph.getSubscribedSkus.mockResolvedValue([
+      {
+        skuId: 'guid-d365',
+        skuPartNumber: 'DYN365_ENTERPRISE_SALES',
+        prepaidEnabled: 100,
+        consumedUnits: 7,
+        capabilityStatus: 'Enabled',
+        appliesTo: 'User',
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      { id: 'c-d365', skuId: 'guid-d365' },
+    ]);
+    prisma.opcoSkuLedger.aggregate.mockResolvedValue({
+      _sum: { assignedQuantity: 4 },
+    });
+    prisma.driftAlert.findFirst.mockResolvedValue(null);
+
+    const res = await service.reconcile();
+
+    expect(prisma.driftAlert.create).toHaveBeenCalledWith({
+      data: {
+        skuCatalogId: 'c-d365',
+        ledgerAssignedSum: 4,
+        tenantConsumed: 7,
+        delta: 3,
+      },
+    });
+    expect(res).toMatchObject({ checked: 1, opened: 1 });
+  });
+
   // BE-graph-harden (BUG-002 sibling): a raw Graph error while reading tenant
   // totals must surface as a clean 503, not crash the process. Fail closed — no
   // catalog read, no drift write happens.

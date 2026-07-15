@@ -17,7 +17,7 @@ async function bootstrap() {
 
   // OpenAPI — this is also the contract n8n / future AI plug into
   const config = new DocumentBuilder()
-    .setTitle('M365 License Operations Platform')
+    .setTitle('M365/D365 License Operations Platform')
     .setDescription('System of Action — operational + orchestration API')
     .setVersion('0.1')
     .addBearerAuth() // Entra JWT — endpoints are guarded (ADR-0002)

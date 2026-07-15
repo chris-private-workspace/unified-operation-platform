@@ -165,6 +165,47 @@ describe('AssignService', () => {
         { usageLocation: 'SG' },
       );
     });
+
+    // ADR-0008 D5 (Phase 丁): D365 licence = subscribedSku, assigned via the same
+    // Graph assignLicense with no SKU-type gate. A D365 line item assigns and
+    // increments the ledger exactly like M365 — lock-in against a future filter.
+    it('assigns a D365 SKU via the same Graph path + ledger +1 (no SKU-type gate)', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({
+          sku: {
+            id: 'c-d365',
+            skuId: 'guid-d365',
+            skuPartNumber: 'DYN365_ENTERPRISE_SALES',
+          },
+        }),
+      );
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'guid-d365',
+          skuPartNumber: 'DYN365_ENTERPRISE_SALES',
+          prepaidEnabled: 100,
+          consumedUnits: 10,
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(graph.assignLicense).toHaveBeenCalledWith(
+        'new.user@rhk.com',
+        'guid-d365',
+        { usageLocation: 'HK' },
+      );
+      expect(tx.opcoSkuLedger.upsert).toHaveBeenCalledWith({
+        where: {
+          opcoId_skuCatalogId: { opcoId: 'o1', skuCatalogId: 'c-d365' },
+        },
+        create: { opcoId: 'o1', skuCatalogId: 'c-d365', assignedQuantity: 1 },
+        update: { assignedQuantity: { increment: 1 } },
+      });
+    });
   });
 
   describe('assignLineItem — gates fail closed', () => {
