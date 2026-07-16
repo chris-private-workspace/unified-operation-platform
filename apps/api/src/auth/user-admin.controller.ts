@@ -13,7 +13,6 @@ import { Roles } from './roles.decorator';
 import { CurrentUser, type AuthUser } from './current-user.decorator';
 import { UserAdminService } from './user-admin.service';
 import {
-  AdminOpcoDto,
   AdminUserDto,
   CreateUserDto,
   UpdateUserDto,
@@ -66,11 +65,5 @@ export class UserAdminController {
     @Body() dto: ResetPasswordDto,
   ): Promise<void> {
     return this.users.resetPassword(actor, id, dto);
-  }
-
-  @Get('opcos')
-  @ApiOkResponse({ type: [AdminOpcoDto] })
-  listOpcos(): Promise<AdminOpcoDto[]> {
-    return this.users.listOpcos();
   }
 }

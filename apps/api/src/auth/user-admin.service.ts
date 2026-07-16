@@ -10,7 +10,6 @@ import type { AppUser, Opco } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  AdminOpcoDto,
   AdminUserDto,
   CreateUserDto,
   UpdateUserDto,
@@ -47,15 +46,6 @@ export class UserAdminService {
       include: SCOPE_INCLUDE,
     });
     return users.map(toAdminUser);
-  }
-
-  /** Active OpCos for the create-user scope selector. */
-  listOpcos(): Promise<AdminOpcoDto[]> {
-    return this.prisma.opco.findMany({
-      where: { active: true },
-      orderBy: { code: 'asc' },
-      select: { id: true, code: true, displayName: true },
-    });
   }
 
   async create(actor: AppUser, dto: CreateUserDto): Promise<AdminUserDto> {

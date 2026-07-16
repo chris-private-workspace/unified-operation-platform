@@ -103,10 +103,3 @@ export class UpdateUserDto {
   @IsBoolean()
   active?: boolean;
 }
-
-/** GET /admin/opcos — active OpCos for the create-user scope selector. */
-export class AdminOpcoDto {
-  @ApiProperty() id!: string;
-  @ApiProperty({ example: 'RHK' }) code!: string;
-  @ApiProperty() displayName!: string;
-}
