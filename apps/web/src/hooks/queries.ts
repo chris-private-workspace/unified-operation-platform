@@ -8,6 +8,7 @@ import type {
   LedgerStats,
   MeResponse,
   OnboardingRequest,
+  Opco,
   RequestDetail,
   Role,
   SkuCatalog,
@@ -126,6 +127,19 @@ export function useAdminOpcos() {
   return useQuery({
     queryKey: ['admin', 'opcos'],
     queryFn: () => apiGet<AdminOpco[]>('/admin/opcos'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /admin/opcos?includeInactive=true — rich OpCo list for the management
+ * panel (CH-004, ADMIN / REGIONAL). Includes deactivated OpCos so they can be
+ * reactivated. 403 for OPCO_IT → the panel shows a restricted state.
+ */
+export function useManageOpcos() {
+  return useQuery({
+    queryKey: ['admin', 'opcos', 'manage'],
+    queryFn: () => apiGet<Opco[]>('/admin/opcos?includeInactive=true'),
     retry: retryUnless403,
   });
 }

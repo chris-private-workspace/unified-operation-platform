@@ -3,18 +3,21 @@ import { apiPatch, apiPost } from '@/lib/api';
 import type {
   AdminUser,
   ChangePasswordBody,
+  CreateOpcoBody,
   CreateRequestBody,
   CreateUserBody,
   LedgerImportResult,
   LedgerRow,
   LineItemStage,
   OnboardingRequest,
+  Opco,
   ReconcileResult,
   RequestLineItem,
   ResetPasswordBody,
   SkuCatalog,
   UpdateCatalogBody,
   UpdateLedgerBody,
+  UpdateOpcoBody,
   UpdateUserBody,
 } from '@/lib/api-types';
 
@@ -190,5 +193,37 @@ export function useResetPassword() {
     mutationFn: (vars: { id: string; body: ResetPasswordBody }) =>
       apiPost<void>(`/admin/users/${vars.id}/reset-password`, vars.body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+  });
+}
+
+// OpCo management (CH-004). ADMIN / REGIONAL; the backend enforces code
+// uniqueness (409) + immutability. Invalidating ['admin','opcos'] refreshes both
+// the management panel and the user-scope selector; ['opcos'] the pickers; and
+// ['license','ledger'] so a new OpCo appears in the Assets By-OpCo table.
+
+/** POST /admin/opcos — create an Operating Company. */
+export function useCreateOpco() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateOpcoBody) => apiPost<Opco>('/admin/opcos', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'opcos'] });
+      qc.invalidateQueries({ queryKey: ['opcos'] });
+      qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
+    },
+  });
+}
+
+/** PATCH /admin/opcos/:id — edit displayName / company / costCenter / active. */
+export function useUpdateOpco() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: UpdateOpcoBody }) =>
+      apiPatch<Opco>(`/admin/opcos/${vars.id}`, vars.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'opcos'] });
+      qc.invalidateQueries({ queryKey: ['opcos'] });
+      qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
+    },
   });
 }
