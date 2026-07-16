@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
@@ -122,5 +122,63 @@ describe('CatalogService', () => {
     expect(prisma.skuCatalog.update).not.toHaveBeenCalled();
     expect(prisma.tenantSkuSnapshot.create).not.toHaveBeenCalled();
     expect(prisma.skuCatalog.updateMany).not.toHaveBeenCalled();
+  });
+
+  // CH-003 — human curation of alias / category / base-flag. Only the curated
+  // columns are writable; skuId / part number / display name stay system-owned.
+  describe('updateEntry (CH-003 curation)', () => {
+    it('updates only curated fields (trimmed); system-owned columns never written', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1', skuId: 'g1' });
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('c1', {
+        businessAlias: '  E3 Bundle  ',
+        category: 'Base',
+        isBaseLicense: true,
+      });
+
+      const arg = prisma.skuCatalog.update.mock.calls[0][0];
+      expect(arg.where).toEqual({ id: 'c1' });
+      expect(arg.data).toEqual({
+        businessAlias: 'E3 Bundle',
+        category: 'Base',
+        isBaseLicense: true,
+      });
+      for (const owned of ['skuId', 'skuPartNumber', 'displayName', 'active']) {
+        expect(arg.data).not.toHaveProperty(owned);
+      }
+    });
+
+    it('normalizes empty / whitespace alias & category to null', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1' });
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('c1', { businessAlias: '', category: '   ' });
+
+      expect(prisma.skuCatalog.update.mock.calls[0][0].data).toEqual({
+        businessAlias: null,
+        category: null,
+      });
+    });
+
+    it('touches only supplied fields (omitted = unchanged)', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1' });
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('c1', { isBaseLicense: false });
+
+      expect(prisma.skuCatalog.update.mock.calls[0][0].data).toEqual({
+        isBaseLicense: false,
+      });
+    });
+
+    it('404s an unknown id and writes nothing', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateEntry('nope', { category: 'X' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.skuCatalog.update).not.toHaveBeenCalled();
+    });
   });
 });

@@ -9,7 +9,11 @@ import { AllocationImportService } from './allocation-import.service';
 import { LedgerReadService } from './ledger-read.service';
 import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
-import { CatalogSyncResultDto, SkuCatalogDto } from './dto/catalog.dto';
+import {
+  CatalogSyncResultDto,
+  SkuCatalogDto,
+  UpdateSkuCatalogDto,
+} from './dto/catalog.dto';
 import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
 import {
   LedgerImportRequestDto,
@@ -51,6 +55,20 @@ export class LicenseController {
   @ApiOkResponse({ type: [SkuCatalogDto] })
   listCatalog(): Promise<SkuCatalogDto[]> {
     return this.catalog.listCatalog();
+  }
+
+  /**
+   * Human curation of one SKU (CH-003) — alias / category / base-flag only.
+   * ADMIN / REGIONAL (inherits the class default); OPCO_IT can't curate the
+   * shared dictionary. skuId / part number / display name stay system-owned.
+   */
+  @Patch('catalog/:id')
+  @ApiOkResponse({ type: SkuCatalogDto })
+  updateCatalog(
+    @Param('id') id: string,
+    @Body() dto: UpdateSkuCatalogDto,
+  ): Promise<SkuCatalogDto> {
+    return this.catalog.updateEntry(id, dto);
   }
 
   @Post('reconcile')

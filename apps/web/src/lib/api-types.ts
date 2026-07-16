@@ -34,6 +34,13 @@ export interface SkuCatalog {
   createdAt: string;
 }
 
+/** PATCH /license/catalog/:id body — curated fields only (CH-003). */
+export interface UpdateCatalogBody {
+  businessAlias?: string | null;
+  category?: string | null;
+  isBaseLicense?: boolean;
+}
+
 /** POST /license/catalog/sync → CatalogSyncResultDto */
 export interface CatalogSyncResult {
   created: number;

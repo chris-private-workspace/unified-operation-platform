@@ -35,6 +35,32 @@ status: in-progress     # in-progress | closed
 
 ---
 
+## Day 1 — 2026-07-16（後端 + 前端實作）
+
+### Done
+- **後端**（`apps/api/src/license`）：`UpdateSkuCatalogDto`（IsOptional/IsString/IsBoolean/MaxLength）+ `CatalogService.updateEntry`（404 gate + `normalizeOptional` 空→null + 只 set 3 curated 欄）+ `PATCH /license/catalog/:id`（繼承 class `@Roles(ADMIN,REGIONAL)`）+ `catalog.service.spec` 4 test。
+- **前端**（`apps/web`）：`UpdateCatalogBody`（api-types）+ `useUpdateCatalog`（invalidate `['license','catalog']`）+ `catalog.tsx` Edit 掣解禁 → `EditSkuDialog`（alias/category/base 可改，system-owned display/part/skuId 唯讀灰盒，SegmentedControl Base/Add-on）+ toast。
+
+### Decisions
+- `normalizeOptional`（trim；空→null）令「清空 alias/category」有明確語意。
+- Edit 掣由 `disabled` → `onClick={setEditing(s)}`；page footer 註「Only alias/category/base editable」保持準確。
+- 唯讀身份用灰盒（`bg-hover`）呈現，重用 CH-002 A1/A2 同款 token。
+
+### Verify（真 tool output）
+- api `npm run build` EXIT 0；`npm test` **205 passed**（201→205，+4 updateEntry）；eslint changed files EXIT=0。
+- web `npm run build` EXIT 0；`npm test` **85 passed**（不降）；eslint changed files EXIT=0。
+- **未做**：live curl / 前端 round-trip —— 用戶 3100 backend 當前 down（curl HTTP 000）；service 邏輯已由 unit test 覆蓋，HTTP 層（route/guard/DTO validation/實際 update）待 server up 或前端 Edit round-trip 驗。
+
+### Blockers
+- 無阻塞。live HTTP 驗證待 3100 重啟（或前端手測）。
+
+### Commits
+| Hash | Subject |
+|---|---|
+| _(next)_ | feat(license): CH-003 catalog edit — PATCH endpoint + Edit dialog |
+
+---
+
 ## Closeout（填於 status=closed）
 
 ### Acceptance verification

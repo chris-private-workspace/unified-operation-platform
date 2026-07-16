@@ -12,6 +12,8 @@ import type {
   ReconcileResult,
   RequestLineItem,
   ResetPasswordBody,
+  SkuCatalog,
+  UpdateCatalogBody,
   UpdateLedgerBody,
   UpdateUserBody,
 } from '@/lib/api-types';
@@ -130,6 +132,20 @@ export function useUpdateLedger() {
       qc.invalidateQueries({ queryKey: ['license', 'tenant-skus'] });
       qc.invalidateQueries({ queryKey: ['license', 'drift'] });
     },
+  });
+}
+
+/**
+ * PATCH /license/catalog/:id — curate alias / category / base-flag (CH-003).
+ * ADMIN / REGIONAL only (backend @Roles); invalidates the catalog list so the
+ * table + any category grouping refreshes. Server message surfaces for the toast.
+ */
+export function useUpdateCatalog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: UpdateCatalogBody }) =>
+      apiPatch<SkuCatalog>(`/license/catalog/${vars.id}`, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['license', 'catalog'] }),
   });
 }
 
