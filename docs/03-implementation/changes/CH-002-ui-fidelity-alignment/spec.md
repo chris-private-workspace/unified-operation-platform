@@ -33,6 +33,7 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 |---|---|---|
 | Request remark | `blockquote` 淨 `border-l-2 border-accent-line`，**無底色** | 灰底盒：`bg-hover` + `border-l`（accent-line 3px）+ 右上下圓角（`0 8px 8px 0`），內距 12–14px |
 | Sync-gate / stage strip | 淨 `border-t border-border pt-[14px]` 分隔，**無底盒** | 灰底圓角盒：`bg-hover` + `border border-border` + `rounded-[10px]` + `p-[12px_14px]` |
+| Operational history timeline **(A9)** | 每事件淨 dot、**無連接線** | 每事件 dot + 下方垂直連接線（`w-px flex-1 bg-border`；最後一項無線）|
 
 #### ② Requests 列表（`apps/web/src/pages/requests.tsx`）
 | 元素 | Before | After |
@@ -54,7 +55,8 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 | Settings 頁大標題 | 有 `Settings` h1（22px） | 移除（prototype 無此 h1，直接 sub-nav + 內容）|
 | Section 卡 | 手砌 `rounded-[12px] border bg-card p-[18px]`，**無陰影** | 改用共用 `Card` primitive（`border + rounded + shadow`）|
 | Users 表頭 | 「{n} users」+ Add-user 掣**浮喺卡外** | 併入 `Card` header：標題「Users & roles」+ 副題「Who can see and act on which OpCos」+ 掣 |
-| 角色圖例卡 | **缺**（`settings.tsx` 註解仍寫「plus the static role reference」= stale） | 補 3 欄圖例卡：Regional operator / OpCo admin / Read-only auditor |
+| 角色圖例卡 | **缺**（`settings.tsx` 註解仍寫「plus the static role reference」= stale） | 補 3 欄圖例卡（實際 role：Admin / Regional / OpCo IT，非 mock 的 auditor — H7）|
+| Account tab 內容 **(A10)** | Profile / Sign-in / Password 三個唯讀 Section（無 avatar，欄位以 Input 呈現）| 貼 mockup layout：**Account 卡**（avatar 60px + 唯讀身份 name/email/role）+ **Role & access 卡**（Role / OpCo scope / Sign-in 行）+ Password 卡（local）。**唯讀誠實** —— 唔加 Job title / Phone / Save / Change photo / MFA（app 無此資料/功能，加咗即假 UI 違 H7）|
 
 ### 2.2 In Scope（本 change 會做）
 
@@ -67,6 +69,8 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 - A6 Assets By-OpCo 補 in-table 總數行（數字取自 `/ledger/stats`，缺值顯示 `—`，不捏造）
 - A7 Settings 移除多餘 h1 + Section 改用 `Card`
 - A8 Users 表頭併入 Card header + 補角色圖例卡
+- **A9**（追加 2026-07-16）Request 內頁 operational history timeline 加事件間垂直連接線
+- **A10**（追加 2026-07-16）Settings Account tab 重砌貼 mockup layout（avatar + Role & access 卡），保持唯讀誠實
 
 **B 組 — 決策已定（2026-07-16），併入實作：**
 - B1 Assets mode active 掣色 = **accent 紅**（`bg-accent text-accent-fg`；決策 B = 選項甲）。連帶更新 `design-system.md` DS-3 澄清「segmented active 屬 accent 合法用途」（消除現有註解衝突）。A4 掣色一併改。
@@ -98,6 +102,8 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 - [ ] **A7** Settings 無 `Settings` h1；4 個 Section 用 `Card`（有陰影）；Account/Preferences/Users/Integrations 內容功能不變
 - [ ] **A8** Users tab 表頭併入 Card header（標題+副題+掣）；表下有 3 欄角色圖例卡；`settings.tsx` stale 註解更新
 - [ ] **B1** Assets active mode 掣 = `bg-accent text-accent-fg`（決策 B = 紅）；`design-system.md` DS-3 加 segmented-active accent 澄清 + changelog
+- [ ] **A9** Request 內頁 timeline 每事件 dot 下有垂直連接線串起（最後一項無線）；light+dark OK
+- [ ] **A10** Settings Account tab = Account 卡（avatar + 唯讀身份）+ Role & access 卡（Role/OpCo/Sign-in 行）+ Password 卡（local）；無 Job title/Phone/Save/photo/MFA（H7 唯讀誠實）；sign-out + 改密碼功能保留
 - [ ] `cd apps/web && npm run build` 綠、`npm run lint` 無 warning、`npm test` 不降（現 85）
 - [ ] 全部改動 trace 得返本 spec §2.1/§2.2（無順手改無關 code — §1.3 surgical）
 
@@ -132,6 +138,7 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 | 2026-07-16 | Initial draft（status: proposed） | Chris 手測發現跨 4 畫面 fidelity drift | — |
 | 2026-07-16 | 決策 B 定案 = 紅 accent（選項甲）；B1 併入實作 + 連帶更新 design-system.md DS-3 | Chris（AskUserQuestion）| Chris |
 | 2026-07-16 | A6 總行數字改用「filtered rows client-side 加總」取代原文「/ledger/stats」| stats 係全 scope 唔跟 OpCo/search filter，篩選時總行會誤導；filtered 加總更正確且仍係真資料聚合（H7） | AI（實作決定，符 spec 意圖）|
+| 2026-07-16 | **範圍擴充**：追加 A9（timeline 連接線）+ A10（Settings Account tab 重砌）| Chris 手測後發現 timeline 線缺失 + Account tab 內容仍未貼 mockup（A7 只改卡殼）；兩者皆純視覺、同 CH-002 主題 → 併入而非另開 | Chris（approve 擴充）|
 
 ---
 

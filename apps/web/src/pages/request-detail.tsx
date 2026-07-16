@@ -350,16 +350,22 @@ export function RequestDetail() {
                 description="Events appear as this request progresses."
               />
             ) : (
-              <div className="flex flex-col gap-[14px]">
-                {req.events.map((ev) => (
-                  <div key={ev.id} className="flex gap-[10px]">
-                    <span
-                      className={cn(
-                        'mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full',
-                        DOT[EVENT_TONE[ev.type]],
+              <div className="flex flex-col">
+                {req.events.map((ev, i) => (
+                  <div key={ev.id} className="flex gap-[11px]">
+                    {/* dot + vertical connector to the next event (prototype) */}
+                    <div className="flex flex-col items-center">
+                      <span
+                        className={cn(
+                          'mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full',
+                          DOT[EVENT_TONE[ev.type]],
+                        )}
+                      />
+                      {i < req.events.length - 1 && (
+                        <span className="w-px flex-1 bg-border" />
                       )}
-                    />
-                    <div className="flex min-w-0 flex-col leading-[1.35]">
+                    </div>
+                    <div className="flex min-w-0 flex-col pb-[14px] leading-[1.35]">
                       <span className="text-[12.5px]">
                         {ev.message ??
                           (ev.fromStage && ev.toStage

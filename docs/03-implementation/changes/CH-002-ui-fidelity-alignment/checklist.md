@@ -20,6 +20,8 @@ last_updated: 2026-07-16
 - [x] A6 Assets By-OpCo 補 in-table「All SKUs · total」總行（數字 = filtered rows 加總，跟 filter；R3 deviation 已 log）（`by-opco-view.tsx`）
 - [x] A7 Settings 移除多餘 h1 + Section 改用 `Card` primitive（`settings.tsx`）
 - [x] A8 Users 表頭併入 Card header + 補角色圖例卡（真實 3 role，非 mock 的 auditor）+ 更新 stale 註解（`users-panel.tsx` / `settings.tsx`）
+- [x] A9（追加）Request 內頁 operational history timeline 加事件間垂直連接線（`request-detail.tsx`）
+- [x] A10（追加）Settings Account tab 重砌：Account 卡（avatar + 唯讀身份）+ Role & access 卡 + Password 卡；唯讀誠實（移除 unused Input import）（`settings.tsx`）
 
 ## Implementation — B 組（決策 B 已定 = 紅 accent，2026-07-16）
 

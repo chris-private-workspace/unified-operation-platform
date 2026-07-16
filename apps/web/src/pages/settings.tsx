@@ -8,8 +8,8 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { Avatar } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -64,6 +64,24 @@ function Field({
   );
 }
 
+// Read-only label→value row for the "Role & access" card (prototype).
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex justify-between border-b border-border py-[9px] text-[12.5px] last:border-0">
+      <span className="text-fg-muted">{label}</span>
+      <span className={cn('font-medium', mono && 'font-mono')}>{value}</span>
+    </div>
+  );
+}
+
 // Settings (handoff full-console): left sub-nav + full-width content, no page
 // heading (prototype). Account + Preferences wire real state (identity, theme);
 // Users & roles is the live admin console (AUTH-4b); Integrations has the
@@ -107,41 +125,52 @@ export function Settings() {
       <div className="flex max-w-[760px] flex-1 flex-col gap-[16px]">
         {tab === 'account' && (
           <>
-            <Section title="Profile">
-              <Field label="Name">
-                <Input value={user.name} disabled readOnly />
-              </Field>
-              <Field label="Email">
-                <Input value={user.email} disabled readOnly />
-              </Field>
-              <Field label="Role">
-                {user.role ? (
-                  <span className="self-start">
-                    <Badge tone={roleTone(user.role)}>
-                      {roleLabel(user.role)}
-                    </Badge>
+            {/* Identity — avatar + read-only (IT-managed; no editable fields,
+                Save, photo or MFA — the app has none of that data, H7). */}
+            <Card title="Account">
+              <div className="flex items-center gap-[16px]">
+                <Avatar name={user.name} size={60} variant="brand" />
+                <div className="flex min-w-0 flex-col gap-[3px]">
+                  <span className="text-[16px] font-semibold">{user.name}</span>
+                  <span className="font-mono text-[12.5px] text-fg-muted">
+                    {user.email}
                   </span>
-                ) : (
-                  <Input value="…" disabled readOnly />
-                )}
-              </Field>
+                  {user.role && (
+                    <span className="self-start">
+                      <Badge tone={roleTone(user.role)}>
+                        {roleLabel(user.role)}
+                      </Badge>
+                    </span>
+                  )}
+                </div>
+              </div>
               <p className="text-[11.5px] text-fg-subtle">
                 Your profile and role are managed by IT and can’t be edited
                 here.
               </p>
-            </Section>
-            <Section title="Sign-in &amp; access">
-              <Field label="Sign-in method">
-                <Input
+            </Card>
+
+            {/* Role & access — read-only rows (prototype). */}
+            <Card title="Role &amp; access">
+              <div className="flex flex-col">
+                <Row
+                  label="Role"
+                  value={user.role ? roleLabel(user.role) : '…'}
+                />
+                <Row
+                  label="OpCo scope"
+                  value={user.opcoScope ? user.opcoScope.code : 'All OpCos'}
+                  mono={Boolean(user.opcoScope)}
+                />
+                <Row
+                  label="Sign-in"
                   value={
                     isLocalSession
                       ? 'Local account (password)'
-                      : 'Microsoft Entra ID (single sign-on)'
+                      : 'Microsoft Entra ID (SSO)'
                   }
-                  disabled
-                  readOnly
                 />
-              </Field>
+              </div>
               {user.canSignOut ? (
                 <Button
                   variant="secondary"
@@ -157,14 +186,15 @@ export function Settings() {
                   of.
                 </p>
               )}
-            </Section>
+            </Card>
+
             {isLocalSession && (
-              <Section title="Password">
+              <Card title="Password">
                 {pwChanged && (
                   <p className="text-[12px] text-ok">Password updated.</p>
                 )}
                 <ChangePasswordForm onDone={() => setPwChanged(true)} />
-              </Section>
+              </Card>
             )}
           </>
         )}

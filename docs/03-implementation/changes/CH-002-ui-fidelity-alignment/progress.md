@@ -76,6 +76,34 @@ status: in-progress     # in-progress | closed
 
 ---
 
+## Day 2 — 2026-07-16（範圍擴充 A9 + A10）
+
+### 緣起
+- Chris 手測回報 3 問題：①timeline 連接線缺失 ②catalog 未能 edit + assets 分類 ③settings 仍唔貼 mockup。
+- **客觀確認 settings 問題 = (b) 改咗但仍未夠貼**：curl 行緊嘅 vite dev server（5173）攞 `settings.tsx` module → 已含我改嘅版本（`import Card`、`flex gap-[24px] p-[24px]`、無 `text-[22px]` h1）→ 證 code live，非 server stale。剩下 = Account tab 內容結構未砌。
+- 分流：①③純視覺 → **併入 CH-002**（本擴充）；②catalog edit 需 backend → 另開 CH-003（待 approve）。Chris approve 擴充。
+
+### Done
+- **A9**（`request-detail.tsx`）：operational history timeline 由「淨 dot」→ 每事件 dot + 下方垂直連接線（`w-px flex-1 bg-border`，最後一項無線；content `pb-[14px]` 取代 gap）。
+- **A10**（`settings.tsx`）：Account tab 重砌貼 mockup layout —— **Account 卡**（`Avatar` 60px + name/email(mono)/role badge，唯讀）+ **Role & access 卡**（`Row` label→value：Role / OpCo scope[code mono] / Sign-in；保留 Sign out 掣）+ **Password 卡**（local）。**唯讀誠實**：唔加 Job title/Phone/Save/Change photo/MFA（app 無此資料/功能，加咗即假 UI 違 H7）。移除變 unused 的 `Input` import。
+
+### Decisions
+- A10 唯讀誠實：只砌 mockup layout，唔照搬可編輯欄 + Save（app profile IT-managed 唯讀；假控件違 H7）。
+- 問題 2（catalog edit）另開 CH-003（需 `PATCH /license/catalog/:id`，觸 H1）—— 唔混入本純視覺 change。
+
+### Verify（真 tool output）
+- `npm run build`：綠（14.8s，無 chunk warning）。
+- `npx eslint request-detail.tsx settings.tsx`：EXIT=0。
+- `npm test`：**85 passed**（不降）。
+- **未做**：light/dark 實 render 對照（同 Day 1，待 Chris 瀏覽器核對）。
+
+### Commits
+| Hash | Subject |
+|---|---|
+| _(next)_ | fix(web): CH-002 A9 timeline connector + A10 settings Account restructure |
+
+---
+
 ## Closeout（填於 status=closed）
 
 ### Acceptance verification
