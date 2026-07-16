@@ -123,7 +123,7 @@ export function Settings() {
       </nav>
 
       {/* content */}
-      <div className="flex max-w-[760px] flex-1 flex-col gap-[16px]">
+      <div className="flex flex-1 flex-col gap-[16px]">
         {tab === 'account' && (
           <>
             {/* Identity — avatar + read-only (IT-managed; no editable fields,
