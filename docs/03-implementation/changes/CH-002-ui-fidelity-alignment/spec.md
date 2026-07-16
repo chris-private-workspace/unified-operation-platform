@@ -94,7 +94,7 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 - [ ] **A3** Requests filter：inactive 為 bordered card chip（`border-border`/`bg-card`/`rounded-[8px]`），active 維持 inverted；count 顯示不變
 - [ ] **A4** Assets mode switcher 容器 = `bg-card border`，順序 Platform→By OpCo；OPCO_IT（無 Platform）行為不變（照舊只見 By OpCo）
 - [ ] **A5** Platform 每行 SKU cell 為雙段 bar（assigned/allocated 兩色 + over→danger），表下有顏色圖例
-- [ ] **A6** By-OpCo 表頂有「All SKUs · total」行；數字 = `/ledger/stats`；`stats` loading/error 時顯示 `—`（不捏造）
+- [ ] **A6** By-OpCo 表頂有「All SKUs · total」行；數字 = 當前 filtered rows client-side 加總（真資料聚合、respects OpCo/search filter；無 filter 時 = `/ledger/stats`）；只在 filtered 有列時渲染，故無捏造/缺值問題
 - [ ] **A7** Settings 無 `Settings` h1；4 個 Section 用 `Card`（有陰影）；Account/Preferences/Users/Integrations 內容功能不變
 - [ ] **A8** Users tab 表頭併入 Card header（標題+副題+掣）；表下有 3 欄角色圖例卡；`settings.tsx` stale 註解更新
 - [ ] **B1** Assets active mode 掣 = `bg-accent text-accent-fg`（決策 B = 紅）；`design-system.md` DS-3 加 segmented-active accent 澄清 + changelog
@@ -131,6 +131,7 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 |---|---|---|---|
 | 2026-07-16 | Initial draft（status: proposed） | Chris 手測發現跨 4 畫面 fidelity drift | — |
 | 2026-07-16 | 決策 B 定案 = 紅 accent（選項甲）；B1 併入實作 + 連帶更新 design-system.md DS-3 | Chris（AskUserQuestion）| Chris |
+| 2026-07-16 | A6 總行數字改用「filtered rows client-side 加總」取代原文「/ledger/stats」| stats 係全 scope 唔跟 OpCo/search filter，篩選時總行會誤導；filtered 加總更正確且仍係真資料聚合（H7） | AI（實作決定，符 spec 意圖）|
 
 ---
 

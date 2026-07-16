@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ShieldAlert, UserPlus, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -399,20 +400,21 @@ export function UsersPanel() {
 
   return (
     <div className="flex flex-col gap-[16px]">
-      <div className="flex items-center justify-between gap-[16px]">
-        <span className="text-[12.5px] text-fg-subtle">
-          {rows.length} {rows.length === 1 ? 'user' : 'users'}
-        </span>
-        <Button
-          variant="primary"
-          icon={<UserPlus size={15} strokeWidth={2} />}
-          onClick={() => setDialog('create')}
-        >
-          Add user
-        </Button>
-      </div>
-
-      <div className="overflow-hidden rounded-[12px] border border-border bg-card">
+      <Card
+        padded={false}
+        title="Users &amp; roles"
+        subtitle="Who can see and act on which OpCos"
+        action={
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<UserPlus size={15} strokeWidth={2} />}
+            onClick={() => setDialog('create')}
+          >
+            Add user
+          </Button>
+        }
+      >
         {rows.length === 0 ? (
           <EmptyState
             icon={<Users size={18} strokeWidth={2} />}
@@ -499,7 +501,35 @@ export function UsersPanel() {
             </table>
           </div>
         )}
-      </div>
+      </Card>
+
+      {/* Role reference (prototype pattern) — the platform's actual 3 roles (H7:
+          Admin / Regional / OpCo IT, not the mock's Read-only auditor). */}
+      <Card bodyClassName="grid grid-cols-1 gap-[16px] sm:grid-cols-3">
+        <div className="flex flex-col gap-[5px]">
+          <span className="text-[12.5px] font-semibold text-purple">Admin</span>
+          <span className="text-[11.5px] leading-[1.45] text-fg-muted">
+            Platform admin. Manages users, roles and every OpCo.
+          </span>
+        </div>
+        <div className="flex flex-col gap-[5px]">
+          <span className="text-[12.5px] font-semibold text-info">
+            Regional
+          </span>
+          <span className="text-[11.5px] leading-[1.45] text-fg-muted">
+            Full access to all OpCos. Runs fulfilment, assignment and
+            reconciliation.
+          </span>
+        </div>
+        <div className="flex flex-col gap-[5px]">
+          <span className="text-[12.5px] font-semibold text-fg-muted">
+            OpCo IT
+          </span>
+          <span className="text-[11.5px] leading-[1.45] text-fg-muted">
+            Sees and manages only their own OpCo’s licenses and requests.
+          </span>
+        </div>
+      </Card>
 
       {dialog === 'create' && (
         <CreateUserDialog

@@ -266,6 +266,22 @@ export function ByOpcoView() {
     });
   }, [ledger.data, opco, q]);
 
+  // In-table grand total (prototype): sum of the CURRENTLY FILTERED rows — real
+  // server data aggregated, not invented (H7). Respects the OpCo/search filter;
+  // matches the /ledger/stats totals when nothing is filtered.
+  const totals = useMemo(
+    () =>
+      filtered.reduce(
+        (acc, r) => ({
+          allocated: acc.allocated + r.allocatedQuantity,
+          assigned: acc.assigned + r.assignedQuantity,
+          headroom: acc.headroom + r.headroom,
+        }),
+        { allocated: 0, assigned: 0, headroom: 0 },
+      ),
+    [filtered],
+  );
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(
@@ -423,6 +439,46 @@ export function ByOpcoView() {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Grand total across the filtered ledger (sum of shown rows). */}
+                  <tr className="border-b-2 border-border-strong bg-hover">
+                    <td
+                      colSpan={2}
+                      className={cn(
+                        TD,
+                        'text-[11px] font-bold uppercase tracking-[.04em]',
+                      )}
+                    >
+                      All SKUs · total
+                    </td>
+                    <td
+                      className={cn(
+                        TD,
+                        'text-right font-mono text-[12.5px] font-bold',
+                      )}
+                    >
+                      {totals.allocated}
+                    </td>
+                    <td
+                      className={cn(
+                        TD,
+                        'text-right font-mono text-[12.5px] font-bold text-info',
+                      )}
+                    >
+                      {totals.assigned}
+                    </td>
+                    <td
+                      className={cn(
+                        TD,
+                        'text-right font-mono text-[12.5px] font-bold',
+                        totals.headroom < 0 ? 'text-danger' : 'text-fg-muted',
+                      )}
+                    >
+                      {totals.headroom}
+                    </td>
+                    <td className={TD} />
+                    <td className={TD} />
+                    <td className={TD} />
+                  </tr>
                   {pageRows.map((r) => (
                     <LedgerTableRow
                       key={r.id}

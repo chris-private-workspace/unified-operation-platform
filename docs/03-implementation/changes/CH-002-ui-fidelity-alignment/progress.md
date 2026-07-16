@@ -39,6 +39,43 @@ status: in-progress     # in-progress | closed
 
 ---
 
+## Day 1 — 2026-07-16（A 組 + B1 實作）
+
+### Done
+- spec `proposed → approved`（Chris）；branch `feat/web-ch-002-ui-fidelity`。
+- **A1/A2**（`request-detail.tsx`）：remark → `bg-hover` 圓角盒 + `border-l-[3px] accent-line`；sync-gate strip → `bg-hover` + `border` + `rounded-[10px]` 灰底盒（connector 40→60px 對齊 prototype）。
+- **A3**（`requests.tsx`）：filter 掣 → `rounded-[8px]` bordered chip（inactive `border-border bg-card`，active 維持 `bg-fg/text-bg` borderless）+ 更新 stale 註解。
+- **A4/B1**（`assets.tsx`）：mode switcher 容器 `bg-card border rounded-[8px]`；順序 Platform→By OpCo；active tab **`bg-accent text-accent-fg`（紅，決策 B）**；更新舊「neutral/DS-3」註解。
+- **A5**（`platform-view.tsx`）：`OwnedBar` 單段 → 雙段（`bg-info` assigned + `bg-border-strong` alloc-not-assigned；over → `bg-danger`）+ 表下 3 色圖例。
+- **A6**（`by-opco-view.tsx`）：table 頂加「All SKUs · total」行（`border-b-2 border-border-strong bg-hover`），數字 = filtered rows client-side 加總（**R3 deviation**：原 spec「/ledger/stats」改為 filtered 加總，因 stats 全 scope 唔跟 filter → 篩選時誤導；已 log spec §7）。
+- **A7**（`settings.tsx`）：移除 page-level `Settings` h1 + flatten wrapper；`Section` → 共用 `Card` primitive（得 resting shadow）；更新 stale 檔頭註解。
+- **A8**（`users-panel.tsx`）：表頭併入 `Card` header（title/subtitle/Add-user action）+ 表下角色圖例卡 —— **用真實 3 role（Admin/Regional/OpCo IT）而非 mock 的 Read-only auditor（H7 唔誤導）**。
+- **DS-3 澄清**（`design-system.md §0.2`）：active segmented-control tab 用 accent 屬合法（view 切換器非 action button；決策 B）。
+
+### Decisions
+- A6 總數來源：filtered 加總 > /ledger/stats（見上，R3）。
+- A8 角色圖例：反映 app 真 role 而非照抄 mock（H7）。
+
+### Verify（真 tool output）
+- `npm run build`：綠（tsc + vite，1847 modules，最大 chunk 254KB « 500，無 warning）。
+- `npx eslint <7 changed files>`：EXIT=0 clean。
+- `npm test`：**85 passed**（不降）。
+- **未做**：light/dark 實 render 對照（本地 web 未開 dev-bypass，AI 唔登入；待 Chris 瀏覽器核對）。
+
+### Blockers
+- 無阻塞。惟 repo-wide `npm run lint` 因 **pre-existing** `ledger.ts`/`ledger.test.ts` CRLF（HEAD 存 CRLF，非本 change 引入）而紅 → 已 `git checkout` revert 不動；本 change 7 檔 scoped-lint clean。
+
+### Effort
+- Planned：~1.5 日；Actual：~數小時（A 組多為 primitive/token 組合）；Variance：−。
+
+### Commits
+| Hash | Subject |
+|---|---|
+| 4da1793 | docs(planning): open CH-002（spec/checklist/progress + BACKLOG） |
+| _(next)_ | fix(web): CH-002 A 組 + B1 fidelity 對齊（4 畫面） |
+
+---
+
 ## Closeout（填於 status=closed）
 
 ### Acceptance verification
