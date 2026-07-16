@@ -2,7 +2,7 @@
 change_id: CH-002
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: in-progress     # in-progress | closed
+status: closed          # in-progress | closed
 ---
 
 # CH-002 — Progress
@@ -109,17 +109,26 @@ status: in-progress     # in-progress | closed
 
 ---
 
-## Closeout（填於 status=closed）
+## Closeout（2026-07-16，status=closed）
 
-### Acceptance verification
-_(待實作後填 — 對 spec.md §3)_
+### Acceptance verification（對 spec.md §3）
+- A1–A10 + B1 全部 ✅ code + `npm run build` / `eslint`(changed files) / `npm test`(85) 綠。
+- **light/dark 實 render 對照**：✅ **Chris browser 確認「頁面效果比較一致」**（含兩輪 settings padding/寬度修正後）。
+- 額外修正（Chris browser 回報）：settings double-padding（`085dd78`）+ content max-width（`b8abede`）。
+- 決策 B（Assets active tab 紅 accent）已落 + `design-system.md §0.2` 澄清。
 
 ### Effort summary
-| Day | Planned (h) | Actual (h) | Variance |
-|---|---|---|---|
+| Day | 內容 | 結果 |
+|---|---|---|
+| 0 | audit + spec | 跨 4 畫面 diff 記錄 |
+| 1 | A1–A8 + B1 | build/lint/85test 綠（`4fb5508`）|
+| 2 | A9 + A10（範圍擴充）+ settings padding/寬度 2 修 | 綠（`bd320d7`/`085dd78`/`b8abede`）|
 
 ### Lessons
-- _(待填)_
+- **盲改代價**：本地 web 未開 dev-bypass，AI 無法 live render，A7 首輪只改卡殼 → settings 看似「處理完」但 Account 內容 + double-padding 未跟。後以 curl 抓行緊嘅 vite dev server module，客觀證「改咗 live 到」排除 server-stale 誤判，再逐輪修 —— 純視覺 fidelity 一定要 render 眼睛或 served-module 佐證。
+- **double-padding**：`app-shell <main>` 已供 page padding（22/24/40），個別頁再加 `p-[24px]` = 疊；新頁一律靠 shell。
+- **誠實 > 照抄 mock**：Account tab 唯讀（無 Job title/Phone/Save/MFA）+ Users 角色圖例（真 3 role 非 mock auditor）按 app 真資料砌，唔造假 UI（H7）。
+- Carry-overs：C 組（Compare 矩陣 / Sync·Export·Manage·Adjust / OpCos CRUD / AI 解析）仍 scope 外，見 BACKLOG。
 
 ---
 

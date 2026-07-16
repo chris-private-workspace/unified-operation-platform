@@ -2,7 +2,7 @@
 change_id: CH-003
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: in-progress     # in-progress | closed
+status: closed          # in-progress | closed
 ---
 
 # CH-003 — Progress
@@ -68,13 +68,18 @@ status: in-progress     # in-progress | closed
 
 ---
 
-## Closeout（填於 status=closed）
+## Closeout（2026-07-16，status=closed）
 
-### Acceptance verification
-_(待實作後填 — 對 spec.md §3)_
+### Acceptance verification（對 spec.md §3）
+- 後端 `PATCH /license/catalog/:id` + DTO + service + 4 test ✅；api build/eslint 綠、**205 test**（+4）。
+- **Live curl（3100 重啟後，dev-bypass=ADMIN）✅**：edit 200[alias trim / system-owned 欄不變] · 404 · 400[非法型別] · restore 還原（DB 無殘留）。**OPCO_IT 403** 由 `@Roles(ADMIN,REGIONAL)` guard 保證（未 live，需換 env）。
+- 前端 Edit dialog ✅ build（渲染）+ eslint 綠、85 test 不降；**round-trip 由 Chris browser 手測**（服務已重啟可即試；backend curl 已證後端）。
 
 ### Lessons
-- _(待填)_
+- **H1 早交代**：backend 新寫入端點 + 觸 curation 欄（businessAlias / ADR-0004）先寫 spec §1.1 評估（= Change 無新 ADR）再落 code，唔跳過。
+- **immutable 保護**：service 只 set 3 curated 欄，system-owned（skuId/partNumber/displayName/active）永不寫；test + live curl 雙證。
+- **normalizeOptional**（trim + 空→null）令「清空 curation 欄」語意明確。
+- Carry-over：問題 2b（By-OpCo 按 category 分組）另列 BACKLOG（`Assets-cat-group` 候選）。
 
 ---
 

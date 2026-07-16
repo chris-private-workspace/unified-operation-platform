@@ -1,7 +1,7 @@
 ---
 change_id: CH-003
 title: "SKU Catalog 編輯 — alias / category / base-flag（PATCH endpoint + 前端 Edit dialog）"
-status: approved        # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-07-16
 target_completion: 2026-07-18
 affects_components: [apps/api, apps/web]

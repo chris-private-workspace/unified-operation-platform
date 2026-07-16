@@ -1,7 +1,7 @@
 ---
 change_id: CH-003
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-07-16
 ---
 
@@ -32,12 +32,12 @@ last_updated: 2026-07-16
 
 ## Cross-Cutting
 
-- [ ] Each commit references `progress.md` Day-N（R2）
-- [ ] Commit tag：`feat(license): ... (CH-003)` / `feat(web): ...`
-- [ ] Open question（isBaseLicense §10）狀態確認（R4；本 change 不 resolve，只記依賴）
-- [ ] Pending / 範圍變動 synced to `BACKLOG.md`（R7；含 2b By-OpCo 分組另列）
-- [ ] `progress.md` closeout summary written
-- [ ] `progress.md` frontmatter status flipped to `done`
+- [x] Each commit references `progress.md` Day-N（R2）
+- [x] Commit tag：`feat(license): … (CH-003)` / `docs(planning): …`
+- [x] Open question（isBaseLicense §10）狀態確認（R4；本 change 不 resolve，只記依賴 — spec §1.1）
+- [x] Pending / 範圍變動 synced to `BACKLOG.md`（R7；2b By-OpCo 分組 = `Assets-cat-group` 候選）
+- [x] `progress.md` closeout summary written
+- [x] `progress.md` status `closed`；spec + checklist status = `done`
 
 ---
 

@@ -1,7 +1,7 @@
 ---
 change_id: CH-002
 title: "LicenseOps 前端 fidelity 對齊 — request 內頁 / requests 列表 / License Assets / Settings·Users"
-status: approved        # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-07-16
 target_completion: 2026-07-18
 affects_components: [apps/web]

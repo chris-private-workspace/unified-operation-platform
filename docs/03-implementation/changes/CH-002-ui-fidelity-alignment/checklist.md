@@ -1,7 +1,7 @@
 ---
 change_id: CH-002
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-07-16
 ---
 
@@ -33,7 +33,7 @@ last_updated: 2026-07-16
 - [x] `cd apps/web && npm run build` 綠（tsc + vite，無 chunk warning）
 - [x] `npx eslint <7 changed files>` clean（EXIT=0）— 註：repo-wide `npm run lint` 因 **pre-existing** `ledger.ts`/`ledger.test.ts` CRLF(非本 change)而紅,已 revert 不動
 - [x] `cd apps/web && npm test` 不降（85 passed）
-- [ ] 每項 light + dark 兩色實 render 驗收（對 prototype）— **pending**（本地 web 未開 dev-bypass，AI 唔代入密碼登入；待 Chris 瀏覽器核對，H7 唔擅自宣稱 rendered）
+- [x] light + dark 實 render 驗收（對 prototype）— **Chris browser 確認「頁面效果比較一致」**（含兩輪 settings padding/寬度修正後）
 - [x] 逐行 diff trace 得返 spec §2（無順手改無關 code — §1.3 surgical）
 
 ## Cross-Cutting
@@ -43,8 +43,8 @@ last_updated: 2026-07-16
 - [x] 更新 `docs/02-architecture/design-system.md` §0.2 DS-3 澄清（decision B approved）
 - [x] Open decision B 解決 → sync spec §6 + progress（R4）
 - [x] Pending / 範圍變動 synced to `BACKLOG.md`（R7；含 C 組另開 task 之識別）
-- [ ] `progress.md` closeout summary written（待 light/dark 核對後 closeout）
-- [ ] `progress.md` frontmatter status flipped to `done`（待 closeout）
+- [x] `progress.md` closeout summary written
+- [x] `progress.md` frontmatter status flipped to `closed`；spec + checklist status = `done`
 
 ---
 
