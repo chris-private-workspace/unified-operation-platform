@@ -76,7 +76,8 @@ export function Requests() {
   return (
     <div className="flex flex-col gap-[16px]">
       <div className="flex items-center justify-between gap-[16px]">
-        {/* Filter pills (prototype): active = inverted pill, others plain + count. */}
+        {/* Filter chips (prototype): rounded-8 bordered card chip + count;
+            active = inverted (bg-fg / text-bg, borderless). */}
         <div className="flex flex-wrap items-center gap-[6px]">
           {FILTERS.map((f) => {
             const active = filter === f.value;
@@ -86,10 +87,10 @@ export function Requests() {
                 type="button"
                 onClick={() => pick(f.value)}
                 className={cn(
-                  'inline-flex cursor-pointer items-center gap-[7px] rounded-pill px-[12px] py-[6px] text-[12.5px] transition-colors',
+                  'inline-flex h-[32px] cursor-pointer items-center gap-[7px] rounded-[8px] border px-[13px] text-[12.5px] transition-colors',
                   active
-                    ? 'bg-fg font-semibold text-bg'
-                    : 'font-medium text-fg-muted hover:bg-hover',
+                    ? 'border-transparent bg-fg font-semibold text-bg'
+                    : 'border-border bg-card font-medium text-fg-muted hover:bg-hover',
                 )}
               >
                 {f.label}

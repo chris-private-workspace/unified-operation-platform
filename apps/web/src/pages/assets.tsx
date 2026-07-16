@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils';
 
 type Mode = 'byopco' | 'platform';
 
+// Prototype order: Platform first, then By OpCo (default stays By OpCo).
 const MODES: { value: Mode; label: string }[] = [
-  { value: 'byopco', label: 'By OpCo' },
   { value: 'platform', label: 'Platform' },
+  { value: 'byopco', label: 'By OpCo' },
 ];
 
 // License Assets (W15 By-OpCo + W17 Platform). By-OpCo works for every role;
@@ -24,10 +25,11 @@ export function Assets() {
 
   return (
     <div className="flex flex-col gap-[16px]">
-      {/* Mode switcher — neutral segmented (no accent, one primary per view; DS-3).
+      {/* Mode switcher (prototype): card+border segmented; active tab = accent
+          (CH-002 decision B — design-system DS-3 allows segmented-active accent).
           Only shown when Platform is available (ADMIN / REGIONAL). */}
       {showPlatform && (
-        <div className="inline-flex w-fit gap-[3px] rounded-lg bg-hover p-[3px]">
+        <div className="inline-flex w-fit gap-[2px] rounded-[8px] border border-border bg-card p-[2px]">
           {MODES.map((m) => {
             const active = activeMode === m.value;
             return (
@@ -36,9 +38,9 @@ export function Assets() {
                 type="button"
                 onClick={() => setMode(m.value)}
                 className={cn(
-                  'cursor-pointer rounded-md px-[14px] py-[6px] text-[12.5px] transition-colors',
+                  'h-[30px] cursor-pointer rounded-[6px] px-[13px] text-[12px] transition-colors',
                   active
-                    ? 'bg-card font-semibold text-fg shadow'
+                    ? 'bg-accent font-semibold text-accent-fg'
                     : 'font-medium text-fg-muted hover:text-fg',
                 )}
               >

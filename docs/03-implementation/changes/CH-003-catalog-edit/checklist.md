@@ -1,0 +1,44 @@
+---
+change_id: CH-003
+spec_ref: ./spec.md
+status: done            # in-progress | done
+last_updated: 2026-07-16
+---
+
+# CH-003 — Checklist
+
+> Atomic items 衍生自 `spec.md §3` acceptance。每 item ≤ 1–2h。
+> **Gate**：spec status = `approved`（Chris pre-approved「同意 CH-003 spec, 可以開始執行」）→ 可落 code。
+
+## Implementation — 後端（apps/api/src/license）
+
+- [x] B1 `UpdateSkuCatalogDto`（`dto/catalog.dto.ts`）：businessAlias?/category?/isBaseLicense?，class-validator（IsOptional/IsString/IsBoolean/MaxLength；空→null 在 service）
+- [x] B2 `CatalogService.updateEntry(id, dto)`：404 if 唔存在；只 set 3 欄（`normalizeOptional` 空→null）；回傳更新後 record
+- [x] B3 `PATCH /license/catalog/:id`（`license.controller.ts`）繼承 class `@Roles(ADMIN, REGIONAL)` + `@ApiOkResponse(SkuCatalogDto)`
+- [x] B4 H5 test（`catalog.service.spec.ts`）：更新 3 欄(trimmed)成功 / 空→null / 只改供應欄 / 404；api 201→**205**
+
+## Implementation — 前端（apps/web）
+
+- [x] F1 `useUpdateCatalog` mutation（`hooks/mutations`）+ `UpdateCatalogBody`（api-types）→ `PATCH /license/catalog/:id` + invalidate `['license','catalog']`
+- [x] F2 `catalog.tsx`：Edit 掣解禁 → `EditSkuDialog`（alias/category/base 可改；display name/part number/skuId 唯讀灰盒）+ toast
+
+## Verification
+
+- [x] `cd apps/api && npm run build`（EXIT 0）`&& npm test`（**205 passed**，+4）+ eslint changed files EXIT=0
+- [x] `cd apps/web && npm run build`（EXIT 0）`&& npm test`（**85 passed**，不降）+ eslint changed files EXIT=0
+- [x] `ui-design` 自檢（dialog：token-only[bg-hover/border/Input/SegmentedControl]，無新 accent/icon，1 primary[Save]）；**light+dark live pending**
+- [x] live 驗（重啟 3100 後）：curl PATCH ADMIN 改成功[200,alias `"  CH003 TEST  "`→trim `"CH003 TEST"`,skuId/partNumber/displayName **不變**] / 404 unknown id / 400 非法型別[isBaseLicense must be boolean] / restore 還原原值。**OPCO_IT 403** 由 class `@Roles(ADMIN,REGIONAL)` guard config 保證（未 live 試,需 AUTH_DEV_USER_EMAIL 換 env）。**前端 Edit round-trip** 待 Chris browser 手測
+- [x] 逐行 diff trace 得返 spec §2（§1.3 surgical）
+
+## Cross-Cutting
+
+- [x] Each commit references `progress.md` Day-N（R2）
+- [x] Commit tag：`feat(license): … (CH-003)` / `docs(planning): …`
+- [x] Open question（isBaseLicense §10）狀態確認（R4；本 change 不 resolve，只記依賴 — spec §1.1）
+- [x] Pending / 範圍變動 synced to `BACKLOG.md`（R7；2b By-OpCo 分組 = `Assets-cat-group` 候選）
+- [x] `progress.md` closeout summary written
+- [x] `progress.md` status `closed`；spec + checklist status = `done`
+
+---
+
+**Lifecycle reminder**：新加 item 必須先入 spec + changelog，再加 checklist。

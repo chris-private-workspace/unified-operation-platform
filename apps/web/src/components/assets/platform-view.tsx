@@ -26,20 +26,34 @@ const NUM = 'text-right font-mono text-[12.5px]';
 
 const numOr = (n: number | null): string => (n === null ? '—' : String(n));
 
-// Allocated-of-owned bar (data-driven width). owned null/0 → an empty track.
+// Dual-segment bar of owned (prototype): assigned-to-users (info) + allocated-
+// not-yet-assigned (border-strong). Over-allocated → the second segment goes
+// danger and fills the remainder. owned null/0 → an empty track. Widths are DATA
+// (not design values), so inline style is correct here.
 function OwnedBar({ row }: { row: TenantSkuRow }) {
-  const pct =
-    row.owned && row.owned > 0
-      ? Math.min(100, Math.round((row.allocatedToOpcos / row.owned) * 100))
-      : 0;
+  const owned = row.owned && row.owned > 0 ? row.owned : 0;
+  const assignedPct = owned
+    ? Math.min(100, (row.assignedToUsers / owned) * 100)
+    : 0;
+  const allocExtraPct = owned
+    ? Math.min(
+        100 - assignedPct,
+        (Math.max(0, row.allocatedToOpcos - row.assignedToUsers) / owned) * 100,
+      )
+    : 0;
   return (
-    <div className="h-[5px] w-[130px] overflow-hidden rounded-pill bg-hover">
+    <div className="flex h-[5px] w-[130px] overflow-hidden rounded-[4px] bg-hover">
+      <div className="h-full bg-info" style={{ width: `${assignedPct}%` }} />
       <div
         className={cn(
-          'h-full rounded-pill',
-          row.overAllocated ? 'bg-danger' : 'bg-info',
+          'h-full',
+          row.overAllocated ? 'bg-danger' : 'bg-border-strong',
         )}
-        style={{ width: `${pct}%` }}
+        style={{
+          width: row.overAllocated
+            ? `${100 - assignedPct}%`
+            : `${allocExtraPct}%`,
+        }}
       />
     </div>
   );
@@ -318,6 +332,22 @@ export function PlatformView() {
           </div>
         )}
       </Card>
+
+      {/* Bar legend (prototype): the three segments of the owned bar. */}
+      <div className="flex flex-wrap items-center gap-[14px] text-[11.5px] text-fg-subtle">
+        <span className="flex items-center gap-[5px]">
+          <span className="h-[10px] w-[10px] rounded-[3px] bg-info" />
+          assigned to users
+        </span>
+        <span className="flex items-center gap-[5px]">
+          <span className="h-[10px] w-[10px] rounded-[3px] bg-border-strong" />
+          allocated, not yet assigned
+        </span>
+        <span className="flex items-center gap-[5px]">
+          <span className="h-[10px] w-[10px] rounded-[3px] bg-danger" />
+          allocated beyond owned
+        </span>
+      </div>
 
       {/* Honest scope note (H7). */}
       <p className="flex items-start gap-[7px] text-[11.5px] leading-[1.5] text-fg-subtle">

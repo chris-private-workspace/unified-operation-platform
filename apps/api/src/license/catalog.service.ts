@@ -1,7 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { graphUnavailable } from '../integration/graph/graph-unavailable';
+
+/** Trim a curation string; empty / whitespace-only → null (clears the field). */
+function normalizeOptional(v: string | null | undefined): string | null {
+  if (v == null) return null;
+  const t = v.trim();
+  return t.length ? t : null;
+}
 
 /** Outcome of a catalog sync run — surfaced to the trigger endpoint. */
 export interface CatalogSyncResult {
@@ -101,5 +109,39 @@ export class CatalogService {
       where: { active: true },
       orderBy: { skuPartNumber: 'asc' },
     });
+  }
+
+  /**
+   * Human curation of one SKU entry (CH-003). Only the curated columns are
+   * writable — skuId / skuPartNumber / displayName / active stay system-owned
+   * (set by sync). Fields left undefined are untouched; "" clears alias/category
+   * to null. businessAlias feeds allocation-import matching (ADR-0004); the edit
+   * is the intended manual curation path, not a new mechanism.
+   */
+  async updateEntry(
+    id: string,
+    dto: {
+      businessAlias?: string | null;
+      category?: string | null;
+      isBaseLicense?: boolean;
+    },
+  ) {
+    const existing = await this.prisma.skuCatalog.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`SKU catalog entry ${id} not found`);
+    }
+
+    const data: Prisma.SkuCatalogUpdateInput = {};
+    if (dto.businessAlias !== undefined) {
+      data.businessAlias = normalizeOptional(dto.businessAlias);
+    }
+    if (dto.category !== undefined) {
+      data.category = normalizeOptional(dto.category);
+    }
+    if (dto.isBaseLicense !== undefined) {
+      data.isBaseLicense = dto.isBaseLicense;
+    }
+
+    return this.prisma.skuCatalog.update({ where: { id }, data });
   }
 }

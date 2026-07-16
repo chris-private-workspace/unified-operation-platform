@@ -11,7 +11,7 @@
 ## 0. 五條不可妥協 (non-negotiables)
 
 1. **Token-only** —— 唔 hardcode 色 / 字 / 間距 / 半徑 / 陰影;唔 eyeball。一律用 `tokens/*.css` 的 CSS var(經 Tailwind theme)。
-2. **單一 accent** —— Ricoh red `#E60027`(dark `#ff3355`)。一個 view **一個** primary action + active nav + link + focus ring。其餘狀態走 6 個 semantic tint。
+2. **單一 accent** —— Ricoh red `#E60027`(dark `#ff3355`)。一個 view **一個** primary action + active nav + link + focus ring + **active segmented-control tab**(view 切換器,非 action button —— prototype `segStyle(active)=var(--accent)`;CH-002 決策 B)。其餘狀態走 6 個 semantic tint。
 3. **Light + dark 都要** —— `:root` / `.dark` swap;唔可以淨做一個。
 4. **Lucide stroke icon only** —— 無 emoji / icon font / filled set;唯一多色 = login Microsoft 4-square。
 5. **數字 / 識別碼一律 Geist Mono** —— seat 數、delta、request id、UPN、GUID、quote/PO ref。

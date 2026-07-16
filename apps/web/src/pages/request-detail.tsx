@@ -156,13 +156,13 @@ export function RequestDetail() {
           )}
         </div>
 
-        <div className="mt-[14px] flex items-center gap-[14px] border-t border-border pt-[14px]">
+        <div className="mt-[16px] flex items-center gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
           <SyncStep
             done={Boolean(req.accountCreatedAt)}
             title="Account created"
             sub="in shared tenant"
           />
-          <div className="h-[2px] w-[40px] shrink-0 rounded bg-border-strong" />
+          <div className="h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
           <SyncStep
             done={synced}
             title="Synced to Azure AD"
@@ -203,7 +203,7 @@ export function RequestDetail() {
                 </span>
               }
             >
-              <blockquote className="border-l-2 border-accent-line pl-[14px] text-[13px] italic text-fg-muted">
+              <blockquote className="rounded-r-[8px] border-l-[3px] border-accent-line bg-hover px-[14px] py-[12px] text-[13px] italic text-fg-muted">
                 “{req.rawRequestText}”
               </blockquote>
             </Card>
@@ -350,16 +350,22 @@ export function RequestDetail() {
                 description="Events appear as this request progresses."
               />
             ) : (
-              <div className="flex flex-col gap-[14px]">
-                {req.events.map((ev) => (
-                  <div key={ev.id} className="flex gap-[10px]">
-                    <span
-                      className={cn(
-                        'mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full',
-                        DOT[EVENT_TONE[ev.type]],
+              <div className="flex flex-col">
+                {req.events.map((ev, i) => (
+                  <div key={ev.id} className="flex gap-[11px]">
+                    {/* dot + vertical connector to the next event (prototype) */}
+                    <div className="flex flex-col items-center">
+                      <span
+                        className={cn(
+                          'mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full',
+                          DOT[EVENT_TONE[ev.type]],
+                        )}
+                      />
+                      {i < req.events.length - 1 && (
+                        <span className="w-px flex-1 bg-border" />
                       )}
-                    />
-                    <div className="flex min-w-0 flex-col leading-[1.35]">
+                    </div>
+                    <div className="flex min-w-0 flex-col pb-[14px] leading-[1.35]">
                       <span className="text-[12.5px]">
                         {ev.message ??
                           (ev.fromStage && ev.toStage

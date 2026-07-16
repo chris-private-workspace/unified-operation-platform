@@ -30,7 +30,9 @@ export class N8nIntakeLineItemDto {
   @Min(1)
   quantity!: number;
 
-  @ApiPropertyOptional({ description: 'sc_req_item (RITM) sysId for this line' })
+  @ApiPropertyOptional({
+    description: 'sc_req_item (RITM) sysId for this line',
+  })
   @IsOptional()
   @IsString()
   serviceNowRitmSysId?: string;
@@ -69,7 +71,8 @@ export class N8nIntakeRequestDto {
   requesterEmail?: string;
 
   @ApiPropertyOptional({
-    description: 'free-text remark; NOT auto-parsed into line items (DESIGN §6)',
+    description:
+      'free-text remark; NOT auto-parsed into line items (DESIGN §6)',
   })
   @IsOptional()
   @IsString()
@@ -77,7 +80,8 @@ export class N8nIntakeRequestDto {
 
   // ── ServiceNow sc_request (REQ) — required; doubles as idempotency key (B3/B5) ──
   @ApiProperty({
-    description: 'sc_request (REQ) sysId — @unique idempotency key (upsert-or-skip)',
+    description:
+      'sc_request (REQ) sysId — @unique idempotency key (upsert-or-skip)',
   })
   @IsString()
   @MinLength(1)
@@ -97,7 +101,8 @@ export class N8nIntakeRequestDto {
   accountCreatedAt?: string;
 
   @ApiPropertyOptional({
-    description: 'n8n-claimed AD→Entra synced (ISO 8601); ≠ Graph-visible (RISK R3)',
+    description:
+      'n8n-claimed AD→Entra synced (ISO 8601); ≠ Graph-visible (RISK R3)',
   })
   @IsOptional()
   @IsDateString()
