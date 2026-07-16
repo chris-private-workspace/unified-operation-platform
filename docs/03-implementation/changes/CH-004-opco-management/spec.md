@@ -1,7 +1,7 @@
 ---
 change_id: CH-004
 title: "OpCo 管理 — Add / Edit Operating Company（create/update endpoint + 前端 settings › OpCos tab + dialog）"
-status: approved          # draft | proposed | approved | active | done | cancelled
+status: done              # draft | proposed | approved | active | done | cancelled
 created: 2026-07-16
 target_completion: 2026-07-18
 affects_components: [apps/api, apps/web]
