@@ -216,11 +216,41 @@ export interface AdminUser {
   mustChangePassword: boolean; // local account still on an admin-set password
 }
 
-/** GET /admin/opcos → AdminOpcoDto[] (create-user scope selector). */
+/**
+ * GET /admin/opcos → thin shape the create-user scope selector + pickers use.
+ * The endpoint now returns the richer Opco (below); this stays a subset.
+ */
 export interface AdminOpco {
   id: string;
   code: string;
   displayName: string;
+}
+
+/** GET /admin/opcos (rich) — the OpCo management panel (CH-004). */
+export interface Opco {
+  id: string;
+  code: string;
+  displayName: string;
+  company: string;
+  costCenter: string | null;
+  active: boolean;
+}
+
+/** POST /admin/opcos body — create an OpCo (code immutable after this). */
+export interface CreateOpcoBody {
+  code: string;
+  displayName: string;
+  company: string;
+  costCenter?: string | null;
+  active?: boolean;
+}
+
+/** PATCH /admin/opcos/:id body — edit an OpCo (code is not editable). */
+export interface UpdateOpcoBody {
+  displayName?: string;
+  company?: string;
+  costCenter?: string | null;
+  active?: boolean;
 }
 
 /** POST /admin/users body — create a local account (admin sets the password). */

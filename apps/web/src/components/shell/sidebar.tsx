@@ -1,6 +1,7 @@
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Boxes,
+  Building2,
   Cable,
   Inbox,
   Layers,
@@ -55,6 +56,7 @@ const CATALOG: NavEntry[] = [
 // and Integrations are the two admin surfaces, not a generic "Settings" item.
 const ADMIN: { tab: string; label: string; Icon: LucideIcon }[] = [
   { tab: 'users', label: 'Users & roles', Icon: Users },
+  { tab: 'opcos', label: 'Operating companies', Icon: Building2 },
   { tab: 'integrations', label: 'Integrations', Icon: Cable },
 ];
 

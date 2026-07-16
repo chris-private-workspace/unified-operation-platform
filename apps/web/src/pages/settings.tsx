@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Building2,
   Cable,
   LogOut,
   SlidersHorizontal,
@@ -22,12 +23,14 @@ import { getLocalProfile } from '@/lib/auth/local-profile';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
 import { UsersPanel } from '@/components/settings/users-panel';
+import { OpcosPanel } from '@/components/settings/opcos-panel';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
   { value: 'account', label: 'Account', Icon: User },
   { value: 'preferences', label: 'Preferences', Icon: SlidersHorizontal },
   { value: 'users', label: 'Users & roles', Icon: Users },
+  { value: 'opcos', label: 'OpCos', Icon: Building2 },
   { value: 'integrations', label: 'Integrations', Icon: Cable },
 ];
 
@@ -223,6 +226,8 @@ export function Settings() {
         )}
 
         {tab === 'users' && <UsersPanel />}
+
+        {tab === 'opcos' && <OpcosPanel />}
 
         {tab === 'integrations' && (
           <>
