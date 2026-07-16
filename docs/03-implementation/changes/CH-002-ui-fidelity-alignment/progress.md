@@ -97,6 +97,10 @@ status: in-progress     # in-progress | closed
 - `npm test`：**85 passed**（不降）。
 - **未做**：light/dark 實 render 對照（同 Day 1，待 Chris 瀏覽器核對）。
 
+### A7 後續修正（Chris browser 回報「settings padding 比較多」）
+- **root cause = double padding**：`app-shell.tsx` `<main>` 已有 `px-[24px] pb-[40px] pt-[22px]`（= prototype `padding:22px 24px 40px`），所有頁靠佢；但 `settings.tsx` 外層**又**加 `p-[24px]` → settings 雙重 padding（左右 ~48px vs 其他頁 24px）。原版已有此 bug，A7 照搬，今移除。
+- fix：`settings.tsx` 外層 `flex gap-[24px] p-[24px]` → `flex gap-[24px]`（padding 交回 shell，與 requests/assets/catalog 一致）。build/eslint EXIT=0。HMR live。
+
 ### Commits
 | Hash | Subject |
 |---|---|

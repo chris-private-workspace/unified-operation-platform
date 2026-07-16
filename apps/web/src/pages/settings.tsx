@@ -100,8 +100,9 @@ export function Settings() {
   const toggleTheme = useUiStore((s) => s.toggleTheme);
 
   return (
-    <div className="flex gap-[24px] p-[24px]">
-      {/* left sub-nav (prototype: no page-level "Settings" heading) */}
+    <div className="flex gap-[24px]">
+      {/* left sub-nav (prototype: no page-level "Settings" heading);
+          page padding comes from the shell <main>, like every other view. */}
       <nav className="flex w-[190px] shrink-0 flex-col gap-[2px]">
         {TABS.map(({ value, label, Icon }) => (
           <button
