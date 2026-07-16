@@ -52,7 +52,14 @@ status: in-progress     # in-progress | closed
 - **未做**：live curl / 前端 round-trip —— 用戶 3100 backend 當前 down（curl HTTP 000）；service 邏輯已由 unit test 覆蓋，HTTP 層（route/guard/DTO validation/實際 update）待 server up 或前端 Edit round-trip 驗。
 
 ### Blockers
-- 無阻塞。live HTTP 驗證待 3100 重啟（或前端手測）。
+- 無阻塞。
+
+### Live curl 驗證（重啟 3100 後補完，dev-bypass=ADMIN）
+- PATCH edit → **200**：`businessAlias` `"  CH003 TEST  "`→`"CH003 TEST"`（trim）、`category`/`isBaseLicense` 更新；`skuId`/`skuPartNumber`(DESKLESSPACK)/`displayName`(Office 365 F3) **不變**（immutable ✅）。
+- unknown id → **404**「SKU catalog entry … not found」。
+- 非法型別 `isBaseLicense:"nope"` → **400**「must be a boolean value」（DTO 驗證 ✅）。
+- restore → **200**，GET 確認回復 `F3 Frontline / Base / true`（DB 無殘留）。
+- OPCO_IT 403 由 `@Roles(ADMIN,REGIONAL)` guard 保證（未 live，需換 env）；前端 Edit round-trip 待 browser 手測。
 
 ### Commits
 | Hash | Subject |

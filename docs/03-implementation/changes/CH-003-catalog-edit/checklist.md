@@ -27,7 +27,7 @@ last_updated: 2026-07-16
 - [x] `cd apps/api && npm run build`（EXIT 0）`&& npm test`（**205 passed**，+4）+ eslint changed files EXIT=0
 - [x] `cd apps/web && npm run build`（EXIT 0）`&& npm test`（**85 passed**，不降）+ eslint changed files EXIT=0
 - [x] `ui-design` 自檢（dialog：token-only[bg-hover/border/Input/SegmentedControl]，無新 accent/icon，1 primary[Save]）；**light+dark live pending**
-- [ ] live 驗：curl PATCH（ADMIN 改成功 / OPCO_IT 403 / 404 / immutable 欄不動）+ 前端 Edit round-trip — **pending**（用戶 3100 backend 當前 down[curl HTTP 000]；unit test 已覆蓋邏輯，HTTP 層待 server up 或前端 round-trip）
+- [x] live 驗（重啟 3100 後）：curl PATCH ADMIN 改成功[200,alias `"  CH003 TEST  "`→trim `"CH003 TEST"`,skuId/partNumber/displayName **不變**] / 404 unknown id / 400 非法型別[isBaseLicense must be boolean] / restore 還原原值。**OPCO_IT 403** 由 class `@Roles(ADMIN,REGIONAL)` guard config 保證（未 live 試,需 AUTH_DEV_USER_EMAIL 換 env）。**前端 Edit round-trip** 待 Chris browser 手測
 - [x] 逐行 diff trace 得返 spec §2（§1.3 surgical）
 
 ## Cross-Cutting
