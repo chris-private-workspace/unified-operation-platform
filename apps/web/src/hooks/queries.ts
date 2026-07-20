@@ -9,6 +9,7 @@ import type {
   MeResponse,
   OnboardingRequest,
   Opco,
+  PermissionEntry,
   RequestDetail,
   Role,
   SkuCatalog,
@@ -140,6 +141,20 @@ export function useManageOpcos() {
   return useQuery({
     queryKey: ['admin', 'opcos', 'manage'],
     queryFn: () => apiGet<Opco[]>('/admin/opcos?includeInactive=true'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /admin/permissions — the role × endpoint matrix, derived live from the
+ * backend's @Roles metadata (W28 / ADR-0009 Decision 8.5). ADMIN-only: it
+ * enumerates every route in the app, so a 403 is authoritative and the tab
+ * degrades to a restricted state. Only mounts when the tab is open.
+ */
+export function usePermissions() {
+  return useQuery({
+    queryKey: ['admin', 'permissions'],
+    queryFn: () => apiGet<PermissionEntry[]>('/admin/permissions'),
     retry: retryUnless403,
   });
 }

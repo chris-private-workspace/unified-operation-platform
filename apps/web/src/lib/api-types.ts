@@ -253,6 +253,33 @@ export interface UpdateOpcoBody {
   active?: boolean;
 }
 
+/**
+ * How a route is protected (W28 / ADR-0009 Decision 8.5). Derived live from the
+ * backend's @Roles metadata — never hand-maintained here.
+ * `unguarded` = no @Roles and not on the reviewed allow-list, i.e. any signed-in
+ * user can reach it. Treat as a finding, not a state.
+ */
+export type AccessKind =
+  'roles' | 'public' | 'm2m' | 'authenticated' | 'unguarded';
+
+/**
+ * GET /admin/permissions → the derived role × endpoint matrix (ADMIN-only; a
+ * non-admin caller 403s and the tab shows a restricted state).
+ *
+ * NOTE: this answers "which role may CALL this endpoint". It does NOT express
+ * row-level scope — OPCO_IT is additionally limited to its own OpCo by the
+ * backend (AUTH-3a opco-scope.ts), which no endpoint-level matrix can show.
+ */
+export interface PermissionEntry {
+  controller: string;
+  handler: string;
+  method: string;
+  path: string;
+  access: AccessKind;
+  roles: Role[];
+  guards: string[];
+}
+
 /** POST /admin/users body — create a local account (admin sets the password). */
 export interface CreateUserBody {
   email: string;

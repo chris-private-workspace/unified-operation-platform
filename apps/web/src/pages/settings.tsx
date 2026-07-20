@@ -4,6 +4,7 @@ import {
   Building2,
   Cable,
   LogOut,
+  ShieldCheck,
   SlidersHorizontal,
   User,
   Users,
@@ -24,6 +25,7 @@ import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
 import { UsersPanel } from '@/components/settings/users-panel';
 import { OpcosPanel } from '@/components/settings/opcos-panel';
+import { PermissionsPanel } from '@/components/settings/permissions-panel';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
@@ -31,6 +33,7 @@ const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
   { value: 'preferences', label: 'Preferences', Icon: SlidersHorizontal },
   { value: 'users', label: 'Users & roles', Icon: Users },
   { value: 'opcos', label: 'OpCos', Icon: Building2 },
+  { value: 'permissions', label: 'Permissions', Icon: ShieldCheck },
   { value: 'integrations', label: 'Integrations', Icon: Cable },
 ];
 
@@ -228,6 +231,8 @@ export function Settings() {
         {tab === 'users' && <UsersPanel />}
 
         {tab === 'opcos' && <OpcosPanel />}
+
+        {tab === 'permissions' && <PermissionsPanel />}
 
         {tab === 'integrations' && (
           <>
