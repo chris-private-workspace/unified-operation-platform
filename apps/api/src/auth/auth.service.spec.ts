@@ -4,6 +4,8 @@ import { AuthService } from './auth.service';
 import { LocalJwtService } from './local-jwt.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 
 jest.mock('argon2');
 
@@ -39,11 +41,13 @@ describe('AuthService.login', () => {
   let prisma: {
     appUser: { findUnique: jest.Mock; update: jest.Mock };
     opco: { findUnique: jest.Mock };
+    $transaction: jest.Mock;
   };
   const localJwt = {
     sign: jest.fn(() => ({ accessToken: 'signed.tok', expiresIn: 900 })),
   } as unknown as LocalJwtService;
   let refreshTokens: RefreshTokenService;
+  let audit: { log: jest.Mock; logChange: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -53,12 +57,17 @@ describe('AuthService.login', () => {
         update: jest.fn().mockResolvedValue(LOCAL_USER as never),
       },
       opco: { findUnique: jest.fn().mockResolvedValue(null) },
+      // W29 F2b: run the callback against the same mock so existing
+      // prisma.appUser.* assertions keep working untouched.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
     };
     refreshTokens = refreshTokensStub();
+    audit = { log: jest.fn(), logChange: jest.fn() };
     service = new AuthService(
       prisma as unknown as PrismaService,
       localJwt,
       refreshTokens,
+      audit as unknown as AuditService,
     );
   });
 
@@ -179,6 +188,7 @@ describe('AuthService.refreshSession', () => {
       prisma as unknown as PrismaService,
       localJwt,
       refreshTokens as unknown as RefreshTokenService,
+      { log: jest.fn(), logChange: jest.fn() } as unknown as AuditService,
     );
   });
 
@@ -228,6 +238,7 @@ describe('AuthService.logout', () => {
       {} as PrismaService,
       {} as LocalJwtService,
       refreshTokens as unknown as RefreshTokenService,
+      { log: jest.fn(), logChange: jest.fn() } as unknown as AuditService,
     );
     await service.logout('raw');
     expect(refreshTokens.revoke).toHaveBeenCalledWith('raw');
@@ -239,6 +250,7 @@ describe('AuthService.logout', () => {
       {} as PrismaService,
       {} as LocalJwtService,
       refreshTokens as unknown as RefreshTokenService,
+      { log: jest.fn(), logChange: jest.fn() } as unknown as AuditService,
     );
     await service.logout(undefined);
     expect(refreshTokens.revoke).not.toHaveBeenCalled();
@@ -257,6 +269,7 @@ describe('AuthService.changePassword', () => {
       prisma as unknown as PrismaService,
       localJwt,
       refreshTokensStub(),
+      { log: jest.fn(), logChange: jest.fn() } as unknown as AuditService,
     );
   });
 
@@ -306,5 +319,141 @@ describe('AuthService.changePassword', () => {
         dto,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+/**
+ * W29 F2b — sign-in outcomes are audit events (ADR-0009 Decision 4).
+ * Q1 (Chris, 2026-07-20): the attempted email is recorded in metadata, because
+ * without it a failed login cannot tell you WHICH account is being probed.
+ */
+describe('AuthService audit trail', () => {
+  let service: AuthService;
+  let prisma: {
+    appUser: { findUnique: jest.Mock; update: jest.Mock };
+    opco: { findUnique: jest.Mock };
+    $transaction: jest.Mock;
+  };
+  let audit: { log: jest.Mock; logChange: jest.Mock };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma = {
+      appUser: {
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      opco: { findUnique: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
+    };
+    audit = { log: jest.fn(), logChange: jest.fn() };
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      {
+        sign: jest.fn(() => ({ accessToken: 't', expiresIn: 900 })),
+      } as unknown as LocalJwtService,
+      refreshTokensStub(),
+      audit as unknown as AuditService,
+    );
+  });
+
+  const entries = () => audit.log.mock.calls.map((c) => c[1]);
+
+  it('records auth.login_success in the same transaction as the lastLoginAt write', async () => {
+    prisma.appUser.findUnique.mockResolvedValue(LOCAL_USER);
+    (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+    await service.login({ email: 'admin@uop.local', password: 'pw' });
+
+    expect(audit.log).toHaveBeenCalledWith(
+      prisma, // same handle the update used
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.AUTH_LOGIN_SUCCESS,
+        targetId: 'u-local',
+        actorId: 'u-local',
+      }),
+    );
+  });
+
+  it('records auth.login_failed with the attempted email on a wrong password', async () => {
+    prisma.appUser.findUnique.mockResolvedValue(LOCAL_USER);
+    (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'admin@uop.local', password: 'wrong' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(entries()).toContainEqual(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+        targetId: 'u-local',
+        metadata: { emailAttempted: 'admin@uop.local' },
+      }),
+    );
+  });
+
+  // The email is deliberately NOT the targetId: that column is indexed and
+  // surfaced in the UI, so PII stays in the whitelisted metadata field.
+  it('records an unknown email as targetId "unknown", email in metadata', async () => {
+    prisma.appUser.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.login({ email: 'ghost@nowhere.test', password: 'x' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(entries()).toContainEqual(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+        targetId: 'unknown',
+        actorId: null,
+        metadata: { emailAttempted: 'ghost@nowhere.test' },
+      }),
+    );
+  });
+
+  /**
+   * Two separate rows on the lockout attempt: the Nth failure, and the account
+   * becoming unusable. Collapsing them would make "when was this account
+   * locked" unsearchable.
+   */
+  it('writes both login_failed and locked when the threshold is hit', async () => {
+    prisma.appUser.findUnique.mockResolvedValue({
+      ...LOCAL_USER,
+      failedLoginCount: 4, // this attempt is the 5th
+    });
+    (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+    await expect(
+      service.login({ email: 'admin@uop.local', password: 'wrong' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    const actions = entries().map((e) => e.action);
+    expect(actions).toContain(AUDIT_ACTIONS.AUTH_LOGIN_FAILED);
+    expect(actions).toContain(AUDIT_ACTIONS.AUTH_LOCKED);
+
+    // The lock is enforced by the platform, not performed by a person.
+    expect(entries()).toContainEqual(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.AUTH_LOCKED,
+        actorId: null,
+        actorType: 'system',
+      }),
+    );
+  });
+
+  it('records a failure against an already-locked account without touching the counter', async () => {
+    prisma.appUser.findUnique.mockResolvedValue({
+      ...LOCAL_USER,
+      lockedUntil: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      service.login({ email: 'admin@uop.local', password: 'pw' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(entries()).toContainEqual(
+      expect.objectContaining({ action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED }),
+    );
+    expect(prisma.appUser.update).not.toHaveBeenCalled();
   });
 });
