@@ -1,8 +1,8 @@
 # ADR-0009: 平台 audit trail(通用 `AuditLog` 與既有 domain 記錄共存 · 白名單 before/after · 平台 vs ServiceNow audit 分工)
 
 **Date**: 2026-07-20
-**Status**: **Proposed** ← 待 Chris 拍板 OQ-1 / OQ-2(見 §Decision 6-7)先 flip Accepted
-**Approver**: Chris Lai(pending)
+**Status**: **Accepted**
+**Approver**: Chris Lai(2026-07-20 拍板:OQ-1 = 記白名單 before/after · OQ-2 = P-B)
 
 ## Context
 
@@ -75,22 +75,31 @@ model AuditLog {
 
 > **點解呢條係 blocking**:實作時若圖方便寫 `before: user`(整個 Prisma object),就會把 `passwordHash` 寫入 audit table —— 災難級 H4 violation。**必須由 test 鎖死**(H5)。
 
-### 6. ⏸️ OQ-1 — 記唔記 before/after【待 Chris 拍板】
+### 6. ✅ 記 before/after(白名單)【OQ-1 — Chris 2026-07-20 拍板】
 
-- **建議:記(白名單)。** 唔記嘅話稽核員問「改成點」答唔到,audit 價值大減。
-- 反面:資料量較大、實作較重。
+**決定:記,經 Decision 5 白名單過濾。** 唔記嘅話稽核員問「改成點」答唔到,audit 價值大減。
 
-### 7. ⏸️ OQ-2 — PII 策略【待 Chris 拍板】
+接受嘅代價:資料量較大、實作較重(每個 `targetType` 要維護白名單)。
+
+### 7. ✅ PII 策略 = P-B【OQ-2 — Chris 2026-07-20 拍板】
 
 `LedgerAdjustment` 個 schema comment(`schema.prisma:133`)特登寫「actor is an AppUser id, **never PII**」。但要 audit「改咗用戶 email」,唔記舊 email 就等於冇記到。
+
+**決定:P-B** —— `actorId` / `targetId` 一律存 **id**;`before`/`after` 白名單**可以含** email · displayName,因為呢啲正正就係被改嘅嘢本身。
 
 | 選項 | 做法 | 得失 |
 |---|---|---|
 | P-A | 一律只存 id | H4 最乾淨 / audit 價值大減 |
-| **P-B(建議)** | actor·target 存 id;`before`/`after` 白名單**可含** email·displayName | audit 真正有用 / table 含 PII,要 role gate |
+| **P-B ✅ 採用** | actor·target 存 id;`before`/`after` 白名單**可含** email·displayName | audit 真正有用 / table 含 PII,要 role gate |
 | P-C | 存 hash / masked | 折衷 / 稽核員睇唔到實值 |
 
-> H4 原文係「唔好 log 落 **plaintext file**」。DB table + role gate ≠ log file,故 **P-B 唔違反 H4 字面**,但屬 H4-adjacent → **必須 Chris 明確拍板,AI 唔自行決定**。
+> H4 原文係「唔好 log 落 **plaintext file**」。DB table + ADMIN-only gate ≠ log file,故 P-B **唔違反 H4 字面**。
+
+**因採 P-B 而生嘅連帶義務(實作必守)**:
+1. 讀取嚴格 **ADMIN-only**(Decision 8.2)—— audit table 含 PII,唔可以放寬。
+2. 白名單以外欄位**一律唔入**(Decision 5)—— 白名單係 PII 邊界嘅唯一 enforcement point。
+3. 將來若定 data-retention / GDPR-style 政策,`AuditLog` **必須納入範圍**(Decision 8.3 現時唔做 retention,呢點要記住)。
+4. `LedgerAdjustment` 個「never PII」註解**維持不變** —— 兩張表策略唔同係刻意嘅(佢只記數字,冇 PII 需要)。
 
 ### 8. 其他決定
 
@@ -108,7 +117,7 @@ model AuditLog {
 
 - **A. Generalize `RequestEvent` → 通用 audit** — rejected(沿用 `allocation-editing-and-drift-correction.md:193` 原判斷):會影響既有 request 歷史同 UI。
 - **B. 逐 domain 加表**(`UserAudit` / `OpcoAudit` / `CatalogAudit` …)— rejected:需求橫跨 6+ domain,逐個加表會爆;跨 domain 查詢(「呢個人今個月改過乜」)要 union 一堆表。
-- **C. 只記事件唔記 before/after** — 見 OQ-1,待拍板。
+- **C. 只記事件唔記 before/after** — rejected(OQ-1,Chris 2026-07-20):稽核員問「改成點」答唔到,audit 價值大減。
 - **D. 起 permission table** — rejected(Decision 8.5):雙真相必 drift。
 - **E(Chosen). 通用 `AuditLog` 與既有記錄共存 + 白名單 before/after + 權限矩陣 derive** — 繞開原 reject 理由、零 breaking migration、單一真相。
 

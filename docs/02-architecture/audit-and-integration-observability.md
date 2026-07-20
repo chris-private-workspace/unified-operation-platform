@@ -2,7 +2,7 @@
 artifact: design-analysis
 title: "平台可稽核性 + 整合可觀測性 — 現況 map、gap 分析、rollout 提案"
 date: 2026-07-20
-status: proposed          # proposed | accepted | superseded
+status: accepted          # proposed | accepted | superseded — OQ-1/OQ-2 已由 Chris 拍板(2026-07-20)→ ADR-0009 Accepted
 author: AI(draft)/ Chris Lai(decision)
 supersedes: —
 ---
@@ -254,16 +254,17 @@ n8n 回程合約要同 **n8n owner 對真值**,否則又係做多一層 represen
 
 ## 8. Open Questions(要 Chris 答先開工)
 
-| # | 問題 | Blocking |
+| # | 問題 | 狀態 |
 |---|---|---|
-| **OQ-1** | audit 記唔記 before/after?(§5.4) | 🔴 item 1 |
-| **OQ-2** | PII 策略 P-A / P-B / P-C?(§5.3) | 🔴 item 1 |
-| **OQ-3** | audit 寫入失敗 → 主操作 rollback?(§5.4) | 🟡 item 3 |
-| **OQ-4** | audit 睇得到嘅 role?(§5.4) | 🟡 item 3 |
-| **OQ-5** | item 6 行「人手 retry」定「BullMQ 自動」?(§7.2) | ⚪ item 6 |
-| **OQ-6** | item 5 之前,幾時同 n8n owner 對合約?(§7.1) | ⚪ item 5 |
+| ~~OQ-1~~ | audit 記唔記 before/after?(§5.4) | ✅ **resolved 2026-07-20 — 記(白名單)** → ADR-0009 Decision 6 |
+| ~~OQ-2~~ | PII 策略 P-A / P-B / P-C?(§5.3) | ✅ **resolved 2026-07-20 — P-B**(白名單可含 email·displayName)→ ADR-0009 Decision 7 + 4 條連帶義務 |
+| **OQ-3** | audit 寫入失敗 → 主操作 rollback? | ✅ 隨 ADR-0009 Decision 8.1 定案(同一 `$transaction`) |
+| **OQ-4** | audit 睇得到嘅 role? | ✅ 隨 ADR-0009 Decision 8.2 定案(ADMIN-only;**因採 P-B 唔可放寬**) |
+| **OQ-5** | item 6 行「人手 retry」定「BullMQ 自動」?(§7.2) | ⚪ 未決 — blocking item 6,留 ADR-0010 |
+| **OQ-6** | item 5 之前,幾時同 n8n owner 對合約?(§7.1) | ⚪ 未決 — blocking item 5(外部) |
 
-> **OQ-1 / OQ-2 有 default 建議(記 + P-B),但因涉 H4-adjacent,我唔會自己拍板。**
+> **OQ-1 / OQ-2 已拍板**(Chris,2026-07-20)→ ADR-0009 flip **Accepted**,item 2-3 解封。
+> 餘下 OQ-5 / OQ-6 只 block item 5-6,唔影響 item 2-4。
 
 ---
 
