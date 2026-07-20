@@ -17,15 +17,15 @@ last_updated: 2026-07-20
 
 ## F1 — 後端 `GET /admin/permissions`
 
-- [ ] `permissions.service.ts`:掃 controller handler,derive route + roles + 特殊標示
-- [ ] 四種標示邏輯:`roles[]` / `public` / `authenticated` / `m2m` / `⚠️ UNGUARDED`
-- [ ] method-level `@Roles` 覆蓋 class-level(驗 `license.controller.ts` 6 處 override)
-- [ ] `permissions.controller.ts`:`GET /admin/permissions`,`@Roles(ADMIN)`
-- [ ] DTO + OpenAPI 標註
-- [ ] module wire
-- [ ] live curl 驗:9 controller 全覆蓋(對 `@Roles` grep 逐條核)—— G1
-- [ ] live curl 驗:`/requests/intake` = `m2m`、auth = `public`、me = `authenticated` —— G3
-- [ ] live curl 驗:非 ADMIN → 403
+- [x] `permissions.ts`:`derivePermissions()` **純函數**(非 service —— 要畀 runtime + test 兩邊共用,見 D1),掃 controller handler derive route + roles + 標示
+- [x] 五種標示邏輯:`roles` / `public` / `m2m` / `authenticated` / `unguarded`;**`unguarded` 定義 = 冇 `@Roles` 且唔喺 `REVIEWED_AUTHENTICATED` 白名單**(白名單 = 刻意開放畀任何登入用戶,加一行係 security decision)
+- [x] method-level `@Roles` 覆蓋 class-level —— derive 邏輯**逐步 mirror `RolesGuard`**(@Public 優先 → method roles → class roles),否則矩陣會描述一啲冇人 enforce 嘅規則
+- [x] `permissions.controller.ts`:`GET /admin/permissions`,`@Roles(ADMIN)`
+- [x] DTO + OpenAPI 標註(含 R4 註記寫入 `@ApiOperation` description)
+- [x] module wire(`AuthModule` 加 `DiscoveryModule` import)
+- [x] live curl 驗:HTTP 200,**34 route / 9 controller 全覆蓋** —— G1 ✅
+- [x] live curl 驗:`/requests/intake` = `m2m` + `guards:["IntakeKeyGuard"]`、auth×3 = `public`、me×2 = `authenticated` —— G3 ✅
+- [ ] live curl 驗:非 ADMIN → 403 —— ⏳ **未 live 試**(需改 `AUTH_DEV_USER_EMAIL` + restart backend,屬用戶進程);**class `@Roles(ADMIN)` 已由 unit test assert**(`permissions.spec.ts`「the permissions endpoint itself is ADMIN-only」)+ `RolesGuard` 本身有 `roles.guard.spec.ts` 覆蓋。H7:唔當已驗
 
 ## F2 — 前端 Settings › Permissions
 
@@ -41,11 +41,13 @@ last_updated: 2026-07-20
 
 ## F3 — Drift 防護 test(H5)
 
-- [ ] Snapshot test:當前矩陣鎖成 fixture
-- [ ] Unguarded 偵測 test:白名單外任何 route 冇 `@Roles` → fail
-- [ ] **fails-before 實證**:故意改一個 `@Roles` → 睇住 snapshot test 紅 → 還原
-- [ ] **fails-before 實證**:故意加一個無 guard route → 睇住 unguarded test 紅 → 還原
-- [ ] 兩條實證結果貼 `progress.md`(H7:唔可以只寫「驗過」)—— G4
+- [x] Snapshot test:當前矩陣鎖成 fixture(`__snapshots__/permissions.spec.ts.snap`,34 行)
+- [x] Unguarded 偵測 test:白名單外任何 route 冇 `@Roles` → fail
+- [x] **fails-before 實證 1**:`opco.controller.ts` 移走 `Role.OPCO_IT` → snapshot **紅**,diff 顯示 `GET /opcos → roles [ADMIN,REGIONAL,OPCO_IT]` 變 `[ADMIN,REGIONAL]` → 已還原
+- [x] **fails-before 實證 2**:`MeController` 加 `@Get('fails-before-probe')`(無 `@Roles`)→ unguarded test **紅**,報 `GET /me/fails-before-probe (MeController.probe)` → 已還原
+- [x] 兩條實證結果貼 `progress.md` —— G4 ✅
+- [x] 額外 8 條意圖 test(controller 全覆蓋 / reviewed-authenticated 白名單 / m2m / public / override / **OPCO_IT 可寫 ledger 迴歸鎖** / tenant-sku 排除 OPCO_IT / endpoint 自身 ADMIN-only)
+- [x] 保留既有 `controllers-guarded.spec.ts`(assert **意圖**)—— 同新 spec(lock **現況**)互補,兩者答唔同問題
 
 ## Verify
 

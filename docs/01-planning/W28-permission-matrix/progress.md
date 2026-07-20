@@ -88,10 +88,48 @@ derivePermissions(controllers: Function[]) → PermissionEntry[]   ← 純函數
 ### Blockers
 - 無。
 
+### F1 + F3 完成
+
+**F1 —— `GET /admin/permissions` live 200,34 route / 9 controller 全覆蓋。**
+
+| Gate | 驗證 | 結果 |
+|---|---|---|
+| G1 | License 11 · Fulfilment 7 · UserAdmin 4 · Auth 3 · OpcoAdmin 3 · Me 2 · Opco/Outbound/Intake/Permissions 各 1 = **34** | ✅ 零遺漏 |
+| G2 | `updateLedger` PATCH = +OPCO_IT · `updateCatalog` PATCH = 繼承 ADMIN/REGIONAL · `listTenantSkus` = OPCO_IT 排除 | ✅ |
+| G3 | `/requests/intake` = **`m2m`** + `guards:["IntakeKeyGuard"]`(**唔係** public)· auth×3 = `public` · me×2 = `authenticated` | ✅ |
+
+**結果本身係個好消息:全 34 條 route 零 `unguarded`** —— 冇任何 endpoint 漏咗保護。
+
+**F3 —— 10 條 test,含兩條 fails-before 實證(G4)。**
+
+| 實證 | 做法 | 結果 |
+|---|---|---|
+| 1 | `opco.controller.ts` 移走 `Role.OPCO_IT` | snapshot **紅**,diff:`GET /opcos → roles [ADMIN,REGIONAL,OPCO_IT]` → `[ADMIN,REGIONAL]` |
+| 2 | `MeController` 加 `@Get('fails-before-probe')`(無 `@Roles`) | unguarded test **紅**,報 `GET /me/fails-before-probe (MeController.probe)` |
+
+兩個都已還原,還原後 **api 213 → 223 test 全綠**(30 suites,1 snapshot)。
+
+### 設計決定(實作期間)
+
+- **`unguarded` 嘅定義**:全域 `JwtAuthGuard` + `RolesGuard` 之下,冇 `@Roles` ≠ 無保護 —— 佢係「任何**已登入**用戶可用」。所以真正嘅風險唔係「完全開放」,而係「應該限 role 但漏咗」。故 `unguarded` 定義為**冇 `@Roles` 且唔喺 `REVIEWED_AUTHENTICATED` 白名單**。白名單目前兩條(`GET /me` / `PATCH /me/password`),加一行 = security decision。
+- **derive 邏輯逐步 mirror `RolesGuard`**(@Public 優先 → method roles → class roles)。若兩者唔一致,矩陣就會描述一啲冇人 enforce 嘅規則 —— 即係 ADR-0009 講嘅「講大話嘅稽核文件」。
+- **`permissions.ts` 係純函數唔係 service** —— 因為要畀 runtime(DiscoveryService)同 test(glob)兩邊共用(D1)。
+
+### Blockers
+- 無。
+
+### ⏳ 未驗項(H7 誠實標註)
+- **非 ADMIN → 403 未 live 試** —— 要改 `AUTH_DEV_USER_EMAIL` + restart backend(屬用戶進程,唔擅自動)。class `@Roles(ADMIN)` 已由 unit test assert,`RolesGuard` 本身亦有 `roles.guard.spec.ts` 覆蓋,但**唔當已 live 驗**。
+
+### 📌 順帶發現(唔屬本 phase,唔改)
+`npm run lint` 有 **383 個 `Delete ␍`(CRLF)error**,全部散喺 4 個 W23-A 舊檔(`license/ledger-write.*` · `license/dto/ledger-write.dto.ts` · `license/license.module.ts`),同本 phase 改動無關。git 存 LF(`.gitattributes`)所以 CI 綠,屬本地 working-copy artifact(memory 早有記錄)。**按 §1.3 surgical 冇順手修**。本 phase 自己 5 個檔 lint exit 0。
+
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
 | F0 spike | 0.5 | ~0.5 | 0 |
+| F1 | 3 | ~1.5 | −1.5(spike 已掃清未知) |
+| F3 | 1.5 | ~1 | −0.5 |
 
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |

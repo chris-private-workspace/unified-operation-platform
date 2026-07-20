@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { LocalJwtService } from './local-jwt.service';
@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { MeController } from './me.controller';
 import { UserAdminService } from './user-admin.service';
 import { UserAdminController } from './user-admin.controller';
+import { PermissionsController } from './permissions.controller';
 
 /**
  * Global auth (ADR-0002 + ADR-0005). Every request runs JwtAuthGuard (Entra JWT
@@ -18,7 +19,15 @@ import { UserAdminController } from './user-admin.controller';
  * (sign). PrismaService (@Global) + ConfigService (global) inject into both.
  */
 @Module({
-  controllers: [MeController, AuthController, UserAdminController],
+  // DiscoveryModule lets PermissionsController enumerate every registered
+  // controller at runtime, so the matrix needs no hand-maintained list (W28).
+  imports: [DiscoveryModule],
+  controllers: [
+    MeController,
+    AuthController,
+    UserAdminController,
+    PermissionsController,
+  ],
   providers: [
     LocalJwtService,
     RefreshTokenService,
