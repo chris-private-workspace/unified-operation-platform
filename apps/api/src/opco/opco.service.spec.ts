@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { OpcoService } from './opco.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 describe('OpcoService', () => {
   let service: OpcoService;
@@ -12,7 +13,9 @@ describe('OpcoService', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
+    $transaction: jest.Mock;
   };
+  let audit: { log: jest.Mock; logChange: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -22,9 +25,17 @@ describe('OpcoService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      // W29 F2c: run the callback against the same mock so existing
+      // prisma.opco.* assertions keep working untouched.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
     };
+    audit = { log: jest.fn(), logChange: jest.fn() };
     const moduleRef = await Test.createTestingModule({
-      providers: [OpcoService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        OpcoService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: audit },
+      ],
     }).compile();
     service = moduleRef.get(OpcoService);
   });
@@ -71,7 +82,7 @@ describe('OpcoService', () => {
       prisma.opco.findUnique.mockResolvedValue(null);
       prisma.opco.create.mockResolvedValue({ id: 'new' });
 
-      await service.createOpco({
+      await service.createOpco('actor-1', {
         code: '  RVN  ',
         displayName: '  Ricoh VN  ',
         company: '  RVN  ',
@@ -99,7 +110,11 @@ describe('OpcoService', () => {
       prisma.opco.findUnique.mockResolvedValue({ id: 'existing' });
 
       await expect(
-        service.createOpco({ code: 'RHK', displayName: 'x', company: 'RHK' }),
+        service.createOpco('actor-1', {
+          code: 'RHK',
+          displayName: 'x',
+          company: 'RHK',
+        }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.opco.create).not.toHaveBeenCalled();
     });
@@ -110,7 +125,7 @@ describe('OpcoService', () => {
       prisma.opco.findUnique.mockResolvedValue({ id: 'o1' });
       prisma.opco.update.mockResolvedValue({ id: 'o1' });
 
-      await service.updateOpco('o1', {
+      await service.updateOpco('actor-1', 'o1', {
         displayName: '  New name  ',
         costCenter: '  IT  ',
       });
@@ -126,7 +141,7 @@ describe('OpcoService', () => {
       prisma.opco.findUnique.mockResolvedValue({ id: 'o1' });
       prisma.opco.update.mockResolvedValue({ id: 'o1' });
 
-      await service.updateOpco('o1', { costCenter: '' });
+      await service.updateOpco('actor-1', 'o1', { costCenter: '' });
 
       expect(prisma.opco.update.mock.calls[0][0].data).toEqual({
         costCenter: null,
@@ -137,7 +152,7 @@ describe('OpcoService', () => {
       prisma.opco.findUnique.mockResolvedValue({ id: 'o1' });
       prisma.opco.update.mockResolvedValue({ id: 'o1' });
 
-      await service.updateOpco('o1', { active: false });
+      await service.updateOpco('actor-1', 'o1', { active: false });
 
       expect(prisma.opco.update.mock.calls[0][0].data).toEqual({
         active: false,
@@ -148,7 +163,7 @@ describe('OpcoService', () => {
       prisma.opco.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.updateOpco('nope', { displayName: 'x' }),
+        service.updateOpco('actor-1', 'nope', { displayName: 'x' }),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.opco.update).not.toHaveBeenCalled();
     });

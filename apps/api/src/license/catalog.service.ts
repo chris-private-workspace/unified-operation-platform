@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { graphUnavailable } from '../integration/graph/graph-unavailable';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 
 /** Trim a curation string; empty / whitespace-only → null (clears the field). */
 function normalizeOptional(v: string | null | undefined): string | null {
@@ -35,6 +37,7 @@ export class CatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly graph: GraphService,
+    private readonly audit: AuditService,
   ) {}
 
   async syncFromTenant(): Promise<CatalogSyncResult> {
@@ -119,6 +122,7 @@ export class CatalogService {
    * is the intended manual curation path, not a new mechanism.
    */
   async updateEntry(
+    actorId: string,
     id: string,
     dto: {
       businessAlias?: string | null;
@@ -142,6 +146,19 @@ export class CatalogService {
       data.isBaseLicense = dto.isBaseLicense;
     }
 
-    return this.prisma.skuCatalog.update({ where: { id }, data });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.skuCatalog.update({ where: { id }, data });
+      // businessAlias drives allocation-import matching (ADR-0004), so an alias
+      // edit can silently change how a future import maps rows — worth a trail.
+      await this.audit.logChange(tx, {
+        action: AUDIT_ACTIONS.CATALOG_UPDATE,
+        targetType: 'SkuCatalog',
+        targetId: id,
+        actorId,
+        before: existing,
+        after: updated,
+      });
+      return updated;
+    });
   }
 }

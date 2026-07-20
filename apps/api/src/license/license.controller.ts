@@ -65,10 +65,11 @@ export class LicenseController {
   @Patch('catalog/:id')
   @ApiOkResponse({ type: SkuCatalogDto })
   updateCatalog(
+    @CurrentUser() actor: AuthUser,
     @Param('id') id: string,
     @Body() dto: UpdateSkuCatalogDto,
   ): Promise<SkuCatalogDto> {
-    return this.catalog.updateEntry(id, dto);
+    return this.catalog.updateEntry(actor.id, id, dto);
   }
 
   @Post('reconcile')

@@ -3,6 +3,7 @@ import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import { AuditService } from '../audit/audit.service';
 
 // A tenant subscribedSkus row (shape from GraphService.getSubscribedSkus()).
 const sku = (
@@ -24,8 +25,10 @@ describe('CatalogService', () => {
   let prisma: {
     skuCatalog: Record<string, jest.Mock>;
     tenantSkuSnapshot: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
   };
   let graph: { getSubscribedSkus: jest.Mock };
+  let audit: { log: jest.Mock; logChange: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -37,14 +40,19 @@ describe('CatalogService', () => {
         findMany: jest.fn(),
       },
       tenantSkuSnapshot: { create: jest.fn() },
+      // W29 F2c: run the callback against the same mock so existing
+      // prisma.skuCatalog.* assertions keep working untouched.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
     };
     graph = { getSubscribedSkus: jest.fn() };
+    audit = { log: jest.fn(), logChange: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         CatalogService,
         { provide: PrismaService, useValue: prisma },
         { provide: GraphService, useValue: graph },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(CatalogService);
@@ -131,7 +139,7 @@ describe('CatalogService', () => {
       prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1', skuId: 'g1' });
       prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
 
-      await service.updateEntry('c1', {
+      await service.updateEntry('actor-1', 'c1', {
         businessAlias: '  E3 Bundle  ',
         category: 'Base',
         isBaseLicense: true,
@@ -153,7 +161,10 @@ describe('CatalogService', () => {
       prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1' });
       prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
 
-      await service.updateEntry('c1', { businessAlias: '', category: '   ' });
+      await service.updateEntry('actor-1', 'c1', {
+        businessAlias: '',
+        category: '   ',
+      });
 
       expect(prisma.skuCatalog.update.mock.calls[0][0].data).toEqual({
         businessAlias: null,
@@ -165,7 +176,7 @@ describe('CatalogService', () => {
       prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1' });
       prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
 
-      await service.updateEntry('c1', { isBaseLicense: false });
+      await service.updateEntry('actor-1', 'c1', { isBaseLicense: false });
 
       expect(prisma.skuCatalog.update.mock.calls[0][0].data).toEqual({
         isBaseLicense: false,
@@ -176,7 +187,7 @@ describe('CatalogService', () => {
       prisma.skuCatalog.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.updateEntry('nope', { category: 'X' }),
+        service.updateEntry('actor-1', 'nope', { category: 'X' }),
       ).rejects.toThrow(NotFoundException);
       expect(prisma.skuCatalog.update).not.toHaveBeenCalled();
     });
