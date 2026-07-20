@@ -37,13 +37,61 @@ status: in-progress    # in-progress | closed
 ## Day 1 — 2026-07-20
 
 ### Done
-- _(執行中)_
+
+**F0 spike 完成 —— R1 解除,行 runtime derive,唔使 fallback。**
+
+跑咗三個 sub-spike(臨時 `src/spike-discovery.spec.ts`,驗完即刪):
+
+| Spike | 問題 | 結果 |
+|---|---|---|
+| **A** | `Reflect.getMetadata` 攞唔攞到 route path + HTTP method + `@Roles` + `@Public`? | ✅ **全部攞到** |
+| **B** | test 內 `import AppModule` + `DiscoveryService` 列舉 controller? | ❌ **爆** —— `jwks-rsa` → `jose` 係 ESM,jest 唔 transform node_modules |
+| **C** | 改用 glob `*.controller.ts` + `require` 逐個 load? | ✅ **9 個檔案 / 9 個 class,零 failure** |
+
+**Spike A 實測輸出**(節錄 `LicenseController`,共 11 route):
+- `classPath` = `license`,`rolesOnClass` = `[ADMIN, REGIONAL]`
+- `listCatalog` → `GET catalog`,method-level `[ADMIN, REGIONAL, OPCO_IT]`
+- `updateLedger` → `PATCH ledger/:id`,method-level `[ADMIN, REGIONAL, OPCO_IT]`
+- `syncCatalog` / `updateCatalog` / `runReconcile` / `listTenantSkus` / `tenantSkuStats` → 無 override,繼承 class `[ADMIN, REGIONAL]`
+- `IntakeController.push` → `POST intake`,`publicOnMethod = true`(`@Public()` 讀到,唔會誤判成「無 guard」)
+- `MeController.me` → `GET /`,無 roles 無 public = `authenticated`
 
 ### Decisions / Open-Questions Resolved
-- _(待填)_
+
+**D1 — F1 同 F3 用唔同方式攞 controller list,但共用同一個 derive 純函數。**
+
+Spike B 嘅失敗迫出一個更好嘅設計:
+
+```
+derivePermissions(controllers: Function[]) → PermissionEntry[]   ← 純函數,易 test
+        ↑ F1 runtime:DiscoveryService.getControllers()
+        ↑ F3 test:  glob *.controller.ts + require
+```
+
+**點解唔兩邊都用同一種**:production build 之後 `.controller.ts` 變 `.js`,runtime glob `.ts` 會搵唔到 → F1 **必須**用 DiscoveryService;而 jest 入面 AppModule 起唔到(spike B)→ F3 **必須**用 glob。
+
+**額外好處**:兩條路殊途同歸 —— 如果 runtime 矩陣同 test 矩陣唔一致,本身就係一個 bug signal。
+
+**D2 — F3 擴展既有 `auth/controllers-guarded.spec.ts`,唔另起爐灶。**
+呢個 spec 已存在(手寫 assert 3 個 controller:License / Fulfilment / UserAdmin),但**冇 path/method、冇自動列舉** —— 新加 controller 唔會令佢紅。F3 會用 glob 覆蓋全部 9 個並保留佢既有 assert 意圖。
+
+### 🔴 意外發現 —— 我 2026-07-20 手寫嘅權限矩陣有錯
+
+`audit-and-integration-observability.md §2.3` 原本寫:
+
+> `license.controller.ts:54,81,105,112,125` | **個別 GET** | + OPCO_IT
+
+**錯**:嗰 5 個 method-level override 入面,`updateLedger` 係 **`PATCH ledger/:id`**,唔係 GET。OPCO_IT 可以**寫** ledger(ADR-0007 決定,service 層 `assertOpcoScope` 保護),唔止讀。
+
+**呢個正正證明咗 F3 drift test 嘅價值** —— 人手抄 `@Roles` 一定會出錯,而錯咗嘅稽核文件比冇文件更危險(ADR-0009 Decision 8.5 原話)。已修正該表並標明完整矩陣由 F1 產出。
 
 ### Blockers
-- _(待填)_
+- 無。
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F0 spike | 0.5 | ~0.5 | 0 |
 
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |

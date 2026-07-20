@@ -67,14 +67,17 @@ supersedes: —
 | `fulfilment.controller.ts:23` | `fulfilment/requests` | ADMIN · REGIONAL · OPCO_IT |
 | `outbound-request.controller.ts:23` | `requests` | ADMIN · REGIONAL · OPCO_IT |
 | `license.controller.ts:35` | `license`(class default) | ADMIN · REGIONAL |
-| `license.controller.ts:54,81,105,112,125` | 個別 GET | + OPCO_IT |
-| `license.controller.ts:92` | 個別寫入 | ADMIN · REGIONAL |
+| `license.controller.ts` 5 處 method-level override | `catalog` · `drift` · `ledger` · `ledger/stats`(GET)+ **`ledger/:id`(PATCH)** | + OPCO_IT |
+| `license.controller.ts:92` | `ledger/import`(POST) | ADMIN · REGIONAL |
 | `user-admin.controller.ts:30` | `admin` | **ADMIN only** |
 | `auth.controller.ts:24` | `auth` | (public — login/refresh/logout) |
 | `me.controller.ts:17` | `me` | (any authenticated) |
 | `intake.controller.ts:19` | `requests/intake` | **m2m** — `@Public()` + `IntakeKeyGuard` |
 
 > ⚠️ 呢張表而家**只存在於本文件**。冇 test 保證佢同 code 同步 —— item 2 就係要解決呢點。
+>
+> 🔴 **實證(2026-07-20,W28 F0 spike)**:本表初版**已經抄錯** —— 原本寫「個別 **GET** + OPCO_IT」,但 runtime metadata 顯示嗰 5 個 override 入面 `updateLedger` 係 **`PATCH ledger/:id`**,即 OPCO_IT 可以**寫**自己 OpCo 嘅 ledger(ADR-0007 決定,service 層 `assertOpcoScope` 保護),唔止讀。
+> 錯咗一日都未夠,已經證明「人手抄 `@Roles` 必然 drift」。**完整權威矩陣由 W28 F1 `GET /admin/permissions` 產出,本表只作背景。**
 
 ### 2.4 整合現況
 

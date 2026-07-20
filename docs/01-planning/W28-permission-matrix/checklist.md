@@ -12,8 +12,8 @@ last_updated: 2026-07-20
 
 ## F0 — Spike(先做,決定 F1 做法)
 
-- [ ] 30 分鐘 spike:`DiscoveryService` + `MetadataScanner` 攞唔攞到 route path + `@Roles` metadata(R1)
-- [ ] Spike 結論寫入 `progress.md` Day-1 —— 成功 → 行 runtime derive;失敗 → fallback 手寫 const map + drift test(**要 log 入 plan §7 changelog**)
+- [x] 30 分鐘 spike:`DiscoveryService` + `MetadataScanner` 攞唔攞到 route path + `@Roles` metadata(R1)—— ✅ **A 成功**(path/method/roles/public 全讀到)· ❌ **B 失敗**(jest 內 import AppModule 爆 `jose` ESM)· ✅ **C 成功**(glob+require 9/9)
+- [x] Spike 結論寫入 `progress.md` Day-1 —— **成功 → 行 runtime derive**;無需 fallback。衍生 **D1**(F1 用 DiscoveryService / F3 用 glob,共用 `derivePermissions` 純函數)+ **D2**(F3 擴展既有 `controllers-guarded.spec.ts`)→ 已入 plan §7 changelog
 
 ## F1 — 後端 `GET /admin/permissions`
 

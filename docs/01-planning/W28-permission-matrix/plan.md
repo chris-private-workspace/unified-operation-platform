@@ -112,6 +112,7 @@ Carry-over 唔係嚟自 W27 retro,而係嚟自 **2026-07-20 audit 規劃**:
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-20 | Initial plan,status=active | Chris 批 rollout item 2「開,唔使等 ADR 拍板」 | Chris Lai |
+| 2026-07-20 | **F0 spike 結果 → refine F1/F3 做法(非 scope 改動)** | Spike A ✅ metadata 全讀到(**R1 解除,唔使 fallback**);Spike B ❌ jest 內 `import AppModule` 爆 `jose` ESM → F3 改用 **glob `*.controller.ts` + require**(Spike C ✅ 9/9);F1 維持 runtime `DiscoveryService`(production build 後 `.ts` 唔存在,glob 唔可行)。兩者共用 `derivePermissions()` 純函數。另 **D2**:F3 擴展既有 `auth/controllers-guarded.spec.ts` 而非另起爐灶 | AI(R3 log;scope 不變,只係實作路徑) |
 
 ---
 
