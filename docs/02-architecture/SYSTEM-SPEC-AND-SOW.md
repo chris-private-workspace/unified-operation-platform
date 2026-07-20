@@ -17,7 +17,7 @@
 > domain model 真相 → `apps/api/prisma/schema.prisma`;pending 工作真相 → `docs/01-planning/BACKLOG.md`。
 > 本文件把上述內容**整合成可交付形式**,並補上**經 code 實證嘅現況查證**。
 >
-> **查證基準**:commit `a5126c7`(2026-07-20,branch `docs/audit-integration-planning`)。所有「已實作」陳述均經讀 source code 或執行測試確認。凡查證唔到嘅,一律標示 `未實作` / `planned` / `未驗證`,**唔以規劃文件嘅措辭當作已完成**。
+> **查證基準**:commit `d107c43`(2026-07-20,branch `docs/audit-integration-planning`)。所有「已實作」陳述均經讀 source code 或執行測試確認。凡查證唔到嘅,一律標示 `未實作` / `planned` / `未驗證`,**唔以規劃文件嘅措辭當作已完成**。
 
 ---
 
@@ -73,7 +73,7 @@ Unified Operation Platform 係一個**自建嘅 IT operation / support 管理與
 | 後端測試 | **223 個 / 30 suites + 1 snapshot,全綠** | 實際執行 `npx jest`(90 秒) |
 | 前端測試 | **85 個 / 10 檔** | 檔案盤點 |
 | 前端畫面(route) | **11 條** | `router.tsx` |
-| 已通過階段 | W01–W27 + CH-001~004 + BUG-001~003(**W28 進行中**) | phase folder + git log |
+| 已通過階段 | W01–W27 + CH-001~004 + BUG-001~003(**W28 交付完成待 closeout**) | phase folder + git log |
 | Accepted ADR | **9 份** | `docs/adr/` |
 
 **未完成嘅主要事項**:生產部署未做;真 SSO 端到端未驗(卡外部);ServiceNow / n8n 對外合約仍屬代表性(representative)而非實際對齊;audit trail(ADR-0009)已拍板未落地;排程與背景佇列雖列入 locked stack 但**一行都未實作**。
@@ -627,7 +627,7 @@ Table API 讀寫:`getRecord` · `getRecordByNumber` · `query` · `updateRecord`
 **Requests** — filter chips(all / mine / attention / procurement / blocked,含計數)+ 分頁表(8/頁)。`mine` 依 `handledById === me.id` 客戶端過濾。
 **Request detail** — header + **Azure sync gate**(Account created → Synced)+ line items stepper(Advance stage / Assign now)+ 操作歷史時間軸。
 **Assets** — 兩個 mode:*By-OpCo*(誠實表:allocated / assigned / available / utilization bar,**支援 inline row 編輯**)· *Platform*(tenant 三層 owned / allocated / assigned / unallocated,按 category 分組 + 小計 + 總計)。OPCO_IT 完全睇唔到 Platform 切換器;若直接觸發後端 403 → graceful restricted state。
-**Settings** — 5 個 tab(`?tab=` 驅動):`account` · `preferences` · `users` · `opcos` · `integrations`(CSV allocation import:選檔 → dry-run 預覽 → commit)。
+**Settings** — **6 個 tab**(`?tab=` 驅動):`account` · `preferences` · `users` · `opcos` · `integrations`(CSV allocation import:選檔 → dry-run 預覽 → commit)· **`permissions`**(W28 F2 新增,ShieldCheck icon —— 按 controller 分組嘅 role × endpoint 唯讀矩陣,**零 primary action**;非 ADMIN → 403 restricted state)。
 
 ### 12.3 App shell
 
@@ -644,7 +644,7 @@ Table API 讀寫:`getRecord` · `getRecordByNumber` · `query` · `updateRecord`
 
 | 類型 | 實作 |
 |---|---|
-| Server state | **TanStack Query** — 13 個 query hook(`hooks/queries.ts`)+ 14 個 mutation(`hooks/mutations.ts`);共用 `retryUnless403`(403 為權威,唔重試) |
+| Server state | **TanStack Query** — **14 個** query hook(`hooks/queries.ts`,含 W28 `usePermissions`)+ 14 個 mutation(`hooks/mutations.ts`);共用 `retryUnless403`(403 為權威,唔重試 —— 非 ADMIN 直接落 restricted state 而唔係一路轉圈) |
 | UI state | **Zustand** — 單一 store `useUiStore`:`theme` · `sidebarCollapsed` |
 
 ### 12.6 設計系統約束(CLAUDE.md §5 H6)
@@ -749,7 +749,7 @@ Dev proxy:`/api` → `http://localhost:3100`(可用 `API_PROXY_TARGET` 覆寫,re
 | P1 | **生產部署** | 候選 | owner 決定時機 + 真數 curation |
 | P2 | **真 SSO 端到端驗證** | 🔴 blocked | IT 未開 SPA app registration |
 | P3 | **Audit trail 落地**(ADR-0009) | 候選 | ADR 已 Accepted,可開工 |
-| P4 | **權限矩陣 derive + drift test** | 🚧 **進行中(W28)** | F0 / F1 / F3 ✅ 完成;**餘 F2 唯讀矩陣 UI** |
+| P4 | ~~權限矩陣 derive + drift test + UI~~ | ✅ **交付完成(W28)** | F0–F3 全完成;餘 phase closeout 手續 |
 | P5 | **Integration 狀態 + Test connection UI** | 候選 | 需輕度 ADR |
 | P6 | **n8n 回程 webhook**(外部推 stage) | 🔴 blocked | 需同 n8n owner 對真合約;另觸發 H1 |
 | P7 | **Outbound 交付保證 / retry** | 候選 | 需 ADR;啟用 BullMQ = H1 架構決定 |
@@ -775,7 +775,7 @@ Dev proxy:`/api` → `http://localhost:3100`(可用 `API_PROXY_TARGET` 覆寫,re
 | W18–W22 | 本地登入 → user 管理 → 密碼生命週期 → session hardening → 前端真 role | 2026-07-13 ~ 07-14 |
 | W23-A / W23-B | Ledger 手動管理(backend + audit)/ Assets inline edit | 2026-07-14 |
 | W24–W27 | ADR-0008 rollout 四階段:甲 inbound → 乙 outbound direct → 丙 n8n outbound → 丁 D365 納入 | 2026-07-15 |
-| **W28** | **權限矩陣 derive + drift test**(audit rollout item 2) | 🚧 **進行中**(kickoff 2026-07-20) |
+| **W28** | **權限矩陣 derive endpoint + drift test + 唯讀 UI**(audit rollout item 2) | 交付完成 2026-07-20;🚧 **待 closeout** |
 
 ### 15.2 變更(Change)與缺陷(Bug)
 
@@ -867,7 +867,7 @@ Graph / ServiceNow **一律 mock**,唔打真 tenant。
 |---|---|---|---|
 | A1 | **排程 / 背景佇列零實作** | `ScheduleModule` 已註冊但零個 `@Cron`;BullMQ 唔喺 `package.json` | 對帳 / catalog 同步淨係人手觸發;outbound 失敗無自動 retry |
 | A2 | **`AuditLog` 未落地** | ADR-0009 Accepted(2026-07-20)但 schema 無此 model | 用戶 CRUD / 角色變更 / 密碼重設 / 登入成敗 / OpCo CRUD / catalog 編輯 / import / drift resolve **全部零留痕** |
-| A3 | ~~**權限矩陣無可查證形式**~~ | ✅ **已解決(W28 F1+F3,2026-07-20)** —— `GET /admin/permissions` live derive + snapshot drift test。`@Roles` 仍係唯一真相,矩陣係 derived view | 餘下:唯讀 UI(W28 F2)未做 |
+| A3 | ~~**權限矩陣無可查證形式**~~ | ✅ **已解決(W28 F1–F3,2026-07-20)** —— `GET /admin/permissions` live derive + snapshot drift test + Settings › Permissions 唯讀矩陣頁。`@Roles` 仍係唯一真相,矩陣係 derived view | 無殘留 |
 | A4 | **無 health / readiness endpoint** | 全 API 無 | 阻礙容器編排與監控 |
 | A5 | **後端未容器化** | `docker-compose.yml` 只有 postgres + redis | 生產部署需補 |
 
@@ -932,7 +932,7 @@ Graph / ServiceNow **一律 mock**,唔打真 tenant。
 
 | ID | 任務 | 前置 |
 |---|---|---|
-| `AUDIT-2` | 權限矩陣 —— backend derive + drift test ✅ 完成;**餘唯讀 UI(F2)** | 🚧 **進行中 — Phase W28**(見 §18.6) |
+| `AUDIT-2` | 權限矩陣 —— derive endpoint + drift test + 唯讀 UI **四項交付全完成**;餘 phase closeout | 🚧 **W28 待 closeout**(見 §18.6) |
 | `AUDIT-3` | `AuditLog` 落地 + Audit UI | ADR-0009 已 Accepted → 可開工(預期為 W29)。🔴 白名單欄位必須 test 鎖死(防 `passwordHash` 入 audit) |
 | `INTEG-1` | Integration 狀態 + Test connection | 輕度 ADR;🔴 endpoint **絕不可回傳 secret 值**,只回 boolean |
 | `FE-activity` | Overview activity feed | 由 `AUDIT-3` 解封 |
@@ -975,8 +975,14 @@ Graph / ServiceNow **一律 mock**,唔打真 tenant。
 |---|---|---|
 | F0 | Spike:`Reflect.getMetadata` 攞唔攞到 route path / method / `@Roles` / `@Public` | ✅ 完成 —— **可以攞到全部**,風險 R1 解除,行 runtime derive 無需 fallback |
 | F1 | Backend:`DiscoveryService` runtime derive → `GET /admin/permissions` | ✅ **完成** —— live 200,34 route / 10 controller 全覆蓋,**零 unguarded** |
-| F2 | Frontend:唯讀矩陣頁 | 🚧 待做 |
+| F2 | Frontend:Settings › **Permissions** 唯讀矩陣頁(第 6 個 tab) | ✅ **完成** —— 按 controller 分組,34 row / 10 group,light + dark 驗;web test 85 不降 |
 | F3 | **Drift test**:glob `*.controller.ts` 自動列舉,code 改咗矩陣冇改 → test 紅 | ✅ **完成** —— `permissions.spec.ts` 10 test + snapshot(api 213 → **223**) |
+
+> **四項交付全部完成**,但 phase frontmatter 仍為 `in-progress` —— 未正式 closeout(retro / phase gate / BACKLOG sync 未填)。
+
+**F2 設計取態**:唯讀,**零 primary action** —— `@Roles` decorator 係唯一真相(ADR-0009 Decision 8.5),呢頁冇嘢改得,所以唔應該有 action。Badge 全部用既有 `BadgeTone`,零自創色(`unguarded`=danger / `m2m`=info / `public`·`authenticated`=warn / `roles`=neutral),守 H6。
+
+**403 gate 補驗(`d107c43`)**:扮 OPCO_IT 做**三重佐證**而非單一 status code —— ① `/me` 回 `role: "OPCO_IT"` + `opcoScope: RHK`(證 env 真生效)② `/admin/permissions` → 403 ③ **同一 session** `/license/ledger` → 200 且只見 RHK(證 403 係 role gate,唔係 session 壞咗)。還原後 ADMIN 200,34 route / unguarded=0 / m2m=1。
 
 **F1 五種標示**:`roles` / `public` / `m2m` / `authenticated` / `unguarded`。
 `unguarded` = 冇 `@Roles` 且唔喺 `REVIEWED_AUTHENTICATED` 白名單 —— 因為喺全域 guard 之下,「冇 `@Roles`」唔等於無保護,而係「任何已登入用戶可用」;真正風險係「**應該限 role 但漏咗**」。**白名單加一行 = 一個 security decision**。
