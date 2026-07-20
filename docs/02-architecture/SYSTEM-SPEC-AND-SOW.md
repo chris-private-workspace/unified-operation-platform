@@ -17,7 +17,7 @@
 > domain model 真相 → `apps/api/prisma/schema.prisma`;pending 工作真相 → `docs/01-planning/BACKLOG.md`。
 > 本文件把上述內容**整合成可交付形式**,並補上**經 code 實證嘅現況查證**。
 >
-> **查證基準**:commit `d107c43`(2026-07-20,branch `docs/audit-integration-planning`)。所有「已實作」陳述均經讀 source code 或執行測試確認。凡查證唔到嘅,一律標示 `未實作` / `planned` / `未驗證`,**唔以規劃文件嘅措辭當作已完成**。
+> **查證基準**:commit `4526b99`(2026-07-20,`main`)—— 即 PR #6(本文件)+ PR #7(ADR-0009 + W28 權限矩陣)合併之後嘅狀態。所有「已實作」陳述均經讀 source code 或執行測試確認。凡查證唔到嘅,一律標示 `未實作` / `planned` / `未驗證`,**唔以規劃文件嘅措辭當作已完成**。
 
 ---
 
@@ -775,7 +775,7 @@ Dev proxy:`/api` → `http://localhost:3100`(可用 `API_PROXY_TARGET` 覆寫,re
 | W18–W22 | 本地登入 → user 管理 → 密碼生命週期 → session hardening → 前端真 role | 2026-07-13 ~ 07-14 |
 | W23-A / W23-B | Ledger 手動管理(backend + audit)/ Assets inline edit | 2026-07-14 |
 | W24–W27 | ADR-0008 rollout 四階段:甲 inbound → 乙 outbound direct → 丙 n8n outbound → 丁 D365 納入 | 2026-07-15 |
-| **W28** | **權限矩陣 derive endpoint + drift test + 唯讀 UI**(audit rollout item 2) | 交付完成 2026-07-20;🚧 **待 closeout** |
+| **W28** | **權限矩陣 derive endpoint + drift test + 唯讀 UI**(audit rollout item 2) | 交付完成 2026-07-20,已併入 `main`(PR #7);🚧 **待 closeout** |
 
 ### 15.2 變更(Change)與缺陷(Bug)
 
@@ -916,9 +916,12 @@ Graph / ServiceNow **一律 mock**,唔打真 tenant。
 | E2 | `docs/architecture.md` §6 仍寫「下一步候選:(C)/(D),建議先 C」—— C 同 D 早已完成 |
 | E3 | `docs/setup.md` 狀態註記停喺 2026-07-09 W01,寫住 `apps/web` = placeholder |
 | E4 | DESIGN.md §11 Roadmap 仍把三大 UI 模組列為「🔮 Later」—— 實際已建 |
-| E5 | `docs/architecture.md` §9 仍寫「guard 層未建、controllers 現時 unguarded」—— 實際 AUTH-1~4 全鏈已完成 |
+| E5 | `docs/architecture.md` §9 仍寫「guard 層未建、controllers 現時 unguarded」—— 實際 AUTH-1~4 全鏈已完成,且 W28 已證實**零 unguarded** |
+| E6 | `docs/01-planning/BACKLOG.md` 個 `AUDIT-2` 仍標「🔵 進行中(W28 kickoff)」,但 F0–F3 四項交付已全部完成並併入 `main` —— **R7 未同步**(隨 W28 closeout 一併補) |
 
-> **建議**:E1–E5 皆屬 stale 敘述(規劃當時嘅措辭未隨進度更新),可一次過 doc-sync。內容決策本身冇錯,只係狀態描述落後。
+> **建議**:E1–E6 皆屬 stale 敘述(規劃當時嘅措辭未隨進度更新),可一次過 doc-sync。內容決策本身冇錯,只係狀態描述落後。
+>
+> **E1 / E2 / E5 已於 `4526b99` 逐條重新查證仍然成立** —— PR #7 冇掂 `architecture.md` / `setup.md` / `DESIGN.md`。
 >
 > **已於本次查證期間確認同步嘅項目**:`docs/adr/README.md` 對 ADR-0009 嘅狀態已更新為 `Accepted`(commit `81dc99b`),**無落差**。
 
@@ -978,7 +981,10 @@ Graph / ServiceNow **一律 mock**,唔打真 tenant。
 | F2 | Frontend:Settings › **Permissions** 唯讀矩陣頁(第 6 個 tab) | ✅ **完成** —— 按 controller 分組,34 row / 10 group,light + dark 驗;web test 85 不降 |
 | F3 | **Drift test**:glob `*.controller.ts` 自動列舉,code 改咗矩陣冇改 → test 紅 | ✅ **完成** —— `permissions.spec.ts` 10 test + snapshot(api 213 → **223**) |
 
-> **四項交付全部完成**,但 phase frontmatter 仍為 `in-progress` —— 未正式 closeout(retro / phase gate / BACKLOG sync 未填)。
+> **四項交付全部完成,並已併入 `main`(PR #7,merge commit `4526b99`)**,但 phase **未正式 closeout**:
+> `progress.md` frontmatter 仍為 `status: in-progress`;retro / phase gate 未填;
+> `BACKLOG.md` 個 `AUDIT-2` 仍標「🔵 進行中(W28 kickoff)」,未反映 F0–F3 已全部完成(R7 未同步)。
+> 即係話 **code 已經喺 main,但流程手續未收** —— 兩者狀態唔一致,closeout 時要一次過補齊。
 
 **F2 設計取態**:唯讀,**零 primary action** —— `@Roles` decorator 係唯一真相(ADR-0009 Decision 8.5),呢頁冇嘢改得,所以唔應該有 action。Badge 全部用既有 `BadgeTone`,零自創色(`unguarded`=danger / `m2m`=info / `public`·`authenticated`=warn / `roles`=neutral),守 H6。
 
@@ -1175,6 +1181,8 @@ jest 內 AppModule 起唔到 → F3 必須用 glob。
 | Phase / change / bug 流程 | `docs/01-planning/PROCESS.md` |
 | 架構決定記錄 | `docs/adr/` |
 | 風險 | `docs/01-planning/RISK_REGISTER.md` |
+| **Audit 現況 map + gap 分析**(ADR-0009 前置) | `docs/02-architecture/audit-and-integration-observability.md` |
+| **本文件**(系統規格暨交付範圍書) | `docs/02-architecture/SYSTEM-SPEC-AND-SOW.md`(+ `.docx`) |
 | 反覆「暫時唔做」 | `docs/01-planning/DEFERRED_REGISTER.md` |
 | 本地開發 setup | `docs/setup.md` |
 | Graph / ServiceNow 設定 | `docs/05-usage/INTEGRATION_SETUP.md` |
