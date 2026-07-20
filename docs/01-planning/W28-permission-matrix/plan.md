@@ -4,7 +4,7 @@ name: "權限矩陣 — 由 @Roles runtime derive + 唯讀 UI + drift 防護"
 sprint_week: W28
 start_date: 2026-07-20
 end_date: 2026-07-20          # planned, may slip with changelog log
-status: active                # draft | active | closed
+status: closed                # draft | active | closed
 spec_refs:
   - docs/adr/0009-platform-audit-trail.md Decision 8.5（權限矩陣 code-derive,唔起 permission table）
   - docs/02-architecture/audit-and-integration-observability.md §2.3（現況:冇任何地方記錄 role 做到咩）
