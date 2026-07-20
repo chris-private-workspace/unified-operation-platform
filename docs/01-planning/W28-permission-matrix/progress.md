@@ -124,12 +124,44 @@ derivePermissions(controllers: Function[]) → PermissionEntry[]   ← 純函數
 ### 📌 順帶發現(唔屬本 phase,唔改)
 `npm run lint` 有 **383 個 `Delete ␍`(CRLF)error**,全部散喺 4 個 W23-A 舊檔(`license/ledger-write.*` · `license/dto/ledger-write.dto.ts` · `license/license.module.ts`),同本 phase 改動無關。git 存 LF(`.gitattributes`)所以 CI 綠,屬本地 working-copy artifact(memory 早有記錄)。**按 §1.3 surgical 冇順手修**。本 phase 自己 5 個檔 lint exit 0。
 
+### F2 完成 —— Settings › Permissions(第 6 tab)
+
+`PermissionsPanel` 按 controller 分組(10 組 / 34 行)。**唯讀,零 primary action** —— `@Roles` 係唯一真相,呢頁冇嘢可以改。
+
+**live browser 實測**(dev-bypass ADMIN):
+
+| 驗證 | light | dark |
+|---|---|---|
+| 34 data row / 10 group / 6 個 tab | ✅ | ✅ |
+| `POST /requests/intake` → 「Machine key」+ `IntakeKeyGuard`(**唔係** Public) | ✅ | ✅ |
+| `GET /me` → 「Any signed-in」 | ✅ | — |
+| R4 註記在頁 | ✅ | ✅ |
+| 零 unguarded → 唔顯示 danger 句 | ✅ | — |
+| theme token swap | `dark` class on root · page bg `rgb(8,8,10)` · badge `rgb(16,31,57)`/`rgb(95,155,255)` · path = **Geist Mono** | ✅ |
+
+**ui-design 自檢**:DS-1 token-only ✅ · DS-2 唔 eyeball ✅ · DS-3 零 primary / 無新 accent ✅ · DS-4 light+dark ✅ · DS-5 path/method mono ✅ · DS-6 lucide stroke ✅ · DS-7 平面(1px border + surface tint)✅ · DS-8 狀態走 Badge semantic ✅ · DS-9 無新 motion ✅ · DS-10 短名詞 Sentence case ✅ · **DS-11 N/A**(prototype 無此畫面 —— 屬 H6 允許嘅「既有 primitive 砌新畫面」)· DS-12 N/A
+
+### 🔴 事故 —— F2 期間一度落錯 branch(已完全恢復,零損失)
+
+做 F2 途中,並行 session(Chris 另一個窗口寫規格書)`checkout` 咗新 branch `docs/system-spec-and-sow`,令我嘅 working tree 由 `docs/audit-integration-planning` 被切走。
+
+**點樣察覺**:system-reminder 顯示 `auth.module.ts` / `adr/README.md` / `BACKLOG.md` 內容**冇咗當日改動**,但 `git status` 又報 clean —— 兩者矛盾。冇當佢係 stale 快照,而係實查 `git log` / `git branch -v`。
+
+**實況**:HEAD 變成 `58417ff`(main 嘅 merge),之後 `ee3ce08`(並行 session)。我嘅 4 個 commit 完好保存喺 `docs/audit-integration-planning`(HEAD `a5126c7`),**一個都冇失**。F2 嘅未 commit 改動落咗喺錯 branch 嘅 working tree。
+
+**處理**:`git checkout docs/audit-integration-planning` —— 4 個未 commit 檔案全部 carry over(兩 branch 只有 docs 分歧,web 無衝突),F1 source 復現(`auth.module.ts` 3 處 `PermissionsController`)。
+
+**為何 F2 嘅 live 驗證仍然有效**:backend process 由 F1 commit 之後一直行緊(hot-reload 已載入 F1),所以 curl 200 同 browser 驗都係打真 F1 code —— 唔係因為 source 喺 working tree。
+
+**教訓**:多 session 並行改同一 repo 時,**`git status` clean 唔代表喺預期 branch**。任何 system-reminder 同 git 狀態矛盾,一律當「真有事」去查,唔好當顯示問題。
+
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
 | F0 spike | 0.5 | ~0.5 | 0 |
 | F1 | 3 | ~1.5 | −1.5(spike 已掃清未知) |
 | F3 | 1.5 | ~1 | −0.5 |
+| F2 | 2.5 | ~1.5 | −1(既有 panel pattern 可沿用) |
 
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |

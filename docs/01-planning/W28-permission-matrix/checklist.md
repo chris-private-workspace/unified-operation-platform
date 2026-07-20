@@ -29,15 +29,16 @@ last_updated: 2026-07-20
 
 ## F2 — 前端 Settings › Permissions
 
-- [ ] `api-types.ts` 加 `PermissionEntry` 型別
-- [ ] `queries.ts` 加 `usePermissions`
-- [ ] `components/settings/permissions-panel.tsx`:按 controller 分組矩陣表
-- [ ] `⚠️ UNGUARDED` = danger Badge · `m2m` = info Badge(沿用既有 Badge tone,唔自創色)
-- [ ] **R4 註記**:頁面明文寫「role 只係第一層;OPCO_IT 另有 per-OpCo row-level scope,本表唔表達」
-- [ ] `settings.tsx` 加第 6 tab(`ShieldCheck`)
-- [ ] 非 ADMIN → graceful restricted state(沿用 users-panel pattern)
-- [ ] **零 primary action**(唯讀頁)· token-only · lucide-only —— H6
-- [ ] browser 驗 light + dark —— G5
+- [x] `api-types.ts` 加 `PermissionEntry` + `AccessKind` 型別
+- [x] `queries.ts` 加 `usePermissions`(`retryUnless403` —— 403 係權威,唔重試)
+- [x] `components/settings/permissions-panel.tsx`:按 controller 分組矩陣表(10 組 / 34 行)
+- [x] `unguarded` = danger · `m2m` = info · `authenticated`/`public` = warn · `roles` = neutral(全部既有 `BadgeTone`,零自創色)
+- [x] **R4 註記**:頁面明文寫「呢張表答 *which role may call an endpoint*,唔表達 row-level scope —— OpCo IT 另受 backend 限制」
+- [x] `settings.tsx` 加第 6 tab(`ShieldCheck`)
+- [x] 非 ADMIN → graceful restricted state(沿用 users-panel / opcos-panel pattern)
+- [x] **零 primary action**(唯讀頁,Card 無 `action` prop)· token-only · lucide-only —— H6
+- [x] browser 驗 light + dark —— G5 ✅(light:34 行 / 10 組 / intake=「Machine key」+IntakeKeyGuard;dark:`dark` on root · page bg `rgb(8,8,10)` · badge token swap `rgb(16,31,57)`/`rgb(95,155,255)` · path = **Geist Mono**)
+- [x] 額外:零 `unguarded` 時唔顯示 danger 行;有 `unguarded` 時頂部出 danger 統計句
 
 ## F3 — Drift 防護 test(H5)
 
@@ -51,10 +52,11 @@ last_updated: 2026-07-20
 
 ## Verify
 
-- [ ] `cd apps/api && npm run build && npm test && npm run lint` 全綠(≥213 test)—— G6
-- [ ] `cd apps/web && npm run build && npm test && npm run lint` 全綠(≥85 test)—— G6
-- [ ] `git diff` 逐行核:**零** 現有 `@Roles` 被改 —— G7
-- [ ] 跑 `ui-design` skill 自檢(H6)
+- [x] `apps/api`:build ✅ exit 0 · test ✅ **223**(30 suites,1 snapshot)· lint ✅ **自己 5 個檔 exit 0** —— G6
+      ⚠️ 全 repo `npm run lint` 仍紅:**383 個 `Delete ␍`(CRLF)散喺 4 個 W23-A 舊檔**(`license/ledger-write.*` · `dto/ledger-write.dto.ts` · `license.module.ts`),**同本 phase 無關**;git 存 LF 故 CI 綠。按 §1.3 surgical **冇順手修** → 已登 BACKLOG E 區候選
+- [x] `apps/web`:build ✅ exit 0 · test ✅ **85** 不降 · lint ✅ exit 0 —— G6
+- [x] `git diff` 核:`opco.controller.ts` / `me.controller.ts` / `license.controller.ts` / `fulfilment/` **全部零 diff**(fails-before 兩處改動已還原乾淨)—— G7 ✅
+- [x] 跑 `ui-design` skill 自檢 —— DS-1~DS-10 全 ✅;**DS-11 = N/A**(prototype 無此畫面,屬「用既有 token + primitive 砌新畫面」,H6 允許唔使問);DS-12 N/A
 
 ---
 
