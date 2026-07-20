@@ -13,8 +13,9 @@ last_updated: 2026-07-20
 
 ## F0 — Gate(開工前)
 
-- [ ] Chris approve plan §9 三點(Q1 login_failed 記唔記 email · Q2 UI 位置 · Q3 F2 review 節奏)
-- [ ] plan.md status → `active`
+- [x] Chris approve plan §9 三點 —— Q1 **記 `metadata.emailAttempted`** · Q2 **獨立 `/audit` 頁 + sidebar**(偏離原建議)· Q3 **逐組 commit,做完三組先 review**
+- [x] plan.md status → `active`
+- [x] Q2 連鎖後果查證:prototype **無** audit 畫面 → `/audit` 屬 owner-approved 新畫面,F4 須補 `design-system.md`(plan §9.1)
 
 ## F1 — Schema + 白名單基建
 
@@ -62,15 +63,17 @@ last_updated: 2026-07-20
 - [ ] live curl 驗非 ADMIN → **403**(跟 W28 三重驗證做法:`/me` 確認身分 → 403 → 同身分下一個應該成功嘅 endpoint 做對照)—— G5
 - [ ] 確認 W28 `permissions.spec.ts` unguarded test 自動覆蓋此新 endpoint(唔使新增)
 
-## F4 — 前端 Audit UI
+## F4 — 前端 Audit UI（獨立 `/audit` 頁,Q2 拍板)
 
 - [ ] `api-types.ts` 加 `AuditEntry` + 篩選型別
 - [ ] `queries.ts` 加 `useAuditLog`(`retryUnless403`)
-- [ ] `components/settings/audit-panel.tsx`:時間序表 + 篩選 + 分頁 + before→after 展開
-- [ ] `settings.tsx` 加第 7 tab
-- [ ] 非 ADMIN → graceful restricted state
+- [ ] `pages/audit.tsx`:時間序表 + 篩選 + 分頁 + before→after 展開
+- [ ] **新 route `/audit`** 註冊
+- [ ] **sidebar 加 Administration 區項目**,用 `canSeeAdminNav` proactive 隱藏(AUTH-3b pattern)
+- [ ] 直接開 URL 時 graceful restricted state(**後端 403 先係真權威**,前端隱藏只係 UX)
 - [ ] **零 primary action**(唯讀)· token-only · lucide-only —— H6
 - [ ] browser 驗 light + dark —— G6
+- [ ] **🔴 更新 `docs/02-architecture/design-system.md`** —— 記低 `/audit` 係 prototype 以外、owner-approved 嘅新畫面 + 新 sidebar 項目。**唔補嘅話將來 fidelity audit 會報成 drift**(plan §9.1)
 
 ## Verify
 

@@ -44,14 +44,35 @@ W28 係**零行為改動**(純 derive 現有 `@Roles`)。本 phase **會 additiv
 
 ## Day 1 — 2026-07-20
 
-### Done
-- _(未開始 — 等 approve)_
+### Decisions / Open-Questions Resolved（R4)
 
-### Decisions / Open-Questions Resolved
-- _(待填 — Q1/Q2/Q3)_
+Chris 拍板 plan §9 三點 → plan status `draft` → **`active`**,R1 gate 解除。
+
+| # | 決定 | 備註 |
+|---|---|---|
+| **Q1** | **記 `metadata.emailAttempted`** | 偵測撞庫 / 鎖戶排查需要。**全 phase 唯一主動寫 PII 落 `metadata` 嘅 case**,owner 明確知情 |
+| **Q2** | **獨立 `/audit` 頁 + sidebar 項目** | **偏離我原建議**(我建議 Settings 第 7 tab)→ 觸發連鎖後果,見下 |
+| **Q3** | **逐組 commit,做完三組先 review** | 中途任何一組令既有 test 紅 → 即停報告 |
+
+### 🔎 Q2 連鎖後果 —— 查證後發現要補 SSOT
+
+拍板後即刻 grep `design_handoff_licenseops/prototype/`(`full-console.html` + `IT Ops Platform.dc.html`):
+
+> **prototype 冇 audit / activity log 畫面,亦冇對應 sidebar 項目。** 全份 handoff 得 `only auditor` 一個 role 描述字眼,唔係畫面。
+
+所以 `/audit` = **prototype 以外嘅新畫面 + 新導航項目**。H6 判斷:
+
+- **唔屬 violation** —— owner 已 approve 方向;實作只組合既有 primitive(sidebar item / Card / Badge / 既有表格 pattern),唔加新 token / accent / 元件類型。H6 明文允許「用既有 token 砌新畫面」。
+- **但必須補 SSOT** —— F4 要更新 `design-system.md` 記低呢個係 owner-approved 嘅 prototype 外新畫面。**唔補嘅話,將來 fidelity audit 會把佢報成 drift** —— 同當年 Avatar gradient 一模一樣嘅情況(嗰次係 handoff 有但 design-system 冇寫,今次係 handoff 冇但實作有,方向相反、後果一樣)。
+
+已同步入 plan §9.1 + §7 changelog + checklist F4。
+
+### Done
+- F0 gate 通過(拍板 + status flip + Q2 查證)
+- _(F1 開始中)_
 
 ### Blockers
-- **plan status=draft,等 Chris approve**(R1 gate,刻意唔開工)
+- 無(R1 gate 已解除)
 
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |

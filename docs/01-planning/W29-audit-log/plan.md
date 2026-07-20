@@ -4,7 +4,7 @@ name: "通用 AuditLog 落地 — 白名單 before/after + 13 個事件覆蓋 + 
 sprint_week: W29
 start_date: 2026-07-20
 end_date: 2026-07-22          # planned, may slip with changelog log
-status: draft                 # draft | active | closed — 待 Chris approve §2.6 + §4 R1 先 flip active
+status: active                # draft | active | closed — Chris 2026-07-20 approve §9 三點後 flip
 spec_refs:
   - docs/adr/0009-platform-audit-trail.md（全份 — Decision 3/4/5/6/7/8）
   - docs/02-architecture/audit-and-integration-observability.md §2.2（零留痕清單）· §5（model 設計）
@@ -75,12 +75,15 @@ ADR-0009 已 Accepted,本 phase 落實 rollout **item 3**:把 `docs/02-architect
   - W28 嘅 `permissions.spec.ts` unguarded test 會自動覆蓋呢個新 endpoint(冇 `@Roles` 就會紅)
 - **Effort estimate**:2.5h
 
-### F4 — 前端 Audit UI
+### F4 — 前端 Audit UI（獨立 `/audit` 頁,Q2 拍板)
 
 - **Spec ref**:`docs/02-architecture/design-system.md`(H6)
-- **內容**:Settings 第 7 個 tab「Audit log」—— 時間序表 + 篩選(actor / action / targetType / 日期)+ 分頁 + before→after 展開
-- **Acceptance criteria**:token-only · 唯讀故**零 primary action** · lucide-only · light + dark · 非 ADMIN restricted state
-- **Effort estimate**:4h
+- **內容**:**獨立 route `/audit` + sidebar 項目**(Administration 區,同 admin nav 一致嘅 gating)—— 時間序表 + 篩選(actor / action / targetType / 日期)+ 分頁 + before→after 展開
+- **Acceptance criteria**:
+  - token-only · 唯讀故**零 primary action** · lucide-only · light + dark
+  - 非 ADMIN:sidebar 項目 **proactive 隱藏**(沿用 `canSeeAdminNav` pattern,AUTH-3b)+ 直接開 URL 時 graceful restricted state(**後端 403 先係真權威**)
+  - **更新 `design-system.md`** 記低呢個係 prototype 以外、owner-approved 嘅新畫面(§9.1)
+- **Effort estimate**:4h(+0.5h SSOT 更新)
 - **注意**:Overview 嘅 activity feed(BACKLOG `FE-activity`)**唔喺本 phase** —— 佢係另一個 candidate,本 phase 只解封佢。
 
 ### F5 — H4 / H5 test
@@ -131,6 +134,8 @@ ADR-0009 已 Accepted,本 phase 落實 rollout **item 3**:把 `docs/02-architect
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-20 | Initial plan,status=**draft**(未 active) | 待 Chris approve §9 三點 | — |
+| 2026-07-20 | **§9 三點拍板 → status `draft` → `active`** | Q1 記 `metadata.emailAttempted` · **Q2 改為獨立 `/audit` 頁 + sidebar(偏離原建議)** · Q3 逐組 commit 做完三組先 review | Chris Lai |
+| 2026-07-20 | **F4 scope 改**:Settings tab → 獨立 route + sidebar 項目;新增「更新 `design-system.md`」為 F4 交付物 | Q2 拍板連鎖後果;查證 prototype **無** audit 畫面,故屬 owner-approved 新畫面,按 H6 必須補 SSOT 否則將來 fidelity audit 會報成 drift | Chris Lai(方向)/ AI(H6 判斷) |
 
 ## 8. 對 ADR-0009 嘅一處收緊提案（要 Chris 知悉）
 
@@ -140,13 +145,24 @@ ADR-0009 已 Accepted,本 phase 落實 rollout **item 3**:把 `docs/02-architect
 
 呢個係**收緊**唔係偏離(ADR 冇容許過 metadata 自由塞),所以我當佢係實作細節寫入 plan;但因涉 H4 邊界,**closeout 時建議喺 ADR-0009 補一句註**,令將來睇 ADR 嘅人唔會以為 metadata 冇管。
 
-## 9. 開工前要 Chris 拍板嘅三點
+## 9. 拍板結果（Chris,2026-07-20)
 
-| # | 問題 | 我嘅建議 |
+| # | 問題 | 決定 |
 |---|---|---|
-| **Q1** | **`auth.login_failed` 記唔記嘗試過嘅 email?** 打錯 email 時根本冇對應 user,`targetId` 會係 unknown。記 email 先查得到「邊個帳號被撞」,但呢個係**主動寫 PII 入 audit**,而且對象可能唔係我哋嘅用戶。 | **記**,放 `metadata.emailAttempted`。理由:偵測撞庫 / 鎖戶排查唔記就做唔到,而 P-B 已允許 audit 含 PII。但要你明確知情 —— 呢個係 §8 提案入面唯一會寫 PII 落 metadata 嘅 case。 |
-| **Q2** | **Audit UI 放 Settings 第 7 tab,定獨立 sidebar 項目?** | **Settings tab**(同 Permissions 一致,都係 admin 工具,唔改導航故唔觸及 H6 prototype 對照)。若你想要獨立 `/audit` 頁,要先確認 prototype 有無對應畫面。 |
-| **Q3** | **F2 三組要唔要一次過做完先 review,定逐組畀你睇?** | **逐組 commit,但一次過做完先叫你 review**(除非中途有組令既有 test 紅 → 即停報告)。R1 係本 phase 最高風險,分組就係為咗令迴歸容易定位。 |
+| **Q1** | `auth.login_failed` 記唔記嘗試過嘅 email | ✅ **記入 `metadata.emailAttempted`** —— 偵測撞庫 / 鎖戶排查需要。**全 phase 唯一主動寫 PII 落 `metadata` 嘅 case**,owner 已明確知情 |
+| **Q2** | Audit UI 位置 | ✅ **獨立 `/audit` 頁 + sidebar 項目**(**偏離我原建議嘅 Settings tab**)→ 連鎖後果見 §9.1 |
+| **Q3** | F2 review 節奏 | ✅ **逐組 commit,做完三組先 review**;中途任何一組令既有 test 紅 → **即停報告**,唔繼續 |
+
+### 9.1 Q2 嘅連鎖後果（拍板後查證補充)
+
+Grep 過 `design_handoff_licenseops/prototype/`(`full-console.html` + `IT Ops Platform.dc.html`)—— **prototype 冇 audit / activity log 畫面,亦冇對應 sidebar 項目**。全份 handoff 得 `only auditor` 一個 role 描述字眼,唔係畫面。
+
+所以獨立 `/audit` 頁 = **prototype 以外嘅新畫面 + 新導航項目**。按 H6 判斷:
+
+- **唔屬 violation** —— owner 已明確 approve 方向;實作只會**組合既有 primitive**(sidebar item / Card / Badge / 既有表格 pattern),**唔加新 token、唔加新 accent、唔加新元件類型**。H6 明文允許「用既有 token 砌新畫面」。
+- **但必須補 SSOT** —— F4 完成時要更新 `docs/02-architecture/design-system.md`,記低「`/audit` 係 prototype 以外、owner-approved 嘅新畫面 + 新 sidebar 項目」。**唔補嘅話,將來 fidelity audit 會把佢報成 drift**(同當年 Avatar gradient 一模一樣嘅情況)。
+
+已加入 checklist F4。
 
 ---
 
