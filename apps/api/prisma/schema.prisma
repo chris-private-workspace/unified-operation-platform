@@ -54,6 +54,7 @@ model AppUser {
   events          RequestEvent[]
   refreshTokens   RefreshToken[] // AUTH-4c-B rotating refresh sessions (local accounts)
   ledgerAdjustments LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
+  auditLogs       AuditLog[] // platform audit trail entries this operator caused (ADR-0009)
 }
 
 // ── RefreshToken (AUTH-4c-B / ADR-0006 §7) — rotating refresh session for the
@@ -295,4 +296,43 @@ model RequestEvent {
   createdAt  DateTime         @default(now())
 
   @@index([requestId, createdAt])
+}
+
+// ── Platform audit trail (ADR-0009) ──────────────────────────
+// Covers every write the two domain-specific records do NOT. RequestEvent owns
+// request lifecycle; LedgerAdjustment owns per-cell ledger edits — both stay
+// untouched (Decision 1: coexist, never replace). What lands here: user CRUD /
+// role changes / password resets, login outcomes, OpCo + catalog curation,
+// allocation import, drift resolution.
+//
+// H4 (Decision 5): `before`/`after` carry WHITELISTED fields only — see
+// audit-fields.ts. passwordHash / tokenHash are permanently blacklisted, and
+// `metadata` is key-restricted too so it cannot become an escape hatch around
+// the whitelist.
+//
+// Decision 8.1: written inside the CALLER's $transaction. A failed operation
+// leaves no audit row, and a failed audit fails the operation — deliberate:
+// "done but unrecorded" is worse than "not done".
+//
+// PII (Decision 7, option P-B): actorId/targetId are ids, but whitelisted
+// before/after MAY contain email / displayName because those are precisely the
+// thing being changed. Consequence: read access stays ADMIN-only, and any
+// future retention policy must cover this table.
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String? // AppUser id; null = system / cron / m2m
+  actor      AppUser? @relation(fields: [actorId], references: [id])
+  actorType  String   @default("user") // 'user' | 'system' | 'm2m'
+  action     String // 'user.role_change' | 'opco.update' | … (AUDIT_ACTIONS)
+  targetType String // 'AppUser' | 'Opco' | 'SkuCatalog' | …
+  targetId   String
+  before     Json? // whitelisted fields only
+  after      Json? // whitelisted fields only
+  metadata   Json? // restricted key set only
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
 }

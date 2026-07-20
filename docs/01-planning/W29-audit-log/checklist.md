@@ -19,14 +19,17 @@ last_updated: 2026-07-20
 
 ## F1 — Schema + 白名單基建
 
-- [ ] `schema.prisma` 加 `AuditLog` model(**additive**:`actorId?` / `actorType` / `action` / `targetType` / `targetId` / `before?` / `after?` / `metadata?` / `createdAt` + 三個 index)
-- [ ] migration 生成 + apply,`npx prisma validate` 過
-- [ ] `audit-fields.ts`:每個 `targetType` 一張**明文 allow-list** + 永久 blacklist(`passwordHash` / `tokenHash`)
-- [ ] `pickAuditFields(targetType, obj)` 純函數 —— 白名單外一律唔入
-- [ ] **🔴 H4 test 先行**(寫喺 hook 之前):餵含 `passwordHash`/`tokenHash` 嘅完整 `AppUser` → assert 結果**唔含**任何 secret —— G2
-- [ ] `audit.service.ts`:`log(tx, entry)` **接受 Prisma transaction client**(Decision 8.1)
-- [ ] `metadata` 同樣受固定 key set 約束(plan §8 收緊提案)—— 唔可以做繞過白名單嘅逃生門
-- [ ] 既有 **223 test 不降** —— G1
+- [x] `schema.prisma` 加 `AuditLog` model(**additive**;`AppUser` 只加 relation field,無新 column)· `prisma validate` ✅
+- [x] migration `add_audit_log` 生成 + apply —— **live DB 實查**:10 欄 + 3 個 index 齊(`targetType+targetId+createdAt` / `actorId+createdAt` / `action+createdAt`),`before`/`after`/`metadata` = `jsonb`
+- [x] `audit-fields.ts`:5 個 `targetType` 明文 allow-list(`AppUser` / `Opco` / `SkuCatalog` / `DriftAlert` / `AllocationImport`)+ 永久 blacklist
+- [x] `pickAuditFields()` 純函數 —— 白名單外一律唔入;**blacklist 贏過 whitelist**(順序寫死,加咗註唔准反轉)
+- [x] **🔴 H4 test 先行 —— 13 條全綠**(G2):餵完整 `AppUser`(含 `passwordHash: '...SECRET_DO_NOT_LEAK'`)→ assert 序列化結果**唔含**該字串;逐個 blacklist key 驗;**白名單交叉驗**(任何 whitelist 都唔可以含 blacklist key)
+- [x] **反向 regression**:`mustChangePassword` **唔會**被誤殺 —— blacklist 刻意用「精確名 + `*Hash`/`*Secret` 後綴」而非 substring match `password`
+- [x] `audit.service.ts`:`log(tx, entry)` + `logChange(tx, entry)` **接受 `Prisma.TransactionClient`**(Decision 8.1);**caller 傳原始 entity,白名單喺 service 內做** —— 冇 call site 可以繞過 H4 邊界
+- [x] `logChange` 只存**變咗嘅欄**;no-op update **唔寫任何 row**(return false)
+- [x] `metadata` 受固定 key set 約束(`reason`/`correlationId`/`source`/`emailAttempted`)—— 專門 test 證實 `requestBody`/`ip`/`passwordHash` 全部被丟棄
+- [x] `AuditModule` **@Global**(同 `PrismaModule` 一致)—— audit 橫跨所有 write module,逐個改 imports 只會多觸碰無關檔案(§1.3)
+- [x] 既有 test 不降:**223 → 236**(+13,31 suites)· build 0 · lint 0 —— G1
 
 ## F2a — identity 事件（user-admin.service.ts）
 

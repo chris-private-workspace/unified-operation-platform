@@ -68,8 +68,34 @@ Chris 拍板 plan §9 三點 → plan status `draft` → **`active`**,R1 gate �
 已同步入 plan §9.1 + §7 changelog + checklist F4。
 
 ### Done
-- F0 gate 通過(拍板 + status flip + Q2 查證)
-- _(F1 開始中)_
+
+**F0 gate 通過**(拍板 + status flip + Q2 prototype 查證)。
+
+**F1 完成 —— schema + 白名單基建 + AuditService。**
+
+跟 plan「**先有網,再落刀**」:H4 test 喺任何 service hook 之前就寫好並綠。
+
+| 項目 | 結果 |
+|---|---|
+| `AuditLog` model | additive(`AppUser` 只加 relation field,**無新 column**)· `prisma validate` ✅ |
+| migration `add_audit_log` | apply 成功 · **live DB 實查**:10 欄 + 3 index 齊,`before`/`after`/`metadata` = `jsonb` |
+| H4 test | **13 條全綠** |
+| 全 api test | **223 → 236**(+13),31 suites · build 0 · lint 0 |
+
+**H4 邊界嘅三層設計**(G2 硬紅線):
+
+1. **Allow-list 而非 deny-list** —— 冇人列過嘅欄位永遠唔會寫入。日後有人喺 Prisma model 加 column,唔會靜靜開始洩漏。
+2. **永久 blacklist 覆蓋 whitelist** —— 即使有人手誤把 secret 加入白名單都擋得住。順序寫死喺 code 並加註「唔准反轉」。
+3. **白名單交叉驗 test** —— 專門一條 test 掃勻每個 whitelist,assert 冇一個 key 中 blacklist。
+
+**一個容易寫錯嘅位**(已加 regression test):blacklist 若用 substring match `password`,就會**誤殺 `mustChangePassword`** —— 佢係合法審計欄位。所以規則係「精確名 + `*Hash` / `*Secret` 後綴」,唔係 substring。
+
+**設計決定**:
+- `log()` / `logChange()` 收 **原始 entity**,白名單喺 service 內部做 —— 咁樣冇任何 call site 可以自己砌 payload 繞過 H4 邊界。
+- `logChange()` 只存**變咗嘅欄**,no-op update **唔寫 row**(唔想 audit 出現一條「乜都冇改」嘅紀錄)。
+- `AuditModule` 用 **@Global**(同 `PrismaModule` 一致):audit 橫跨 identity / OpCo / catalog / reconcile,逐個 module 加 imports 係純 churn,而且每次編輯都係一次碰到無關嘢嘅機會(§1.3)。
+
+**環境**:`prisma generate` 撞到 `EPERM`(backend process 鎖住 query engine DLL)→ 停 backend → generate → build → test → 重起。已回復,`/docs/api` 200。
 
 ### Blockers
 - 無(R1 gate 已解除)
