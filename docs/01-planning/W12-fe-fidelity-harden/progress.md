@@ -1,6 +1,6 @@
 ---
 phase: W12-fe-fidelity-harden
-status: active
+status: closed        # plan 已 closed；honest gap 三項另列 BACKLOG（2026-07-20 status 回填）
 ---
 
 # W12 — FE fidelity audit + harden — Progress

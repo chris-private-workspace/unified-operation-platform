@@ -1,6 +1,6 @@
 ---
 phase: W26-request-n8n-outbound
-status: active
+status: closed        # plan 已 closed；CONTRACT-OUTBOUND 仍 representative（待 live lock），另行追蹤（2026-07-20 回填）
 ---
 
 # W26 Phase 丙 — Progress

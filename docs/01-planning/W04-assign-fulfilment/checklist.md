@@ -47,7 +47,7 @@ last_updated: 2026-07-09
 - [x] `progress.md` retro section written
 - [x] `progress.md` frontmatter status flipped to `closed`
 - [x] 下一個 phase（FE-scaffold）kickoff trigger noted in retro
-- [ ] **發現（非本 phase 修）**:`GraphService.assignLicense` log 咗 UPN（PII）—— pre-existing W01 integration code,H4 concern,已 flag 俾 Chris（BUG 候選,見 retro）
+- [x] **發現（非本 phase 修）**:`GraphService.assignLicense` log 咗 UPN（PII）—— pre-existing W01 integration code,H4 concern,已 flag 俾 Chris（BUG 候選,見 retro）→ **已由 BUG-001 修復 ✅**（fix + regression test,2026-07-09）;2026-07-20 補勾
 
 ---
 

@@ -5,7 +5,7 @@ sprint_week: W06
 backlog_id: FE-1
 start_date: 2026-07-09
 end_date: 2026-07-16          # planned, may slip with changelog log
-status: active               # draft | active | closed
+status: closed               # draft | active | closed — progress closed + checklist complete（2026-07-20 status 回填）
 spec_refs:
   - docs/02-architecture/design-system.md（設計系統 SSOT + anti-drift）
   - design_handoff_licenseops/prototype/full-console.html（Overview + Assets 視覺真相 — browser render 抽 section）

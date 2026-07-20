@@ -1,8 +1,8 @@
 ---
 bug_id: BUG-001
 report_ref: ./report.md
-status: verifying    # investigating | fixing | verifying | done
-last_updated: 2026-07-09
+status: done         # investigating | fixing | verifying | done — fix + regression test 已驗（report done；2026-07-20 status 回填）
+last_updated: 2026-07-20
 ---
 
 # BUG-001 — Checklist

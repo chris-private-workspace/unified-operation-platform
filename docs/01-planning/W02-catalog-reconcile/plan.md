@@ -4,7 +4,7 @@ name: "Module C — SKU Catalog 字典 + 總量層對帳 / drift"
 sprint_week: W02
 start_date: 2026-07-09
 end_date: 2026-07-16          # planned, may slip with changelog log
-status: active               # draft | active | closed
+status: closed               # draft | active | closed — progress closed + checklist complete（2026-07-20 status 回填）
 spec_refs:
   - docs/02-architecture/licenseops/DESIGN.md §5 State 模型 & Reconciliation
   - docs/02-architecture/licenseops/DESIGN.md §6 Domain Model

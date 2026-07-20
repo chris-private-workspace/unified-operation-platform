@@ -1,6 +1,6 @@
 ---
 phase: W11-auth-opco-scope
-status: active
+status: closed        # AUTH-3b 已於 W22 完成，殘留真 SSO e2e 歸 W10/AUTH-2b（2026-07-20 回填）
 ---
 
 # W11（AUTH-3a）— Checklist（daily tick）

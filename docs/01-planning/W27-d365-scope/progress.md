@@ -1,6 +1,6 @@
 ---
 phase: W27-d365-scope
-status: active
+status: closed        # plan 已 closed；真數 D365 curation = deploy-time ops（CURATION-D365.md runbook）（2026-07-20 回填）
 ---
 
 # W27 Phase 丁 — Progress

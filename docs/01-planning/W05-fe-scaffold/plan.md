@@ -4,7 +4,7 @@ name: "前端 scaffold — apps/web app shell + token/theme 基建"
 sprint_week: W05
 start_date: 2026-07-09
 end_date: 2026-07-16          # planned, may slip with changelog log
-status: active               # draft | active | closed
+status: closed               # draft | active | closed — progress closed + checklist complete（2026-07-20 status 回填）
 spec_refs:
   - docs/02-architecture/design-system.md（設計系統 SSOT + anti-drift）
   - design_handoff_licenseops/design-system/styles.css（token 引入真相）

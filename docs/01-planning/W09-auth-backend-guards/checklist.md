@@ -1,6 +1,6 @@
 ---
 phase: W09-auth-backend-guards
-status: active
+status: closed        # plan 已 closed（2026-07-20 status 回填）
 ---
 
 # W09（AUTH-1）— Checklist（daily tick）

@@ -1,6 +1,6 @@
 ---
 phase: W08-fe-drift-harden
-status: active
+status: closed        # plan 已 closed（2026-07-20 status 回填）
 ---
 
 # W08（FE-3）— Checklist（daily tick）

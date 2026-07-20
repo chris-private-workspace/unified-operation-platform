@@ -4,7 +4,7 @@ name: "Module D-1 — Request 生命週期骨架（intake → triage → stage �
 sprint_week: W03
 start_date: 2026-07-09
 end_date: 2026-07-16          # planned, may slip with changelog log
-status: active               # draft | active | closed
+status: closed               # draft | active | closed — progress closed + checklist complete（2026-07-20 status 回填）
 spec_refs:
   - docs/02-architecture/licenseops/DESIGN.md §6 Domain Model（Request / RequestLineItem / RequestEvent）
   - docs/02-architecture/licenseops/DESIGN.md §7 Request 生命週期
