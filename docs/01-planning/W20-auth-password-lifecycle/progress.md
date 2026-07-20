@@ -1,6 +1,6 @@
 ---
 phase: W20-auth-password-lifecycle
-status: active
+status: closed        # plan + checklist 已 closed；4c-C（email reset）另列 deferred（2026-07-20 status 回填）
 ---
 
 # W20 — AUTH-4c-A — Progress

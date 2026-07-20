@@ -89,17 +89,20 @@ Chris 手測發現左側 sidemenu 冇「OpCo 設定」入口。查證結論（co
 > ⚠️ **D1 連鎖後果（flag,§7 changelog）**：D1 放寬至 REGIONAL 後,REGIONAL 亦需**讀** rich OpCo 清單先填到管理面板,但既有 `GET /admin/opcos`（user-admin）係 ADMIN-only。故 D4「GET 留 user-admin 不動」與 D1 相衝 → 決議把 `GET /admin/opcos` **一併搬入 `OpcoAdminController`**（路徑不變、前端 hook 零改,只後端擁有權移動 + role 放寬 + DTO additive）。此為 D1 的必然結果,非額外 scope。
 
 ## 3. Acceptance Criteria
-- [ ] `GET /admin/opcos`（`@Roles(ADMIN, REGIONAL)`）回 rich 清單;`?includeInactive` 預設 false（active-only）、true 見 inactive;OPCO_IT → 403
-- [ ] `POST /admin/opcos`（`@Roles(ADMIN, REGIONAL)`）建立成功;OPCO_IT → 403;重複 code → 409
-- [ ] `PATCH /admin/opcos/:id`（`@Roles(ADMIN, REGIONAL)`）只改 displayName/company/costCenter/active;`code` 不受影響（test 實證）;unknown id → 404
-- [ ] AUTH-4b relocation：user-admin `@Get('opcos')` 移除後 user-scope 下拉仍 work（同路徑）;既有 test 移轉不降
-- [ ] 空 costCenter 字串 → null;過長 → 400;缺必填（code/displayName/company）→ 400
-- [ ] deactivate（active=false）成功,OpCo 從 active 讀取（picker / by-opco）消失,歷史列保留
-- [ ] `opco.service.spec` 新增 test 全綠;`apps/api` 既有 test 不降
-- [ ] 前端 settings 出現 OpCos tab → Add OpCo 建立 → 表即時反映 + toast;Edit 改欄 → 反映;`code` 於 Edit 唯讀
-- [ ] `cd apps/api && npm run build && npm test` 綠;`cd apps/web && npm run build && npm test` 綠;兩邊 lint clean（changed files）
-- [ ] `ui-design` 自檢：token-only、一 view 一 primary（Add OpCo / dialog Save）、lucide Building2、light+dark
-- [ ] 每行改動 trace 得返本 spec §2（§1.3 surgical）
+
+> 驗收結果見 `progress.md` Day 1 + Closeout（2026-07-16）。live curl 於 3100（dev-bypass=ADMIN）實跑。
+
+- [x] `GET /admin/opcos`（`@Roles(ADMIN, REGIONAL)`）回 rich 清單;`?includeInactive` 預設 false（active-only）、true 見 inactive;OPCO_IT → 403 —— GET 200 + rich（23 opco 含 company/costCenter）✅ live、includeInactive 對照 ✅ live；**OPCO_IT 403 由 guard config 保證,未 live 試**
+- [x] `POST /admin/opcos`（`@Roles(ADMIN, REGIONAL)`）建立成功;OPCO_IT → 403;重複 code → 409 —— 201 ✅ / 409 ✅ live；**OPCO_IT 403 同上，未 live 試**
+- [x] `PATCH /admin/opcos/:id`（`@Roles(ADMIN, REGIONAL)`）只改 displayName/company/costCenter/active;`code` 不受影響（test 實證）;unknown id → 404 —— 200 ✅、送 `code:"HACKED"` 被 whitelist strip → code 不變 ✅ live、404 ✅ live
+- [x] AUTH-4b relocation：user-admin `@Get('opcos')` 移除後 user-scope 下拉仍 work（同路徑）;既有 test 移轉不降 —— `GET /admin/opcos` 同路徑 200 ✅ live（下拉所需 id/code/displayName 齊）；api 213 test 綠；**user-admin 原無 `listOpcos` 專屬 test 故無需移轉**（grep 實證）；下拉 UI 本身未 browser 手測
+- [x] 空 costCenter 字串 → null;過長 → 400;缺必填（code/displayName/company）→ 400 —— `"   "`→null ✅ live、缺 company → 400 ✅ live（`MaxLength` 由 DTO 保證，過長未單獨 live 試）
+- [x] deactivate（active=false）成功,OpCo 從 active 讀取（picker / by-opco）消失,歷史列保留 —— 200 ✅；picker `/opcos` + admin active-default 均濾走、`?includeInactive` 見 `active:false` ✅ live
+- [x] `opco.service.spec` 新增 test 全綠;`apps/api` 既有 test 不降 —— 205 → **213**（+8）
+- [ ] 前端 settings 出現 OpCos tab → Add OpCo 建立 → 表即時反映 + toast;Edit 改欄 → 反映;`code` 於 Edit 唯讀 —— ⏳ **待 Chris browser 手測**（build 過＝結構渲染 OK，後端全由 curl 證；AI 無法登入 web，H7 不虛報）
+- [x] `cd apps/api && npm run build && npm test` 綠;`cd apps/web && npm run build && npm test` 綠;兩邊 lint clean（changed files）
+- [x] `ui-design` 自檢：token-only、一 view 一 primary（Add OpCo / dialog Save）、lucide Building2、light+dark —— 靜態自檢 ✅（零 hex、Badge semantic、code/costCenter mono、TH/TD 沿 users-panel）；**light+dark 實 render 未做**，隨上一項待手測
+- [x] 每行改動 trace 得返本 spec §2（§1.3 surgical）
 
 ## 4. Risks
 | # | Risk | Likelihood | Impact | Mitigation |

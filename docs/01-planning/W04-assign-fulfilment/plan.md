@@ -4,7 +4,7 @@ name: "Module D-2 — 履行動作（sync gate → assign → ledger → 回寫 
 sprint_week: W04
 start_date: 2026-07-09
 end_date: 2026-07-16          # planned, may slip with changelog log
-status: active               # draft | active | closed
+status: closed               # draft | active | closed — progress closed + checklist complete（2026-07-20 status 回填）
 spec_refs:
   - docs/02-architecture/licenseops/DESIGN.md §5 State 模型 & Reconciliation（ledger assignedQuantity）
   - docs/02-architecture/licenseops/DESIGN.md §7 Request 生命週期（→ASSIGNED / sync gate）

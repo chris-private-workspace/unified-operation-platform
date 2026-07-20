@@ -61,13 +61,16 @@ CH-002 fidelity audit 期間 Chris 發現 `/catalog` 個 Edit 掣一直 **disabl
 - `businessAlias` 編輯**唔改** allocation-import / reconciliation 既有邏輯本身（只係令其 input 可經 UI 設定）。
 
 ## 3. Acceptance Criteria
-- [ ] `PATCH /license/catalog/:id` 存在,`@Roles(ADMIN, REGIONAL)`;OPCO_IT 呼叫 → 403
-- [ ] 只更新 alias / category / isBaseLicense;system-owned 欄（skuId/partNumber/displayName/active）**不受影響**（test 實證）
-- [ ] unknown id → 404;空 alias/category 字串 → null;過長 → 400
-- [ ] `catalog.service.spec` 新增 test 全綠;`apps/api` 既有 test 不降
-- [ ] 前端 Edit 掣可用 → dialog 改 3 欄 → save → 表即時反映 + toast;system-owned 欄唯讀
-- [ ] `cd apps/api && npm run build && npm test` 綠;`cd apps/web && npm run build && npm test` 綠;兩邊 lint clean（changed files）
-- [ ] 每行改動 trace 得返本 spec §2（§1.3 surgical）
+
+> 驗收結果見 `progress.md` Closeout（2026-07-16）。live curl 於 3100 重啟後以 dev-bypass=ADMIN 實跑。
+
+- [x] `PATCH /license/catalog/:id` 存在,`@Roles(ADMIN, REGIONAL)`;OPCO_IT 呼叫 → 403 —— endpoint live 200 ✅；**OPCO_IT 403 由 class `@Roles(ADMIN,REGIONAL)` guard config 保證,未 live 試**（需換 `AUTH_DEV_USER_EMAIL` env）
+- [x] 只更新 alias / category / isBaseLicense;system-owned 欄（skuId/partNumber/displayName/active）**不受影響**（test 實證）—— unit test + live curl 雙證（skuId/DESKLESSPACK/Office 365 F3 不變）
+- [x] unknown id → 404;空 alias/category 字串 → null;過長 → 400 —— 404 ✅ live、空→null ✅ test、400 ✅ live（非法型別；`MaxLength` 由 DTO 保證，過長未單獨 live 試）
+- [x] `catalog.service.spec` 新增 test 全綠;`apps/api` 既有 test 不降 —— 201 → **205**（+4）
+- [ ] 前端 Edit 掣可用 → dialog 改 3 欄 → save → 表即時反映 + toast;system-owned 欄唯讀 —— ⏳ **待 Chris browser 手測**（code 已 build 過＝結構渲染 OK，後端已由 curl 全證；AI 無法登入 web 故未親驗，H7 不虛報）
+- [x] `cd apps/api && npm run build && npm test` 綠;`cd apps/web && npm run build && npm test` 綠;兩邊 lint clean（changed files）
+- [x] 每行改動 trace 得返本 spec §2（§1.3 surgical）
 
 ## 4. Risks
 | # | Risk | Likelihood | Impact | Mitigation |

@@ -93,19 +93,21 @@ Chris 喺頁面手測期間，發現多個實畫面同 hifi mockup（`design_han
 
 > 每項落 code 後跑 `ui-design` skill 自檢 + light/dark 兩色實 render 驗收；token-only，無 hardcode 色值。
 
-- [ ] **A1** Request 內頁 remark 呈灰底（`bg-hover`）圓角盒 + accent-line 左邊；light+dark 對比 OK
-- [ ] **A2** Sync-gate strip 呈灰底（`bg-hover`）圓角盒 + border；帳號/sync 兩步狀態顯示不變
-- [ ] **A3** Requests filter：inactive 為 bordered card chip（`border-border`/`bg-card`/`rounded-[8px]`），active 維持 inverted；count 顯示不變
-- [ ] **A4** Assets mode switcher 容器 = `bg-card border`，順序 Platform→By OpCo；OPCO_IT（無 Platform）行為不變（照舊只見 By OpCo）
-- [ ] **A5** Platform 每行 SKU cell 為雙段 bar（assigned/allocated 兩色 + over→danger），表下有顏色圖例
-- [ ] **A6** By-OpCo 表頂有「All SKUs · total」行；數字 = 當前 filtered rows client-side 加總（真資料聚合、respects OpCo/search filter；無 filter 時 = `/ledger/stats`）；只在 filtered 有列時渲染，故無捏造/缺值問題
-- [ ] **A7** Settings 無 `Settings` h1；4 個 Section 用 `Card`（有陰影）；Account/Preferences/Users/Integrations 內容功能不變
-- [ ] **A8** Users tab 表頭併入 Card header（標題+副題+掣）；表下有 3 欄角色圖例卡；`settings.tsx` stale 註解更新
-- [ ] **B1** Assets active mode 掣 = `bg-accent text-accent-fg`（決策 B = 紅）；`design-system.md` DS-3 加 segmented-active accent 澄清 + changelog
-- [ ] **A9** Request 內頁 timeline 每事件 dot 下有垂直連接線串起（最後一項無線）；light+dark OK
-- [ ] **A10** Settings Account tab = Account 卡（avatar + 唯讀身份）+ Role & access 卡（Role/OpCo/Sign-in 行）+ Password 卡（local）；無 Job title/Phone/Save/photo/MFA（H7 唯讀誠實）；sign-out + 改密碼功能保留
-- [ ] `cd apps/web && npm run build` 綠、`npm run lint` 無 warning、`npm test` 不降（現 85）
-- [ ] 全部改動 trace 得返本 spec §2.1/§2.2（無順手改無關 code — §1.3 surgical）
+> 驗收結果見 `progress.md` Closeout（2026-07-16）：A1–A10 + B1 全部 ✅ code + build/eslint/85 test 綠；**light/dark 實 render 由 Chris browser 確認「頁面效果比較一致」**（含 settings padding `085dd78` + max-width `b8abede` 兩輪修正後）。
+
+- [x] **A1** Request 內頁 remark 呈灰底（`bg-hover`）圓角盒 + accent-line 左邊；light+dark 對比 OK
+- [x] **A2** Sync-gate strip 呈灰底（`bg-hover`）圓角盒 + border；帳號/sync 兩步狀態顯示不變
+- [x] **A3** Requests filter：inactive 為 bordered card chip（`border-border`/`bg-card`/`rounded-[8px]`），active 維持 inverted；count 顯示不變
+- [x] **A4** Assets mode switcher 容器 = `bg-card border`，順序 Platform→By OpCo；OPCO_IT（無 Platform）行為不變（照舊只見 By OpCo）
+- [x] **A5** Platform 每行 SKU cell 為雙段 bar（assigned/allocated 兩色 + over→danger），表下有顏色圖例
+- [x] **A6** By-OpCo 表頂有「All SKUs · total」行；數字 = 當前 filtered rows client-side 加總（真資料聚合、respects OpCo/search filter；無 filter 時 = `/ledger/stats`）；只在 filtered 有列時渲染，故無捏造/缺值問題
+- [x] **A7** Settings 無 `Settings` h1；4 個 Section 用 `Card`（有陰影）；Account/Preferences/Users/Integrations 內容功能不變
+- [x] **A8** Users tab 表頭併入 Card header（標題+副題+掣）；表下有 3 欄角色圖例卡；`settings.tsx` stale 註解更新
+- [x] **B1** Assets active mode 掣 = `bg-accent text-accent-fg`（決策 B = 紅）；`design-system.md` DS-3 加 segmented-active accent 澄清 + changelog
+- [x] **A9** Request 內頁 timeline 每事件 dot 下有垂直連接線串起（最後一項無線）；light+dark OK
+- [x] **A10** Settings Account tab = Account 卡（avatar + 唯讀身份）+ Role & access 卡（Role/OpCo/Sign-in 行）+ Password 卡（local）；無 Job title/Phone/Save/photo/MFA（H7 唯讀誠實）；sign-out + 改密碼功能保留
+- [x] `cd apps/web && npm run build` 綠、`npm run lint` 無 warning、`npm test` 不降（現 85）—— scoped eslint EXIT=0（repo-wide 紅屬 pre-existing CRLF，見 progress Day 1 Blockers）
+- [x] 全部改動 trace 得返本 spec §2.1/§2.2（無順手改無關 code — §1.3 surgical）
 
 ## 4. Risks
 

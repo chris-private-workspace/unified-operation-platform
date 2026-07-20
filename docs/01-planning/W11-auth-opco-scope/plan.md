@@ -5,7 +5,7 @@ sprint_week: W11
 backlog_id: AUTH（sub-phase AUTH-3a）
 start_date: 2026-07-10
 end_date: TBD
-status: active           # draft | active | closed — AUTH-3a done（8 deliverable + G1-G8 過,live 對照驗）;仍 active 因 3b（前端真 role + 真 SSO e2e）卡 IT app reg（未驗當 done = 違 H7）
+status: closed           # draft | active | closed — AUTH-3a done（8 deliverable + G1-G8 過,live 對照驗）。2026-07-20 回填：原「仍 active 因 3b」之阻塞已解 —— **AUTH-3b 已於 W22 完成**；殘留「真 SSO e2e」屬 AUTH-2b，由 W10（blocked-on-it-app-reg）追蹤，不再掛 W11。
 spec_refs:
   - docs/architecture.md §9（Auth / Security — SSO + 3 role）
   - docs/02-architecture/licenseops/DESIGN.md §10（OpCo self-service 開放時機 — model 就緒,開放時機 open）

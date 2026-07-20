@@ -1,6 +1,6 @@
 ---
 phase: W19-auth-user-admin
-status: active
+status: closed        # plan + checklist 已 closed（2026-07-20 status 回填）
 ---
 
 # W19 — AUTH-4b — Progress

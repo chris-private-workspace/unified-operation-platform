@@ -41,11 +41,14 @@ AUTH-2a(W10,ADR-0003)引入 MSAL 後,`apps/web` production build 產生單一 ve
 - **唔提高 `chunkSizeWarningLimit`**(嗰個係掩蓋警告,唔係真拆)。
 
 ## 3. Acceptance Criteria
-- [ ] `npm run build`(於 `apps/web`)成功,exit 0,**無 >500KB chunk 警告**(無單一 chunk 超 `chunkSizeWarningLimit`)。
-- [ ] Build 產出見到具名 vendor chunk(`react-vendor` / `msal-vendor` / `query-vendor`)。
-- [ ] `npm run lint` exit 0。
-- [ ] `npm run test` web 8 test 全綠(無 runtime 改,test 不應受影響)。
-- [ ] dev-bypass live 驗:Login(`/login`)+ 一個 authed 頁(`/`)載入正常、MSAL provider 無爆、console 無 error;light + dark 各驗一次。
+
+> 驗收結果見 `progress.md` Closeout「Acceptance verification」表(5/5 ✅,2026-07-13)。
+
+- [x] `npm run build`(於 `apps/web`)成功,exit 0,**無 >500KB chunk 警告**(無單一 chunk 超 `chunkSizeWarningLimit`)。—— 最大 chunk 254.17 kB
+- [x] Build 產出見到具名 vendor chunk(`react-vendor` / `msal-vendor` / `query-vendor`)。—— 三個皆見於 build output
+- [x] `npm run lint` exit 0。
+- [x] `npm run test` web 8 test 全綠(無 runtime 改,test 不應受影響)。
+- [x] dev-bypass live 驗:Login(`/login`)+ 一個 authed 頁(`/`)載入正常、MSAL provider 無爆、console 無 error;light + dark 各驗一次。—— `vite preview` serve 真 `dist/`,light↔dark token swap 實測
 
 ## 4. Risks
 | # | Risk | Likelihood | Impact | Mitigation |

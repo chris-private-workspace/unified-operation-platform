@@ -1,6 +1,6 @@
 ---
 phase: W12-fe-fidelity-harden
-status: active
+status: closed        # plan + progress 已 closed；honest gap 三項另列 BACKLOG（2026-07-20 status 回填）
 ---
 
 # W12 — FE fidelity audit + harden — Checklist
@@ -19,7 +19,7 @@ status: active
 - [x] Login（`/login`）對 prototype（L1-L5）
 - [x] Settings（`/settings`）對 prototype（ST1-3）
 - [x] 寫 `AUDIT.md`（分 🔧 真 drift / 🚧 honest gap;P1-3 + prototype 依據 + 修法 + Tier 分組）
-- [ ] **G1:present inventory → Chris approve 修復優先（OD1-4）** ← 等緊
+- [x] **G1:present inventory → Chris approve 修復優先（OD1-4）** —— Chris approved 2026-07-11（決定見下方 D2+ 標題:OD1=Tier1+2+3 全 · OD2=user menu MVP · OD3=拆 Users&roles+Integrations nav · OD4=honest gap 唔造假）;2026-07-20 補勾
 
 ## D2+ — Harden（approved 2026-07-11:OD1=Tier1+2+3 全 · OD2=user menu MVP · OD3=拆 Users&roles+Integrations nav · OD4=honest gap 唔造假）
 

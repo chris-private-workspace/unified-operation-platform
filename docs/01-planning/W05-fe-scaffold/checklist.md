@@ -57,7 +57,7 @@ last_updated: 2026-07-09
 - [x] `progress.md` retro section written + status flipped `closed`
 - [x] 下一個 phase（FE-1 Overview + License Assets）kickoff trigger noted in retro
 - [x] R1（Google Fonts CDN）實測 = **本 session 冇被封**（Geist render 到）;記入 progress
-- [ ] **flag（非本 phase 修）**:① Avatar brand gradient `#8a0018`（handoff vs DS-7 衝突,BACKLOG）② npm 32 vulnerabilities（dev 工具鏈,BACKLOG）
+- [x] **flag（非本 phase 修）**:① Avatar brand gradient `#8a0018`（handoff vs DS-7 衝突,BACKLOG）→ **已由 DS-flag 處理 ✅**（tokenize `--accent-deep` + DS-7 明文加 Avatar 例外,2026-07-10）② npm 32 vulnerabilities（dev 工具鏈,BACKLOG）→ **🚧 defer 至 DD-2**（全 dev-only,實測非-force 清唔到,等 vite@8 生態）;2026-07-20 補勾
 
 ---
 
