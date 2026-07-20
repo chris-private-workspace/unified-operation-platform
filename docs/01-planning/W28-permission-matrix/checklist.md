@@ -25,7 +25,11 @@ last_updated: 2026-07-20
 - [x] module wire(`AuthModule` 加 `DiscoveryModule` import)
 - [x] live curl 驗:HTTP 200,**34 route / 9 controller 全覆蓋** —— G1 ✅
 - [x] live curl 驗:`/requests/intake` = `m2m` + `guards:["IntakeKeyGuard"]`、auth×3 = `public`、me×2 = `authenticated` —— G3 ✅
-- [ ] live curl 驗:非 ADMIN → 403 —— ⏳ **未 live 試**(需改 `AUTH_DEV_USER_EMAIL` + restart backend,屬用戶進程);**class `@Roles(ADMIN)` 已由 unit test assert**(`permissions.spec.ts`「the permissions endpoint itself is ADMIN-only」)+ `RolesGuard` 本身有 `roles.guard.spec.ts` 覆蓋。H7:唔當已驗
+- [x] live curl 驗:非 ADMIN → **403 ✅ 已實試**(Chris 指示 restart)。三重證明,唔止一個 status code:
+      ① `AUTH_DEV_USER_EMAIL=opco.it.rhk@rapo.com.hk` 重起 → `/me` 回 `role:"OPCO_IT"` · `opcoScope:{code:"RHK"}`(**確認真係扮到**)
+      ② `GET /admin/permissions` → **403**
+      ③ 同一 session `GET /license/ledger` → **200 且只見 RHK**(**證明 403 係 role gate,唔係 session 壞咗**)
+      ④ 還原預設重起 → `/me` = ADMIN · `/admin/permissions` = **200** · 34 route / unguarded=0 / m2m=1
 
 ## F2 — 前端 Settings › Permissions
 
@@ -52,8 +56,8 @@ last_updated: 2026-07-20
 
 ## Verify
 
-- [x] `apps/api`:build ✅ exit 0 · test ✅ **223**(30 suites,1 snapshot)· lint ✅ **自己 5 個檔 exit 0** —— G6
-      ⚠️ 全 repo `npm run lint` 仍紅:**383 個 `Delete ␍`(CRLF)散喺 4 個 W23-A 舊檔**(`license/ledger-write.*` · `dto/ledger-write.dto.ts` · `license.module.ts`),**同本 phase 無關**;git 存 LF 故 CI 綠。按 §1.3 surgical **冇順手修** → 已登 BACKLOG E 區候選
+- [x] `apps/api`:build ✅ exit 0 · test ✅ **223**(30 suites,1 snapshot)· lint ✅ **全 repo exit 0** —— G6
+      📌 CRLF 383 error(4 個 W23-A 舊檔)**經 Chris 指示順手清咗**。查根因發現**問題早已根治且唔會復發**:`.gitattributes`(W25)嘅 `* text=auto eol=lf` **override** 咗 `core.autocrlf=true`,`git ls-files --eol` 證實全部 `i/lf w/lf`。嗰 4 個檔只係 `.gitattributes` 生效**之前**遺留嘅 working-copy 殘留,從未 refresh → `eslint --fix` 清完 **`git diff` 空**(index 本來就 LF,repo 一直乾淨,無嘢可 commit)。**唔係技術債,唔使入 BACKLOG。**
 - [x] `apps/web`:build ✅ exit 0 · test ✅ **85** 不降 · lint ✅ exit 0 —— G6
 - [x] `git diff` 核:`opco.controller.ts` / `me.controller.ts` / `license.controller.ts` / `fulfilment/` **全部零 diff**(fails-before 兩處改動已還原乾淨)—— G7 ✅
 - [x] 跑 `ui-design` skill 自檢 —— DS-1~DS-10 全 ✅;**DS-11 = N/A**(prototype 無此畫面,屬「用既有 token + primitive 砌新畫面」,H6 允許唔使問);DS-12 N/A

@@ -118,11 +118,37 @@ derivePermissions(controllers: Function[]) → PermissionEntry[]   ← 純函數
 ### Blockers
 - 無。
 
-### ⏳ 未驗項(H7 誠實標註)
-- **非 ADMIN → 403 未 live 試** —— 要改 `AUTH_DEV_USER_EMAIL` + restart backend(屬用戶進程,唔擅自動)。class `@Roles(ADMIN)` 已由 unit test assert,`RolesGuard` 本身亦有 `roles.guard.spec.ts` 覆蓋,但**唔當已 live 驗**。
+### ✅ 補驗:非 ADMIN → 403(Chris 指示 restart 後實試)
 
-### 📌 順帶發現(唔屬本 phase,唔改)
-`npm run lint` 有 **383 個 `Delete ␍`(CRLF)error**,全部散喺 4 個 W23-A 舊檔(`license/ledger-write.*` · `license/dto/ledger-write.dto.ts` · `license/license.module.ts`),同本 phase 改動無關。git 存 LF(`.gitattributes`)所以 CI 綠,屬本地 working-copy artifact(memory 早有記錄)。**按 §1.3 surgical 冇順手修**。本 phase 自己 5 個檔 lint exit 0。
+原本標 ⏳ 未驗。Chris 指示重啟後補驗,**三重證明**(唔止一個 status code):
+
+| # | 動作 | 結果 |
+|---|---|---|
+| ① | `AUTH_DEV_USER_EMAIL=opco.it.rhk@rapo.com.hk` 重起 → `GET /me` | `role:"OPCO_IT"` · `opcoScope:{code:"RHK"}` —— **確認真係扮到**,唔係 env 冇生效 |
+| ② | `GET /admin/permissions` | **403** |
+| ③ | 同一 session `GET /license/ledger` | **200 且只見 RHK** —— **證明 403 係 role gate,唔係 session 壞咗** |
+| ④ | 還原預設重起 | `/me` = ADMIN · `/admin/permissions` = **200** · 34 route / unguarded=0 / m2m=1 |
+
+③ 係關鍵 —— 淨係見到 403 唔足以斷定原因;要有一個「同一身分下應該成功」嘅對照,先證明係 role gate 生效。
+
+**額外收穫**:呢次 restart 把 process kill 咗重新 build,所以 200 係由 **working tree source clean rebuild** 得出,唔再係之前 hot-reload 嘅 stale process —— 比原先嗰次驗證更有力(呼應上面 branch 事故:當時 live 驗證雖然有效,但確實係靠 runtime 而非 source)。
+
+前端 reload 後端到端仍然 work(34 row / 10 group / intake = Machine key)。
+**未 touch `.env`**(§4.4)—— 用 shell env 覆蓋,process env 優先於 `.env`。
+
+### 📌 CRLF —— 查根因後發現「債早已還清」
+
+原判斷:383 個 `Delete ␍` 係 4 個 W23-A 舊檔嘅技術債。**Chris 指示順手清,一清就發現判斷唔準。**
+
+- `.gitattributes`(W25 加)已有 `* text=auto eol=lf`,而 **gitattributes 優先於 `core.autocrlf=true`**。
+- `git ls-files --eol` 證實三個抽查檔全部 **`i/lf w/lf`** —— index 同 working tree 都係 LF。
+- `eslint --fix` 清完 → **`git diff` 空**。即係 repo 一直乾淨,**冇嘢可以 commit**。
+
+**收尾一步**:`eslint --fix` 之後 `git status` 仍標 ` M`(即使 `update-index --refresh`),但 `git diff --stat` / `--numstat` **兩者皆空** —— 內容經 clean filter 後同 index 完全一致,只係 stat cache 對唔上。`git checkout --` 令 working tree 對齊 index 後:**status 完全 clean · `i/lf w/lf` · `npm run lint` exit 0**。
+
+**最終結論:唔係技術債,係一次性 working-copy 殘留 —— checkout 一次就乾淨,而且唔會復發**(`.gitattributes eol=lf` 令每次 checkout 都寫 LF,已由呢次 checkout 實證)。**唔使入 BACKLOG,零 commit。** 全 repo lint exit 0;api 223 test 仍全綠。
+
+> **判斷演變(誠實記錄)**:① 初判「W23-A 技術債」→ 按 §1.3 唔修 ② Chris 指示修 → 發現 `git diff` 空,改判「債早已還清」③ status 仍標 M → 再查 → checkout 實證 → 定案「一次性殘留,永不復發」。**初判錯咗**:我把「本地 lint 紅」等同「repo 有債」,冇先查 index 實際存咩。教訓:報 lint 問題之前,先分清「working copy 狀態」定「committed 內容」。
 
 ### F2 完成 —— Settings › Permissions(第 6 tab)
 
