@@ -9,6 +9,8 @@ import { Role } from '@prisma/client';
 import type { AppUser, Opco } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import {
   AdminUserDto,
   CreateUserDto,
@@ -37,7 +39,10 @@ const SCOPE_INCLUDE = {
 export class UserAdminService {
   private readonly logger = new Logger(UserAdminService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   /** All users, active first — for the Users & roles table. */
   async list(): Promise<AdminUserDto[]> {
@@ -66,18 +71,33 @@ export class UserAdminService {
 
     const passwordHash = await argon2.hash(dto.initialPassword);
 
-    const user = await this.prisma.appUser.create({
-      data: {
-        email: dto.email,
-        displayName: dto.displayName,
-        role: dto.role,
-        opcoScopeId,
-        passwordHash,
-        authProvider: 'local',
-        // Force the user to replace the admin-set password on first login.
-        mustChangePassword: true,
-      },
-      include: SCOPE_INCLUDE,
+    // ADR-0009 Decision 8.1: the audit row shares the operation's transaction —
+    // a user that exists without a creation record is exactly what this phase
+    // is here to prevent.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.appUser.create({
+        data: {
+          email: dto.email,
+          displayName: dto.displayName,
+          role: dto.role,
+          opcoScopeId,
+          passwordHash,
+          authProvider: 'local',
+          // Force the user to replace the admin-set password on first login.
+          mustChangePassword: true,
+        },
+        include: SCOPE_INCLUDE,
+      });
+      // The raw row goes in — AuditService whitelists it (passwordHash is on
+      // this object and must never reach the audit table).
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.USER_CREATE,
+        targetType: 'AppUser',
+        targetId: created.id,
+        actorId: actor.id,
+        after: created,
+      });
+      return created;
     });
     // H4: log ids + role only — never email (PII) / password / hash.
     this.logger.log(
@@ -123,10 +143,40 @@ export class UserAdminService {
       dto.opcoScopeId !== undefined ? dto.opcoScopeId : target.opcoScopeId;
     const opcoScopeId = await this.normaliseScope(nextRole, rawScope);
 
-    const user = await this.prisma.appUser.update({
-      where: { id },
-      data: { role: nextRole, active: nextActive, opcoScopeId },
-      include: SCOPE_INCLUDE,
+    /**
+     * One audit row per update, labelled by the most consequential thing that
+     * changed. A privilege change wins over a deactivation so that searching
+     * `action = user.role_change` returns EVERY privilege change — including a
+     * demote-and-deactivate done in one call. The full before/after diff is
+     * stored either way, so nothing is lost by the labelling.
+     */
+    const privilegeChanged =
+      nextRole !== target.role || opcoScopeId !== target.opcoScopeId;
+    const deactivating = target.active && nextActive === false;
+    const action = privilegeChanged
+      ? AUDIT_ACTIONS.USER_ROLE_CHANGE
+      : deactivating
+        ? AUDIT_ACTIONS.USER_DEACTIVATE
+        : AUDIT_ACTIONS.USER_UPDATE;
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.appUser.update({
+        where: { id },
+        data: { role: nextRole, active: nextActive, opcoScopeId },
+        include: SCOPE_INCLUDE,
+      });
+      // logChange writes only the fields that moved, and nothing at all on a
+      // no-op PATCH — an audit row claiming a change that never happened is
+      // its own kind of lie.
+      await this.audit.logChange(tx, {
+        action,
+        targetType: 'AppUser',
+        targetId: id,
+        actorId: actor.id,
+        before: target,
+        after: updated,
+      });
+      return updated;
     });
     this.logger.log(
       `User updated: id=${user.id} role=${user.role} active=${user.active} by=${actor.id}`,
@@ -158,13 +208,24 @@ export class UserAdminService {
     if (violation) throw new BadRequestException(violation);
 
     const passwordHash = await argon2.hash(dto.newPassword);
-    await this.prisma.appUser.update({
-      where: { id },
-      data: {
-        passwordHash,
-        mustChangePassword: true,
-        passwordChangedAt: new Date(),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.appUser.update({
+        where: { id },
+        data: {
+          passwordHash,
+          mustChangePassword: true,
+          passwordChangedAt: new Date(),
+        },
+      });
+      // Event only — no before/after. The only thing that changed is the hash
+      // and its lifecycle flags; storing them would be either useless or a leak.
+      // "who reset whose password, when" is the whole auditable fact here.
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.USER_PASSWORD_RESET,
+        targetType: 'AppUser',
+        targetId: id,
+        actorId: actor.id,
+      });
     });
     // H4: log ids only — never the new password / hash.
     this.logger.log(`Password reset by admin: userId=${id} by=${actor.id}`);
