@@ -4,7 +4,7 @@ name: "Integration 狀態 + Test connection(ADR-0010 item 4 / INTEG-1)"
 sprint_week: W30
 start_date: 2026-07-21
 end_date: 2026-07-22          # planned, may slip with changelog log
-status: draft                 # draft | active | closed — 待 Chris approve §9
+status: active                # draft | active | closed — Chris 2026-07-21 approve §9 三點後 flip
 spec_refs:
   - docs/adr/0010-integration-observability-delivery.md（D2/D3/D4/D5/D6 — 全部本 phase 落地）
   - docs/02-architecture/audit-and-integration-observability.md §2.4（整合現況）· §6 item 4
@@ -15,7 +15,7 @@ prior_phase: W29-audit-log
 
 > **Plan version**:1.0(initial)
 > **Owner**:AI(執行)/ Chris Lai(decision)
-> **Approved by**:_(待 Chris approve — 見 §9 三個要拍板嘅點)_
+> **Approved by**:**Chris Lai(2026-07-21)** —— §9 三點拍板(Q1/Q2/Q3,全部照建議)
 
 ## 1. Scope
 
@@ -133,6 +133,7 @@ ADR-0010 **Accepted**,本 phase 落實 rollout **item 4**:令 Integrations tab �
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-21 | Initial plan,status=**draft** | 待 Chris approve §9 三點 | — |
+| 2026-07-21 | **§9 三點拍板 → status `draft` → `active`** | Q1 交白卷 · Q2 節流 10s · Q3 state 與探測結果分開兩個欄位(避免 restart 後 error 憑空消失) | Chris Lai |
 
 ## 8. 一個實作面要留意嘅位
 
@@ -142,13 +143,15 @@ ADR-0010 D4 講「派生既有 domain timestamp」,但**四個 connector 入面�
 
 呢點 ADR-0010 冇預見到(佢個表列咗 n8n inbound 有派生來源)。**屬實作層修正,唔改 ADR 決定方向**,closeout 時喺 ADR References 補一句註。
 
-## 9. 要拍板嘅點（Chris）
+## 9. 拍板結果（Chris,2026-07-21 — 三點全部照建議)
 
-| # | 問題 | 選項 | 建議 |
-|---|---|---|---|
-| **Q1** | n8n inbound 一行點處理? | (a) 交白卷標「無法區分」 ·(b) 索性唔顯示呢一行 ·(c) 顯示近似值加註 | **(a)** —— 誠實 gap 好過隱藏或者呃人 |
-| **Q2** | 節流間隔? | 10s / 30s / 60s | **10s** —— 夠防連環撳,又唔阻礙真排查 |
-| **Q3** | 探針失敗時 state 點顯示? | (a) state 唔變(仍 `required`),另有一個「上次探測」結果 ·(b) state 直接變 `error` | **(a)** —— state 講**部署形態**,探測結果係另一件事;溝埋會令重啟後「消失嘅錯誤」變成假象 |
+| # | 問題 | 決定 |
+|---|---|---|
+| **Q1** | n8n inbound 一行點處理 | ✅ **交白卷,標「無法從既有資料區分」** —— 誠實 gap 好過隱藏或者呃人。**唔可以**因為一行留空「唔靚」而補個近似值 |
+| **Q2** | 節流間隔 | ✅ **10s**(同一 connector);超出回 **429** |
+| **Q3** | 探針失敗時 state 點顯示 | ✅ **state 唔變,另有「上次探測」結果** —— `state` 講**部署形態**(由 config 算出),探測結果係另一件事。溝埋會令 restart 之後個 error **憑空消失**(state 重算返 `required`),睇落似「自己好返」,實際上乜都冇修好 |
+
+**Q3 嘅實作後果**:回應要有兩組獨立欄位 —— `state`(部署形態,恆定)+ `lastProbe`(nullable,只喺本次 process 撳過 Test 先有值)。`lastProbe` **唔持久化**(D4 已決唔開 model),所以要明講佢係 in-process、restart 即清 —— UI 唔可以令人以為佢係歷史紀錄。
 
 ---
 

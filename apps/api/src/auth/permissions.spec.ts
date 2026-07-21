@@ -60,6 +60,7 @@ describe('permission matrix (derived from @Roles)', () => {
         'AuthController',
         'FulfilmentController',
         'IntakeController',
+        'IntegrationController', // W30 F2 — /admin/integrations, @Roles(ADMIN)
         'LicenseController',
         'MeController',
         'OpcoAdminController',

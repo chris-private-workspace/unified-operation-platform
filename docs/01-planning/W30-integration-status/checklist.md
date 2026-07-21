@@ -9,12 +9,11 @@ last_updated: 2026-07-21
 
 > Atomic checkbox(每 item ≤ 1–2 hour effort)。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
-> **⚠️ plan status=draft —— 未 approve 唔可以開 F1**(PROCESS R1)。
-
 ## F0 — Gate(開工前)
 
-- [ ] Chris approve plan §9 三點 —— Q1(n8n inbound 交白卷?)· Q2(節流間隔)· Q3(探針失敗點顯示)
-- [ ] plan.md status → `active`
+- [x] Chris approve plan §9 三點 —— Q1 **交白卷標「無法區分」** · Q2 **節流 10s** · Q3 **state 唔變,另有「上次探測」結果**(三點全照建議)
+- [x] plan.md status → `active`
+- [x] Q3 實作後果記低:回應分兩組欄位 `state`(部署形態,恆定)+ `lastProbe`(**in-process,restart 即清**,唔持久化)—— UI 唔可以令人以為 `lastProbe` 係歷史紀錄
 
 ## F1 — Connector 狀態 read-model
 
