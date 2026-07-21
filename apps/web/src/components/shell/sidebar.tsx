@@ -9,6 +9,7 @@ import {
   LineChart,
   LogOut,
   Package,
+  ScrollText,
   TriangleAlert,
   UserMinus,
   Users,
@@ -54,10 +55,13 @@ const CATALOG: NavEntry[] = [
 
 // ADMINISTRATION deep-links into the Settings sub-tabs (prototype): Users & roles
 // and Integrations are the two admin surfaces, not a generic "Settings" item.
-const ADMIN: { tab: string; label: string; Icon: LucideIcon }[] = [
-  { tab: 'users', label: 'Users & roles', Icon: Users },
-  { tab: 'opcos', label: 'Operating companies', Icon: Building2 },
-  { tab: 'integrations', label: 'Integrations', Icon: Cable },
+// Audit log (W29 F4) is the one standalone-route entry — an owner-approved
+// screen beyond the prototype (design-system.md §3.2, plan §9.1 Q2).
+const ADMIN: { to: string; label: string; Icon: LucideIcon }[] = [
+  { to: '/settings?tab=users', label: 'Users & roles', Icon: Users },
+  { to: '/settings?tab=opcos', label: 'Operating companies', Icon: Building2 },
+  { to: '/settings?tab=integrations', label: 'Integrations', Icon: Cable },
+  { to: '/audit', label: 'Audit log', Icon: ScrollText },
 ];
 
 const SectionLabel = ({ children }: { children: string }) => (
@@ -152,16 +156,25 @@ export function Sidebar() {
           <>
             <div className="pt-[6px]" />
             {!collapsed && <SectionLabel>Administration</SectionLabel>}
-            {ADMIN.map(({ tab, label, Icon }) => (
-              <NavItem
-                key={tab}
-                icon={<Icon size={16} strokeWidth={2} />}
-                label={label}
-                collapsed={collapsed}
-                active={pathname === '/settings' && params.get('tab') === tab}
-                onClick={() => navigate(`/settings?tab=${tab}`)}
-              />
-            ))}
+            {ADMIN.map(({ to, label, Icon }) => {
+              // Settings deep-links match on their tab param; the standalone
+              // /audit route matches on the pathname like the Operations nav.
+              const [path, query] = to.split('?');
+              const tab = new URLSearchParams(query).get('tab');
+              const active = tab
+                ? pathname === path && params.get('tab') === tab
+                : isActive(path);
+              return (
+                <NavItem
+                  key={to}
+                  icon={<Icon size={16} strokeWidth={2} />}
+                  label={label}
+                  collapsed={collapsed}
+                  active={active}
+                  onClick={() => navigate(to)}
+                />
+              );
+            })}
           </>
         )}
 

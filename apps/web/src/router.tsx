@@ -11,6 +11,7 @@ import { NewRequest } from '@/pages/new-request';
 import { RequestDetail } from '@/pages/request-detail';
 import { Drift } from '@/pages/drift';
 import { Assets } from '@/pages/assets';
+import { Audit } from '@/pages/audit';
 
 // One route per screen (design-system.md §3.2). FE-1 → Overview + SKU Catalog;
 // FE-2 → Requests list + detail; FE-3 → Drift Alerts; FE-Assets → License Assets
@@ -33,6 +34,9 @@ export const router = createBrowserRouter([
       { path: 'assets', element: <Assets /> },
       { path: 'drift', element: <Drift /> },
       { path: 'catalog', element: <Catalog /> },
+      // W29 F4 — owner-approved screen beyond the prototype (plan §9.1 Q2);
+      // ADMIN-only at the backend, sidebar-gated by canSeeAdminNav.
+      { path: 'audit', element: <Audit /> },
       { path: 'settings', element: <Settings /> },
     ],
   },

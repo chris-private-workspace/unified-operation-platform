@@ -33,58 +33,58 @@ last_updated: 2026-07-20
 
 ## F2a — identity 事件（user-admin.service.ts）
 
-- [ ] `user.create` / `user.update` / `user.deactivate` / `user.password_reset`
-- [ ] **`user.role_change` 獨立成一個 action**(role / opcoScopeId 有變時額外記)—— 權限變更係稽核最關心嘅事,唔應該埋喺一般 update 要人自己 diff
-- [ ] 各操作包 `$transaction`,audit 同主寫入同一個 tx
-- [ ] test:5 個事件各證實**真係寫低咗**(唔止「唔 crash」)
-- [ ] **rollback test**:主操作失敗 → audit **唔會**留低 —— G4
-- [ ] 跑全 api test,**既有全綠先落下一組**(R1)
+- [x] `user.create` / `user.update` / `user.deactivate` / `user.password_reset`
+- [x] **`user.role_change` 獨立成一個 action**(role / opcoScopeId 有變時額外記)—— 權限變更係稽核最關心嘅事,唔應該埋喺一般 update 要人自己 diff(labelling:privilege change 蓋過 deactivate,test 鎖住)
+- [x] 各操作包 `$transaction`,audit 同主寫入同一個 tx
+- [x] test:5 個事件各證實**真係寫低咗**(唔止「唔 crash」)
+- [x] **rollback test**:主操作失敗 → audit **唔會**留低 —— G4
+- [x] 跑全 api test,**既有全綠先落下一組**(R1)—— 236 → 242
 
 ## F2b — auth 事件（auth.service.ts）
 
-- [ ] `auth.login_success` / `auth.login_failed` / `auth.locked`
-- [ ] `login_failed` 嘅 `targetId` 處理(打錯 email 時無對應 user)—— 按 Q1 拍板結果
-- [ ] test:3 個事件 + lockout 觸發 `auth.locked`
-- [ ] 跑全 api test,既有全綠先落下一組
+- [x] `auth.login_success` / `auth.login_failed` / `auth.locked`(locked 獨立一條 row,actorType 'system')
+- [x] `login_failed` 嘅 `targetId` 處理(打錯 email 時無對應 user)—— 按 Q1:`metadata.emailAttempted`,targetId 'unknown'
+- [x] test:3 個事件 + lockout 觸發 `auth.locked`
+- [x] 跑全 api test,既有全綠先落下一組 —— 242 → 247
 
 ## F2c — config + bulk 事件
 
-- [ ] `opco.create` / `opco.update`(`opco.service.ts`)
-- [ ] `catalog.update`(`catalog.service.ts`,CH-003 三個 curation 欄)
-- [ ] `allocation.import` —— **summary-level 一條,唔係每行**(逐行會淹沒 audit table)
-- [ ] `drift.resolve`
-- [ ] test:5 個事件
-- [ ] 跑全 api test
+- [x] `opco.create` / `opco.update`(`opco.service.ts`)
+- [x] `catalog.update`(`catalog.service.ts`,CH-003 三個 curation 欄)
+- [x] `allocation.import` —— **summary-level 一條,唔係每行**(逐行會淹沒 audit table;`buildLogArgs()` 入 array-form `$transaction` 同批)
+- [x] `drift.resolve`(`reconcile(actorId)`:人手 = actorType user + source manual-reconcile;@Cron = system + scheduled)
+- [x] test:5 個事件
+- [x] 跑全 api test —— 247 → 256
 
 ## F3 — `GET /admin/audit`
 
-- [ ] 篩選:`actorId` / `targetType` / `targetId` / `action` / 日期範圍
-- [ ] 分頁 + **單次上限 100**(防一次拉走成個 table)
-- [ ] `@Roles(ADMIN)` —— **採 P-B 故 table 含 PII,唔可放寬**(ADR Decision 7 連帶義務 ①)
-- [ ] DTO + OpenAPI
-- [ ] test:篩選 / 分頁 / 上限
-- [ ] live curl 驗非 ADMIN → **403**(跟 W28 三重驗證做法:`/me` 確認身分 → 403 → 同身分下一個應該成功嘅 endpoint 做對照)—— G5
-- [ ] 確認 W28 `permissions.spec.ts` unguarded test 自動覆蓋此新 endpoint(唔使新增)
+- [x] 篩選:`actorId` / `targetType` / `targetId` / `action` / 日期範圍(`from`/`to` ISO 8601;action / targetType 用 `@IsIn` 對齊 write-path 常數,typo 即 400)
+- [x] 分頁 + **單次上限 100**(DTO `@Max(100)` + service 層 re-clamp 雙重防守)
+- [x] `@Roles(ADMIN)` —— **採 P-B 故 table 含 PII,唔可放寬**(ADR Decision 7 連帶義務 ①;controller comment 寫明放寬須重開 ADR)
+- [x] DTO + OpenAPI(`audit-query.dto.ts`:AuditQueryDto / AuditEntryDto / AuditPageDto)
+- [x] test:篩選 / 分頁 / 上限(service find 4 條 + DTO validation 3 條)
+- [x] live curl 驗非 ADMIN → **403**(三重驗證:`/me` 200 = opco.it.rhk OPCO_IT → `/admin/audit` 403 → 同身分 `/license/ledger` 200 對照)—— G5
+- [x] 確認 W28 `permissions.spec.ts` unguarded test 自動覆蓋此新 endpoint —— **實證**:snapshot 即 fail 並捕捉 `GET /admin/audit → roles [ADMIN]`,審視後 deliberate update(snapshot + controller 名單 +AuditController)
 
 ## F4 — 前端 Audit UI（獨立 `/audit` 頁,Q2 拍板)
 
-- [ ] `api-types.ts` 加 `AuditEntry` + 篩選型別
-- [ ] `queries.ts` 加 `useAuditLog`(`retryUnless403`)
-- [ ] `pages/audit.tsx`:時間序表 + 篩選 + 分頁 + before→after 展開
-- [ ] **新 route `/audit`** 註冊
-- [ ] **sidebar 加 Administration 區項目**,用 `canSeeAdminNav` proactive 隱藏(AUTH-3b pattern)
-- [ ] 直接開 URL 時 graceful restricted state(**後端 403 先係真權威**,前端隱藏只係 UX)
-- [ ] **零 primary action**(唯讀)· token-only · lucide-only —— H6
-- [ ] browser 驗 light + dark —— G6
-- [ ] **🔴 更新 `docs/02-architecture/design-system.md`** —— 記低 `/audit` 係 prototype 以外、owner-approved 嘅新畫面 + 新 sidebar 項目。**唔補嘅話將來 fidelity audit 會報成 drift**(plan §9.1)
+- [x] `api-types.ts` 加 `AuditEntry` + 篩選型別(AuditActor / AuditPage / AuditFilters)
+- [x] `queries.ts` 加 `useAuditLog`(`retryUnless403`;filters 入 queryKey)
+- [x] `pages/audit.tsx`:時間序表 + 篩選 + 分頁 + before→after 展開(filter 變更自動 reset offset)
+- [x] **新 route `/audit`** 註冊
+- [x] **sidebar 加 Administration 區項目**,用 `canSeeAdminNav` proactive 隱藏(AUTH-3b pattern;ADMIN 陣列改 `to` union 支援 standalone route + settings tab deep-link)
+- [x] 直接開 URL 時 graceful restricted state(403 → EmptyState「Access required」;**後端 403 先係真權威**)
+- [x] **零 primary action**(唯讀)· token-only · lucide-only —— H6(ui-design 12 條自檢全 ✅)
+- [x] browser 驗 light + dark —— G6(真數據 render + 展開 + filter 生效 + dark swap 無爆色)
+- [x] **🔴 更新 `docs/02-architecture/design-system.md`** —— 新增 §6「Prototype 以外嘅 owner-approved 畫面」表,登記 `/audit` + sidebar 項(Chris 2026-07-20,plan §9.1 Q2)
 
 ## Verify
 
-- [ ] `apps/api`:build · test(≥223+)· lint 全綠 —— G7
-- [ ] `apps/web`:build · test(≥85)· lint 全綠 —— G7
-- [ ] **G2 live 抽查**:實際觸發一次 user 改動,查 DB `AuditLog` row 確認**冇任何 secret 欄位**
-- [ ] **G8 零既有行為改動**:既有 test 全綠 + `git diff` 核冇改到 API 回應 / 權限 / 對帳邏輯
-- [ ] 跑 `ui-design` skill 自檢(H6)
+- [x] `apps/api`:build · test(**263**,31→32 suites)· lint 全綠 —— G7
+- [x] `apps/web`:build · test(**92**)· lint 全綠 —— G7
+- [x] **G2 live 抽查**:實觸發 PATCH deactivate + 還原 → `/admin/audit` 見 2 row(`user.deactivate` + `user.update`,diff 只含 `active`,actor join 正常)——**冇任何 secret 欄位**
+- [x] **G8 零既有行為改動**:既有 test 全綠(api 263 / web 92)+ `git diff` 核全 additive —— audit.service 只加 read path,snapshot +1 行純新 route,sidebar refactor 行為等價
+- [x] 跑 `ui-design` skill 自檢(H6)—— 12 條全 ✅(零 primary action / token-only / light+dark 實截)
 
 ---
 

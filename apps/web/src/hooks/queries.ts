@@ -3,6 +3,8 @@ import { apiGet, ApiError } from '@/lib/api';
 import type {
   AdminOpco,
   AdminUser,
+  AuditFilters,
+  AuditPage,
   DriftAlert,
   LedgerRow,
   LedgerStats,
@@ -17,6 +19,7 @@ import type {
   TenantSkuStats,
 } from '@/lib/api-types';
 import { getLocalProfile } from '@/lib/auth/local-profile';
+import { auditQueryString } from '@/lib/audit';
 
 // A 403 (OPCO_IT hitting a tenant-admin surface) is authoritative — never retry
 // it; still retry transient failures a couple of times.
@@ -155,6 +158,21 @@ export function usePermissions() {
   return useQuery({
     queryKey: ['admin', 'permissions'],
     queryFn: () => apiGet<PermissionEntry[]>('/admin/permissions'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /admin/audit — the platform audit trail (W29 F4). ADMIN-only: the rows
+ * carry P-B whitelisted PII, so a 403 is authoritative (retryUnless403) and the
+ * /audit page degrades to a restricted state. Filters are part of the query key
+ * so each filter/page combination caches independently.
+ */
+export function useAuditLog(filters: AuditFilters) {
+  return useQuery({
+    queryKey: ['admin', 'audit', filters],
+    queryFn: () =>
+      apiGet<AuditPage>(`/admin/audit${auditQueryString(filters)}`),
     retry: retryUnless403,
   });
 }
