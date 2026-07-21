@@ -65,6 +65,10 @@ describe('permission matrix (derived from @Roles)', () => {
         'MeController',
         'OpcoAdminController',
         'OpcoController',
+        // W31 F3 — /admin/outbound-failures, @Roles(ADMIN,REGIONAL). Wider than
+        // the audit trail on purpose (ADR-0011 D4): a failed delivery is an
+        // operations problem and REGIONAL is who chases it.
+        'OutboundFailureController',
         'OutboundRequestController',
         'PermissionsController',
         'UserAdminController',

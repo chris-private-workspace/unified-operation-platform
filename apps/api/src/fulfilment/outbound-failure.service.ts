@@ -57,8 +57,7 @@ export class OutboundFailureService {
             input.payload,
           ) as Prisma.InputJsonValue,
           externalRef: pickFailureExternalRef(input.kind, input.externalRef) as
-            | Prisma.InputJsonValue
-            | undefined,
+            Prisma.InputJsonValue | undefined,
           lastError: message,
           requestId: input.requestId ?? null,
         },
