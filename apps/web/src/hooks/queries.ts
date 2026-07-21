@@ -5,6 +5,7 @@ import type {
   AdminUser,
   AuditFilters,
   AuditPage,
+  ConnectorStatus,
   DriftAlert,
   LedgerRow,
   LedgerStats,
@@ -173,6 +174,19 @@ export function useAuditLog(filters: AuditFilters) {
     queryKey: ['admin', 'audit', filters],
     queryFn: () =>
       apiGet<AuditPage>(`/admin/audit${auditQueryString(filters)}`),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /admin/integrations — connector rows (W30). ADMIN-only: it describes how
+ * the platform is wired to its vendors, so a 403 is authoritative and the tab
+ * degrades to a restricted state.
+ */
+export function useIntegrations() {
+  return useQuery({
+    queryKey: ['admin', 'integrations'],
+    queryFn: () => apiGet<ConnectorStatus[]>('/admin/integrations'),
     retry: retryUnless403,
   });
 }

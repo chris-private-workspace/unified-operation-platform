@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  HttpCode,
   HttpException,
   HttpStatus,
   Param,
@@ -59,6 +60,7 @@ export class IntegrationController {
    * from turning into a burst.
    */
   @Post(':key/test')
+  @HttpCode(HttpStatus.OK) // a probe creates nothing — 201 would be a lie
   @ApiOkResponse({ type: ProbeResultDto })
   async test(@Param('key') key: string): Promise<ProbeResultDto> {
     if (!CONNECTOR_KEYS.includes(key as ConnectorKey)) {

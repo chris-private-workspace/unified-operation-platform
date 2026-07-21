@@ -17,49 +17,51 @@ last_updated: 2026-07-21
 
 ## F1 — Connector 狀態 read-model
 
-- [ ] `integration-status.service.ts` —— 純 query layer,四個 connector 各一行
-- [ ] **三態(D3)**:Graph / ServiceNow / intake = `required`(constructor `getOrThrow` fail-fast)· n8n outbound 隨 `REQUEST_SUBMISSION_PROVIDER` 切 `active`/`inactive` —— **唔可以出現 `configured: false` 呢種恆真廢話**
-- [ ] **派生時間(D4)**:Graph = `max(SkuCatalog.lastSyncedAt, TenantSkuSnapshot.capturedAt)` · SN = 最近 `serviceNowSysId` 非 null 嘅 Request · n8n outbound = 最近 `origin='platform-created'` 且有 sysId
-- [ ] **n8n inbound 交白卷**(Q1 拍板後定案)—— `Request.origin` default 就係 `'onboarding-intake'`(`schema.prisma:200`),seed 同真 intake 分唔開;**寧可標「無法區分」都唔畀錯時間**
-- [ ] 冇任何成功紀錄 → `lastSuccessAt: null`(**唔可以** fallback 做「而家」或亂估)
-- [ ] test:三態 / 三個派生來源 / 無紀錄 → null
+- [x] `integration-status.service.ts` —— 純 query layer,四個 connector 各一行
+- [x] **三態(D3)**:Graph / ServiceNow / intake = `required`(constructor `getOrThrow` fail-fast)· n8n outbound 隨 `REQUEST_SUBMISSION_PROVIDER` 切 `active`/`inactive` —— **無 `configured` 欄位**
+- [x] **派生時間(D4)**:三個來源全部實作 + test
+- [x] **n8n inbound 交白卷**(Q1)—— `lastSuccessNote` 明寫「Cannot be distinguished from other requests in existing data」
+- [x] 冇任何成功紀錄 → `lastSuccessAt: null`(有專門 test 鎖住,唔 fallback)
+- [x] test:三態 / 三個派生來源 / 無紀錄 → null(**9 條**)
 
 ## F2 — `GET /admin/integrations` + `POST /admin/integrations/:key/test`
 
-- [ ] DTO **allow-list 明文列欄位**(唔用 spread)—— D2 唯一結構性保證
-- [ ] `GET /admin/integrations` `@Roles(ADMIN)` + OpenAPI
-- [ ] `POST /admin/integrations/:key/test` `@Roles(ADMIN)`;探針 **重用既有唯讀方法**:`getSubscribedSkus()` / `query('', table, 1)`
-- [ ] 🔴 **絕不 `createRecord`** · 🔴 **絕不打 n8n webhook**(會建真 ticket)· n8n inbound 探針不適用
-- [ ] vendor 原始 error **唔可直吐前端**(可能含 instance URL / 帳號)—— 沿用 `graph-unavailable.ts` wrap 手法轉結構化
-- [ ] 節流:同 connector 最短間隔(Q2 拍板值),超出 **429**;**唔可以做成 `@Cron`**(D5 連帶義務:只准用戶觸發)
-- [ ] **🔴 G1 test 先行**:餵含假 secret 嘅 config → assert 序列化回應**唔含**該字串(同 W29 H4 test 同一思路)
-- [ ] **🔴 G2 test**:斷言 `createRecord` / n8n webhook **從未被呼叫**
-- [ ] test:403 / 節流 429 / 探針失敗 wrap
-- [ ] live curl 驗非 ADMIN → **403**(三重驗證:`/me` 確認身分 → 403 → 同身分對照 endpoint 200)
-- [ ] W28 `permissions.spec.ts` 預期兩重紅(snapshot + controller 名單)→ 審視後 deliberate update
+- [x] DTO **allow-list 明文列欄位**(唔用 spread)—— controller mapper 亦逐欄砌
+- [x] `GET /admin/integrations` `@Roles(ADMIN)` + OpenAPI
+- [x] `POST /admin/integrations/:key/test` `@Roles(ADMIN)`;探針**重用既有唯讀方法**,零新 vendor 方法
+- [x] 🔴 **絕不 `createRecord`** · 🔴 **絕不打 n8n webhook** —— `PROBEABLE` 寫成**資料**並註明「Do not add a probe here」
+- [x] vendor 原始 error **只入 log**,回固定訊息
+- [x] 節流 **10s**/connector → **429**;無 `@Cron` 變體
+- [x] **🔴 G1 test**:餵六個假 secret → assert 序列化回應一個都唔含(連 `service-now.com` 片段都唔准)
+- [x] **🔴 G2 test**:跑晒四個探針 → assert `createRecord`/`updateRecord`/`addWorkNote` **從未被呼叫**
+- [x] test:403(live)/ 節流 429 / 探針失敗 wrap —— **20 條**(9 status + 11 probe)
+- [x] live curl 驗非 ADMIN → **403** 三重驗證(`/me`=opco.it.rhk OPCO_IT → GET **403** + POST test **403** → `/license/ledger` 200 對照)
+- [x] W28 `permissions.spec.ts` 如預期兩重紅,兩條新 route 都帶 `roles [ADMIN]`,審視後 deliberate update
+- [x] **順手修語意**:探針原返 **201 Created** 但乜都冇建立 → `@HttpCode(200)`(live 驗證由 201 → 200)
 
 ## F3 — 前端 Integrations tab
 
-- [ ] `components/settings/integrations-panel.tsx` —— 每 connector 一行(名 · state badge · 最後成功時間 · Test 掣 + 結果)
-- [ ] `api-types.ts` + `queries.ts`(`useIntegrations`,`retryUnless403`)+ `mutations.ts`(`useTestConnection`)
-- [ ] 取代 `settings.tsx:240-246` EmptyState
-- [ ] **🔴 D6:刪走文案入面嘅 DocuWare**(後端零實作 + H3 排除,唔可繼續承諾)—— G9
-- [ ] **一個 view 一個 primary**:Test 掣一律 `secondary`(upload 已係本 tab primary)
-- [ ] 時間 / 識別碼 **mono**(DS-5)· token-only · lucide-only
-- [ ] n8n inbound 行誠實顯示「無法從既有資料區分」,**唔留白扮正常**
-- [ ] 403 → restricted state(後端先係真權威)
-- [ ] browser 驗 light + dark —— G6
-- [ ] 跑 `ui-design` skill 自檢(H6)
+- [x] `components/settings/integrations-panel.tsx` —— 每 connector 一行
+- [x] `api-types.ts` + `queries.ts`(`useIntegrations`,`retryUnless403`)+ `mutations.ts`(`useTestConnection`)
+- [x] 取代 EmptyState;**順手刪咗變成 orphan 嘅 `EmptyState` import**(§1.3 自己造成嘅 orphan 要清)
+- [x] **🔴 D6 DocuWare 已清** —— live DOM 驗 `hasDocuWare: false`(G9)
+- [x] **一個 view 一個 primary**:Test 掣 `secondary`
+- [x] 時間 / note **mono**(實測 `"Geist Mono"`)· token-only(grep 零 hex/rgb/gradient)· lucide-only
+- [x] n8n inbound 誠實顯示「Cannot be distinguished…」(live DOM 驗到)
+- [x] 403 → restricted state
+- [x] browser 驗 light + dark —— G6(bg 245→8 · badge 21,128,61→67,209,127 · **見下 dark 量度陷阱**)
+- [x] 跑 `ui-design` skill 自檢(H6)—— 12 條;**自檢揪到 3 個位即場修**:`py-[13px]` eyeball → `py-[11px]`(§1.3 `--pad-cell-y`)· `gap-[5px]` 唔喺 2px-step scale → `gap-[6px]` · **閃電圖示 `animate-spin` 讀落似 glitch** → pending 換 `RefreshCw`(跟 `drift.tsx` 慣例)
+- [x] 純函數 test:`lib/integrations.ts`(tone / label / lastSuccessText 三態)—— **6 條**,含「文案只可講 succeeded 唔可講 checked」嘅措辭 guard
 
 ## Verify
 
-- [ ] `apps/api`:build · test(≥266)· lint 全綠 —— G7
-- [ ] `apps/web`:build · test(≥93)· lint 全綠 —— G7
-- [ ] **G1 live**:實際打 `GET /admin/integrations`,肉眼核回應**零 env 值 / 零遮罩值**
-- [ ] **G5 live**:連撳兩次 Test → 第二次 429
-- [ ] **G4 live**:切 `REQUEST_SUBMISSION_PROVIDER` 重啟對照 n8n outbound `active` vs `inactive`
-- [ ] **G8 零既有行為改動**:既有 test 全綠 + `git diff` 核
-- [ ] **G9**:grep `settings.tsx` 零 DocuWare
+- [x] `apps/api`:build · test **286**(266→+20)· lint 全綠 —— G7
+- [x] `apps/web`:build · test **99**(93→+6)· lint 全綠 —— G7
+- [x] **G1 live**:`GET /admin/integrations` 回應**零 env 值 / 零 URL / 零遮罩**;頁面亦零 `AADSTS` / host / URL
+- [x] **G5 live**:連撳兩次 → 第二次 **429**「Too many attempts — retry in 10s」
+- [x] **G4 live**:切 `REQUEST_SUBMISSION_PROVIDER=n8n` 重啟 → `inactive` **→ `active`**
+- [x] **G8 零既有行為改動**:既有 test 全綠 + `git diff` 核 —— 純新增(唯一改既有檔 = `settings.tsx` 換 panel + 清 orphan import、`integration.module.ts` 加 controller)
+- [x] **G9**:live DOM `hasDocuWare: false`
 
 ---
 
