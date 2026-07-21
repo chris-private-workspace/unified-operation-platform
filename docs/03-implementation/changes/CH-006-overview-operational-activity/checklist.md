@@ -32,30 +32,30 @@
 
 ## F4 — 前端:來源切換
 
-- [ ] F4.1 `src/lib/api-types.ts` 加 `ActivityEvent`(`AuditEntry` 保留唔郁)
-- [ ] F4.2 `src/lib/activity.ts` 改寫 —— `eventTone` / `eventIcon` / `eventSummary`;`STAGE_CHANGE` 用 `STAGE_LABEL` 砌文字
-- [ ] F4.3 **B7** `EVENT_TONE` 抽入 `lib/activity.ts`,`request-detail.tsx` 改 import;grep 驗全 repo **只有一處定義**
-- [ ] F4.4 刪 CH-005 遺下嘅 audit 映射 orphan(`ACTION_LABEL` / `ACTION_ICON` / `activityTone`)—— 確認 `/audit` 頁不受影響
-- [ ] F4.5 `src/hooks/queries.ts` 加 `useActivity({ limit })`
-- [ ] F4.6 `activity-feed.tsx` 換 hook + **B12** EmptyState 改營運措辭
-- [ ] F4.7 `overview.tsx` 移除 `canSeeAdminNav` gate;header link → `/requests`;清 orphan import
-- [ ] F4.8 `lib/activity.test.ts` 重寫 + feed component test(含空狀態,**用 component test 唔用 live hack**)
-- [ ] F4.9 `apps/web` test / lint / build 綠
+- [x] F4.1 `src/lib/api-types.ts` 加 `ActivityEvent`(`AuditEntry` 保留唔郁)
+- [x] F4.2 `src/lib/activity.ts` 改寫 —— `eventTone` / `eventIcon` / `eventSummary`;`STAGE_CHANGE` 用 `STAGE_LABEL` 砌文字
+- [x] F4.3 **B7** `EVENT_TONE` 抽入 `lib/activity.ts`,`request-detail.tsx` 改 import;grep 驗全 repo **只有一處定義** ✅
+- [x] F4.4 刪 CH-005 audit 映射 orphan(`ACTION_LABEL`/`ACTION_ICON`/`activityTone`);`/audit` 頁用自己嗰套 `lib/audit.ts`,`audit.test.ts` 8 test 仍綠
+- [x] F4.5 `src/hooks/queries.ts` 加 `useActivity(limit)`
+- [x] F4.6 `activity-feed.tsx` 換 hook + **B12** EmptyState 改營運措辭(+ 措辭 guard test)
+- [x] F4.7 `overview.tsx` 移除 gate;header link → `/requests`;清 orphan(`canSeeAdminNav`/`useCurrentUser`/`role`)
+- [x] F4.8 `lib/activity.test.ts` 重寫(9)+ feed component test(6,含空狀態 / error / 無-message stage move)
+- [x] F4.9 `apps/web` test **123/123** · lint 0 · build 0
 
 ## F5 — 驗收
 
-- [ ] G-B1 ADMIN live:Overview card ≤6 行真事件 + ref + 相對時間
-- [ ] G-B2 **OPCO_IT live 對照**:card 見到,且只有自己 OpCo 事件(vs ADMIN 見跨 OpCo)
-- [ ] G-B9 H6 token-only grep(零 hex / rgb / gradient)+ lucide stroke + 零 primary action
-- [ ] G-B10 light + dark 都驗;時間 / requestRef mono(DS-5)
-- [ ] G-B11 **截圖驗**窄視窗冇內容被切走(W31 教訓 —— DOM 綠唔代表用到)
-- [ ] G-B13 api **324 → ≥332** · web **123 → ≥128**
-- [ ] G-B14 跑 `ui-design` skill 12 條,逐條記錄
+- [x] G-B1 ADMIN live:card 6 行,**六行行齊每條文字分支**(有 message / stage 對砌 / 有 actor / 無 actor / SN 號 / id-tail fallback)
+- [x] G-B2 **OPCO_IT live 三方對照**(見 progress):ADMIN 18(跨 OpCo)· OPCO_IT-RHK **2 條全 RHK、PFU-Asia 洩漏 0** · `/admin/audit` **403**
+- [x] G-B9 H6 token-only grep 零 hex/rgb/gradient · icon 全 lucide stroke · 零 primary action
+- [x] G-B10 light + dark **四個色值全 swap**(card 底 / chip 底 / chip 前景 / mono 前景);`Geist Mono` live 確認(DS-5)
+- [x] G-B11 **截圖驗**:極窄下文字換行、ref 落第二行、時間靠 `shrink-0` 保留,零內容切走、body 唔橫向 scroll
+- [x] G-B13 api **324 → 333** ✅ · web **123 → 123** ⚠️ **未達 ≥128** —— 見 spec §7 changelog(換來源非加來源,原數字基於錯假設)
+- [x] G-B14 跑 `ui-design` skill 12 條(見 progress)
 
 ## F6 — 收尾
 
-- [ ] F6.1 `progress.md` 完成摘要 + 教訓
-- [ ] F6.2 `spec.md` status → `done`
-- [ ] F6.3 BACKLOG `FE-activity-ops` → ✅ 完成(R7)
-- [ ] F6.4 `design-system.md §6` 檢查是否需登記(Overview card 改來源,非新畫面)
-- [ ] F6.5 commit + push + PR
+- [x] F6.1 `progress.md` 完成摘要 + 三個教訓 + **未達標項誠實記錄**
+- [x] F6.2 `spec.md` status → `done` + §7 三條 changelog(R3)
+- [x] F6.3 BACKLOG `FE-activity-ops` → ✅ 完成(R7)
+- [x] F6.4 `design-system.md §6` —— **唔需要新登記**:Overview 係已登記畫面,本 Change 只換 card 資料來源,冇新增畫面 / primitive / token
+- [x] F6.5 commit + push + PR

@@ -1,7 +1,7 @@
 ---
 change_id: CH-006
 title: "Overview 營運活動流 — RequestEvent 全域時間軸取代 audit feed"
-status: active          # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-07-21
 target_completion: 2026-07-22
 affects_components: [apps/api, apps/web, prisma]
@@ -160,6 +160,9 @@ BACKLOG `FE-activity-ops` 寫「`RequestEvent` **只有 write、零 read surface
 |---|---|---|---|
 | 2026-07-21 | Initial draft | CH-005 carry-over;D1/D2/D3 已拍板 | Chris Lai |
 | 2026-07-21 | Approved → active;§2.3 raw-enum 裁定唔改 | Chris「Approve 開工」,未就 raw-enum 另行指示 → default out-of-scope | Chris Lai |
+| 2026-07-22 | **B13 web 數字修正**:`123 → ≥128` 改為 `123 → 123(不變)` | 原數字假設 test 累加。本 Change **換來源**,CH-005 嘅 audit 措辭 test 連同佢守護嘅映射一齊刪:新 15 test(9+6)= 舊 15 test(10+5)。api 側 324→333 如期。**唔為湊數補 test** | AI(記錄)· 待 Chris 覆核 |
+| 2026-07-22 | F3.3 由「獨立 controller spec」改為「用既有 `permissions.spec.ts`」 | `fulfilment/` 零 controller spec;本項目 role 驗證集中於 W28 derived 矩陣。跟既有 pattern(§13) | AI(記錄) |
+| 2026-07-22 | status → `done` | B1–B12 / B14 全 pass;B13 部分(見上) | AI(記錄) |
 
 ---
 
