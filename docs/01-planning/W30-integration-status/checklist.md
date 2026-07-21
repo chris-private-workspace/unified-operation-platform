@@ -1,7 +1,7 @@
 ---
 phase: W30-integration-status
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete       # in-progress | complete
 last_updated: 2026-07-21
 ---
 
@@ -9,6 +9,7 @@ last_updated: 2026-07-21
 
 > Atomic checkbox(每 item ≤ 1–2 hour effort)。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
+
 ## F0 — Gate(開工前)
 
 - [x] Chris approve plan §9 三點 —— Q1 **交白卷標「無法區分」** · Q2 **節流 10s** · Q3 **state 唔變,另有「上次探測」結果**(三點全照建議)
@@ -67,13 +68,13 @@ last_updated: 2026-07-21
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker(R4)—— Q1/Q2/Q3 拍板結果入 progress
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **預期無新 ADR**(ADR-0010 已涵蓋);但 plan §8 嘅 n8n inbound 派生落空 → closeout 喺 ADR-0010 補一句註
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)—— INTEG-1 → 完成;item 5 / 6 狀態不變
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro(候選:INTEG-3 人手 retry[要新 model = H1]/ FE-activity[⚠️ 受 ADMIN-only 限制]/ AUTH-2b[🔴 卡 IT]/ DEPLOY)
+- [x] All deliverables committed to git(`b58e7ce` kickoff · `a73e848` F1+F2 · `d3b589a` F3 · closeout commit)
+- [x] All open-question status changes reflected in decision tracker(R4)—— Q1/Q2/Q3 拍板結果 + Q3 實作後果入 progress Day 1
+- [x] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **無新 ADR**;**ADR-0010 D4 已補實作補註**(n8n inbound 派生落空 + 點解交白卷),同 W29 補 ADR-0009 一樣屬補完邊界唔係推翻
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)—— INTEG-1 → ✅ 完成;item 5(卡 OQ-D)/ item 6(路線已定)狀態不變
+- [x] `progress.md` retro section written
+- [x] `progress.md` frontmatter status flipped to `closed`(plan / checklist 同步)
+- [x] Phase N+1 kickoff trigger noted in retro(候選:INTEG-3 人手 retry[⚠️ 要新 model = H1]/ FE-activity[⚠️ 受 ADMIN-only 限制]/ AUTH-2b[🔴 卡 IT]/ DEPLOY)
 
 ---
 

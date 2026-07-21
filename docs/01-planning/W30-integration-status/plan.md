@@ -4,7 +4,7 @@ name: "Integration 狀態 + Test connection(ADR-0010 item 4 / INTEG-1)"
 sprint_week: W30
 start_date: 2026-07-21
 end_date: 2026-07-22          # planned, may slip with changelog log
-status: active                # draft | active | closed — Chris 2026-07-21 approve §9 三點後 flip
+status: closed                # draft | active | closed — G1-G9 全 pass,2026-07-21 closeout
 spec_refs:
   - docs/adr/0010-integration-observability-delivery.md（D2/D3/D4/D5/D6 — 全部本 phase 落地）
   - docs/02-architecture/audit-and-integration-observability.md §2.4（整合現況）· §6 item 4
