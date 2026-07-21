@@ -66,9 +66,17 @@ item 4 完全自足。item 5 卡外部合約(§7.1),item 6 要 owner 揀路線(O
 |---|---|
 | Graph | `max(SkuCatalog.lastSyncedAt)` · `max(TenantSkuSnapshot.capturedAt)` |
 | ServiceNow | 最近一張有 `serviceNowSysId` 嘅 `Request` |
-| n8n inbound | 最近一張 `origin` = intake 嘅 `Request`(ADR-0008) |
+| n8n inbound | ~~最近一張 `origin` = intake 嘅 `Request`~~ → **派生唔到,見下補註** |
 
 **零新 schema、零新寫入路徑、零迴歸面。** 代價係佢係**代理信號**(proxy):反映「最近一次成功用過」,唔係「最近一次探測通過」。UI 必須誠實標示(**唔可以叫佢 "Last health check"**)。
+
+> **實作補註(W30 closeout,2026-07-21)—— n8n inbound 派生唔到**
+>
+> 上表原本列咗 n8n inbound 可以由 `origin` = intake 派生。**實作時查證發現唔得**:`Request.origin` 個 **default 就係 `'onboarding-intake'`**(`schema.prisma:200`),所以 W03 seed 出嚟嘅單同真 n8n 推入嚟嘅單**完全分唔開**。
+>
+> W30 嘅處理(Chris 2026-07-21 拍板 Q1):**交白卷** —— 該行 `lastSuccessAt: null` + `lastSuccessNote` 明文寫「Cannot be distinguished from other requests in existing data」。**唔揀近似值**:一個睇落合理但實際錯嘅時間戳,比「唔知」更危險,因為運維會照住佢判斷 connector 死咗未。
+>
+> 呢個 gap 要靠 item 5(n8n 回程 webhook)或者將來獨立健康記錄(OQ-B 重開)解決。**屬實作層修正,唔改本 Decision 嘅方向**(仍然係「派生優先、唔開 model」)。
 
 > **唔把整合結果寫入 `AuditLog`。** ADR-0009 個表答嘅係「邊個改咗乜」;connector 通唔通係另一回事,溝埋會污染 audit trail 同 P-B 嘅 PII 邊界推理。真要獨立健康史 → 見 OQ-B。
 

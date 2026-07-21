@@ -3,6 +3,8 @@
 exports[`permission matrix (derived from @Roles) matches the locked matrix snapshot 1`] = `
 [
   "GET /admin/audit → roles [ADMIN]",
+  "GET /admin/integrations → roles [ADMIN]",
+  "POST /admin/integrations/:key/test → roles [ADMIN]",
   "GET /admin/opcos → roles [ADMIN,REGIONAL]",
   "POST /admin/opcos → roles [ADMIN,REGIONAL]",
   "PATCH /admin/opcos/:id → roles [ADMIN,REGIONAL]",

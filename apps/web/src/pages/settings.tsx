@@ -14,7 +14,6 @@ import { Avatar } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useUiStore, type Theme } from '@/store/ui';
@@ -26,6 +25,7 @@ import { AllocationImportPanel } from '@/components/settings/allocation-import';
 import { UsersPanel } from '@/components/settings/users-panel';
 import { OpcosPanel } from '@/components/settings/opcos-panel';
 import { PermissionsPanel } from '@/components/settings/permissions-panel';
+import { IntegrationsPanel } from '@/components/settings/integrations-panel';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
@@ -237,13 +237,7 @@ export function Settings() {
         {tab === 'integrations' && (
           <>
             <AllocationImportPanel />
-            <div className="rounded-[12px] border border-border bg-card">
-              <EmptyState
-                icon={<Cable size={18} strokeWidth={2} />}
-                title="Connector status coming soon"
-                description="Live status for Microsoft Graph, ServiceNow and DocuWare (and n8n config) needs the integration-status API."
-              />
-            </div>
+            <IntegrationsPanel />
           </>
         )}
       </div>

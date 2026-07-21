@@ -11,6 +11,7 @@ import type {
   LineItemStage,
   OnboardingRequest,
   Opco,
+  ProbeResult,
   ReconcileResult,
   RequestLineItem,
   ResetPasswordBody,
@@ -115,6 +116,23 @@ export function useAllocationImport() {
   return useMutation({
     mutationFn: (vars: { csv: string; dryRun: boolean }) =>
       apiPost<LedgerImportResult>('/license/ledger/import', vars),
+  });
+}
+
+/**
+ * POST /admin/integrations/:key/test — run one read-only probe (W30 / ADR-0010
+ * D5). Invalidates the connector list so the row picks up the stored result.
+ * The backend throttles per connector (10s → 429); the UI just surfaces the
+ * server's message rather than tracking the cooldown itself.
+ */
+export function useTestConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) =>
+      apiPost<ProbeResult>(`/admin/integrations/${key}/test`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'integrations'] });
+    },
   });
 }
 

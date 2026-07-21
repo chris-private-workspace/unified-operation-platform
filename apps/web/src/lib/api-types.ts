@@ -325,6 +325,36 @@ export interface AuditFilters {
   offset?: number;
 }
 
+/**
+ * GET /admin/integrations → connector rows (W30 / ADR-0010 item 4). ADMIN-only.
+ *
+ * `state` is DEPLOYMENT SHAPE, not health — `required` means the config is
+ * getOrThrow-ed at boot, so the app could not be running without it (a
+ * `configured: true` field would be a tautology). A failed probe never changes
+ * `state`; it lands in `lastProbe`, which is in-process only and cleared on
+ * restart — so it must never be presented as a history.
+ */
+export type ConnectorState = 'required' | 'active' | 'inactive';
+
+export interface ProbeResult {
+  ok: boolean;
+  message: string; // safe for display — never the vendor's own error text
+  at: string;
+}
+
+export interface ConnectorStatus {
+  key: string; // 'graph' | 'servicenow' | 'n8n-outbound' | 'n8n-inbound'
+  label: string;
+  state: ConnectorState;
+  /** When it last demonstrably worked (derived) — NOT when it was last checked. */
+  lastSuccessAt: string | null;
+  /** Set when lastSuccessAt can never be derived for this connector. */
+  lastSuccessNote: string | null;
+  lastProbe: ProbeResult | null;
+  probeable: boolean;
+  probeNote: string | null;
+}
+
 /** POST /admin/users body — create a local account (admin sets the password). */
 export interface CreateUserBody {
   email: string;
