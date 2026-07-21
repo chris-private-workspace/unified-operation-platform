@@ -9,6 +9,7 @@ import type { AppUser } from '@prisma/client';
 import { OutboundRequestService } from './outbound-request.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestSubmissionProvider } from './request-submission.provider';
+import { OutboundFailureService } from './outbound-failure.service';
 
 // Actors (AUTH-3a). OpCo under test = 'o1'.
 const ADMIN = { id: 'admin', opcoScopeId: null } as unknown as AppUser;
@@ -32,6 +33,7 @@ describe('OutboundRequestService', () => {
     request: Record<string, jest.Mock>;
   };
   let provider: { submit: jest.Mock };
+  let failures: { record: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -40,11 +42,14 @@ describe('OutboundRequestService', () => {
       request: { create: jest.fn() },
     };
     provider = { submit: jest.fn() };
+    // ADR-0011 — both failure branches queue through this.
+    failures = { record: jest.fn().mockResolvedValue(undefined) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         OutboundRequestService,
         { provide: PrismaService, useValue: prisma },
         { provide: RequestSubmissionProvider, useValue: provider },
+        { provide: OutboundFailureService, useValue: failures },
       ],
     }).compile();
     service = moduleRef.get(OutboundRequestService);
@@ -170,5 +175,89 @@ describe('OutboundRequestService', () => {
       ServiceUnavailableException,
     );
     expect(prisma.request.create).not.toHaveBeenCalled();
+  });
+
+  // ── ADR-0011: the outbound failure queue ──────────────────────────────
+  describe('failure queue (W31)', () => {
+    const submitted = {
+      serviceNowSysId: 'req-sys',
+      serviceNowNumber: 'REQ0001',
+      lineItems: [
+        { serviceNowSysId: 'ritm-1', serviceNowNumber: 'RITM001' },
+        { serviceNowSysId: 'ritm-2', serviceNowNumber: 'RITM002' },
+      ],
+    };
+
+    it('queues a submit failure with NO externalRef — nothing was created', async () => {
+      arrangeResolves();
+      provider.submit.mockRejectedValue(new Error('fetch failed'));
+
+      await expect(service.create(payload(), ADMIN)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      const entry = failures.record.mock.calls[0][0];
+      expect(entry.kind).toBe('request.submit');
+      expect(entry.payload.targetUpn).toBe('user@rhk.com.hk');
+      // Absent externalRef is the signal that re-submitting is safe (D3).
+      expect(entry.externalRef).toBeUndefined();
+    });
+
+    /**
+     * The orphan case. Two things must hold: the sysIds are captured (so the
+     * repair can write the mirror without touching ServiceNow), and the error
+     * NAMES the ticket — D7. The old `throw err` surfaced a raw Prisma error,
+     * which told the operator nothing about the real ticket now sitting in SN.
+     */
+    it('queues a mirror failure WITH the SN sysIds and names the ticket', async () => {
+      arrangeResolves();
+      provider.submit.mockResolvedValue(submitted);
+      prisma.request.create.mockRejectedValue(new Error('deadlock detected'));
+
+      await expect(service.create(payload(), ADMIN)).rejects.toThrow(
+        /REQ0001 was created, but the platform could not record it/,
+      );
+
+      const entry = failures.record.mock.calls[0][0];
+      expect(entry.kind).toBe('request.mirror');
+      expect(entry.externalRef.serviceNowSysId).toBe('req-sys');
+      expect(entry.externalRef.lineItems).toHaveLength(2);
+      // The payload must still carry what the local rows need.
+      expect(entry.payload.opcoCode).toBe('RHK');
+      expect(entry.payload.lineItems).toHaveLength(2);
+    });
+
+    it('tells the operator NOT to submit again', async () => {
+      arrangeResolves();
+      provider.submit.mockResolvedValue(submitted);
+      prisma.request.create.mockRejectedValue(new Error('deadlock'));
+
+      await expect(service.create(payload(), ADMIN)).rejects.toThrow(
+        /Do not submit again/,
+      );
+    });
+
+    /**
+     * G3 — recording must survive the failure it describes. The mirror write is
+     * what failed; if the record shared its fate the queue would be empty at
+     * exactly the moment it matters (D6).
+     */
+    it('records the mirror failure even though the local write failed', async () => {
+      arrangeResolves();
+      provider.submit.mockResolvedValue(submitted);
+      prisma.request.create.mockRejectedValue(new Error('write failed'));
+
+      await expect(service.create(payload(), ADMIN)).rejects.toThrow();
+      expect(failures.record).toHaveBeenCalledTimes(1);
+    });
+
+    it('queues nothing on the happy path', async () => {
+      arrangeResolves();
+      provider.submit.mockResolvedValue(submitted);
+      prisma.request.create.mockResolvedValue({ id: 'r1', lineItems: [] });
+
+      await service.create(payload(), ADMIN);
+      expect(failures.record).not.toHaveBeenCalled();
+    });
   });
 });

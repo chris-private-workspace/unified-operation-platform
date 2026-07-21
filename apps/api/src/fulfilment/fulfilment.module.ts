@@ -14,6 +14,7 @@ import { OutboundRequestService } from './outbound-request.service';
 import { RequestSubmissionProvider } from './request-submission.provider';
 import { DirectServiceNowProvider } from './direct-servicenow.provider';
 import { N8nWorkflowProvider } from './n8n-workflow.provider';
+import { OutboundFailureService } from './outbound-failure.service';
 
 /**
  * ADR-0008 D3 / Phase 丙 (W26, Fork 3 = config 單選): pick the outbound
@@ -57,6 +58,7 @@ export function requestSubmissionProviderFactory(
     IntakeService,
     IntakeKeyGuard,
     OutboundRequestService,
+    OutboundFailureService, // ADR-0011 — outbound failure queue
     // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by env — see
     // requestSubmissionProviderFactory above.
     {
