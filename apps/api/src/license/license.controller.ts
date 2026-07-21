@@ -74,8 +74,8 @@ export class LicenseController {
 
   @Post('reconcile')
   @ApiOkResponse({ type: ReconcileResultDto })
-  runReconcile(): Promise<ReconcileResultDto> {
-    return this.reconcile.reconcile();
+  runReconcile(@CurrentUser() actor: AuthUser): Promise<ReconcileResultDto> {
+    return this.reconcile.reconcile(actor.id);
   }
 
   @Get('drift')
@@ -93,9 +93,10 @@ export class LicenseController {
   @Roles(Role.ADMIN, Role.REGIONAL)
   @ApiOkResponse({ type: LedgerImportResultDto })
   importAllocation(
+    @CurrentUser() actor: AuthUser,
     @Body() dto: LedgerImportRequestDto,
   ): Promise<LedgerImportResultDto> {
-    return this.allocationImport.import(dto);
+    return this.allocationImport.import(actor.id, dto);
   }
 
   /**

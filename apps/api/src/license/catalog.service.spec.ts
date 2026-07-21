@@ -191,5 +191,37 @@ describe('CatalogService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(prisma.skuCatalog.update).not.toHaveBeenCalled();
     });
+
+    // W29 F2c — an alias edit silently changes how future allocation imports
+    // match rows (ADR-0004), so the curation trail matters.
+    it('records catalog.update with before/after in the write transaction', async () => {
+      const before = { id: 'c1', businessAlias: 'Old', category: null };
+      prisma.skuCatalog.findUnique.mockResolvedValue(before);
+      prisma.skuCatalog.update.mockResolvedValue({
+        ...before,
+        businessAlias: 'New',
+      });
+
+      await service.updateEntry('actor-1', 'c1', { businessAlias: 'New' });
+
+      expect(audit.logChange).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'catalog.update',
+          targetType: 'SkuCatalog',
+          targetId: 'c1',
+          actorId: 'actor-1',
+          before,
+        }),
+      );
+    });
+
+    it('writes no audit row when the entry does not exist', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateEntry('actor-1', 'nope', { category: 'X' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(audit.logChange).not.toHaveBeenCalled();
+    });
   });
 });

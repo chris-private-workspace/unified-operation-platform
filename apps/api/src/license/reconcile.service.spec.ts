@@ -3,6 +3,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { ReconcileService } from './reconcile.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import { AuditService } from '../audit/audit.service';
 
 const liveSku = (skuId: string, consumed: number) => ({
   skuId,
@@ -19,8 +20,10 @@ describe('ReconcileService', () => {
     skuCatalog: Record<string, jest.Mock>;
     opcoSkuLedger: Record<string, jest.Mock>;
     driftAlert: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
   };
   let graph: { getSubscribedSkus: jest.Mock };
+  let audit: { log: jest.Mock; logChange: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -32,14 +35,19 @@ describe('ReconcileService', () => {
         update: jest.fn(),
         count: jest.fn().mockResolvedValue(0),
       },
+      // W29 F2c: run the callback against the same mock so existing
+      // prisma.driftAlert.* assertions keep working untouched.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
     };
     graph = { getSubscribedSkus: jest.fn() };
+    audit = { log: jest.fn(), logChange: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         ReconcileService,
         { provide: PrismaService, useValue: prisma },
         { provide: GraphService, useValue: graph },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(ReconcileService);
@@ -203,5 +211,64 @@ describe('ReconcileService', () => {
     expect(prisma.skuCatalog.findMany).not.toHaveBeenCalled();
     expect(prisma.driftAlert.create).not.toHaveBeenCalled();
     expect(prisma.driftAlert.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * W29 F2c — resolving a drift alert is decided by the code (delta hit 0), but
+   * WHO set the run going is a separate question an auditor will ask
+   * (Chris, 2026-07-21).
+   */
+  describe('audit trail', () => {
+    const oneSkuReconciled = () => {
+      graph.getSubscribedSkus.mockResolvedValue([liveSku('guid-1', 10)]);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c1', skuId: 'guid-1', active: true },
+      ]);
+      prisma.opcoSkuLedger.aggregate.mockResolvedValue({
+        _sum: { assignedQuantity: 10 }, // delta 0 → resolve
+      });
+      prisma.driftAlert.findFirst.mockResolvedValue({
+        id: 'alert-1',
+        status: 'OPEN',
+      });
+      prisma.driftAlert.update.mockResolvedValue({
+        id: 'alert-1',
+        status: 'RESOLVED',
+      });
+    };
+
+    it('attributes a manually triggered resolve to the operator', async () => {
+      oneSkuReconciled();
+
+      await service.reconcile('actor-1');
+
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'drift.resolve',
+          targetType: 'DriftAlert',
+          targetId: 'alert-1',
+          actorId: 'actor-1',
+          actorType: 'user',
+          metadata: { source: 'manual-reconcile' },
+        }),
+      );
+    });
+
+    // The scheduled sweep has no person behind it.
+    it('attributes the scheduled sweep to the system', async () => {
+      oneSkuReconciled();
+
+      await service.reconcile(); // no actor → @Cron path
+
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          actorId: null,
+          actorType: 'system',
+          metadata: { source: 'scheduled' },
+        }),
+      );
+    });
   });
 });

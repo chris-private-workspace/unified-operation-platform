@@ -168,4 +168,51 @@ describe('OpcoService', () => {
       expect(prisma.opco.update).not.toHaveBeenCalled();
     });
   });
+
+  // W29 F2c — OpCo curation is auditable (ADR-0009 Decision 4).
+  describe('audit trail', () => {
+    it('records opco.create in the write transaction', async () => {
+      prisma.opco.findUnique.mockResolvedValue(null);
+      const created = { id: 'new', code: 'RVN' };
+      prisma.opco.create.mockResolvedValue(created);
+
+      await service.createOpco('actor-1', {
+        code: 'RVN',
+        displayName: 'Ricoh VN',
+        company: 'RVN',
+      });
+
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'opco.create',
+          targetType: 'Opco',
+          targetId: 'new',
+          actorId: 'actor-1',
+          after: created,
+        }),
+      );
+    });
+
+    it('records opco.update with before/after for the diff', async () => {
+      const before = { id: 'o1', displayName: 'Old', active: true };
+      prisma.opco.findUnique.mockResolvedValue(before);
+      prisma.opco.update.mockResolvedValue({ ...before, displayName: 'New' });
+
+      await service.updateOpco('actor-1', 'o1', { displayName: 'New' });
+
+      expect(audit.logChange).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ action: 'opco.update', before }),
+      );
+    });
+
+    it('writes nothing when the OpCo does not exist', async () => {
+      prisma.opco.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateOpco('actor-1', 'nope', { displayName: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(audit.logChange).not.toHaveBeenCalled();
+    });
+  });
 });

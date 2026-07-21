@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { AllocationImportService } from './allocation-import.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 // Two OpCos + two curated M365 SKUs; the D365 row is deliberately uncurated
 // (no businessAlias match) to exercise curation-as-scope (ADR-0004).
@@ -36,8 +37,10 @@ describe('AllocationImportService', () => {
     opco: { findMany: jest.Mock };
     skuCatalog: { findMany: jest.Mock };
     opcoSkuLedger: { findMany: jest.Mock; upsert: jest.Mock };
+    auditLog: { create: jest.Mock };
     $transaction: jest.Mock;
   };
+  let audit: { buildLogArgs: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -47,20 +50,25 @@ describe('AllocationImportService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         upsert: jest.fn().mockResolvedValue({}),
       },
+      // W29 F2c: the summary audit row rides along in the same array-form
+      // transaction as the upserts.
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
       // array-form $transaction — resolve the batched upserts.
       $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
     };
+    audit = { buildLogArgs: jest.fn(() => ({ data: {} })) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AllocationImportService,
         { provide: PrismaService, useValue: prisma },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(AllocationImportService);
   });
 
   it('dry-run: maps OpCo + SKU, classifies, writes nothing', async () => {
-    const res = await service.import({ csv: CSV, dryRun: true });
+    const res = await service.import('actor-1', { csv: CSV, dryRun: true });
 
     expect(res.dryRun).toBe(true);
     expect(res.committed).toBe(0);
@@ -99,7 +107,7 @@ describe('AllocationImportService', () => {
       },
     ]);
 
-    const res = await service.import({ csv: CSV, dryRun: false });
+    const res = await service.import('actor-1', { csv: CSV, dryRun: false });
 
     expect(res.dryRun).toBe(false);
     expect(res.committed).toBe(4);
@@ -160,7 +168,7 @@ describe('AllocationImportService', () => {
       },
     ]);
 
-    const res = await service.import({ csv: CSV, dryRun: false });
+    const res = await service.import('actor-1', { csv: CSV, dryRun: false });
 
     expect(res.summary.changes).toBe(0);
     expect(res.committed).toBe(0);
@@ -182,7 +190,7 @@ describe('AllocationImportService', () => {
       },
     ]);
 
-    const res = await service.import({ csv, dryRun: false });
+    const res = await service.import('actor-1', { csv, dryRun: false });
 
     expect(res.changes).toContainEqual({
       opcoCode: 'RHK',
@@ -204,7 +212,7 @@ describe('AllocationImportService', () => {
   it('reports header columns that match no Opco.code (Grand Total is not "unknown")', async () => {
     const csv =
       ',RHK,BOGUS,Grand Total\nM365 E3 Unified Existing Customer Sub Per User,10,20,30';
-    const res = await service.import({ csv, dryRun: true });
+    const res = await service.import('actor-1', { csv, dryRun: true });
 
     expect(res.unknownOpcoHeaders).toEqual(['BOGUS']);
     expect(res.summary.opcoColumns).toBe(1); // only RHK mapped
@@ -225,7 +233,7 @@ describe('AllocationImportService', () => {
       },
     ]);
 
-    const res = await service.import({ csv: CSV, dryRun: false });
+    const res = await service.import('actor-1', { csv: CSV, dryRun: false });
 
     // D365 row is no longer skipped; RTH=175 (RHK blank → no-op) becomes a change.
     expect(res.skippedSkuLabels).toEqual([]);
@@ -244,6 +252,39 @@ describe('AllocationImportService', () => {
     expect(d365[0].create).toMatchObject({
       skuCatalogId: 'sku-d365',
       allocatedQuantity: 175,
+    });
+  });
+
+  /**
+   * W29 F2c — ONE summary row per import, riding in the same array-form
+   * transaction as the upserts. A per-change row would drown the table: a
+   * single import can touch hundreds of ledger cells.
+   */
+  describe('audit trail', () => {
+    it('writes one summary audit row inside the commit transaction', async () => {
+      await service.import('actor-1', { csv: CSV, dryRun: false });
+
+      expect(audit.buildLogArgs).toHaveBeenCalledTimes(1);
+      expect(audit.buildLogArgs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'allocation.import',
+          targetType: 'AllocationImport',
+          actorId: 'actor-1',
+          after: expect.objectContaining({ committed: expect.any(Number) }),
+        }),
+      );
+      // the audit create is part of the same batched transaction as the upserts
+      expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+      const batch = prisma.$transaction.mock.calls[0][0];
+      expect(batch.length).toBe(
+        prisma.opcoSkuLedger.upsert.mock.calls.length + 1,
+      );
+    });
+
+    // Nothing changed, so nothing to record.
+    it('writes no audit row on a dry run', async () => {
+      await service.import('actor-1', { csv: CSV, dryRun: true });
+      expect(audit.buildLogArgs).not.toHaveBeenCalled();
     });
   });
 });

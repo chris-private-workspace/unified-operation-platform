@@ -39,7 +39,18 @@ export interface AuditEntryInput {
 export class AuditService {
   /** Record an event. `before`/`after`/`metadata` are whitelisted here. */
   async log(tx: AuditTx, entry: AuditEntryInput): Promise<void> {
-    await tx.auditLog.create({
+    await tx.auditLog.create(this.buildLogArgs(entry));
+  }
+
+  /**
+   * The same whitelisted payload, built but NOT executed — for callers that use
+   * the array form of `$transaction` (allocation import batches its upserts
+   * that way). Rewriting those as an interactive transaction would change their
+   * batching semantics for no gain; this keeps the audit row in the SAME
+   * transaction while whitelisting still happens here, not at the call site.
+   */
+  buildLogArgs(entry: AuditEntryInput): Prisma.AuditLogCreateArgs {
+    return {
       data: {
         action: entry.action,
         targetType: entry.targetType,
@@ -50,7 +61,7 @@ export class AuditService {
         after: toJson(pickAuditFields(entry.targetType, entry.after)),
         metadata: toJson(pickAuditMetadata(entry.metadata)),
       },
-    });
+    };
   }
 
   /**
