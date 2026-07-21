@@ -11,7 +11,8 @@ export const AUDIT_ACTION_OPTIONS = [
   'user.update',
   'user.role_change',
   'user.deactivate',
-  'user.password_reset',
+  'user.password_reset', // admin reset someone else's
+  'user.password_change', // self-service (actorId === targetId)
   'auth.login_success',
   'auth.login_failed',
   'auth.locked',

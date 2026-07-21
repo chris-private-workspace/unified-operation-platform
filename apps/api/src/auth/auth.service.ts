@@ -172,14 +172,28 @@ export class AuthService {
     if (violation) throw new BadRequestException(violation);
 
     const passwordHash = await argon2.hash(dto.newPassword);
-    await this.prisma.appUser.update({
-      where: { id: user.id },
-      data: {
-        passwordHash,
-        mustChangePassword: false,
-        passwordChangedAt: new Date(),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.appUser.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          passwordChangedAt: new Date(),
+        },
+      });
+      // Event only — no before/after, matching user.password_reset: the only
+      // things that changed are the hash and its lifecycle flags, which would be
+      // either useless or a leak to store. actorId === targetId is what marks
+      // this as self-service; a forced change is visible as this row following a
+      // user.password_reset on the same account.
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.USER_PASSWORD_CHANGE,
+        targetType: 'AppUser',
+        targetId: user.id,
+        actorId: user.id,
+      });
     });
+    // H4: log the id only — never the password / hash.
     this.logger.log(`Password changed: userId=${user.id}`);
   }
 

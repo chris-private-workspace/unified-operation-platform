@@ -207,11 +207,17 @@ Chris 揀咗獨立 `/audit` 頁(偏離我原建議)。冇當「owner 話咗算�
 ### Carry-overs to W30
 
 - ✅ **BACKLOG R7 同步 —— 已完成**(PR #9 merge 後解封,見下「R7 狀態」)。
-- 🟡 **self-service 改密碼冇 audit**(H3 gap,見下)—— 等 Chris 決定。
+- ✅ **self-service 改密碼 audit —— 已收**(Chris 2026-07-21 approve;見下 H3 gap 一節)。
 - 🟢 **audit retention** —— ADR-0009 Decision 8.3 刻意唔做(避免過早優化),但 Decision 7 連帶義務 ③ 講明將來 retention **必須涵蓋** `AuditLog`。**已登 BACKLOG A 區 candidate**。
 - 🟢 **FE-activity**(Overview activity feed)由本 phase **解封** —— activity feed = audit 查詢嘅一個 view,`GET /admin/audit` 已提供。**但注意連帶問題**:該 endpoint ADMIN-only(P-B,唔可放寬),而 Overview 係全 role 畫面 → 開工前要先決定 non-admin 睇到乜(另開 scoped endpoint / 隱藏 feed / 只顯示自己嘅操作)。已寫入 BACKLOG 該行前置。
 
-#### 🟡 發現咗一個 scope gap,冇擅自補(H3)
+#### ✅ 發現咗一個 scope gap,冇擅自補(H3)—— 事後由 owner 拍板補上
+
+> **2026-07-21 更新**:Chris approve 補。當 **trivial change**(PROCESS §1.1)做,唔開 phase:新增 `user.password_change`(命名放 `user.` 而非 `auth.`,理由見 ADR-0009 Decision 4 補註)· `changePassword` 包 `$transaction` · 3 條新 api test(含 H4 payload 斷言)+ 1 條 web drift-guard;api 263→**266** · web 92→**93**。**ADR-0009 Decision 4 已補註,首階段覆蓋 14 個事件。**
+>
+> **Live 真 session 驗證**(dev-bypass 會掩蓋 session,所以特意關咗重啟):login 200 → `/me` **403「Password change required」**(force-change gate 生效 = 證實用緊真 session)→ self-service change **204** → DB 見兩條並排:`user.password_reset`(actor `chris.lai`,self_service=**f**)vs `user.password_change`(actor `fc.demo`,self_service=**t**),兩條 payload 全空。驗完已還原 dev-bypass。
+
+以下保留當時嘅判斷紀錄。
 
 ADR-0009 Decision 4 個 13 事件清單有 `user.password_reset`(**admin 重設**別人密碼),但**冇 self-service 改密碼**(`AuthService.changePassword`,AUTH-4c-A)。
 

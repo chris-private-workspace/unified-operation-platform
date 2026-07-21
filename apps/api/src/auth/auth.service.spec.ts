@@ -259,17 +259,24 @@ describe('AuthService.logout', () => {
 
 describe('AuthService.changePassword', () => {
   let service: AuthService;
-  let prisma: { appUser: { update: jest.Mock } };
+  let prisma: { appUser: { update: jest.Mock }; $transaction: jest.Mock };
+  let audit: { log: jest.Mock; logChange: jest.Mock };
   const localJwt = { sign: jest.fn() } as unknown as LocalJwtService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    prisma = { appUser: { update: jest.fn().mockResolvedValue({}) } };
+    prisma = {
+      appUser: { update: jest.fn().mockResolvedValue({}) },
+      // Run the callback against the same mock so the existing
+      // prisma.appUser.update assertions keep working untouched.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
+    };
+    audit = { log: jest.fn(), logChange: jest.fn() };
     service = new AuthService(
       prisma as unknown as PrismaService,
       localJwt,
       refreshTokensStub(),
-      { log: jest.fn(), logChange: jest.fn() } as unknown as AuditService,
+      audit as unknown as AuditService,
     );
   });
 
@@ -319,6 +326,55 @@ describe('AuthService.changePassword', () => {
         dto,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  /**
+   * Chris approved auditing self-service password change (2026-07-21) — it was
+   * the one credential event ADR-0009 Decision 4 left out. Kept event-only and
+   * named user.password_change so it sits beside user.password_reset.
+   */
+  describe('audit trail', () => {
+    it('records the change inside the same transaction, attributed to the user', async () => {
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      (argon2.hash as jest.Mock).mockResolvedValue('new-hash');
+
+      await service.changePassword(LOCAL_USER as never, dto);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'user.password_change',
+          targetType: 'AppUser',
+          // actorId === targetId is what marks this as self-service, as
+          // opposed to an admin reset of someone else's password.
+          targetId: 'u-local',
+          actorId: 'u-local',
+        }),
+      );
+    });
+
+    // The audited payload must never carry the password or its hash (H4).
+    it('never puts the password or hash in the audit entry', async () => {
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      (argon2.hash as jest.Mock).mockResolvedValue('new-hash');
+
+      await service.changePassword(LOCAL_USER as never, dto);
+
+      const entry = JSON.stringify(audit.log.mock.calls[0][1]);
+      expect(entry).not.toContain('new-hash');
+      expect(entry).not.toContain(dto.newPassword);
+      expect(entry).not.toContain(dto.currentPassword);
+    });
+
+    it('writes no audit row when the current password is wrong', async () => {
+      (argon2.verify as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.changePassword(LOCAL_USER as never, dto),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(audit.log).not.toHaveBeenCalled();
+    });
   });
 });
 

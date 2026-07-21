@@ -22,7 +22,16 @@ export const AUDIT_ACTIONS = {
   /** Split out of user.update on purpose: a privilege change is the event auditors care most about. */
   USER_ROLE_CHANGE: 'user.role_change',
   USER_DEACTIVATE: 'user.deactivate',
+  /** An admin reset SOMEONE ELSE's password. */
   USER_PASSWORD_RESET: 'user.password_reset',
+  /**
+   * A user changed their OWN password (self-service). Same underlying fact as
+   * password_reset — this account's credential changed — so it lives next to it
+   * under `user.` rather than with the `auth.` sign-in events; an auditor asking
+   * "what happened to this account's credentials" wants both. The two are told
+   * apart by actorId === targetId (self) vs actorId !== targetId (admin).
+   */
+  USER_PASSWORD_CHANGE: 'user.password_change',
   AUTH_LOGIN_SUCCESS: 'auth.login_success',
   AUTH_LOGIN_FAILED: 'auth.login_failed',
   AUTH_LOCKED: 'auth.locked',

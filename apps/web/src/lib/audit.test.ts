@@ -48,8 +48,16 @@ describe('filter option constants', () => {
   // Guards against the frontend mirror drifting from the backend AUDIT_ACTIONS
   // in count — a renamed action still needs a human eye, but a forgotten one
   // shows up here.
-  it('offers all 13 recorded actions and 5 target types', () => {
-    expect(AUDIT_ACTION_OPTIONS).toHaveLength(13);
+  it('offers all 14 recorded actions and 5 target types', () => {
+    expect(AUDIT_ACTION_OPTIONS).toHaveLength(14);
     expect(AUDIT_TARGET_TYPE_OPTIONS).toHaveLength(5);
+  });
+
+  // Both credential events must be filterable — an auditor asking "what
+  // happened to this account's password" needs the admin reset AND the
+  // self-service change.
+  it('covers both credential events', () => {
+    expect(AUDIT_ACTION_OPTIONS).toContain('user.password_reset');
+    expect(AUDIT_ACTION_OPTIONS).toContain('user.password_change');
   });
 });
