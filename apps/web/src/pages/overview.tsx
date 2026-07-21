@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity,
   ArrowRight,
   CircleAlert,
   ClipboardList,
@@ -16,7 +15,10 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
+import { ActivityFeed } from '@/components/overview/activity-feed';
 import { useDrift, useLedgerStats, useRequests } from '@/hooks/queries';
+import { useCurrentUser } from '@/lib/auth/use-current-user';
+import { canSeeAdminNav } from '@/lib/roles';
 import { matchesFilter } from '@/lib/requests';
 import type { RequestStatus } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
@@ -93,6 +95,7 @@ const ROADMAP: {
 
 export function Overview() {
   const navigate = useNavigate();
+  const { role } = useCurrentUser();
   const [tab, setTab] = useState<'summary' | 'analytics'>('summary');
   const requests = useRequests();
   const drift = useDrift();
@@ -341,14 +344,22 @@ export function Overview() {
             </div>
           </div>
 
-          {/* Recent activity — no events endpoint yet (honest EmptyState) */}
-          <Card title="Recent activity">
-            <EmptyState
-              icon={<Activity size={18} strokeWidth={2} />}
-              title="No activity yet"
-              description="The activity feed appears once request event history is exposed by the API."
+          {/*
+            Recent activity — ADMIN only (CH-005 D1). The feed reads
+            GET /admin/audit, which stays ADMIN-only because its rows carry
+            whitelisted PII (ADR-0009 Decision 7). Other roles get no card at
+            all rather than a permanent restricted tile on their landing screen.
+          */}
+          {canSeeAdminNav(role) && (
+            <ActivityFeed
+              action={
+                <HeaderLink
+                  label="View audit log"
+                  onClick={() => navigate('/audit')}
+                />
+              }
             />
-          </Card>
+          )}
         </>
       )}
     </div>
