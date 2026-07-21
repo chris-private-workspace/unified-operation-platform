@@ -93,7 +93,7 @@ last_updated: 2026-07-21
 - [x] All deliverables committed to git(`219075f` F1 · `2a60d48`/`b0634ed`/`b8d3c30`/`91b4c40` F2 · `95bd083` F3 · `5c0cb24` F4 · `5fb5085` progress)
 - [x] All open-question status changes reflected in decision tracker(R4)—— Q1/Q2/Q3 拍板結果 + Q2 連鎖後果查證入 progress Day 1
 - [x] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **無新 ADR**(ADR-0009 已涵蓋);plan §8 `metadata` 收緊 **已補入 ADR-0009 Decision 5 實作補註**(明寫收緊唔係推翻,故唔需新 ADR)
-- [ ] 🚧 **Pending / next-candidate changes synced to `BACKLOG.md`(R7)** —— **卡 PR #9(`docs/w28-closeout`,待 Chris review)**。查證:`955ddd3` 改嘅正正係同一批行(header / W28 row / AUDIT-2 / **AUDIT-3**)。喺本 branch 改 = 必然 conflict + 中間態自相矛盾(W29 完成但 W28 進行中)。**Target**:PR #9 merge 後,一個 commit 同時 sync W28 + W29(AUDIT-3 → ✅ · W29 入進行中表 · header · **audit retention** 登 candidate[R5]· FE-activity 標解封)。詳見 progress retro「R7 狀態」
+- [x] **Pending / next-candidate changes synced to `BACKLOG.md`(R7)** —— 曾 🚧 卡 PR #9(`docs/w28-closeout` 改同一批行 → 必然 conflict + 中間態自相矛盾);**PR #9 於 2026-07-21 merge(`547c89f`)後解封**:rebase 本 branch 上 main(11 commit 零衝突)→ 一個 commit 同步 AUDIT-3 → ✅ · W29 入進行中表 · header 更新 · **`audit-retention` 登新 candidate**(R5)· **`FE-activity` 標解封**(附 ADMIN-only 連帶問題)
 - [x] `progress.md` retro section written
 - [x] `progress.md` frontmatter status flipped to `closed`
 - [x] Phase N+1 kickoff trigger noted in retro —— **INTEG-1**(connector 狀態 + test connection);但建議先 PR #9 merge + R7 sync 再開

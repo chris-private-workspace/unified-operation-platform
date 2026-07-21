@@ -206,10 +206,10 @@ Chris 揀咗獨立 `/audit` 頁(偏離我原建議)。冇當「owner 話咗算�
 
 ### Carry-overs to W30
 
-- 🔴 **BACKLOG R7 同步未做 —— 卡 PR #9**(見下「R7 狀態」)。**呢個係唯一未完成嘅 closeout 項**。
+- ✅ **BACKLOG R7 同步 —— 已完成**(PR #9 merge 後解封,見下「R7 狀態」)。
 - 🟡 **self-service 改密碼冇 audit**(H3 gap,見下)—— 等 Chris 決定。
-- 🟢 **audit retention** —— ADR-0009 Decision 8.3 刻意唔做(避免過早優化),但 Decision 7 連帶義務 ③ 講明將來 retention **必須涵蓋** `AuditLog`。R7 解封後登 BACKLOG 做 candidate。
-- 🟢 **FE-activity**(Overview activity feed)由本 phase **解封** —— activity feed = audit 查詢嘅一個 view,`GET /admin/audit` 已提供。屬另一個 candidate,唔喺本 phase。
+- 🟢 **audit retention** —— ADR-0009 Decision 8.3 刻意唔做(避免過早優化),但 Decision 7 連帶義務 ③ 講明將來 retention **必須涵蓋** `AuditLog`。**已登 BACKLOG A 區 candidate**。
+- 🟢 **FE-activity**(Overview activity feed)由本 phase **解封** —— activity feed = audit 查詢嘅一個 view,`GET /admin/audit` 已提供。**但注意連帶問題**:該 endpoint ADMIN-only(P-B,唔可放寬),而 Overview 係全 role 畫面 → 開工前要先決定 non-admin 睇到乜(另開 scoped endpoint / 隱藏 feed / 只顯示自己嘅操作)。已寫入 BACKLOG 該行前置。
 
 #### 🟡 發現咗一個 scope gap,冇擅自補(H3)
 
@@ -217,18 +217,20 @@ ADR-0009 Decision 4 個 13 事件清單有 `user.password_reset`(**admin 重設*
 
 改自己密碼一樣係安全事件,照計應該審計。但佢**唔喺 approved 清單**,加咗就係擅自擴 scope(H3),所以我冇做。技術上係一行嘅事(`AuditService` 已 @Global,`AUDIT_ACTIONS` 加一個 key)。**畀 Chris 決定**要唔要補;要嘅話建議當 trivial change 做,唔使開 phase。
 
-#### 🔴 R7 狀態 —— 卡 PR #9,唔係漏做
+#### ✅ R7 狀態 —— 曾卡 PR #9,已解封並完成
 
-`BACKLOG.md` 嘅 W29 更新**未做**,原因係查證後發現真衝突:
+> **2026-07-21 更新**:Chris 已 merge PR #9(`547c89f`)。本 branch **rebase 上 main**(11 commit,**零衝突** —— 兩邊改嘅檔案完全唔重疊),然後**一個 commit 同步 W28 + W29**:`AUDIT-3` → ✅ 完成 · W29 入進行中表 · header 更新 · `audit-retention` 登新 candidate · `FE-activity` 標解封(附 ADMIN-only 連帶問題)。**BACKLOG 任何時刻都自洽**,原計劃達成。以下保留當時嘅判斷紀錄。
+
+原本卡住嘅原因(查證後發現真衝突):
 
 `docs/w28-closeout`(**PR #9,待 Chris review**)嘅 commit `955ddd3` 改嘅正正係同一批行 —— header「最後更新」、新增 W28 row、`AUDIT-2` row、**`AUDIT-3` row**(= W29 要 flip 成完成嗰行)。喺 `feat/audit-log` 改會:
 
 1. 兩個 branch 改同幾行 → **必然 merge conflict**;
 2. 中間態自相矛盾 —— BACKLOG 會寫住「W29 完成」但「W28 進行中」。
 
-**建議**:PR #9 merge 之後,一個 commit 同時 sync W28 + W29(`AUDIT-3` → ✅ 完成、W29 入進行中表、header 更新、audit retention 登 candidate、FE-activity 標解封)。呢個順序令 BACKLOG 任何時刻都自洽。
+**建議**:PR #9 merge 之後,一個 commit 同時 sync W28 + W29(`AUDIT-3` → ✅ 完成、W29 入進行中表、header 更新、audit retention 登 candidate、FE-activity 標解封)。呢個順序令 BACKLOG 任何時刻都自洽。 → **已照此執行**。
 
-> 呢項喺 checklist 標 🚧 而唔係跳過(PROCESS sacred rule:未勾項唔可刪,要標理由 + target)。
+> 當時喺 checklist 標 🚧 而唔係跳過(PROCESS sacred rule:未勾項唔可刪,要標理由 + target)。事後證明呢個處理啱:PR #9 一 merge,rebase + 一個 commit 就收乾淨,冇留低任何 conflict 或矛盾中間態。
 
 ### ADR triggers
 
