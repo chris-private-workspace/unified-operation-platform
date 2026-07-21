@@ -297,6 +297,10 @@ model RequestEvent {
   createdAt  DateTime         @default(now())
 
   @@index([requestId, createdAt])
+  // CH-006: the Overview feed pulls the newest events ACROSS requests, which the
+  // composite above cannot serve (its leading column is requestId). Additive and
+  // reversible — approved as H1-lite rather than via ADR (spec.md §1.1).
+  @@index([createdAt])
 }
 
 // ── Platform audit trail (ADR-0009) ──────────────────────────

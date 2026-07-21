@@ -5,27 +5,30 @@
 
 ## F1 — 後端:index + migration
 
-- [ ] F1.1 `prisma/schema.prisma` `RequestEvent` 加 `@@index([createdAt])`(保留既有 `[requestId, createdAt]`)
-- [ ] F1.2 `npx prisma migrate dev --name add_request_event_created_at_index` 實跑 apply
-- [ ] F1.3 **B8** 驗 dev DB 真係有新 index(查 `pg_indexes`,唔靠 migrate 輸出)
+- [x] F1.1 `prisma/schema.prisma` `RequestEvent` 加 `@@index([createdAt])`(保留既有 `[requestId, createdAt]`)
+- [x] F1.2 `npx prisma migrate dev --name add_request_event_created_at_index` 實跑 apply(`20260721152629_…`)
+- [x] F1.3 **B8** 驗 dev DB 真係有新 index —— `pg_indexes` 查得 `RequestEvent_createdAt_idx`,舊 composite 仍在(3 個 index)
 
 ## F2 — 後端:query service
 
-- [ ] F2.1 `src/fulfilment/dto/activity-query.dto.ts` —— query DTO(`limit` default 6 / max 50)+ response DTO(白名單欄位)
-- [ ] F2.2 `src/fulfilment/activity.service.ts` —— `recent(user, limit)`,conditional scope spread
-- [ ] F2.3 `activity.service.spec.ts`:
-  - [ ] **B3** OPCO_IT 查詢 where 帶 `request.opcoId`(fail-closed)
-  - [ ] **B5** ADMIN / REGIONAL 嘅 where **唔含 `request` 鍵**(冇白白 join)
-  - [ ] **B4** `limit` 超上限 → 收窄到 50
-  - [ ] **B6** **PII 負面斷言** —— 餵齊 `targetUpn`/`requesterEmail`/`targetDisplayName` 嘅 Request,assert 結果零出現
-  - [ ] `orderBy createdAt desc` + `take` 正確
+- [x] F2.1 `src/fulfilment/dto/activity-query.dto.ts` —— query DTO(`limit` default 6 / max 50)+ response DTO(白名單欄位)
+- [x] F2.2 `src/fulfilment/activity.service.ts` —— `recent(user, limit)`,conditional scope spread
+- [x] F2.3 `activity.service.spec.ts`(9 test):
+  - [x] **B3** OPCO_IT 查詢 where 帶 `request.opcoId`(fail-closed)
+  - [x] **B5** ADMIN / REGIONAL 嘅 where **唔含 `request` 鍵**(`it.each` 兩個 role)
+  - [x] **B4** `limit` 上限 —— DTO `@Max(50)` + controller `Math.min` 二重(見 F3.1)
+  - [x] **B6** **PII 負面斷言** —— 餵**比 select 更肥**嘅 row,assert 序列化零出現 6 個 PII 標記
+  - [x] `orderBy createdAt desc` + `take` + `select` 白名單形狀
 
 ## F3 — 後端:controller + 接線
 
-- [ ] F3.1 `src/fulfilment/activity.controller.ts` —— `@Controller('fulfilment/activity')`,`@Roles(ADMIN, REGIONAL, OPCO_IT)`
-- [ ] F3.2 `fulfilment.module.ts` 註冊 controller + service
-- [ ] F3.3 `activity.controller.spec.ts` —— role metadata + 轉發 query
-- [ ] F3.4 `apps/api` test / lint / build 綠
+- [x] F3.1 `src/fulfilment/activity.controller.ts` —— `@Controller('fulfilment/activity')`,`@Roles(ADMIN, REGIONAL, OPCO_IT)` + `Math.min` re-clamp
+- [x] F3.2 `fulfilment.module.ts` 註冊 controller + service
+- [x] F3.3 ~~`activity.controller.spec.ts`~~ → **改用既有 `permissions.spec.ts`**(見下)
+- [x] F3.4 `apps/api` test **333/333** · lint 0 · build 0
+
+> **F3.3 偏離原 checklist(非 scope 改動)**:原本諗住寫獨立 controller spec,但 `fulfilment/` **零 controller spec** —— 本項目嘅 role 驗證集中喺 `auth/permissions.spec.ts`(W28,矩陣由 `@Roles` **derived**,唔手寫)。跟既有 pattern 好過另起一層(§13)。
+> 新 controller 被 glob **自動發現**,兩處刻意更新:①controller 名單加 `ActivityController` + 理由註釋 ②matrix snapshot。snapshot diff **只得一行**(`GET /fulfilment/activity → roles [ADMIN,REGIONAL,OPCO_IT]`),`access = roles` 非 `unguarded`,其餘零移動 —— 讀完 diff 先 `-u`,冇反射式掃過。
 
 ## F4 — 前端:來源切換
 

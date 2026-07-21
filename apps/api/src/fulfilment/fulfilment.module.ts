@@ -17,6 +17,8 @@ import { N8nWorkflowProvider } from './n8n-workflow.provider';
 import { OutboundFailureService } from './outbound-failure.service';
 import { OutboundRetryService } from './outbound-retry.service';
 import { OutboundFailureController } from './outbound-failure.controller';
+import { ActivityController } from './activity.controller';
+import { ActivityService } from './activity.service';
 
 /**
  * ADR-0008 D3 / Phase 丙 (W26, Fork 3 = config 單選): pick the outbound
@@ -53,6 +55,7 @@ export function requestSubmissionProviderFactory(
     IntakeController,
     OutboundRequestController,
     OutboundFailureController,
+    ActivityController,
   ],
   providers: [
     RequestService,
@@ -63,6 +66,7 @@ export function requestSubmissionProviderFactory(
     OutboundRequestService,
     OutboundFailureService, // ADR-0011 — outbound failure queue
     OutboundRetryService,
+    ActivityService, // CH-006 — cross-request activity feed (read-only)
     // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by env — see
     // requestSubmissionProviderFactory above.
     {
