@@ -1,8 +1,8 @@
 # ADR-0010: 整合可觀測性 + 交付保證(connector 狀態 / test connection · n8n 回程 webhook · outbound retry)
 
 **Date**: 2026-07-21
-**Status**: **Proposed** —— 待 Chris 拍板 §OQ 三點(OQ-A / OQ-B / OQ-C)
-**Approver**: Chris Lai(pending)
+**Status**: **Accepted**
+**Approver**: Chris Lai(2026-07-21 拍板:**OQ-A = 容許唯讀主動探針** · **OQ-B = 派生既有 timestamp** · **OQ-C = 先做人手 retry**;OQ-D 外部,仍 open)
 
 ## Context
 
@@ -58,7 +58,7 @@ item 4 完全自足。item 5 卡外部合約(§7.1),item 6 要 owner 揀路線(O
 
 **真正有資訊量嘅係 liveness**(D4 / D5),唔係 configuredness。呢個係本 ADR 對原 rollout 描述「已配置 ✓✗」嘅**修正**。
 
-### D4 — 「最後成功時間」先由既有 domain timestamp 派生,唔開新 model
+### D4 — 「最後成功時間」由既有 domain timestamp 派生,唔開新 model【OQ-B — Chris 2026-07-21 拍板】
 
 已經有真實信號可用:
 
@@ -72,7 +72,7 @@ item 4 完全自足。item 5 卡外部合約(§7.1),item 6 要 owner 揀路線(O
 
 > **唔把整合結果寫入 `AuditLog`。** ADR-0009 個表答嘅係「邊個改咗乜」;connector 通唔通係另一回事,溝埋會污染 audit trail 同 P-B 嘅 PII 邊界推理。真要獨立健康史 → 見 OQ-B。
 
-### D5 — Test connection = 唯讀探針,ADMIN-only,逐 connector 明文定義
+### D5 — Test connection = 唯讀探針,ADMIN-only,逐 connector 明文定義【OQ-A — Chris 2026-07-21 拍板:容許主動出站】
 
 **🔴 絕不可有副作用。** 逐個定死:
 
@@ -84,6 +84,8 @@ item 4 完全自足。item 5 卡外部合約(§7.1),item 6 要 owner 揀路線(O
 | n8n inbound | **不適用** —— 方向係外部推入嚟,平台無得主動測 | |
 
 `@Roles(ADMIN)`(同 W28/W29 一致)。探針失敗一律轉成結構化結果(沿用既有 `graph-unavailable.ts` 503 wrap 手法),**唔可以把 vendor 原始 error 直接吐畀前端** —— 佢可能含 instance URL / 帳號提示。
+
+**因採「容許主動出站」而生嘅連帶義務**:探針係**用戶觸發**先出站,唔可以做成 poll / `@Cron` 定時打(否則變咗持續向 vendor 打無謂流量);同一 connector 要有最短間隔節流,防連環撳。
 
 ### D6 — 唔起 DocuWare connector;改正 UI 文案
 
@@ -99,9 +101,13 @@ DocuWare 屬 H3 排除項。item 4 **唔可以**因為 EmptyState 寫咗就順�
 
 **本 ADR 唔解封 item 5**,待 OQ-D(合約會)。
 
-### D8 — item 6(retry)原則:先解「睇得見 + 撳得返」,自動化係第二步
+### D8 — item 6(retry)行**人手 retry**,唔啟用 BullMQ【OQ-C — Chris 2026-07-21 拍板】
 
-無論行邊條路,**失敗必須先變成一件可見、可查嘅事**。「自動 retry 但冇人知試過幾多次」比冇 retry 更差。路線選擇 = **OQ-C**。
+**失敗必須先變成一件可見、可查嘅事** —— 「自動 retry 但冇人知試過幾多次」比冇 retry 更差。所以先做:失敗記錄 + UI 重試掣,**唔啟用 BullMQ**(H2 元件雖已 lock 但從未用,啟用要另外處理 worker 部署 / 監控 / 死信佇列)。真有需要自動化先另寫 ADR。
+
+> ⚠️ **誠實補一句**:「零新 runtime 元件」**唔等於零 schema**。要人手重試就要把失敗嘅 outbound 持久化(payload + 錯誤 + 嘗試次數),即係一個新 model → **仍然觸發 H1**,只係比 BullMQ 輕好多。item 6 埋身時要當架構改動處理。
+
+**唔重用 `AuditLog` 做失敗佇列** —— 同 D4 註同一理由:audit 係唯讀事實紀錄,唔應該變成有狀態嘅工作佇列(要記 attempt 次數 / 已解決未)。
 
 ## Alternatives Considered
 
@@ -117,16 +123,16 @@ DocuWare 屬 H3 排除項。item 4 **唔可以**因為 EmptyState 寫咗就順�
 - **Negative**:D4 係代理信號,答唔到「而家通唔通」(要撳 Test connection);n8n outbound 無得真測(D5),只驗到配置;item 5/6 仍然 pending。
 - **Neutral**:ADR-0008 provider 選路 / ADR-0009 audit / 對帳方案甲 / ledger 兩層數字 / sync gate 全部不受影響。
 
-## Open Questions(要 Chris 答)
+## Open Questions
 
-| # | 問題 | 影響 |
+| # | 問題 | 狀態 |
 |---|---|---|
-| **OQ-A** | Test connection 容唔容許**主動打真 tenant / 真 SN instance**(唯讀 D5)?定係只准報派生狀態,唔主動出站? | blocking item 4 嘅 Test connection 掣。容許 = 有真 liveness;唔容許 = tab 只得 D4 代理信號 |
-| **OQ-B** | 「最後成功時間」行 **D4 派生**(零 schema),定係開 `IntegrationHealth` model 記真探測史? | blocking item 4 資料模型。派生 = 快而輕;新 model = H1 + 真歷史 |
-| **OQ-C** | item 6 行 **人手 retry**(失敗記錄 + UI 重試掣,零新 runtime 元件)定 **BullMQ 自動 retry**(H2 啟用已 lock 但從未用嘅元件)? | blocking item 6 |
-| **OQ-D** | 幾時同 n8n owner 開合約對齊會? | blocking item 5(外部,唔喺我哋手上) |
+| ~~OQ-A~~ | Test connection 容唔容許主動打真 tenant / 真 SN instance? | ✅ **resolved 2026-07-21 — 容許,唯讀探針** → D5(+ 節流 / 唔可 cron 化嘅連帶義務) |
+| ~~OQ-B~~ | 最後成功時間:派生 vs 新 `IntegrationHealth` model? | ✅ **resolved 2026-07-21 — 派生既有 domain timestamp** → D4(零新 schema;UI 須誠實標示係代理信號) |
+| ~~OQ-C~~ | item 6 retry:人手 vs BullMQ? | ✅ **resolved 2026-07-21 — 先做人手 retry** → D8(**注意仍需新 model 持久化失敗 = H1**) |
+| **OQ-D** | 幾時同 n8n owner 開合約對齊會? | ⚪ **仍 open** — blocking item 5(外部,唔喺我哋手上) |
 
-> OQ-A / OQ-B 拍板即可開 item 4 phase(W30)。OQ-C / OQ-D 唔 block item 4。
+> **OQ-A / OQ-B 已拍板 → item 4(INTEG-1)完全解封,可即開 phase。** item 6 路線已定但要埋身先做;item 5 仍卡 OQ-D。
 
 ## References
 
