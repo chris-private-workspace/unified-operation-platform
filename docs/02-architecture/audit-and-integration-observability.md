@@ -263,8 +263,12 @@ n8n 回程合約要同 **n8n owner 對真值**,否則又係做多一層 represen
 | ~~OQ-2~~ | PII 策略 P-A / P-B / P-C?(§5.3) | ✅ **resolved 2026-07-20 — P-B**(白名單可含 email·displayName)→ ADR-0009 Decision 7 + 4 條連帶義務 |
 | **OQ-3** | audit 寫入失敗 → 主操作 rollback? | ✅ 隨 ADR-0009 Decision 8.1 定案(同一 `$transaction`) |
 | **OQ-4** | audit 睇得到嘅 role? | ✅ 隨 ADR-0009 Decision 8.2 定案(ADMIN-only;**因採 P-B 唔可放寬**) |
-| **OQ-5** | item 6 行「人手 retry」定「BullMQ 自動」?(§7.2) | ⚪ 未決 — blocking item 6,留 ADR-0010 |
-| **OQ-6** | item 5 之前,幾時同 n8n owner 對合約?(§7.1) | ⚪ 未決 — blocking item 5(外部) |
+| ~~OQ-5~~ | item 6 行「人手 retry」定「BullMQ 自動」?(§7.2) | ✅ **resolved 2026-07-21 — 人手 retry**(唔啟用 BullMQ)→ ADR-0010 D8;⚠️ 仍需新 model 持久化失敗 = H1 |
+| **OQ-6** | item 5 之前,幾時同 n8n owner 對合約?(§7.1) | ⚪ 未決 — blocking item 5(外部)= ADR-0010 OQ-D |
+
+> **ADR-0010 Accepted(2026-07-21)** —— item 4 完全解封;另定 OQ-A(容許唯讀主動探針)/ OQ-B(最後成功時間派生既有 timestamp,零新 schema)。
+>
+> ⚠️ **本文 §2.4「缺」第 3-4 點同 §6 item 4 描述「已配置 ✓✗」已被 ADR-0010 D3 修正** —— 查證發現 Graph / ServiceNow / `INTAKE_API_KEY` 喺 constructor `getOrThrow`(缺就 boot 唔起),所以 `configured` 對佢哋恆真;改為三態 required / active / inactive,重點放 liveness。另 §2.4 未提及嘅發現:`settings.tsx` 文案承諾 **DocuWare** connector,但後端零實作且屬 H3 排除項 → ADR-0010 D6 唔起,改文案。
 
 > **OQ-1 / OQ-2 已拍板**(Chris,2026-07-20)→ ADR-0009 flip **Accepted**,item 2-3 解封。
 > 餘下 OQ-5 / OQ-6 只 block item 5-6,唔影響 item 2-4。
