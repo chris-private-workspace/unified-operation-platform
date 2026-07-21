@@ -15,7 +15,31 @@ status: in-progress     # in-progress | closed
 ## Day 1 — 2026-07-21
 
 ### Done
-- (執行中)
+
+**I1 — `lib/activity.ts`(test 先行,實證 fails-before)**
+- `activity.test.ts` 先寫 → 跑,紅(檔案未存在,transform error)→ 寫實作 → 10 test 綠
+- `activitySummary` / `activityIcon` / `activityTone`;tone **delegate 去 `auditActionTone`**,唔另起色映射
+- **查證驅動嘅兩個 edge case**(唔係估):
+  - `auth.service.ts:294` 對唔存在嘅 email 寫 `targetId: 'unknown'`(刻意唔寫 email,令 PII 唔入 indexed 欄位)→ 無條件 `slice(-6)` 會顯示成 `nknown`,所以只截長度 > 12 嘅值
+  - 同一路徑 `actorId: null` 但 `actorType` 留喺 `'user'` 預設 → 直接印 `user` 會讀落似人名 → 降級做 `Unknown user`
+
+**I2 — `components/overview/activity-feed.tsx`**
+- 跟 prototype 結構(24×24 chip + 描述 + ref + mono 時間);四態齊
+- 空 feed 措辭已換走「once request event history is exposed by the API」(嗰句係 W12 寫低嘅,而家已經唔啱)
+
+**I3 — `pages/overview.tsx`**
+- `canSeeAdminNav(role)` gate;清走 orphan `Activity` import
+
+**Verify(機械部分)**
+- lint 綠 · build 綠(tsc --noEmit 過)· test **99 → 109**(+10,A10 要求 ≥103)
+- **A4 零後端改動**:`git diff apps/api` = **0 行**
+- **A5** 新檔案 grep 零 `#hex` / `rgb(` / `gradient`
+
+### 計劃外改動(surgical 例外,值得記低)
+
+`TONE_SOFT` 本來想由 `badge.tsx` export 畀 feed 嘅 icon chip 用(避免兩處配色真相),但 lint 即刻報 `react-refresh/only-export-components` warning —— **呢個 warning 係我引入嘅,lint 之前全綠**。所以改為抽 `lib/tones.ts`(型別 + 映射),`badge.tsx` 用 `export type { BadgeTone }` re-export → **既有 import 全部零改動**,warning 消失,亦真正做到單一配色真相。
+
+Spec §2.2 原本淨係列咗三個新檔案,`lib/tones.ts` 係第四個 —— 但佢係實作手段唔係 scope 擴張(零新行為、零新 token),故唔開 §7 changelog,喺此記低。
 
 ### Decisions
 
