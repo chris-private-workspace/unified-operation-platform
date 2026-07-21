@@ -3,8 +3,8 @@ phase: W29-audit-log
 name: "通用 AuditLog 落地 — 白名單 before/after + 13 個事件覆蓋 + Audit UI"
 sprint_week: W29
 start_date: 2026-07-20
-end_date: 2026-07-22          # planned, may slip with changelog log
-status: active                # draft | active | closed — Chris 2026-07-20 approve §9 三點後 flip
+end_date: 2026-07-21          # actual — 提前一日(F3+F4 併入 Day 2)
+status: closed                # draft | active | closed — G1-G8 全 pass,2026-07-21 closeout
 spec_refs:
   - docs/adr/0009-platform-audit-trail.md（全份 — Decision 3/4/5/6/7/8）
   - docs/02-architecture/audit-and-integration-observability.md §2.2（零留痕清單）· §5（model 設計）
@@ -15,7 +15,7 @@ prior_phase: W28-permission-matrix
 
 > **Plan version**:1.0(initial)
 > **Owner**:AI(執行)/ Chris Lai(decision)
-> **Approved by**:_(待 Chris approve — 見 §9 三個要拍板嘅點)_
+> **Approved by**:**Chris Lai(2026-07-20)** —— §9 三點拍板(Q1/Q2/Q3)
 
 ## 1. Scope
 
@@ -136,6 +136,7 @@ ADR-0009 已 Accepted,本 phase 落實 rollout **item 3**:把 `docs/02-architect
 | 2026-07-20 | Initial plan,status=**draft**(未 active) | 待 Chris approve §9 三點 | — |
 | 2026-07-20 | **§9 三點拍板 → status `draft` → `active`** | Q1 記 `metadata.emailAttempted` · **Q2 改為獨立 `/audit` 頁 + sidebar(偏離原建議)** · Q3 逐組 commit 做完三組先 review | Chris Lai |
 | 2026-07-20 | **F4 scope 改**:Settings tab → 獨立 route + sidebar 項目;新增「更新 `design-system.md`」為 F4 交付物 | Q2 拍板連鎖後果;查證 prototype **無** audit 畫面,故屬 owner-approved 新畫面,按 H6 必須補 SSOT 否則將來 fidelity audit 會報成 drift | Chris Lai(方向)/ AI(H6 判斷) |
+| 2026-07-21 | **status `active` → `closed`**;end_date 07-22 → **07-21**(提前一日) | G1–G8 **8/8 pass**;F3 + F4 提前併入 Day 2,D3 未使用。R7 BACKLOG sync 🚧 卡 PR #9(見 progress retro) | AI(closeout) |
 
 ## 8. 對 ADR-0009 嘅一處收緊提案（要 Chris 知悉）
 
@@ -144,6 +145,8 @@ ADR-0009 已 Accepted,本 phase 落實 rollout **item 3**:把 `docs/02-architect
 **提案:`metadata` 同樣受固定 key set 約束**,只允許 `reason` / `correlationId` / `source` / `emailAttempted` 幾個明確 key。
 
 呢個係**收緊**唔係偏離(ADR 冇容許過 metadata 自由塞),所以我當佢係實作細節寫入 plan;但因涉 H4 邊界,**closeout 時建議喺 ADR-0009 補一句註**,令將來睇 ADR 嘅人唔會以為 metadata 冇管。
+
+> ✅ **已落實(2026-07-21 closeout)**:`AUDIT_METADATA_KEYS` 固定 key set 已實作 + 專門 test 證實 `requestBody`/`ip`/`passwordHash` 全被丟棄;**ADR-0009 Decision 5 已補實作補註**(明寫收緊唔係推翻,故唔需新 ADR)。
 
 ## 9. 拍板結果（Chris,2026-07-20)
 
