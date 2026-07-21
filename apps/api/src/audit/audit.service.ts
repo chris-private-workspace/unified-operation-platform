@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   auditDiff,
   pickAuditFields,
@@ -7,6 +8,11 @@ import {
   type AuditAction,
   type AuditTargetType,
 } from './audit-fields';
+import {
+  AUDIT_PAGE_MAX,
+  AuditPageDto,
+  AuditQueryDto,
+} from './dto/audit-query.dto';
 
 /**
  * The Prisma client handle available inside an interactive `$transaction`.
@@ -37,9 +43,56 @@ export interface AuditEntryInput {
  */
 @Injectable()
 export class AuditService {
+  /**
+   * Write methods take the caller's transaction handle (Decision 8.1); this
+   * injected client exists ONLY for the read path (`find`), which has no
+   * enclosing transaction to join.
+   */
+  constructor(private readonly prisma: PrismaService) {}
+
   /** Record an event. `before`/`after`/`metadata` are whitelisted here. */
   async log(tx: AuditTx, entry: AuditEntryInput): Promise<void> {
     await tx.auditLog.create(this.buildLogArgs(entry));
+  }
+
+  /**
+   * Query the trail (W29 F3). Filters are ANDed; newest first. The page cap is
+   * re-clamped here as defence in depth — the DTO already rejects limit > 100,
+   * but an internal caller bypassing the pipe must not widen the window.
+   */
+  async find(query: AuditQueryDto): Promise<AuditPageDto> {
+    const limit = Math.min(query.limit ?? 50, AUDIT_PAGE_MAX);
+    const offset = query.offset ?? 0;
+
+    const where: Prisma.AuditLogWhereInput = {
+      ...(query.actorId && { actorId: query.actorId }),
+      ...(query.targetType && { targetType: query.targetType }),
+      ...(query.targetId && { targetId: query.targetId }),
+      ...(query.action && { action: query.action }),
+      ...((query.from || query.to) && {
+        createdAt: {
+          ...(query.from && { gte: new Date(query.from) }),
+          ...(query.to && { lte: new Date(query.to) }),
+        },
+      }),
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.auditLog.count({ where }),
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+        // display join only — email/displayName are P-B-sanctioned on this
+        // ADMIN-only surface (ADR-0009 Decision 7).
+        include: {
+          actor: { select: { email: true, displayName: true } },
+        },
+      }),
+    ]);
+
+    return { total, limit, offset, entries: rows };
   }
 
   /**

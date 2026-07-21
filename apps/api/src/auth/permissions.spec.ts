@@ -52,10 +52,11 @@ describe('permission matrix (derived from @Roles)', () => {
 
   it('discovers every controller in src', () => {
     const names = new Set(matrix.map((e) => e.controller));
-    // All nine registered controllers must appear. If a new one is added this
+    // All registered controllers must appear. If a new one is added this
     // count changes — that is intended, update it deliberately.
     expect(names).toEqual(
       new Set([
+        'AuditController', // W29 F3 — GET /admin/audit, @Roles(ADMIN)
         'AuthController',
         'FulfilmentController',
         'IntakeController',
