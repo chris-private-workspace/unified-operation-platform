@@ -4,7 +4,7 @@ name: "Outbound 交付失敗持久化 + 人手補救(ADR-0011 / INTEG-3 / rollou
 sprint_week: W31
 start_date: 2026-07-21
 end_date: 2026-07-23          # planned, may slip with changelog log
-status: draft                 # draft | active | closed
+status: active                # draft | active | closed
 spec_refs:
   - docs/adr/0011-outbound-delivery-failure-recovery.md（D1–D9 — 全部本 phase 落地）
   - docs/adr/0010-integration-observability-delivery.md D8（路線來源）
@@ -16,7 +16,7 @@ prior_phase: W30-integration-status
 
 > **Plan version**:1.0(initial)
 > **Owner**:AI(執行)/ Chris Lai(decision)
-> **Approved by**:_(待 Chris approve 後填)_
+> **Approved by**:**Chris Lai(2026-07-21)** —— scope + §6 三個實作級選擇(I1/I2/I3)照建議通過
 
 ## 1. Scope
 
