@@ -1,7 +1,7 @@
 ---
 change_id: CH-005
 title: "Overview activity feed — 真內容取代 placeholder EmptyState"
-status: approved        # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-07-21
 target_completion: 2026-07-21
 affects_components: [apps/web]

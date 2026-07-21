@@ -1,7 +1,7 @@
 ---
 change_id: CH-005
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-07-21
 ---
 
@@ -14,50 +14,50 @@ last_updated: 2026-07-21
 
 ### I1 — `lib/activity.ts` 純函數(先寫 test,措辭 guard 係硬紅線)
 
-- [ ] `lib/activity.test.ts` 先行 —— 措辭 guard(A9)+ 14 action 覆蓋 + 未知 action fallback
-- [ ] `activitySummary(entry)` → `{ text, ref }`;措辭忠於 audit 語意,**唔用營運口吻**
-- [ ] `activityIcon(action)` → lucide icon;只用 stroke set
-- [ ] tone **重用** `auditActionTone`(`lib/audit.ts:40`)—— 唔另起色映射(兩處真相 = drift 源頭)
-- [ ] 未知 action → fallback raw 字串,唔 crash 唔亂猜(R5)
+- [x] `lib/activity.test.ts` 先行 —— **實證 fails-before**(檔案未存在 → transform error)
+- [x] `activitySummary(entry)` → `{ text, ref }`;措辭忠於 audit 語意
+- [x] `activityIcon(action)` → lucide stroke icon
+- [x] tone **重用** `auditActionTone` —— 唔另起色映射
+- [x] 未知 action → fallback raw 字串,唔 crash 唔亂猜(R5)
 
 ### I2 — `components/overview/activity-feed.tsx`
 
-- [ ] 跟 prototype 結構:24×24 圓角 6 icon 方塊(soft 底 + solid 前景)+ 描述 12.5px + ref fg-subtle + 時間 11px **mono** nowrap
-- [ ] 四態齊:loading / error / empty / 正常
-- [ ] 空 feed → 誠實 EmptyState,**唔再提「once request event history is exposed」**(A12,嗰句已經唔啱)
-- [ ] 上限 6 條
-- [ ] header `View audit log →` HeaderLink → `/audit`(A2,既有 pattern)
+- [x] 跟 prototype 結構:24×24 chip(radius **6px = `--radius-sm`**)+ 描述 + ref + mono 時間
+- [x] 四態齊:loading / error / empty / 正常
+- [x] 空 feed 措辭已換走「once request event history is exposed by the API」—— **全 codebase 0 處殘留**
+- [x] 上限 6 條
+- [x] header `View audit log →` → `/audit`
 
 ### I3 — `pages/overview.tsx` gate
 
-- [ ] `useCurrentUser().role` + `canSeeAdminNav(role)`;ADMIN 先 render,否則**整張 card 唔出**
-- [ ] 清走自己造成嘅 orphan import(§1.3)—— `Activity`,`EmptyState` 視乎其他用途再定
-- [ ] role `undefined`(/me 未載入)→ 當作冇權(fail-safe,跟 `roles.ts` 既定語意)
+- [x] `canSeeAdminNav(role)` gate;非 ADMIN **整張 card 唔出**
+- [x] 清走 orphan `Activity` import
+- [x] role `undefined` → 當作冇權(`canSeeAdminNav` 既定 fail-safe 語意,`roles.test.ts` 已覆蓋)
 
 ## Verification
 
-- [ ] **A1** ADMIN live:feed ≤ 6 行,每行有描述 + 相對時間
-- [ ] **A2** `View audit log →` 去到 `/audit`
-- [ ] **A3** **OPCO_IT live DOM**:`hasActivityCard: false`,**同一 session** KPI / Needs attention 照 render(證明係 gate 唔係整頁爆)
-- [ ] **A4** **零後端改動**:`git diff --stat apps/api` 空
-- [ ] **A5** 新檔案 grep 零 `#hex` / `rgb(` / `gradient`
-- [ ] **A6** 時間欄實測 `font-family` 含 `Geist Mono`
-- [ ] **A7** light + dark 都驗;dark 用**無 transition 元素**量度(避 W30 隱藏-tab 假陰性坑)
-- [ ] **A8** icon 全 lucide stroke;feed 零 primary
-- [ ] **A9** 措辭 guard test 綠
-- [ ] **A10** build · lint 綠;test **99 → ≥103**
-- [ ] **A11** `ui-design` skill 12 條逐條記錄
-- [ ] **A12** 空 feed EmptyState 措辭已更新
+- [x] **A1** ADMIN live:**6 行**真內容,每行有描述 + 相對時間
+- [x] **A2** `View audit log →` header link 存在(live DOM 讀到)
+- [x] **A3** **OPCO_IT live DOM**:`hasActivityCard: false`;**同一 session** Needs attention / Drift summary / On the roadmap + 三個 KPI 照 render。後端同步三重驗證:`/me` = OPCO_IT(RHK)· `/admin/audit` **403** · `/license/ledger` **200**
+- [x] **A4** **零後端改動**:`git diff apps/api` = **0 行**
+- [x] **A5** 新檔案 grep 零 `#hex` / `rgb(` / `gradient`
+- [x] **A6** 時間欄實測 `font-family` = `"Geist Mono"`
+- [x] **A7** light + dark 實測四個值全 swap(cardBg 255→20 · chipBg 238→28 · chipFg 82→161 · time 154→108)
+- [x] **A8** icon 實測 `stroke-width=2` / `fill=none`;feed 零 primary
+- [x] **A9** 措辭 guard test 綠
+- [x] **A10** build · lint 綠;test **99 → 114**(+15,要求 ≥103)
+- [x] **A11** `ui-design` 12 條逐條記錄 —— **DS-5 揪到真 violation 並即場修**(見 progress)
+- [x] **A12** 空 feed EmptyState 措辭已更新 —— ⚠️ **改用 component test 驗,唔係 live**(理由見 progress「A12 驗證方式改動」)
 
 ## Cross-Cutting
 
-- [ ] Each commit references `progress.md` Day-N entry(R2)
-- [ ] Commit message 標對應 component tag
-- [ ] (if architectural)ADR written —— **預期 N/A**:零 schema / 零 dep / 零後端
-- [ ] Open-question status sync(R4)—— D1 / D2 拍板已入 spec §1
-- [ ] Pending changes synced to `BACKLOG.md`(R7)—— `FE-activity` → ✅ 完成;**`RequestEvent` 營運 feed 登做新 candidate**
-- [ ] `progress.md` closeout summary written
-- [ ] `progress.md` frontmatter status flipped to `done`
+- [x] Each commit references `progress.md` Day-N entry(R2)
+- [x] Commit message 標對應 component tag
+- [x] (if architectural)ADR —— **N/A**:零 schema / 零 dep / 零後端 / 零新 token
+- [x] Open-question status sync(R4)—— D1 / D2 拍板已入 spec §1 + progress
+- [x] Pending changes synced to `BACKLOG.md`(R7)—— `FE-activity` → ✅ 完成;**`RequestEvent` 營運 feed 登做新 candidate**
+- [x] `progress.md` closeout summary written
+- [x] `progress.md` frontmatter status flipped to `done`
 
 ---
 

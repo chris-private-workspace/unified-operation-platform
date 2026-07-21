@@ -59,7 +59,11 @@ export function ActivityFeed({ action }: { action?: ReactNode }) {
               <Icon size={13} strokeWidth={2} />
             </span>
             <div className="min-w-0 flex-1 text-[12.5px] leading-[1.4]">
-              {text} <span className="text-fg-subtle">{ref}</span>
+              {text}{' '}
+              {/* mono: ref carries a record identifier (DS-5), as on /audit */}
+              <span className="font-mono text-[11.5px] text-fg-subtle">
+                {ref}
+              </span>
             </div>
             <span className="shrink-0 whitespace-nowrap font-mono text-[11px] text-fg-subtle">
               {relativeTime(entry.createdAt)}
