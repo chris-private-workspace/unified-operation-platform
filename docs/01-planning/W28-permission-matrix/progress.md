@@ -2,7 +2,7 @@
 phase: W28-permission-matrix
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | closed
+status: closed    # in-progress | closed
 ---
 
 # Phase W28 — Progress
@@ -201,32 +201,64 @@ derivePermissions(controllers: Function[]) → PermissionEntry[]   ← 純函數
 
 ---
 
-## Retro(填於 phase 結束)
+## Retro(2026-07-20)
 
 ### What worked
-- _(待填)_
+
+- **F0 spike 先行,回報極高。** 半日 spike 換返 F1 3h→~1.5h、F3 1.5h→~1h。落 code 前把「攞唔攞到 metadata」呢個唯一真未知掃清,之後基本冇卡過。
+- **「derive 而非手寫」呢個決定即日被自己證實。** 唔使等三個月 drift —— 我 2026-07-20 手寫嘅矩陣,同日 spike 一跑就發現 `updateLedger` 抄錯。呢個唔係假想風險。
+- **fails-before 雙實證** 真係捉到嘢:兩條 test 都親眼睇住紅過、diff 準確指出邊一行/邊個 handler,先算數。冇實證嘅 test 只係一段會 pass 嘅 code。
+- **沿用既有 panel pattern**(users-panel / opcos-panel 嘅 loading / 403 restricted / 表格)令 F2 由 2.5h 縮到 ~1.5h,而且視覺自動一致,唔使再對 token。
+- **H7 誠實標註未驗項有用**:403 一直標 ⏳ 而唔係當已驗,所以 Chris 一叫就知道具體要補咩、點補。
 
 ### What didn't work / unexpected friction
-- _(待填)_
+
+- **🔴 並行 session branch 事故**(見上文詳錄)。F2 期間 working tree 被切去另一條 branch,我一度喺錯 branch 上面寫 code。**冇損失,但完全靠「system-reminder 同 git status 矛盾」先察覺** —— 如果我當咗係顯示問題,就會一路做落去。
+- **jest 載唔到 `AppModule`**(`jwks-rsa` → `jose` 係 ESM)。既有環境限制,逼到 F1 / F3 用兩種唔同嘅 controller discovery。
+- **我用 `git add -A` 掃咗一個唔關事嘅檔案入 commit**(Chris 並行寫緊嘅 `DIAGRAM-BRIEF.md`),而且係一個我未讀過嘅檔。已 `git rm --cached` + amend 移除。**教訓:逐個 `git add`,唔用 `-A`。**
+- **CRLF 初判錯**:把「本地 lint 紅」等同「repo 有債」,冇先查 index 實際存咩。實情 repo 一直乾淨。
+- **第一個 commit 用錯 shell 語法**(喺 Bash tool 寫 PowerShell here-string),subject 多咗個 `@`。已 amend。
 
 ### Surprises / discoveries
-- _(待填)_
+
+- **零 `unguarded`** —— 34 條 route 全部有適當保護。事前唔知,查完先確認。呢個係本 phase 最有價值嘅**結論**(而唔是交付物)。
+- **`PATCH /license/ledger/:id` 允許 OPCO_IT** —— OpCo 可以改自己 ledger(ADR-0007),唔止讀。我手寫矩陣寫錯成「個別 GET」。已加專門 regression test 鎖住。
+- **Spike B 失敗反而催生更好設計。** 如果 jest 載到 AppModule,我大概兩邊都用 DiscoveryService 就算。載唔到之後被逼分成「純函數 + 兩個 discovery 源」,結果多咗一個免費性質:**兩條路唔一致本身就係 bug signal**。
+- **`unguarded` 嘅定義要重新諗。** 全域 guard 之下「冇 `@Roles`」唔等於無保護,而係「任何已登入用戶可用」。原 plan 用詞會令 `GET /me` 都被標成危險,失去信號價值。
+- **CRLF「債」根本唔存在** —— `.gitattributes`(W25)早已根治,`checkout` 一次就乾淨。
 
 ### Carry-overs to W29
-- _(待填)_
+
+- **AUDIT-3(`AuditLog` 落地)= 下一個**,ADR-0009 已 Accepted 並解封。
+- **`REVIEWED_AUTHENTICATED` 白名單目前 2 條**(`GET /me` / `PATCH /me/password`)。將來要加,**當 security decision 處理**,唔可以為咗令 test 綠而隨手加 —— code comment 同 test 都寫明咗。
+- **snapshot 唔好反射性 `jest -u`**。權限變更要喺 PR diff 見到並被 review,呢個先係 snapshot 存在嘅理由。
+- INTEG-1(connector 狀態)/ INTEG-2(n8n 回程,🔴 卡外部合約)/ INTEG-3(retry)仍待。
 
 ### ADR triggers
-- 預期**無新 ADR** —— 純 derive,ADR-0009 Decision 8.5 已覆蓋
-- 若 F0 spike 失敗改 fallback(手寫 const map)→ 屬 plan deviation,入 plan §7 changelog(R3),仍非 ADR 級
+
+- **無新 ADR**(如預期)—— 純 derive、零 schema、零行為改動,ADR-0009 Decision 8.5 已完整覆蓋。
+- F0 spike 成功,冇觸發 fallback,故 plan §7 只記錄實作路徑 refine(D1 / D2),非架構級。
 
 ### Phase Gate result
-- G1–G7:_(待填)_
+
+| Gate | 結果 | Measure |
+|---|---|---|
+| G1 覆蓋全部 controller route | **Pass** | live 200,**34 route / 9(+本身=10)controller**,對 `@Roles` 逐條核,零遺漏 |
+| G2 method-level override 正確 | **Pass** | `updateLedger` +OPCO_IT · `updateCatalog` 繼承 ADMIN/REGIONAL · `listTenantSkus` 排除 OPCO_IT |
+| G3 特殊 case 標示正確 | **Pass** | intake=`m2m`+`IntakeKeyGuard` · auth×3=`public` · me×2=`authenticated` |
+| G4 drift + unguarded test 且 fails-before 實證 | **Pass** | 10 test;實證 1 snapshot 紅(指出 `GET /opcos` 行)· 實證 2 unguarded 紅(指出 `MeController.probe`) |
+| G5 前端 light + dark | **Pass** | light 34 行/10 組;dark `dark` on root · bg `rgb(8,8,10)` · badge `rgb(16,31,57)`/`rgb(95,155,255)` · path Geist Mono |
+| G6 build + lint + test | **Pass** | api build 0 · **223 test** · **全 repo lint 0**;web build 0 · **85 test** · lint 0 |
+| G7 零行為改動 | **Pass** | `opco/me/license/fulfilment` 四處 `git diff` 全空;fails-before 改動已還原 |
+
+**額外(plan 外)**:非 ADMIN → **403 三重驗證**(`/me` 確認身分 → 403 → 同身分下 `/license/ledger` 200 作對照 → 還原後 200)。
 
 ### Phase status
-- Closeout commit:_(待填)_
-- Frontmatter status flipped to `closed`
-- BACKLOG synced(R7)
-- Phase W29 kickoff trigger:預期 = **AUDIT-3**(`AuditLog` 落地)
+
+- Closeout commit:見下方 commit(本 entry 所屬)
+- Frontmatter status flipped to `closed`(plan / checklist / progress 三份)
+- BACKLOG synced(R7):**AUDIT-2 → 完成**;W28 入「進行中」表;**AUDIT-3 標為下一個候選**
+- Phase W29 kickoff trigger:**AUDIT-3**(`AuditLog` 落地)—— 無外部阻塞,可即開
 
 ---
 

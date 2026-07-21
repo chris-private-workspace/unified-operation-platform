@@ -1,7 +1,7 @@
 ---
 phase: W28-permission-matrix
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete    # in-progress | complete
 last_updated: 2026-07-20
 ---
 
@@ -66,13 +66,13 @@ last_updated: 2026-07-20
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker(R4)
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— 預期**無新 ADR**(純 derive,ADR-0009 8.5 已覆蓋);若 spike 失敗改 fallback → plan §7 changelog
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro(預期 = **AUDIT-3** `AuditLog` 落地)
+- [x] All deliverables committed to git(`3fc4de7` F0 · `a5126c7` F1+F3 · `faf8c68` F2 · `d107c43` 403+CRLF · closeout commit)
+- [x] All open-question status changes reflected in decision tracker(R4)—— OQ-1/OQ-2 於 `81dc99b` 已同步 ADR-0009 + 分析文件 §8
+- [x] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **無新 ADR**,ADR-0009 Decision 8.5 已完整覆蓋(純 derive / 零 schema / 零行為改動);spike 成功故無 fallback deviation
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
+- [x] `progress.md` retro section written
+- [x] `progress.md` frontmatter status flipped to `closed`(plan / checklist 同步)
+- [x] Phase N+1 kickoff trigger noted in retro —— **AUDIT-3**(`AuditLog` 落地),無外部阻塞可即開
 
 ---
 
