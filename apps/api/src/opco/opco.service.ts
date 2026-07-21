@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { CreateOpcoDto, OpcoDto, UpdateOpcoDto } from './dto/opco.dto';
 
 export interface OpcoOption {
@@ -32,7 +34,10 @@ function normalizeOptional(v: string | null | undefined): string | null {
 
 @Injectable()
 export class OpcoService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   /** Active OpCos for picker selectors (id + code + displayName only). */
   listActive(): Promise<OpcoOption[]> {
@@ -58,7 +63,7 @@ export class OpcoService {
   }
 
   /** Create an OpCo. code must be unique (409 on clash). */
-  async createOpco(dto: CreateOpcoDto): Promise<OpcoDto> {
+  async createOpco(actorId: string, dto: CreateOpcoDto): Promise<OpcoDto> {
     const code = dto.code.trim();
     const clash = await this.prisma.opco.findUnique({
       where: { code },
@@ -67,15 +72,25 @@ export class OpcoService {
     if (clash)
       throw new ConflictException(`OpCo code "${code}" already exists`);
 
-    return this.prisma.opco.create({
-      data: {
-        code,
-        displayName: dto.displayName.trim(),
-        company: dto.company.trim(),
-        costCenter: normalizeOptional(dto.costCenter),
-        active: dto.active ?? true,
-      },
-      select: ADMIN_SELECT,
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.opco.create({
+        data: {
+          code,
+          displayName: dto.displayName.trim(),
+          company: dto.company.trim(),
+          costCenter: normalizeOptional(dto.costCenter),
+          active: dto.active ?? true,
+        },
+        select: ADMIN_SELECT,
+      });
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.OPCO_CREATE,
+        targetType: 'Opco',
+        targetId: created.id,
+        actorId,
+        after: created,
+      });
+      return created;
     });
   }
 
@@ -84,10 +99,15 @@ export class OpcoService {
    * immutable (never in the data), matching the skuId-style stable-key rule
    * (CH-003). 404 if the id does not exist.
    */
-  async updateOpco(id: string, dto: UpdateOpcoDto): Promise<OpcoDto> {
+  async updateOpco(
+    actorId: string,
+    id: string,
+    dto: UpdateOpcoDto,
+  ): Promise<OpcoDto> {
+    // Select the audited columns (not just id) so the audit diff has a `before`.
     const existing = await this.prisma.opco.findUnique({
       where: { id },
-      select: { id: true },
+      select: ADMIN_SELECT,
     });
     if (!existing) throw new NotFoundException(`OpCo ${id} not found`);
 
@@ -100,10 +120,21 @@ export class OpcoService {
     }
     if (dto.active !== undefined) data.active = dto.active;
 
-    return this.prisma.opco.update({
-      where: { id },
-      data,
-      select: ADMIN_SELECT,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.opco.update({
+        where: { id },
+        data,
+        select: ADMIN_SELECT,
+      });
+      await this.audit.logChange(tx, {
+        action: AUDIT_ACTIONS.OPCO_UPDATE,
+        targetType: 'Opco',
+        targetId: id,
+        actorId,
+        before: existing,
+        after: updated,
+      });
+      return updated;
     });
   }
 }

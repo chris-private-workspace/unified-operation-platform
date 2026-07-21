@@ -109,3 +109,13 @@ shadcn/ui 做底但 re-skin 用上面 token(或 alias `--primary:var(--accent)` 
 - **加新畫面 / 組合既有 primitive** → 直接做(用 token),唔算 violate。
 - **要加新 primitive / 新 pattern / 改 token 值 / 加新色** → **STOP(H6)**:先同 owner 傾 → 更新本檔(+ 若動到 token 契約 / 架構級 → 寫 ADR)→ 先落 code。
 - **token 值有變** → 改 `design_handoff_licenseops/design-system/tokens/*.css`(機器真相),本檔同步摘要。
+
+---
+
+## 6. Prototype 以外嘅 owner-approved 畫面
+
+> Prototype(`full-console.html`)**冇**、但 owner 拍板加嘅畫面 / 導航項。將來 fidelity audit 對照 prototype 見到呢啲差異 = **預期**,唔係 drift。新增畫面必須喺呢度登記(邊個批 / 幾時 / 邊份 plan)。
+
+| 畫面 / 導航 | 內容 | 拍板 |
+|---|---|---|
+| `/audit` Audit log 頁 + sidebar「Administration → Audit log」項 | 平台 audit trail 唯讀時間序表(action / target 篩選 · 分頁 · before→after 展開 row)。**零 primary action**(唯讀)。ADMIN-only:sidebar 以 `canSeeAdminNav` 隱藏,直開 URL 落 restricted state(後端 403 係真權威)。全部組合既有 primitive(Card / Badge / Select / Button / EmptyState),無新 token / 新色 / 新 pattern;prototype 僅得「only auditor」字眼,無此畫面。 | Chris,2026-07-20(W29 plan §9 Q2;ADR-0009) |

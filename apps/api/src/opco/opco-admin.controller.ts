@@ -15,6 +15,7 @@ import {
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { OpcoService } from './opco.service';
 import { CreateOpcoDto, OpcoDto, UpdateOpcoDto } from './dto/opco.dto';
 
@@ -41,16 +42,20 @@ export class OpcoAdminController {
 
   @Post()
   @ApiCreatedResponse({ type: OpcoDto })
-  create(@Body() dto: CreateOpcoDto): Promise<OpcoDto> {
-    return this.opcos.createOpco(dto);
+  create(
+    @CurrentUser() actor: AuthUser,
+    @Body() dto: CreateOpcoDto,
+  ): Promise<OpcoDto> {
+    return this.opcos.createOpco(actor.id, dto);
   }
 
   @Patch(':id')
   @ApiOkResponse({ type: OpcoDto })
   update(
+    @CurrentUser() actor: AuthUser,
     @Param('id') id: string,
     @Body() dto: UpdateOpcoDto,
   ): Promise<OpcoDto> {
-    return this.opcos.updateOpco(id, dto);
+    return this.opcos.updateOpco(actor.id, id, dto);
   }
 }

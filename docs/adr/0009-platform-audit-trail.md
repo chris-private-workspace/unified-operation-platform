@@ -75,6 +75,14 @@ model AuditLog {
 
 > **點解呢條係 blocking**:實作時若圖方便寫 `before: user`(整個 Prisma object),就會把 `passwordHash` 寫入 audit table —— 災難級 H4 violation。**必須由 test 鎖死**(H5)。
 
+> **實作補註(W29 closeout,2026-07-21)—— `metadata` 同樣受約束**
+>
+> 本 Decision 原文只講 `before`/`after`。但 `metadata` 一樣係 `Json?` 欄 —— 若唔管,佢就係繞過白名單嘅**逃生門**(例:想記低登入失敗嘗試過嘅 email,順手掟成個 request body 入去)。
+>
+> W29 落實時令 `metadata` **只允許固定 key set**:`reason` / `correlationId` / `source` / `emailAttempted`(`audit-fields.ts` `AUDIT_METADATA_KEYS`,有專門 test 證實 `requestBody` / `ip` / `passwordHash` 全部被丟棄)。永久 blacklist 同樣套用喺 metadata。
+>
+> **呢個係收緊,唔係推翻** —— 本 ADR 從未容許 metadata 自由塞,所以唔需要新 ADR(CLAUDE.md §6)。補喺呢度係為咗令將來睇本 ADR 嘅人唔會以為 metadata 冇管。出處:W29 plan §8。
+
 ### 6. ✅ 記 before/after(白名單)【OQ-1 — Chris 2026-07-20 拍板】
 
 **決定:記,經 Decision 5 白名單過濾。** 唔記嘅話稽核員問「改成點」答唔到,audit 價值大減。

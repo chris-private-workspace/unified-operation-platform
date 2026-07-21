@@ -3,6 +3,8 @@ import { DriftStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { graphUnavailable } from '../integration/graph/graph-unavailable';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 
 /** Outcome of a reconciliation run — surfaced to the trigger endpoint. */
 export interface ReconcileResult {
@@ -30,9 +32,16 @@ export class ReconcileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly graph: GraphService,
+    private readonly audit: AuditService,
   ) {}
 
-  async reconcile(): Promise<ReconcileResult> {
+  /**
+   * @param actorId  the operator who triggered this run, or null for the
+   *   scheduled sweep. Resolving a drift alert is decided by the code (delta
+   *   reached 0), but WHO set that run going is a different question — and one
+   *   an auditor will ask (Chris, 2026-07-21). null ⇒ actorType 'system'.
+   */
+  async reconcile(actorId: string | null = null): Promise<ReconcileResult> {
     // OD2: reconcile against fresh tenant totals, not a stored snapshot.
     // BE-graph-harden: a raw Graph error must not crash the process (BUG-002);
     // fail closed with a clean 503 before any drift alert is written.
@@ -91,9 +100,22 @@ export class ReconcileService {
           opened++;
         }
       } else if (openAlert) {
-        await this.prisma.driftAlert.update({
-          where: { id: openAlert.id },
-          data: { status: DriftStatus.RESOLVED, resolvedAt: new Date() },
+        await this.prisma.$transaction(async (tx) => {
+          const resolvedAlert = await tx.driftAlert.update({
+            where: { id: openAlert.id },
+            data: { status: DriftStatus.RESOLVED, resolvedAt: new Date() },
+          });
+          await this.audit.log(tx, {
+            action: AUDIT_ACTIONS.DRIFT_RESOLVE,
+            targetType: 'DriftAlert',
+            targetId: openAlert.id,
+            actorId,
+            // A scheduled sweep has no person behind it.
+            actorType: actorId ? 'user' : 'system',
+            before: openAlert,
+            after: resolvedAlert,
+            metadata: { source: actorId ? 'manual-reconcile' : 'scheduled' },
+          });
         });
         resolved++;
       }

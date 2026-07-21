@@ -8,6 +8,8 @@ import type { AppUser } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { UserAdminService } from './user-admin.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 
 jest.mock('argon2');
 
@@ -44,7 +46,9 @@ describe('UserAdminService', () => {
       count: jest.Mock;
     };
     opco: { findFirst: jest.Mock; findMany: jest.Mock };
+    $transaction: jest.Mock;
   };
+  let audit: { log: jest.Mock; logChange: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -58,8 +62,15 @@ describe('UserAdminService', () => {
         count: jest.fn(),
       },
       opco: { findFirst: jest.fn(), findMany: jest.fn() },
+      // W29 F2a: run the callback against the same mock, so every existing
+      // assertion on prisma.appUser.* keeps working untouched.
+      $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(prisma)),
     };
-    service = new UserAdminService(prisma as unknown as PrismaService);
+    audit = { log: jest.fn(), logChange: jest.fn().mockResolvedValue(true) };
+    service = new UserAdminService(
+      prisma as unknown as PrismaService,
+      audit as unknown as AuditService,
+    );
   });
 
   describe('create', () => {
@@ -315,6 +326,136 @@ describe('UserAdminService', () => {
         service.resetPassword(ADMIN, 'u9', { newPassword: 'weak' }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.appUser.update).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * W29 F2a — every identity write leaves a trail (ADR-0009 Decision 4), and
+   * it shares the operation's transaction (Decision 8.1).
+   */
+  describe('audit trail', () => {
+    const existing = (over: Record<string, unknown> = {}) => ({
+      id: 'u2',
+      email: 'u2@uop.local',
+      displayName: 'U Two',
+      role: Role.REGIONAL,
+      active: true,
+      opcoScopeId: null,
+      ...over,
+    });
+
+    it('records user.create with the raw row (service does the whitelisting)', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(null);
+      const created = rowWithScope();
+      prisma.appUser.create.mockResolvedValue(created);
+
+      await service.create(ADMIN, {
+        email: 'new@uop.local',
+        displayName: 'New User',
+        role: Role.REGIONAL,
+        initialPassword: 'Sup3r!Secret9',
+      });
+
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma, // same handle the write used → same transaction (Decision 8.1)
+        expect.objectContaining({
+          action: AUDIT_ACTIONS.USER_CREATE,
+          targetType: 'AppUser',
+          targetId: 'u1',
+          actorId: ADMIN.id,
+          after: created,
+        }),
+      );
+    });
+
+    it('labels a role change as user.role_change', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(existing());
+      prisma.appUser.count.mockResolvedValue(1);
+      prisma.appUser.update.mockResolvedValue(
+        rowWithScope({ id: 'u2', role: Role.ADMIN }),
+      );
+
+      await service.update(ADMIN, 'u2', { role: Role.ADMIN });
+
+      expect(audit.logChange).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: AUDIT_ACTIONS.USER_ROLE_CHANGE,
+          targetId: 'u2',
+        }),
+      );
+    });
+
+    it('labels a plain deactivation as user.deactivate', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(existing());
+      prisma.appUser.count.mockResolvedValue(1);
+      prisma.appUser.update.mockResolvedValue(
+        rowWithScope({ id: 'u2', active: false }),
+      );
+
+      await service.update(ADMIN, 'u2', { active: false });
+
+      expect(audit.logChange).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ action: AUDIT_ACTIONS.USER_DEACTIVATE }),
+      );
+    });
+
+    /**
+     * The labelling rule that matters: searching `user.role_change` must return
+     * EVERY privilege change, including one bundled with a deactivation.
+     */
+    it('prefers role_change when a demotion and a deactivation happen together', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(
+        existing({ role: Role.ADMIN }),
+      );
+      prisma.appUser.count.mockResolvedValue(1); // another admin exists
+      prisma.appUser.update.mockResolvedValue(
+        rowWithScope({ id: 'u2', role: Role.REGIONAL, active: false }),
+      );
+
+      await service.update(ADMIN, 'u2', {
+        role: Role.REGIONAL,
+        active: false,
+      });
+
+      expect(audit.logChange).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ action: AUDIT_ACTIONS.USER_ROLE_CHANGE }),
+      );
+    });
+
+    // The hash and its lifecycle flags are either useless or a leak — the
+    // auditable fact is "who reset whose password, when".
+    it('records user.password_reset as an event with no before/after', async () => {
+      prisma.appUser.findUnique.mockResolvedValue({
+        id: 'u9',
+        email: 'u9@uop.local',
+        authProvider: 'local',
+      });
+      prisma.appUser.update.mockResolvedValue({});
+
+      await service.resetPassword(ADMIN, 'u9', {
+        newPassword: 'Sup3r!Secret9',
+      });
+
+      const entry = audit.log.mock.calls.at(-1)![1];
+      expect(entry.action).toBe(AUDIT_ACTIONS.USER_PASSWORD_RESET);
+      expect(entry.targetId).toBe('u9');
+      expect(entry.before).toBeUndefined();
+      expect(entry.after).toBeUndefined();
+    });
+
+    // A failed operation must not leave an audit row claiming it happened.
+    it('writes no audit row when the operation is rejected', async () => {
+      prisma.appUser.findUnique.mockResolvedValue(null);
+      await expect(
+        service.update(ADMIN, 'ghost', { active: false }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(audit.log).not.toHaveBeenCalled();
+      expect(audit.logChange).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

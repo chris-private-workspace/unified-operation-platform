@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { parseCsv } from './csv';
 import {
   LedgerImportChangeDto,
@@ -32,9 +34,15 @@ interface OpcoColumn {
 export class AllocationImportService {
   private readonly logger = new Logger(AllocationImportService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
-  async import(dto: LedgerImportRequestDto): Promise<LedgerImportResultDto> {
+  async import(
+    actorId: string,
+    dto: LedgerImportRequestDto,
+  ): Promise<LedgerImportResultDto> {
     const commit = dto.dryRun === false;
     const rows = parseCsv(dto.csv);
 
@@ -102,25 +110,47 @@ export class AllocationImportService {
     if (commit && changes.length > 0) {
       // Look up skuCatalogId per change (by partNumber is ambiguous — resolve via
       // the alias map we already built, keyed by businessAlias label).
-      await this.prisma.$transaction(
-        changes.map((c) => {
-          const sku = skuByAlias.get(c.skuBusinessAlias)!;
-          const opcoId = opcoColumns.find(
-            (o) => o.opcoCode === c.opcoCode,
-          )!.opcoId;
-          return this.prisma.opcoSkuLedger.upsert({
-            where: { opcoId_skuCatalogId: { opcoId, skuCatalogId: sku.id } },
-            // create omits assignedQuantity → schema default 0 (never derived
-            // from import); update touches ONLY allocatedQuantity.
-            create: {
-              opcoId,
-              skuCatalogId: sku.id,
-              allocatedQuantity: c.target,
+      const upserts = changes.map((c) => {
+        const sku = skuByAlias.get(c.skuBusinessAlias)!;
+        const opcoId = opcoColumns.find(
+          (o) => o.opcoCode === c.opcoCode,
+        )!.opcoId;
+        return this.prisma.opcoSkuLedger.upsert({
+          where: { opcoId_skuCatalogId: { opcoId, skuCatalogId: sku.id } },
+          // create omits assignedQuantity → schema default 0 (never derived
+          // from import); update touches ONLY allocatedQuantity.
+          create: {
+            opcoId,
+            skuCatalogId: sku.id,
+            allocatedQuantity: c.target,
+          },
+          update: { allocatedQuantity: c.target },
+        });
+      });
+
+      // Summary-level audit, one row (Chris 2026-07-21). A per-change row would
+      // drown the table — a single import can touch hundreds of ledger cells —
+      // and the per-cell trail already exists for manual edits (LedgerAdjustment,
+      // ADR-0007). Same $transaction as the upserts (Decision 8.1).
+      await this.prisma.$transaction([
+        ...upserts,
+        this.prisma.auditLog.create(
+          this.audit.buildLogArgs({
+            action: AUDIT_ACTIONS.ALLOCATION_IMPORT,
+            targetType: 'AllocationImport',
+            targetId: 'bulk', // no single entity — this is a batch operation
+            actorId,
+            after: {
+              opcoColumns: opcoColumns.length,
+              skuRows: dataRows.filter((r) => (r[0] ?? '').trim() !== '')
+                .length,
+              mappedSkuRows,
+              changes: changes.length,
+              committed: changes.length,
             },
-            update: { allocatedQuantity: c.target },
-          });
-        }),
-      );
+          }),
+        ),
+      ]);
       committed = changes.length;
     }
 

@@ -280,6 +280,51 @@ export interface PermissionEntry {
   guards: string[];
 }
 
+/**
+ * GET /admin/audit → one platform audit-trail event (W29 / ADR-0009). ADMIN-only
+ * — before/after may carry P-B whitelisted PII (email / displayName), so a 403
+ * for any other role is authoritative and the page degrades to restricted.
+ * before/after hold whitelisted fields only; for updates it is the changed-field
+ * diff, so keys vary per row.
+ */
+export interface AuditActor {
+  email: string;
+  displayName: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  createdAt: string;
+  action: string; // 'user.role_change' | 'opco.update' | … (backend AUDIT_ACTIONS)
+  targetType: string; // 'AppUser' | 'Opco' | 'SkuCatalog' | 'DriftAlert' | 'AllocationImport'
+  targetId: string;
+  actorId: string | null; // null = system / cron / m2m
+  actor: AuditActor | null;
+  actorType: 'user' | 'system' | 'm2m';
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface AuditPage {
+  total: number;
+  limit: number;
+  offset: number;
+  entries: AuditEntry[];
+}
+
+/** GET /admin/audit query — all optional; mirrors apps/api audit-query.dto.ts. */
+export interface AuditFilters {
+  actorId?: string;
+  targetType?: string;
+  targetId?: string;
+  action?: string;
+  from?: string; // ISO 8601
+  to?: string;
+  limit?: number; // backend caps at 100
+  offset?: number;
+}
+
 /** POST /admin/users body — create a local account (admin sets the password). */
 export interface CreateUserBody {
   email: string;
