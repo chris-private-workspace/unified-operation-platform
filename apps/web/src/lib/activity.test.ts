@@ -1,132 +1,131 @@
 import { describe, expect, it } from 'vitest';
-import { AUDIT_ACTION_OPTIONS, auditActionTone } from './audit';
-import { activityIcon, activitySummary, activityTone } from './activity';
-import type { AuditEntry } from './api-types';
+import { EVENT_TONE, eventIcon, eventSummary, eventTone } from './activity';
+import { STAGE_LABEL } from './requests';
+import type { ActivityEvent, EventType } from './api-types';
 
-const entry = (over: Partial<AuditEntry> = {}): AuditEntry => ({
-  id: 'a1',
+const ALL_TYPES: EventType[] = [
+  'STAGE_CHANGE',
+  'ASSIGN',
+  'SYNC',
+  'RECONCILE',
+  'NOTE',
+];
+
+const event = (over: Partial<ActivityEvent> = {}): ActivityEvent => ({
+  id: 'ev1',
+  type: 'ASSIGN',
+  fromStage: 'READY',
+  toStage: 'ASSIGNED',
+  message: 'Assigned SPE_E3',
   createdAt: '2026-07-21T03:00:00.000Z',
-  action: 'user.role_change',
-  targetType: 'AppUser',
-  targetId: 'clx9k2m4a0000qwer1234abcd',
-  actorId: 'u-admin',
-  actor: { email: 'admin@uop.local', displayName: 'Alice Wong' },
-  actorType: 'user',
-  before: null,
-  after: null,
-  metadata: null,
+  actorName: 'Alex Tan',
+  requestId: 'req-abc123def456',
+  requestRef: 'REQ0012345',
   ...over,
 });
 
-describe('activitySummary — wording (CH-005 D2)', () => {
+describe('eventSummary — text', () => {
+  it('prefers the event message and names the actor', () => {
+    expect(eventSummary(event()).text).toBe('Assigned SPE_E3 — Alex Tan');
+  });
+
   /**
-   * The hard line of this change. The feed LOOKS like the prototype's activity
-   * stream, but it is fed by AuditLog — configuration and account changes, not
-   * the licence-operations flow the prototype mocked up ("Alex Tan assigned
-   * Office 365 F3 to may.chan@…", which lives in RequestEvent and has no read
-   * surface). If someone later rewrites these labels in operational voice the
-   * feed starts claiming things it cannot know. This test fails first.
+   * stage.service.ts writes STAGE_CHANGE with fromStage/toStage but NO message,
+   * so this branch is the normal path for stage moves, not an edge case.
    */
-  it('never phrases an audit event in operational voice', () => {
-    for (const action of AUDIT_ACTION_OPTIONS) {
-      const { text } = activitySummary(entry({ action }));
-      expect(text.toLowerCase()).not.toContain('assigned');
-      expect(text.toLowerCase()).not.toContain('provisioned');
-      // " to " is how the prototype narrates a seat landing on a person.
-      expect(text.toLowerCase()).not.toContain(' to ');
-    }
-  });
-
-  it('gives every backend action its own label — none falls through to raw', () => {
-    for (const action of AUDIT_ACTION_OPTIONS) {
-      const { text } = activitySummary(entry({ action }));
-      // A fallthrough would surface the dotted action verbatim.
-      expect(text).not.toContain(action);
-    }
-  });
-
-  it('names the actor', () => {
-    expect(activitySummary(entry()).text).toBe('Role changed — Alice Wong');
-  });
-
-  it('attributes a platform-enforced event to the system, not a person', () => {
-    const { text } = activitySummary(
-      entry({
-        action: 'auth.locked',
-        actor: null,
-        actorId: null,
-        actorType: 'system',
+  it('builds stage-move text from the stage pair when there is no message', () => {
+    const { text } = eventSummary(
+      event({
+        type: 'STAGE_CHANGE',
+        message: null,
+        fromStage: 'QUOTING',
+        toStage: 'READY',
       }),
     );
-    expect(text).toBe('Account locked — system');
+    expect(text).toBe('Quoting → ready — Alex Tan');
   });
 
   /**
-   * A failed sign-in for an address with no account: auth.service.ts records
-   * actorId null but leaves actorType at its 'user' default. Printing the bare
-   * word "user" reads like a username, so it degrades to an explicit unknown.
+   * Delegation guard (same idea as CH-005 delegating tone to the audit page):
+   * stage wording comes from the Requests screens' labels, so a stage cannot be
+   * called one thing in the feed and another on /requests.
    */
-  it('does not print the literal word "user" as an actor name', () => {
-    const { text } = activitySummary(
-      entry({
-        action: 'auth.login_failed',
-        actor: null,
-        actorId: null,
-        actorType: 'user',
+  it('uses the same stage labels as the Requests screens', () => {
+    const { text } = eventSummary(
+      event({
+        type: 'STAGE_CHANGE',
+        message: null,
+        fromStage: 'AWAITING_VENDOR',
+        toStage: 'READY',
       }),
     );
-    expect(text).toBe('Sign-in failed — Unknown user');
-  });
-});
-
-describe('activitySummary — target ref', () => {
-  it('shortens a cuid so the row stays scannable', () => {
-    expect(activitySummary(entry()).ref).toBe('AppUser · 34abcd');
+    // Case-insensitive on the leading stage: the row is a sentence, so its
+    // first word is capitalised (DS-10). The vocabulary is what must match.
+    expect(text.toLowerCase()).toContain(STAGE_LABEL.AWAITING_VENDOR);
+    expect(text.toLowerCase()).toContain(STAGE_LABEL.READY);
   });
 
   /**
-   * auth.service.ts:294 writes the literal string 'unknown' when the attempted
-   * address has no account — deliberately, so PII stays out of the indexed
-   * targetId. Blind tail-slicing would render that as "nknown".
+   * SYNC / NOTE are written by the platform with actorId null. Appending a
+   * placeholder ("— system", "— Unknown user") would invent an author for an
+   * event nobody performed; the row simply carries no attribution.
    */
-  it('leaves a non-id target marker intact', () => {
-    const { ref } = activitySummary(
-      entry({ action: 'auth.login_failed', targetId: 'unknown' }),
+  it('omits attribution entirely for platform-written events', () => {
+    const { text } = eventSummary(
+      event({
+        type: 'SYNC',
+        actorName: null,
+        message: 'Phase 1 sync confirmed (azureSyncedAt set)',
+      }),
     );
-    expect(ref).toBe('AppUser · unknown');
+    expect(text).toBe('Phase 1 sync confirmed (azureSyncedAt set)');
+    expect(text).not.toContain('—');
   });
-});
 
-describe('activitySummary — unknown action (backend ahead of frontend)', () => {
-  it('falls back to the raw action instead of crashing or guessing', () => {
-    const { text } = activitySummary(
-      entry({ action: 'request.something_new' }),
-    );
-    expect(text).toBe('request.something_new — Alice Wong');
-  });
-});
-
-describe('activityTone / activityIcon', () => {
   /**
-   * Tone is NOT re-derived here — it delegates to the /audit page's mapping so
-   * the same event cannot read as routine in one view and alarming in another.
+   * Robustness across the whole enum: an event with neither message nor stages
+   * must still read as a sentence. A missing branch would surface "undefined"
+   * or "null" to the operator.
    */
-  it('delegates tone to the audit page mapping', () => {
-    for (const action of AUDIT_ACTION_OPTIONS) {
-      expect(activityTone(action)).toBe(auditActionTone(action));
+  it('never renders a null-ish placeholder for any event type', () => {
+    for (const type of ALL_TYPES) {
+      const { text } = eventSummary(
+        event({ type, message: null, fromStage: null, toStage: null }),
+      );
+      expect(text).toBeTruthy();
+      expect(text.toLowerCase()).not.toContain('undefined');
+      expect(text.toLowerCase()).not.toContain('null');
+    }
+  });
+});
+
+describe('eventSummary — ref', () => {
+  it('shows the ServiceNow number when the request has one', () => {
+    expect(eventSummary(event()).ref).toBe('REQ0012345');
+  });
+
+  // Platform-created requests have no SN number until submission succeeds; the
+  // backend already substitutes an id tail, so the feed just renders it.
+  it('renders whatever handle the backend resolved', () => {
+    expect(eventSummary(event({ requestRef: 'def456' })).ref).toBe('def456');
+  });
+});
+
+describe('eventTone / eventIcon', () => {
+  /**
+   * EVENT_TONE is the single source shared with the request-detail timeline
+   * (CH-006 B7) — two mappings would let the same event read as routine on one
+   * screen and notable on the other.
+   */
+  it('maps every event type to a tone', () => {
+    for (const type of ALL_TYPES) {
+      expect(EVENT_TONE[type]).toBeDefined();
+      expect(eventTone(type)).toBe(EVENT_TONE[type]);
     }
   });
 
-  /**
-   * Asserted against the fallback rather than by identity: a missing entry in
-   * ACTION_ICON is silent at runtime (every action still renders SOMETHING), so
-   * the only observable failure is that it renders the generic glyph.
-   */
-  it('gives every known action its own icon, not the generic fallback', () => {
-    const fallback = activityIcon('totally.unknown.action');
-    expect(fallback).toBeDefined();
-    for (const action of AUDIT_ACTION_OPTIONS) {
-      expect(activityIcon(action)).not.toBe(fallback);
-    }
+  it('gives every event type its own icon', () => {
+    const icons = ALL_TYPES.map((type) => eventIcon(type));
+    expect(new Set(icons).size).toBe(ALL_TYPES.length);
   });
 });

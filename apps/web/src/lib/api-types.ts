@@ -487,6 +487,28 @@ export interface RequestEvent {
 }
 
 /**
+ * GET /fulfilment/activity → the same events, read ACROSS requests (CH-006).
+ *
+ * Flatter than RequestEvent above: the actor's name and a human request handle
+ * are resolved server-side, since a feed row has no request context to borrow
+ * from. Onboarding PII (targetUpn / requesterEmail) is deliberately absent —
+ * this surface is open to OPCO_IT.
+ */
+export interface ActivityEvent {
+  id: string;
+  type: EventType;
+  fromStage: LineItemStage | null;
+  toStage: LineItemStage | null;
+  message: string | null;
+  createdAt: string;
+  /** null for platform-written events (SYNC / NOTE) — no operator caused them. */
+  actorName: string | null;
+  requestId: string;
+  /** ServiceNow number when the request has one, else a short id tail. */
+  requestRef: string;
+}
+
+/**
  * GET /fulfilment/requests → the service returns the full Request plus `opco`
  * and `lineItems` (richer than RequestDto). Fields beyond the DTO are real.
  */

@@ -15,7 +15,9 @@ import {
   useAssignLineItem,
   useMarkSynced,
 } from '@/hooks/mutations';
-import type { EventType } from '@/lib/api-types';
+// Shared with the Overview feed (CH-006) so the same event cannot read as
+// routine on one screen and notable on the other.
+import { EVENT_TONE } from '@/lib/activity';
 import {
   deriveStatus,
   nextStage,
@@ -29,13 +31,6 @@ import { cn } from '@/lib/utils';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-const EVENT_TONE: Record<EventType, BadgeTone> = {
-  STAGE_CHANGE: 'info',
-  ASSIGN: 'ok',
-  SYNC: 'info',
-  RECONCILE: 'warn',
-  NOTE: 'neutral',
-};
 const DOT: Record<BadgeTone, string> = {
   ok: 'bg-ok',
   warn: 'bg-warn',

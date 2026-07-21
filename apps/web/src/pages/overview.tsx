@@ -17,8 +17,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { ActivityFeed } from '@/components/overview/activity-feed';
 import { useDrift, useLedgerStats, useRequests } from '@/hooks/queries';
-import { useCurrentUser } from '@/lib/auth/use-current-user';
-import { canSeeAdminNav } from '@/lib/roles';
 import { matchesFilter } from '@/lib/requests';
 import type { RequestStatus } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
@@ -95,7 +93,6 @@ const ROADMAP: {
 
 export function Overview() {
   const navigate = useNavigate();
-  const { role } = useCurrentUser();
   const [tab, setTab] = useState<'summary' | 'analytics'>('summary');
   const requests = useRequests();
   const drift = useDrift();
@@ -345,21 +342,19 @@ export function Overview() {
           </div>
 
           {/*
-            Recent activity — ADMIN only (CH-005 D1). The feed reads
-            GET /admin/audit, which stays ADMIN-only because its rows carry
-            whitelisted PII (ADR-0009 Decision 7). Other roles get no card at
-            all rather than a permanent restricted tile on their landing screen.
+            Recent activity — every role (CH-006). GET /fulfilment/activity is
+            opco-scoped server-side, so an OPCO_IT operator sees its own OpCo's
+            events. No role gate here: the card used to be ADMIN-only because
+            its source was the audit trail, not because activity is privileged.
           */}
-          {canSeeAdminNav(role) && (
-            <ActivityFeed
-              action={
-                <HeaderLink
-                  label="View audit log"
-                  onClick={() => navigate('/audit')}
-                />
-              }
-            />
-          )}
+          <ActivityFeed
+            action={
+              <HeaderLink
+                label="View requests"
+                onClick={() => navigate('/requests')}
+              />
+            }
+          />
         </>
       )}
     </div>
