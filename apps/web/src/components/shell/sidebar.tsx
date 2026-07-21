@@ -9,6 +9,7 @@ import {
   LineChart,
   LogOut,
   Package,
+  PackageX,
   ScrollText,
   TriangleAlert,
   UserMinus,
@@ -23,7 +24,8 @@ import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
 import { useUiStore } from '@/store/ui';
 import { useDrift } from '@/hooks/queries';
-import { canSeeAdminNav } from '@/lib/roles';
+import { canRepairOutbound, canSeeAdminNav } from '@/lib/roles';
+import type { Role } from '@/lib/api-types';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
 interface NavEntry {
@@ -57,11 +59,47 @@ const CATALOG: NavEntry[] = [
 // and Integrations are the two admin surfaces, not a generic "Settings" item.
 // Audit log (W29 F4) is the one standalone-route entry — an owner-approved
 // screen beyond the prototype (design-system.md §3.2, plan §9.1 Q2).
-const ADMIN: { to: string; label: string; Icon: LucideIcon }[] = [
-  { to: '/settings?tab=users', label: 'Users & roles', Icon: Users },
-  { to: '/settings?tab=opcos', label: 'Operating companies', Icon: Building2 },
-  { to: '/settings?tab=integrations', label: 'Integrations', Icon: Cable },
-  { to: '/audit', label: 'Audit log', Icon: ScrollText },
+//
+// Each entry carries its own role predicate (W31): the section used to be
+// uniformly ADMIN-only, but Delivery failures is ADMIN + REGIONAL (ADR-0011 D4).
+// Gating per entry rather than widening the whole section keeps REGIONAL out of
+// Users & roles while still giving it the queue it is meant to work.
+const ADMIN: {
+  to: string;
+  label: string;
+  Icon: LucideIcon;
+  visible: (role: Role | undefined) => boolean;
+}[] = [
+  {
+    to: '/settings?tab=users',
+    label: 'Users & roles',
+    Icon: Users,
+    visible: canSeeAdminNav,
+  },
+  {
+    to: '/settings?tab=opcos',
+    label: 'Operating companies',
+    Icon: Building2,
+    visible: canSeeAdminNav,
+  },
+  {
+    to: '/settings?tab=integrations',
+    label: 'Integrations',
+    Icon: Cable,
+    visible: canSeeAdminNav,
+  },
+  {
+    to: '/audit',
+    label: 'Audit log',
+    Icon: ScrollText,
+    visible: canSeeAdminNav,
+  },
+  {
+    to: '/outbound-failures',
+    label: 'Delivery failures',
+    Icon: PackageX,
+    visible: canRepairOutbound,
+  },
 ];
 
 const SectionLabel = ({ children }: { children: string }) => (
@@ -152,29 +190,31 @@ export function Sidebar() {
         {!collapsed && <SectionLabel>Catalog</SectionLabel>}
         {renderNav(CATALOG)}
 
-        {canSeeAdminNav(user.role) && (
+        {ADMIN.some((e) => e.visible(user.role)) && (
           <>
             <div className="pt-[6px]" />
             {!collapsed && <SectionLabel>Administration</SectionLabel>}
-            {ADMIN.map(({ to, label, Icon }) => {
-              // Settings deep-links match on their tab param; the standalone
-              // /audit route matches on the pathname like the Operations nav.
-              const [path, query] = to.split('?');
-              const tab = new URLSearchParams(query).get('tab');
-              const active = tab
-                ? pathname === path && params.get('tab') === tab
-                : isActive(path);
-              return (
-                <NavItem
-                  key={to}
-                  icon={<Icon size={16} strokeWidth={2} />}
-                  label={label}
-                  collapsed={collapsed}
-                  active={active}
-                  onClick={() => navigate(to)}
-                />
-              );
-            })}
+            {ADMIN.filter((e) => e.visible(user.role)).map(
+              ({ to, label, Icon }) => {
+                // Settings deep-links match on their tab param; the standalone
+                // /audit route matches on the pathname like the Operations nav.
+                const [path, query] = to.split('?');
+                const tab = new URLSearchParams(query).get('tab');
+                const active = tab
+                  ? pathname === path && params.get('tab') === tab
+                  : isActive(path);
+                return (
+                  <NavItem
+                    key={to}
+                    icon={<Icon size={16} strokeWidth={2} />}
+                    label={label}
+                    collapsed={collapsed}
+                    active={active}
+                    onClick={() => navigate(to)}
+                  />
+                );
+              },
+            )}
           </>
         )}
 

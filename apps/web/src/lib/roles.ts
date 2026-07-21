@@ -33,3 +33,17 @@ export function canSeePlatform(role: Role | undefined): boolean {
 export function canSeeAdminNav(role: Role | undefined): boolean {
   return role === 'ADMIN';
 }
+
+/**
+ * The outbound failure queue is ADMIN + REGIONAL (ADR-0011 D4) — wider than the
+ * rest of the admin console, because a failed delivery is an operations problem
+ * and REGIONAL is who chases it.
+ *
+ * Same predicate as canSeePlatform today, but kept separate on purpose: they
+ * answer different questions ("may I see tenant-wide numbers?" vs "may I repair
+ * a delivery?"), and collapsing them would mean a future change to one silently
+ * moves the other.
+ */
+export function canRepairOutbound(role: Role | undefined): boolean {
+  return role === 'ADMIN' || role === 'REGIONAL';
+}
