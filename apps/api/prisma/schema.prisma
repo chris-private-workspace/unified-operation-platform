@@ -213,6 +213,7 @@ model Request {
 
   lineItems         RequestLineItem[]
   events            RequestEvent[]
+  outboundFailures  OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   closedAt          DateTime?
@@ -335,4 +336,57 @@ model AuditLog {
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])
   @@index([action, createdAt])
+}
+
+// ── Outbound delivery failures (ADR-0011) ────────────────────
+// Outbound used to fail and vanish: a throw, a logger.warn, nothing queryable.
+// This table makes each failure a visible, retryable fact.
+//
+// THREE kinds, and they are NOT interchangeable (Decision 2) — the whole point
+// of the `kind` column is that each needs a DIFFERENT repair:
+//   request.submit     → SN/n8n ticket creation failed; nothing written locally
+//                        (clean) → repair = submit again.
+//   request.mirror     → the ticket EXISTS in ServiceNow but the local mirror
+//                        write failed (orphan) → repair = write the local rows
+//                        from `externalRef`. 🔴 NEVER re-submit: that opens a
+//                        SECOND real ticket (Decision 3).
+//   servicenow.worknote → assign succeeded, the write-back note did not. It is
+//                        swallowed by design (OD4) → repair = send it again.
+//
+// H4 (Decision 5): `payload` / `externalRef` are WHITELISTED per kind — see
+// outbound-failure-fields.ts. Credentials and raw vendor bodies never land
+// here; `lastError` holds the message text only.
+//
+// Decision 6 — deliberately the OPPOSITE of AuditLog above: this row is written
+// OUTSIDE the caller's transaction. request.mirror's failure IS a failed local
+// write, so joining that transaction would roll the record away at exactly the
+// moment it is needed.
+//
+// Unlike AuditLog, this table is STATEFUL (status / attemptCount get updated) —
+// which is why the audit trail was not reused as a work queue (Decision 9).
+// PII: payload carries targetUpn. Read + repair is ADMIN + REGIONAL (Decision
+// 4) — the same people who already see these requests. No opcoId column: scope
+// derives via requestId → Request.opcoId if ever needed.
+
+model OutboundFailure {
+  id     String @id @default(cuid())
+  kind   String // 'request.submit' | 'request.mirror' | 'servicenow.worknote'
+  status String @default("open") // 'open' | 'resolved' | 'abandoned'
+
+  payload     Json // whitelisted inputs needed to redo the thing
+  externalRef Json? // side-effects that ALREADY happened (mirror: the SN sysIds)
+
+  lastError     String // message text only — never the raw vendor body
+  attemptCount  Int      @default(1)
+  lastAttemptAt DateTime @default(now())
+
+  requestId String?
+  request   Request? @relation(fields: [requestId], references: [id])
+
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById String? // AppUser id; who repaired or abandoned it
+
+  @@index([status, createdAt])
+  @@index([kind, status])
 }
