@@ -4,7 +4,7 @@ name: "Outbound 交付失敗持久化 + 人手補救(ADR-0011 / INTEG-3 / rollou
 sprint_week: W31
 start_date: 2026-07-21
 end_date: 2026-07-23          # planned, may slip with changelog log
-status: active                # draft | active | closed
+status: closed                # draft | active | closed — G1-G9 全 pass,2026-07-21 closeout
 spec_refs:
   - docs/adr/0011-outbound-delivery-failure-recovery.md（D1–D9 — 全部本 phase 落地）
   - docs/adr/0010-integration-observability-delivery.md D8（路線來源）

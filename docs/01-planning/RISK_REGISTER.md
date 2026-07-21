@@ -21,7 +21,7 @@ last_updated: 2026-07-15
 |---|---|---|---|---|---|---|
 | R1 | 公司 proxy 阻擋 `binaries.prisma.sh`(Prisma engine CDN)→ generate/migrate/seed/boot 卡住 | W01 執行(2026-07-09) | High(已發生) | 🔴 High(阻 backend runtime) | **Workaround 已用**:流動網路跑一次 generate/migrate → engine cache 落 `node_modules`,返公司網即用本機 binary。長遠靠 IT allowlist `*.prisma.sh`。⚠️ clean reinstall(刪 node_modules)前需再轉流動網路。 | 🟡 Mitigating |
 | R2 | `AUTH_DEV_BYPASS=true` 誤帶入 production → 繞過 JWT 驗證、注入 seed ADMIN(權限完全繞過) | W09 AUTH-1(2026-07-10) | Low | 🔴 High(權限繞過) | 預設 `false`;開啟時啟動打 warning log;prod path `getOrThrow(ENTRA_TENANT_ID/ENTRA_API_AUDIENCE)` 未設即 boot 失敗(fail-fast)。ADR-0002 記錄。部署時確保 `.env` 無此 flag。 | 🟢 Resolved(Mitigated) |
-| R3 | n8n on-prem AD → Entra Connect sync 延遲:push 帶 `azureSyncedAt` 但平台即刻 `findUser(upn)` 仲搵唔到 → assign fail | W24 AGENDA A4(2026-07-15) | Med(on-prem 常態) | 🟡 Lower(assign 短暫 fail,可 retry) | assign 端唔純信 `azureSyncedAt` timestamp,以 `findUser` 真命中為 gate;命中前 retry / 留 queue(D2 approach)。DESIGN §7 sync 時序註。 | ⚠️ Open(待 D2 實作 retry) |
+| R3 | n8n on-prem AD → Entra Connect sync 延遲:push 帶 `azureSyncedAt` 但平台即刻 `findUser(upn)` 仲搵唔到 → assign fail | W24 AGENDA A4(2026-07-15) | Med(on-prem 常態) | 🟡 Lower(assign 短暫 fail,可 retry) | assign 端唔純信 `azureSyncedAt` timestamp,以 `findUser` 真命中為 gate;命中前 retry / 留 queue(D2 approach)。DESIGN §7 sync 時序註。<br>⚠️ **校正(2026-07-21,W31)**:ADR-0010 §7.2 講 item 6「解 RISK R3」係**錯引用**。W31 / ADR-0011 解嘅係 **outbound 提交失敗**(`audit-and-integration-observability.md §2.4` 第 5 點「冇交付保證」),同呢條 sync 延遲致 assign fail **唔係同一件事** —— `OutboundFailure` 三個 kind 都唔涵蓋 assign 路徑。**本條完全不受 W31 影響。** | ⚠️ **Open**(待 D2 實作 retry;**W31 冇解決佢**) |
 
 <!-- 範例:
 | R1 | 某外部服務單點故障 | BUG-0XX postmortem | Med | High | 加 fallback + 熱切換(ADR-00XX) | 🟡 Mitigating |
