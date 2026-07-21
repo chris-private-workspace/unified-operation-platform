@@ -69,6 +69,14 @@ model AuditLog {
 
 `user.create` / `user.update` / `user.role_change` / `user.deactivate` / `user.password_reset` · `auth.login_success` / `auth.login_failed` / `auth.locked` · `opco.create` / `opco.update` · `catalog.update` · `allocation.import` · `drift.resolve`。
 
+> **補入 `user.password_change`(Chris 2026-07-21 approve)**
+>
+> 上面 13 項有 `user.password_reset`(admin 重設**別人**密碼),但漏咗 **self-service 改自己密碼**(`AuthService.changePassword`,AUTH-4c-A)。改自己密碼一樣係安全事件。W29 執行時發現咗但**冇擅自加**(超出當時 approved scope,H3),closeout 提出後由 owner 拍板補上。
+>
+> 命名放喺 `user.` 而唔係 `auth.`:兩者係同一件事實(呢個帳戶嘅憑證變咗),只差邊個做 —— 而「邊個做」已由 `actorId` vs `targetId` 表達(相等 = self-service)。稽核員問「呢個帳戶嘅密碼發生過咩事」時,兩條應該相鄰。同 `user.password_reset` 一致採 **event-only**(無 before/after)。
+>
+> **首階段覆蓋範圍因此為 14 個事件。**
+
 ### 5. 🔴 白名單 before/after(H4 強制)
 
 每個 `targetType` 有一張**明文白名單欄位表**;只有白名單內欄位可入 `before`/`after`。`passwordHash` / `tokenHash` / 任何 secret **永久 blacklist**。
