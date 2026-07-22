@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -14,6 +15,8 @@ import {
   SubmittedRequest,
 } from './request-submission.provider';
 import { CreateRequestDto } from './dto/create-request.dto';
+import { OutboundFailureService } from './outbound-failure.service';
+import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
 
 /**
  * ADR-0008 Phase 乙 — outbound direct. IT opens a standalone license request →
@@ -30,6 +33,7 @@ export class OutboundRequestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly provider: RequestSubmissionProvider,
+    private readonly failures: OutboundFailureService,
   ) {}
 
   async create(dto: CreateRequestDto, actor: AppUser) {
@@ -81,6 +85,21 @@ export class OutboundRequestService {
       this.logger.error(
         `Request submission to ServiceNow failed: ${(err as Error)?.message}`,
       );
+      // ADR-0011: nothing was created externally, so the queued repair is a
+      // plain re-submit. Recording never throws, so the operator still gets the
+      // 503 below — the message is unchanged (G4: no behaviour drift).
+      await this.failures.record({
+        kind: OUTBOUND_FAILURE_KINDS.REQUEST_SUBMIT,
+        payload: {
+          targetUpn: dto.targetUpn,
+          targetDisplayName: dto.targetDisplayName,
+          opcoCode: dto.opcoCode,
+          requesterEmail: dto.requesterEmail,
+          remark: dto.remark,
+          lineItems: submitLines,
+        },
+        error: err,
+      });
       throw new ServiceUnavailableException(
         'ServiceNow is unavailable — the request could not be submitted. Please retry.',
       );
@@ -127,7 +146,35 @@ export class OutboundRequestService {
           (err as Error).message
         }`,
       );
-      throw err;
+      // ADR-0011: the ONE case where the external world already changed.
+      // externalRef carries the sysIds so the repair can write the local rows
+      // WITHOUT touching ServiceNow again (D3) — re-submitting here would open
+      // a second real ticket.
+      await this.failures.record({
+        kind: OUTBOUND_FAILURE_KINDS.REQUEST_MIRROR,
+        payload: {
+          targetUpn: dto.targetUpn,
+          targetDisplayName: dto.targetDisplayName,
+          opcoCode: dto.opcoCode,
+          requesterEmail: dto.requesterEmail,
+          remark: dto.remark,
+          lineItems: submitLines,
+        },
+        externalRef: {
+          serviceNowSysId: submitted.serviceNowSysId,
+          serviceNowNumber: submitted.serviceNowNumber,
+          lineItems: submitted.lineItems,
+        },
+        error: err,
+      });
+      // D7: the old `throw err` surfaced a raw Prisma error, which tells the
+      // operator nothing about the one thing that matters here — a REAL ticket
+      // now exists. Naming it (and saying "do not submit again") is what stops
+      // the duplicate this failure mode invites.
+      const ref = submitted.serviceNowNumber ?? submitted.serviceNowSysId;
+      throw new InternalServerErrorException(
+        `ServiceNow ticket ${ref} was created, but the platform could not record it. Do not submit again — the failure is queued for repair.`,
+      );
     }
   }
 }

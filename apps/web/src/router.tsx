@@ -12,6 +12,7 @@ import { RequestDetail } from '@/pages/request-detail';
 import { Drift } from '@/pages/drift';
 import { Assets } from '@/pages/assets';
 import { Audit } from '@/pages/audit';
+import { OutboundFailures } from '@/pages/outbound-failures';
 
 // One route per screen (design-system.md §3.2). FE-1 → Overview + SKU Catalog;
 // FE-2 → Requests list + detail; FE-3 → Drift Alerts; FE-Assets → License Assets
@@ -37,6 +38,9 @@ export const router = createBrowserRouter([
       // W29 F4 — owner-approved screen beyond the prototype (plan §9.1 Q2);
       // ADMIN-only at the backend, sidebar-gated by canSeeAdminNav.
       { path: 'audit', element: <Audit /> },
+      // W31 F4 — outbound delivery failure queue (ADR-0011). ADMIN + REGIONAL
+      // at the backend; sidebar-gated by canRepairOutbound.
+      { path: 'outbound-failures', element: <OutboundFailures /> },
       { path: 'settings', element: <Settings /> },
     ],
   },

@@ -313,6 +313,45 @@ export interface AuditPage {
   entries: AuditEntry[];
 }
 
+/**
+ * Outbound delivery failures (W31 / ADR-0011). ADMIN + REGIONAL — wider than
+ * the audit trail on purpose: a failed delivery is an operations problem, and
+ * `payload` carries only what REGIONAL already sees on the request itself.
+ */
+export interface OutboundFailure {
+  id: string;
+  kind: string; // 'request.submit' | 'request.mirror' | 'servicenow.worknote'
+  status: string; // 'open' | 'resolved' | 'abandoned'
+  /** Whitelisted retry inputs — never credentials. */
+  payload: Record<string, unknown> | null;
+  /**
+   * Side-effects that already happened. Present on request.mirror ONLY — its
+   * presence is exactly why that kind must not be re-submitted (D3).
+   */
+  externalRef: Record<string, unknown> | null;
+  lastError: string;
+  attemptCount: number;
+  lastAttemptAt: string;
+  requestId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedById: string | null;
+}
+
+export interface OutboundFailurePage {
+  total: number;
+  limit: number;
+  offset: number;
+  entries: OutboundFailure[];
+}
+
+export interface OutboundFailureFilters {
+  status?: string;
+  kind?: string;
+  limit?: number;
+  offset?: number;
+}
+
 /** GET /admin/audit query — all optional; mirrors apps/api audit-query.dto.ts. */
 export interface AuditFilters {
   actorId?: string;

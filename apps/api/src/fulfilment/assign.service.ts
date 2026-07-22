@@ -14,6 +14,8 @@ import { graphUnavailable } from '../integration/graph/graph-unavailable';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { assertOpcoScope } from '../auth/opco-scope';
 import { aggregateRequestStatus } from './stage.service';
+import { OutboundFailureService } from './outbound-failure.service';
+import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
 
 /**
  * Module D-2 — fulfilment actions (the hardest critical path).
@@ -28,6 +30,7 @@ export class AssignService {
     private readonly prisma: PrismaService,
     private readonly graph: GraphService,
     private readonly snow: ServiceNowService,
+    private readonly failures: OutboundFailureService,
   ) {}
 
   /**
@@ -188,18 +191,25 @@ export class AssignService {
     // fall back to the parent REQ mirror for legacy rows without a per-line RITM.
     const snTarget = item.serviceNowSysId ?? request.serviceNowSysId;
     if (snTarget) {
+      const note = `License ${item.sku.skuPartNumber} assigned via platform.`;
       try {
-        await this.snow.addWorkNote(
-          snTarget,
-          `License ${item.sku.skuPartNumber} assigned via platform.`,
-          'sc_req_item',
-        );
+        await this.snow.addWorkNote(snTarget, note, 'sc_req_item');
       } catch (err) {
         this.logger.warn(
           `ServiceNow write-back failed for request ${request.id}: ${
             (err as Error).message
           }`,
         );
+        // ADR-0011 (I1): queue it, but STILL swallow. The assignment itself
+        // succeeded — the licence is on the user and the ledger has moved. A
+        // missing mirror note must not turn a completed assign into a failure
+        // (OD4 unchanged); it just stops being invisible.
+        await this.failures.record({
+          kind: OUTBOUND_FAILURE_KINDS.SERVICENOW_WORKNOTE,
+          payload: { snTarget, note, table: 'sc_req_item' },
+          error: err,
+          requestId: request.id,
+        });
       }
     }
 

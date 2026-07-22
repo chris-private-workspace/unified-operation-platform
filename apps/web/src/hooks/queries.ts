@@ -12,6 +12,8 @@ import type {
   MeResponse,
   OnboardingRequest,
   Opco,
+  OutboundFailureFilters,
+  OutboundFailurePage,
   PermissionEntry,
   RequestDetail,
   Role,
@@ -187,6 +189,29 @@ export function useIntegrations() {
   return useQuery({
     queryKey: ['admin', 'integrations'],
     queryFn: () => apiGet<ConnectorStatus[]>('/admin/integrations'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /admin/outbound-failures — the delivery failure queue (W31 / ADR-0011).
+ * ADMIN + REGIONAL, so a 403 is authoritative (retryUnless403) and the page
+ * degrades to a restricted state. Filters are part of the query key so each
+ * filter combination caches independently.
+ */
+export function useOutboundFailures(filters: OutboundFailureFilters) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === null || value === '') continue;
+    params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ['admin', 'outbound-failures', filters],
+    queryFn: () =>
+      apiGet<OutboundFailurePage>(
+        `/admin/outbound-failures${qs ? `?${qs}` : ''}`,
+      ),
     retry: retryUnless403,
   });
 }

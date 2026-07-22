@@ -11,6 +11,7 @@ import type {
   LineItemStage,
   OnboardingRequest,
   Opco,
+  OutboundFailure,
   ProbeResult,
   ReconcileResult,
   RequestLineItem,
@@ -132,6 +133,36 @@ export function useTestConnection() {
       apiPost<ProbeResult>(`/admin/integrations/${key}/test`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'integrations'] });
+    },
+  });
+}
+
+/**
+ * Repair / abandon / reopen a queued outbound failure (W31 / ADR-0011).
+ *
+ * One hook, because all three are the same shape — but the CALLER must not
+ * present them as one generic action: what `retry` does depends on the failure's
+ * kind, and for `request.mirror` it writes local rows without contacting
+ * ServiceNow (D3). See repairAction() in lib/outbound-failures.
+ *
+ * A repair can create a request (submit kind) or write one locally (mirror
+ * kind), so the requests list and the audit trail are both invalidated.
+ */
+export function useRepairFailure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: {
+      id: string;
+      action: 'retry' | 'abandon' | 'reopen';
+    }) =>
+      apiPost<OutboundFailure>(
+        `/admin/outbound-failures/${vars.id}/${vars.action}`,
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'outbound-failures'] });
+      qc.invalidateQueries({ queryKey: ['requests'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'audit'] });
     },
   });
 }

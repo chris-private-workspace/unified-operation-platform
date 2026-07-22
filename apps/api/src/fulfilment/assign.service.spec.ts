@@ -10,6 +10,7 @@ import { AssignService } from './assign.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { OutboundFailureService } from './outbound-failure.service';
 
 // Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
 const ADMIN = { id: 'admin', opcoScopeId: null } as unknown as AppUser;
@@ -22,6 +23,7 @@ describe('AssignService', () => {
   let tx: any;
   let graph: any;
   let snow: any;
+  let failures: any;
 
   // A READY line item wired for a successful assign; individual tests tweak it.
   const readyItem = (over: Record<string, any> = {}) => ({
@@ -86,12 +88,17 @@ describe('AssignService', () => {
     };
     snow = { addWorkNote: jest.fn().mockResolvedValue(undefined) };
 
+    // ADR-0011: the work-note failure is queued here. Stubbed rather than
+    // omitted so the tests below can assert it is (and is NOT) called.
+    failures = { record: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AssignService,
         { provide: PrismaService, useValue: prisma },
         { provide: GraphService, useValue: graph },
         { provide: ServiceNowService, useValue: snow },
+        { provide: OutboundFailureService, useValue: failures },
       ],
     }).compile();
     service = moduleRef.get(AssignService);
@@ -404,6 +411,40 @@ describe('AssignService', () => {
         ForbiddenException,
       );
       expect(prisma.request.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── ADR-0011 I1: the write-back failure is queued but STILL swallowed ──
+  describe('ServiceNow write-back failure (W31)', () => {
+    it('queues the failed note but the assign still succeeds', async () => {
+      arrangeHappy();
+      snow.addWorkNote.mockRejectedValue(new Error('SN 503'));
+
+      // The licence is on the user and the ledger has moved. A missing mirror
+      // note must NOT turn a completed assign into a failure (OD4 unchanged).
+      const result = await service.assignLineItem('li1', undefined, ADMIN);
+      expect(result).toBeDefined();
+
+      const entry = failures.record.mock.calls[0][0];
+      expect(entry.kind).toBe('servicenow.worknote');
+      expect(entry.payload.snTarget).toBe('sys1');
+      expect(entry.payload.note).toMatch(/SPE_E3 assigned via platform/);
+      expect(entry.requestId).toBe('r1');
+    });
+
+    it('the ledger increment still happened despite the note failing', async () => {
+      arrangeHappy();
+      snow.addWorkNote.mockRejectedValue(new Error('SN 503'));
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+      expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled();
+    });
+
+    it('queues nothing when the write-back succeeds', async () => {
+      arrangeHappy();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+      expect(failures.record).not.toHaveBeenCalled();
     });
   });
 });

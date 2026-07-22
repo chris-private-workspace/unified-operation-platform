@@ -40,12 +40,29 @@ export const AUDIT_ACTIONS = {
   CATALOG_UPDATE: 'catalog.update',
   ALLOCATION_IMPORT: 'allocation.import',
   DRIFT_RESOLVE: 'drift.resolve',
+  /**
+   * W31 / ADR-0011 Decision 8 — repairing an outbound failure is a human action
+   * with a real side-effect (it can create a ticket or write to ServiceNow), so
+   * it is audited like any other operator write.
+   */
+  OUTBOUND_RETRY: 'outbound.retry',
+  /**
+   * "Decided not to repair" is a decision too, and the one most worth being able
+   * to attribute later — an abandoned orphan ticket is a silent divergence
+   * between ServiceNow and the platform.
+   */
+  OUTBOUND_ABANDON: 'outbound.abandon',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
 
 export type AuditTargetType =
-  'AppUser' | 'Opco' | 'SkuCatalog' | 'DriftAlert' | 'AllocationImport';
+  | 'AppUser'
+  | 'Opco'
+  | 'SkuCatalog'
+  | 'DriftAlert'
+  | 'AllocationImport'
+  | 'OutboundFailure';
 
 /**
  * Per-target allow-list. Only these keys can reach `before` / `after`.
@@ -75,6 +92,14 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'changes',
       'committed',
     ],
+    /**
+     * Event-only, like user.password_change. The row's own payload already
+     * lives in OutboundFailure and carries a UPN — copying it into the audit
+     * trail would duplicate PII into a table with DIFFERENT read permissions
+     * (audit is ADMIN-only, the failure queue is ADMIN + REGIONAL). The `reason`
+     * metadata carries the kind + attempt, which is what an auditor needs.
+     */
+    OutboundFailure: [],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */
