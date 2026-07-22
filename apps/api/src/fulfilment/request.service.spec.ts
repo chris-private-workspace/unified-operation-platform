@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AppUser } from '@prisma/client';
 import { RequestService } from './request.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -30,9 +34,16 @@ describe('RequestService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => ({ id: 'r1', ...data })),
       },
       skuCatalog: { findUnique: jest.fn() },
-      requestLineItem: { create: jest.fn() },
+      requestLineItem: {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        delete: jest.fn().mockResolvedValue({ id: 'li1' }),
+      },
       requestEvent: { create: jest.fn() },
     };
     snow = { getRecordByNumber: jest.fn() };
@@ -182,6 +193,214 @@ describe('RequestService', () => {
         service.addLineItem('r1', { skuCatalogId: 'c1' }, OTHER_IT),
       ).rejects.toThrow(ForbiddenException);
       expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
+    });
+
+    // CH-007 D6: a platform-created request is already fully in ServiceNow.
+    it('adding to a platform-created request → 409, no create', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        origin: 'platform-created',
+      });
+
+      await expect(
+        service.addLineItem('r1', { skuCatalogId: 'c1' }, ADMIN),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
+    });
+
+    // …while intake requests (the D-1 authoring flow) still accept lines.
+    it('adding to an intake request is allowed', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        origin: 'onboarding-intake',
+      });
+      prisma.skuCatalog.findUnique.mockResolvedValue({
+        id: 'c1',
+        skuPartNumber: 'SPE_E3',
+      });
+      prisma.requestLineItem.create.mockImplementation(({ data }) => ({
+        id: 'li1',
+        ...data,
+      }));
+
+      await expect(
+        service.addLineItem('r1', { skuCatalogId: 'c1' }, ADMIN),
+      ).resolves.toMatchObject({ stage: 'REQUESTED' });
+    });
+  });
+
+  // CH-007 — header edit
+  describe('updateHeader', () => {
+    it('updates display fields + writes a NOTE event naming the changed fields only', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        azureSyncedAt: null,
+        targetDisplayName: 'Old Name',
+        requesterEmail: null,
+      });
+
+      await service.updateHeader(
+        'r1',
+        { targetDisplayName: 'New Name' },
+        ADMIN,
+      );
+
+      expect(prisma.request.update).toHaveBeenCalled();
+      // H4: the event message must name the field, never its (PII) value.
+      const eventArg = prisma.requestEvent.create.mock.calls[0][0];
+      expect(eventArg.data.message).toContain('targetDisplayName');
+      expect(eventArg.data.message).not.toContain('New Name');
+    });
+
+    // D2 — targetUpn is the assign key once synced; editing it then is fail-closed.
+    it('rejects a targetUpn change after the account has synced → 409', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        azureSyncedAt: new Date('2026-07-01'),
+        targetUpn: 'old@rhk.com',
+      });
+
+      await expect(
+        service.updateHeader('r1', { targetUpn: 'new@rhk.com' }, ADMIN),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.request.update).not.toHaveBeenCalled();
+    });
+
+    it('allows a targetUpn change before sync', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        azureSyncedAt: null,
+        targetUpn: 'old@rhk.com',
+      });
+
+      await expect(
+        service.updateHeader('r1', { targetUpn: 'new@rhk.com' }, ADMIN),
+      ).resolves.toBeDefined();
+      expect(prisma.request.update).toHaveBeenCalled();
+    });
+
+    // C3 — sync keys are not on the DTO; even if the caller smuggles them in the
+    // object, the service only ever writes the four allowed columns.
+    it('never writes sync keys / opcoId even if present on the payload', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        azureSyncedAt: null,
+        rawRequestText: 'old',
+      });
+
+      await service.updateHeader(
+        'r1',
+        {
+          rawRequestText: 'new',
+          // @ts-expect-error — smuggled fields the DTO does not declare
+          serviceNowNumber: 'REQ9999999',
+          opcoId: 'evil',
+          origin: 'platform-created',
+        },
+        ADMIN,
+      );
+
+      const updateData = prisma.request.update.mock.calls[0][0].data;
+      expect(updateData).not.toHaveProperty('serviceNowNumber');
+      expect(updateData).not.toHaveProperty('opcoId');
+      expect(updateData).not.toHaveProperty('origin');
+    });
+
+    it('OPCO_IT editing another OpCo request → 403', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        azureSyncedAt: null,
+      });
+
+      await expect(
+        service.updateHeader('r1', { targetDisplayName: 'x' }, OTHER_IT),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.request.update).not.toHaveBeenCalled();
+    });
+
+    // A no-op PATCH (same value) must not write an empty "Header updated: " event.
+    it('writes nothing when no field actually changes', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        azureSyncedAt: null,
+        targetDisplayName: 'Same Name',
+      });
+
+      await service.updateHeader(
+        'r1',
+        { targetDisplayName: 'Same Name' },
+        ADMIN,
+      );
+
+      expect(prisma.request.update).not.toHaveBeenCalled();
+      expect(prisma.requestEvent.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // CH-007 — line item removal (D5)
+  describe('removeLineItem', () => {
+    const reqOk = { id: 'r1', opcoId: 'o1' };
+    const line = (over: Record<string, unknown> = {}) => ({
+      id: 'li1',
+      requestId: 'r1',
+      serviceNowSysId: null,
+      stage: 'REQUESTED',
+      sku: { skuPartNumber: 'SPE_E3' },
+      ...over,
+    });
+
+    it('removes a REQUESTED line with no RITM + writes event + recomputes', async () => {
+      prisma.request.findUnique.mockResolvedValue(reqOk);
+      prisma.requestLineItem.findUnique.mockResolvedValue(line());
+
+      await service.removeLineItem('r1', 'li1', ADMIN);
+
+      expect(prisma.requestLineItem.delete).toHaveBeenCalledWith({
+        where: { id: 'li1' },
+      });
+      expect(prisma.requestEvent.create).toHaveBeenCalled();
+      expect(stage.recomputeRequestStatus).toHaveBeenCalledWith('r1');
+    });
+
+    it('refuses to remove a line that has an RITM in ServiceNow → 409', async () => {
+      prisma.request.findUnique.mockResolvedValue(reqOk);
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        line({ serviceNowSysId: 'ritm-sys-1' }),
+      );
+
+      await expect(service.removeLineItem('r1', 'li1', ADMIN)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.requestLineItem.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses to remove a line past REQUESTED → 409', async () => {
+      prisma.request.findUnique.mockResolvedValue(reqOk);
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        line({ stage: 'READY' }),
+      );
+
+      await expect(service.removeLineItem('r1', 'li1', ADMIN)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(prisma.requestLineItem.delete).not.toHaveBeenCalled();
+    });
+
+    it('OPCO_IT removing from another OpCo request → 403', async () => {
+      prisma.request.findUnique.mockResolvedValue(reqOk);
+
+      await expect(
+        service.removeLineItem('r1', 'li1', OTHER_IT),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.requestLineItem.delete).not.toHaveBeenCalled();
     });
   });
 

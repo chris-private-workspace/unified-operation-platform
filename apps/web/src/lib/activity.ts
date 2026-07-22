@@ -1,116 +1,94 @@
 import {
-  Building2,
-  CheckCheck,
-  KeyRound,
-  Lock,
-  LogIn,
-  Package,
-  ScrollText,
-  ShieldAlert,
-  ShieldCheck,
-  Upload,
-  UserCog,
-  UserMinus,
-  UserPlus,
+  ArrowRight,
+  FileText,
+  RefreshCw,
+  Scale,
+  UserCheck,
   type LucideIcon,
 } from 'lucide-react';
 import type { BadgeTone } from './tones';
-import { auditActionTone } from './audit';
-import type { AuditEntry } from './api-types';
+import type { ActivityEvent, EventType } from './api-types';
+import { STAGE_LABEL } from './requests';
 
-// Pure helpers for the Overview activity feed (CH-005). The feed renders the
-// prototype's activity layout but is fed by AuditLog, so the wording stays in
-// audit voice — see the wording guard in activity.test.ts for why.
-
-/**
- * Human label per action. Deliberately noun-ish and passive ("Role changed",
- * not "Alice changed Bob's role"): the row already names the actor, and an
- * active-voice sentence invites the operational phrasing this feed must not
- * claim. Every AUDIT_ACTION_OPTIONS entry appears here; unknown actions (a
- * backend running ahead of this build) fall back to the raw action string
- * rather than being guessed at or dropped.
- */
-const ACTION_LABEL: Record<string, string> = {
-  'user.create': 'User created',
-  'user.update': 'User updated',
-  'user.role_change': 'Role changed',
-  'user.deactivate': 'User deactivated',
-  'user.password_reset': 'Password reset',
-  'user.password_change': 'Password changed',
-  'auth.login_success': 'Signed in',
-  'auth.login_failed': 'Sign-in failed',
-  'auth.locked': 'Account locked',
-  'opco.create': 'OpCo created',
-  'opco.update': 'OpCo updated',
-  'catalog.update': 'Catalog entry updated',
-  'allocation.import': 'Allocation imported',
-  'drift.resolve': 'Drift alert resolved',
-};
-
-const ACTION_ICON: Record<string, LucideIcon> = {
-  'user.create': UserPlus,
-  'user.update': UserCog,
-  'user.role_change': ShieldCheck,
-  'user.deactivate': UserMinus,
-  'user.password_reset': KeyRound,
-  'user.password_change': KeyRound,
-  'auth.login_success': LogIn,
-  'auth.login_failed': ShieldAlert,
-  'auth.locked': Lock,
-  'opco.create': Building2,
-  'opco.update': Building2,
-  'catalog.update': Package,
-  'allocation.import': Upload,
-  'drift.resolve': CheckCheck,
-};
-
-/** Unknown action → the same neutral glyph the /audit page uses for the trail. */
-const FALLBACK_ICON = ScrollText;
+// Pure helpers for the Overview activity feed (CH-006). The feed shows what
+// happened to REQUESTS — assignments, stage moves, sync — which is what the
+// prototype's activity stream always depicted. The audit trail (configuration
+// and account changes) lives on /audit and is not mixed in here: with a 6-row
+// tail, sign-in events alone would crowd out every operational row.
 
 /**
- * Tone delegates to the /audit page's mapping rather than re-deriving it: two
- * mappings would let the same event read as routine in one view and alarming in
- * the other.
+ * Event type → semantic tone (design-system.md DS-8).
+ *
+ * Exported and imported by the request-detail timeline rather than duplicated
+ * there: two mappings would let the same event read as routine on one screen
+ * and notable on the other.
  */
-export function activityTone(action: string): BadgeTone {
-  return auditActionTone(action);
+export const EVENT_TONE: Record<EventType, BadgeTone> = {
+  STAGE_CHANGE: 'info',
+  ASSIGN: 'ok',
+  SYNC: 'info',
+  RECONCILE: 'warn',
+  NOTE: 'neutral',
+};
+
+const EVENT_ICON: Record<EventType, LucideIcon> = {
+  STAGE_CHANGE: ArrowRight,
+  ASSIGN: UserCheck,
+  SYNC: RefreshCw,
+  RECONCILE: Scale,
+  NOTE: FileText,
+};
+
+/**
+ * Last-resort wording, used only when an event carries neither a message nor a
+ * stage pair. RECONCILE is listed for completeness — no write site produces it
+ * today, so it is mapped rather than advertised.
+ */
+const EVENT_LABEL: Record<EventType, string> = {
+  STAGE_CHANGE: 'Stage changed',
+  ASSIGN: 'Licence assigned',
+  SYNC: 'Directory sync confirmed',
+  RECONCILE: 'Reconciled',
+  NOTE: 'Note added',
+};
+
+export function eventTone(type: EventType): BadgeTone {
+  return EVENT_TONE[type];
 }
 
-export function activityIcon(action: string): LucideIcon {
-  return ACTION_ICON[action] ?? FALLBACK_ICON;
+export function eventIcon(type: EventType): LucideIcon {
+  return EVENT_ICON[type] ?? FileText;
 }
 
 /**
- * One feed row: what happened (+ who), and which record it touched.
- * `ref` is rendered muted next to the text, mirroring the prototype's layout.
+ * One feed row: what happened (+ who), and which request it belongs to.
+ * `ref` is rendered muted and mono next to the text, mirroring the prototype.
  */
-export function activitySummary(entry: AuditEntry): {
+export function eventSummary(event: ActivityEvent): {
   text: string;
   ref: string;
 } {
-  const label = ACTION_LABEL[entry.action] ?? entry.action;
+  const what = describe(event);
   return {
-    text: `${label} — ${actorLabel(entry)}`,
-    ref: `${entry.targetType} · ${shortTarget(entry.targetId)}`,
+    // SYNC / NOTE are written by the platform itself, with no actor. Appending
+    // a placeholder there would read like someone's name.
+    text: event.actorName ? `${what} — ${event.actorName}` : what,
+    ref: event.requestRef,
   };
 }
 
 /**
- * A failed sign-in for an address with no account has actorId null while
- * actorType keeps its 'user' default (auth.service.ts:294) — printing the bare
- * word "user" there would read like someone's name.
+ * Prefer the event's own message — it is the most specific thing available
+ * ("Assigned SPE_E3"). STAGE_CHANGE writes no message (stage.service.ts), so
+ * its text is built from the stage pair using the labels the Requests screens
+ * already use.
  */
-function actorLabel(entry: AuditEntry): string {
-  if (entry.actor) return entry.actor.displayName;
-  return entry.actorType === 'user' ? 'Unknown user' : entry.actorType;
+function describe(event: ActivityEvent): string {
+  if (event.message) return event.message;
+  if (event.fromStage && event.toStage) {
+    return `${cap(STAGE_LABEL[event.fromStage])} → ${STAGE_LABEL[event.toStage]}`;
+  }
+  return EVENT_LABEL[event.type];
 }
 
-/**
- * cuids are too long to scan in a feed row, but targetId is not always an id:
- * auth.service.ts writes the literal 'unknown' when the attempted address has
- * no account, keeping PII out of the indexed column. Tail-slicing that would
- * render "nknown", so only id-length values are shortened.
- */
-function shortTarget(targetId: string): string {
-  return targetId.length > 12 ? targetId.slice(-6) : targetId;
-}
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

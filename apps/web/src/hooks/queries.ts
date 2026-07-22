@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, ApiError } from '@/lib/api';
 import type {
+  ActivityEvent,
   AdminOpco,
   AdminUser,
   AuditFilters,
@@ -176,6 +177,20 @@ export function useAuditLog(filters: AuditFilters) {
     queryKey: ['admin', 'audit', filters],
     queryFn: () =>
       apiGet<AuditPage>(`/admin/audit${auditQueryString(filters)}`),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /fulfilment/activity — the operational feed (CH-006). Open to all three
+ * roles and opco-scoped server-side, so unlike useAuditLog there is no 403 to
+ * design around: an OPCO_IT operator gets its own OpCo's events.
+ */
+export function useActivity(limit: number) {
+  return useQuery({
+    queryKey: ['fulfilment', 'activity', limit],
+    queryFn: () =>
+      apiGet<ActivityEvent[]>(`/fulfilment/activity?limit=${limit}`),
     retry: retryUnless403,
   });
 }

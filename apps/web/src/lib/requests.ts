@@ -103,6 +103,36 @@ export function deriveStatus(req: OnboardingRequest): DerivedStatus {
   return { label: 'Triage', tone: 'info' };
 }
 
+// CH-007 edit-lock gating. These MIRROR the backend guards (request.service.ts)
+// exactly — they decide only whether the UI shows a control. The backend is the
+// real gate (409/403 on violation); these just avoid offering an action that
+// would bounce. If they ever drift from the backend, the backend still wins.
+
+/** targetUpn is editable only before the account has synced (D2). */
+export function canEditUpn(
+  req: Pick<OnboardingRequest, 'azureSyncedAt'>,
+): boolean {
+  return !req.azureSyncedAt;
+}
+
+/**
+ * A line can be removed only while it has no ServiceNow RITM and is still at
+ * REQUESTED (D5) — i.e. nothing real has started and nothing would drift from SN.
+ */
+export function canRemoveLine(
+  item: Pick<RequestLineItem, 'serviceNowSysId' | 'stage'>,
+): boolean {
+  return item.serviceNowSysId === null && item.stage === 'REQUESTED';
+}
+
+/**
+ * Lines can be added only to intake requests. A platform-created request already
+ * pushed every line to ServiceNow, so a new local line would drift (D6).
+ */
+export function canAddLine(req: Pick<OnboardingRequest, 'origin'>): boolean {
+  return req.origin !== 'platform-created';
+}
+
 // List filter tabs (AUTH-3b). "My queue" matches requests handled by the signed-in
 // operator — enabled now that GET /me gives a real AppUser id (req.handledById is
 // on the list payload). meId is passed by the caller (useMe); when it's absent

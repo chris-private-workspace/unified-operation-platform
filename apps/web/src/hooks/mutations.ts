@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiPatch, apiPost } from '@/lib/api';
+import { apiDelete, apiPatch, apiPost } from '@/lib/api';
 import type {
+  AddLineItemBody,
   AdminUser,
   ChangePasswordBody,
   CreateOpcoBody,
@@ -20,6 +21,7 @@ import type {
   UpdateCatalogBody,
   UpdateLedgerBody,
   UpdateOpcoBody,
+  UpdateRequestBody,
   UpdateUserBody,
 } from '@/lib/api-types';
 
@@ -60,6 +62,50 @@ export function useAssignLineItem(requestId: string) {
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
       // assignment moves the ledger, so drift may change too
       qc.invalidateQueries({ queryKey: ['license', 'drift'] });
+    },
+  });
+}
+
+/**
+ * PATCH …/:id — edit the request header (CH-007). The backend strips sync keys
+ * and gates targetUpn on sync; a 409/403 message is surfaced by apiPatch.
+ */
+export function useUpdateRequest(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateRequestBody) =>
+      apiPatch<OnboardingRequest>(`${base}/${requestId}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}
+
+/** POST …/:id/line-items — author a line item (intake requests only, CH-007 D6). */
+export function useAddLineItem(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AddLineItemBody) =>
+      apiPost<RequestLineItem>(`${base}/${requestId}/line-items`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}
+
+/** DELETE …/:id/line-items/:lineItemId — remove an unsent REQUESTED line (D5). */
+export function useRemoveLineItem(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lineItemId: string) =>
+      apiDelete<{ id: string; removed: boolean }>(
+        `${base}/${requestId}/line-items/${lineItemId}`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
     },
   });
 }

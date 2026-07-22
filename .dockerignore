@@ -1,0 +1,32 @@
+# Docker build context = repo ROOT for both images (ADR-0012 / apps/*/Dockerfile).
+# A .dockerignore is honoured only at the context root, so this single file
+# governs both the uop-api and uop-web builds.
+#
+# Keep OUT of the build context: installed deps, build output, secrets, docs,
+# local tooling. Do NOT exclude apps/*/package.json, app source, or
+# design_handoff_licenseops/ (the web build @imports its tokens).
+
+# deps + build output — reinstalled/rebuilt inside the image
+node_modules
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/*.tsbuildinfo
+
+# secrets — never ship into an image (H4). Keep .env.example (it has no secrets).
+**/.env
+**/.env.*
+!**/.env.example
+
+# vcs + docs (not needed to build; docs also holds the large PAR .docx)
+.git
+.github
+docs
+
+# local agent / test tooling
+.claude
+.playwright-mcp
+**/*.log
+.DS_Store
+Thumbs.db

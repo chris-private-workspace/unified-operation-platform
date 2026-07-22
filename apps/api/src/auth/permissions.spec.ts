@@ -56,6 +56,11 @@ describe('permission matrix (derived from @Roles)', () => {
     // count changes — that is intended, update it deliberately.
     expect(names).toEqual(
       new Set([
+        // CH-006 — GET /fulfilment/activity, @Roles(ADMIN,REGIONAL,OPCO_IT).
+        // The widest of the three read surfaces on purpose: it carries no
+        // account history (unlike /admin/audit) and is opco-scoped in the
+        // service, so an OPCO_IT operator sees only its own OpCo's events.
+        'ActivityController',
         'AuditController', // W29 F3 — GET /admin/audit, @Roles(ADMIN)
         'AuthController',
         'FulfilmentController',
