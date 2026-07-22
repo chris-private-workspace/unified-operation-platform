@@ -35,12 +35,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl \
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN npm ci --omit=dev --workspace=@uop/api
+# Full install WITH devDependencies: the entrypoint's optional self-migrate/seed
+# (RUN_MIGRATIONS_ON_START / RUN_SEED_ON_START) needs the prisma CLI + ts-node,
+# which are devDependencies. --include=dev is REQUIRED because ENV NODE_ENV=production
+# (set above, needed at runtime for Secure cookies) would otherwise make npm ci omit
+# them — leaving `npm run seed` (ts-node) with no ts-node. Fatter image, but it lets
+# the container migrate + seed itself where the operator can't reach the DB (W33).
+RUN npm ci --workspace=@uop/api --include=dev
 # Generated Prisma client + query engine from the build stage (hoisted to the
-# root node_modules by the workspace). @prisma/client itself comes from npm ci.
+# root node_modules by the workspace).
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+# prisma schema + migrations + seed.ts — needed by the optional self-migrate/seed.
+COPY apps/api/prisma ./apps/api/prisma
+# tsconfig — the seed runs via ts-node (`npm run seed`), which needs it.
+COPY apps/api/tsconfig.json apps/api/tsconfig.build.json ./apps/api/
+COPY apps/api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 WORKDIR /app/apps/api
 # main.ts listens on PORT ?? 3000; ACA ingress targetPort must match (default 3000).
 EXPOSE 3000
-CMD ["node", "dist/main"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
