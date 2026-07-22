@@ -5,7 +5,8 @@
 
 ## 狀態
 
-**W32 = 部署準備(pre-deploy)** —— 出齊文件、build artifacts、治理流程。**未** provision / deploy;實際落雲屬 W33(待 **RCI PAR** 批准 + 用戶落令)。
+**✅ W33 = 已部署上線**(2026-07-22,`rcitest` sub)—— UAT live,break-glass admin 登入驗證通過。實際環境見 [`07-uat-as-built.md`](./07-uat-as-built.md)。W32 = 部署準備(ADR-0012 + 文件 + build artifacts)。
+> **實際部署路徑同 W32 原藍圖有大出入**(公司 proxy 擋所有 data-plane → 手寫 ARM / self-migrate / ACA native secret)—— [`04-deploy-runbook.md`](./04-deploy-runbook.md) 已更新為 **as-built 可行路徑**,請以佢為準。
 
 ## 一頁 topology 摘要
 
@@ -29,9 +30,10 @@ Logs ────────────▶ Log Analytics workspace
 | 明白整體架構 / 資源清單 / 網路 | [`01-topology.md`](./01-topology.md) |
 | 設定 / 對照環境變數(邊個係 secret) | [`02-environment-reference.md`](./02-environment-reference.md) |
 | 明白兩個 Dockerfile 點 build | [`03-build-images.md`](./03-build-images.md) |
-| 實際部署逐步(provision→deploy→migrate→smoke) | [`04-deploy-runbook.md`](./04-deploy-runbook.md) |
+| 實際部署逐步(as-built:constraints→provision→ARM deploy→smoke) | [`04-deploy-runbook.md`](./04-deploy-runbook.md) |
 | 走 RCI 授權流程(PAR)+ 填表輸入 | [`05-rci-par-process.md`](./05-rci-par-process.md) |
 | 上線前安全自檢 | [`06-prod-hardening-checklist.md`](./06-prod-hardening-checklist.md) |
+| **實際跑緊嘅 UAT 環境**(資源名 / URL / deferred) | [`07-uat-as-built.md`](./07-uat-as-built.md) |
 
 ## 文件
 

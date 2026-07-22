@@ -1,130 +1,135 @@
-# 04 — Deploy Runbook(Azure UAT)
+# 04 — Deploy Runbook(Azure UAT · as-built)
 
-> **前置閘**:RCI 部署**必先過 PAR**(見 `05-rci-par-process.md`)+ 用戶明確落令。本 runbook 係 W32 準備嘅步驟藍圖,**W32 唔執行**。
-> 分工標記:**[RIT]** = RCI 團隊(PAR 後)· **[SP]** = 我哋用已登入嘅 service principal 執行。實際邊步歸邊方,**部署前同 RIT 對齊**(RCI 通常由 RIT 掌 subscription / VNet / 網路,app 層畀 project team)。
-> 佔位:`<rg>` resource group · `<acr>` registry · `<kv>` key vault · `<pg>` postgres server · `<env>` ACA environment · `<loc>` 如 `eastasia`(RCI1 HK)。
+> **此 runbook 反映 W33 實際成功部署嘅路徑**(2026-07-22),已用真環境驗證。實際部署記錄見 [`07-uat-as-built.md`](./07-uat-as-built.md)。
+> **前置閘**:RCI 正式部署需過 PAR(見 `05-rci-par-process.md`)。W33 UAT 已喺 `rcitest` sub 實跑;PAR 由 owner 另行處理,不阻 UAT。
+> 佔位:`<rg>` / `<acr>` / `<pg>` / `<kv>` / `<env>` / `<law>` / `<loc>`(= `eastasia`)。
 
-## 0. 前置
+## ⚠️ 0. 環境規律(先讀 —— 決定成套做法)
 
-- [ ] PAR **Accepted**(Section 3 全簽)
-- [ ] `az login`(SP)+ `az account set --subscription <uat-sub>`;`az account show` 確認 tenant/sub 正確
-- [ ] 決定命名 + region(RCI1 HK = `eastasia` 最近)
-- [ ] 產生強隨機 secret:`AUTH_JWT_SECRET`(≥32 bytes)、`INTAKE_API_KEY`、DB 密碼、`LOCAL_ADMIN_INITIAL_PASSWORD` —— **只入 Key Vault**,唔落檔
+公司網 proxy **只放行 Azure management plane(`management.azure.com`),SSL-MITM / 503 擋晒所有 data-plane**:Docker Hub CDN、ACR `/v2/`、Key Vault `vault.azure.net`、`aka.ms`(az 擴充 / bicep)、Log Analytics query。**驗證過嘅後果**:
 
-## 1. Provision 基礎資源 [RIT 或 SP,視 RCI 分工]
+| 想做 | 直覺做法(❌ 行唔通) | as-built 做法(✅) |
+|---|---|---|
+| build image | 本地 `docker build` | **`az acr build`**(Azure 側 build) |
+| 存 secret | Key Vault data-plane | **ACA native secureString**(經 ARM) |
+| 部署 ACA | `az containerapp create`(擴充) | **`az deployment group create` + `deploy/azure/aca.json`**(手寫 ARM) |
+| 編譯 Bicep | `az bicep install` | **直接用手寫 ARM JSON**(bicep CLI 裝唔到) |
+| migrate/seed | operator 對 DB 跑 | **container 啟動時自跑**(`RUN_MIGRATIONS_ON_START`) |
+| 睇 container log | `az containerapp logs` / LA query | **逐層 HTTP 探測**(見 §7)+ `az rest` replica 狀態 |
+
+**兩條操作紀律**:① `az` 一律 **sequential**(多個並發會互鎖 hang);② `az acr build` / `az deployment` 個 CLI 會因印 Unicode `✔` 撞 Windows charmap **crash(exit 1 假象)**,真結果查 management plane(`az acr task list-runs` / `az deployment group show`),背景跑就算 CLI 被殺,**server-side 照完成**。
+
+> 若喺**唔受限網路**(冇 proxy)部署,以上多數限制消失,可用更直接嘅路(bicep、KV data-plane、operator migrate)。但 as-built 呢條路**兩種網路都 work**,建議照跟以保一致。
+
+## 1. 前置 [SP]
+
+- [ ] `az login`(SP)→ `az account show` 確認 sub/tenant(W33 = `rcitest` / `30dac177-…`)
+- [ ] 確認 SP 權限:`az role assignment list --assignee <sp> --all`(W33 = Contributor **只限** `<rg>`;**建唔到** Entra app reg → SSO 需 IT)
+- [ ] 決定命名 + region(`eastasia` = RCI1 HK)
+- [ ] 產生強隨機 secret(見 §4;**只落 session-temp params 檔,絕不入 git**)
+
+## 2. Provision 基礎資源 [SP]
 
 ```bash
-az group create -n <rg> -l <loc>
+# ACR（image registry）+ 開 admin（俾 ARM 攞 registry creds；hardening 可改 Managed Identity）
+az acr create -n <acr> -g <rg> --sku Basic -l <loc>
+az acr update -n <acr> --admin-enabled true
 
-# ACR(image registry)
-az acr create -n <acr> -g <rg> --sku Basic
-
-# PostgreSQL Flexible Server(managed;private access 對齊 RCI 安全)
+# PostgreSQL Flexible（v16）—— 注意：呢個 az 版本【冇】--database-name，要分兩步
 az postgres flexible-server create -n <pg> -g <rg> -l <loc> \
-  --tier Burstable --sku-name Standard_B1ms --version 16 \
-  --admin-user uop --admin-password '<db-pw-from-kv>' \
-  --database-name platform
-#   ⚠ 網路:RCI 慣例 private access / VNet。臨時 public 需明確 firewall allow,收工即收。
+  --tier Burstable --sku-name Standard_B1ms --version 16 --storage-size 32 \
+  --admin-user uop --admin-password "$DBPW" --public-access 0.0.0.0 --yes
+#   --public-access 0.0.0.0 = "Allow Azure services"（令 ACA 到到 DB）。
+#   hardening：改 private access / VNet（但 operator 就更加連唔到，self-migrate 仍啱）。
+az postgres flexible-server db create -s <pg> -g <rg> -d platform
 
-# Key Vault
-az keyvault create -n <kv> -g <rg> -l <loc>
-
-# Log Analytics + ACA environment
+# Log Analytics（ACA env 要）+ Key Vault（W33 存 secret 用唔到 data-plane，但仍建，留 hardening）
 az monitor log-analytics workspace create -n <law> -g <rg> -l <loc>
-az containerapp env create -n <env> -g <rg> -l <loc> \
-  --logs-workspace-id <law-customer-id> --logs-workspace-key <law-key>
+az keyvault create -n <kv> -g <rg> -l <loc>
 ```
-
-## 2. 入 Key Vault(全部 secret) [SP]
-
-```bash
-az keyvault secret set --vault-name <kv> -n DATABASE-URL \
-  --value 'postgresql://uop:<db-pw>@<pg>.postgres.database.azure.com:5432/platform?sslmode=require'
-az keyvault secret set --vault-name <kv> -n GRAPH-CLIENT-SECRET  --value '<...>'
-az keyvault secret set --vault-name <kv> -n SERVICENOW-PASSWORD  --value '<...>'
-az keyvault secret set --vault-name <kv> -n INTAKE-API-KEY       --value '<...>'
-az keyvault secret set --vault-name <kv> -n AUTH-JWT-SECRET      --value '<...>'
-az keyvault secret set --vault-name <kv> -n LOCAL-ADMIN-INITIAL-PASSWORD --value '<...>'
-```
-> secret 清單來源:`02-environment-reference.md`「UAT 最小變數清單」。**絕不**將真值寫入本 runbook / git。
 
 ## 3. Build + push image [SP]
 
 ```bash
-# 由 repo root。az acr build 喺 Azure 側 build(繞開公司 proxy —— 見 03 §CDN 503)。
+# 由 repo root。Azure 側 build，繞開本地 Docker CDN 503。
 TAG=uat-$(git rev-parse --short HEAD)
 az acr build --registry <acr> --image uop-api:$TAG -f apps/api/Dockerfile .
-
-# uop-web:Entra SSO 值係 build-time,經 --build-arg 烘死落 bundle(非 secret)。
-# VITE_ENTRA_REDIRECT_URI = 最終 uop-web 對外 hostname(先建 web app 攞 FQDN,或用自訂域)。
-az acr build --registry <acr> --image uop-web:$TAG -f apps/web/Dockerfile . \
-  --build-arg VITE_ENTRA_CLIENT_ID=<uop-web-spa-client-id> \
-  --build-arg VITE_ENTRA_TENANT_ID=<tenant-id> \
-  --build-arg VITE_ENTRA_API_SCOPE=api://<uop-api-client-id>/access_as_user \
-  --build-arg VITE_ENTRA_REDIRECT_URI=https://<uop-web-fqdn>
-#   若 UAT app registration 未 ready → 省略 4 個 --build-arg,前端跌返 break-glass 本地登入;
-#   SSO 後補時要重 build uop-web(VITE_* 係 build-time)。
+az acr build --registry <acr> --image uop-web:$TAG -f apps/web/Dockerfile .
+#   ↑ CLI 可能 charmap crash（exit 1 假象）。真結果：
+az acr task list-runs -r <acr> --top 3 -o table    # 睇 Status = Succeeded
 ```
-> ⚠️ 首次 build 要**真睇綠燈**先當成功(03 §未驗證項:argon2 prebuilt / prisma engine / prisma copy 三個假設未經一次成功 build 證實)。
-> ⚠️ **redirect URI 雞蛋問題**:`VITE_ENTRA_REDIRECT_URI` 要 web 嘅最終 hostname,但 hostname 部署先知。做法:先建 `uop-web`(step 5)攞 FQDN → 再 build web image → 更新 revision;或用預定自訂域。
 
-## 4. Migration + seed(對 UAT DB,由 operator/pipeline) [SP]
+- **SSO(可選)**:web image 要烘 Entra 值 → 加 `--build-arg VITE_ENTRA_CLIENT_ID=… VITE_ENTRA_TENANT_ID=… VITE_ENTRA_API_SCOPE=api://<uop-api-client-id>/access_as_user VITE_ENTRA_REDIRECT_URI=https://<uop-web-fqdn>`。無 app reg → 省略 → 前端跌返 break-glass 本地登入(W33 用呢個)。redirect URI 雞蛋問題:先部署攞 web FQDN → 重 build web。
 
-**唔喺 container 內跑** —— 由 operator 機(已 cache Prisma engine)對 UAT DB 執行:
+## 4. Secrets → ARM params 檔(ACA native,非 KV) [SP]
+
+KV data-plane 被擋 → secret 用 ACA native secureString,經 ARM params 檔傳。**params 檔只落 session-temp,絕不入 git**(`deploy/azure/aca.json` 只有 `@secure()` param 定義,無值)。
 
 ```bash
-# operator 機需能連到 UAT Postgres(firewall allow operator IP,或喺 VNet 內)
-export DATABASE_URL='postgresql://uop:<db-pw>@<pg>.postgres.database.azure.com:5432/platform?sslmode=require'
-npm run prisma:deploy -w @uop/api        # prisma migrate deploy(唔用 migrate dev)
-LOCAL_ADMIN_INITIAL_PASSWORD='<...>' npm run seed   # 23 OpCos + 本地 admin
+# 生成 secret（url-safe DB 密碼要 3+ 類字元；base64 JWT）
+DBPW="$(openssl rand -hex 20)Aa9x"; JWT="$(openssl rand -base64 48|tr -d '\n')"
+INTAKE="$(openssl rand -hex 32)"; ADMINPW="Uop-$(openssl rand -hex 6)-Aa9"
+# 攞 law id/key + acr pw（management plane）
+LAWID=$(az monitor log-analytics workspace show -g <rg> -n <law> --query customerId -o tsv)
+LAWKEY=$(az monitor log-analytics workspace get-shared-keys -g <rg> -n <law> --query primarySharedKey -o tsv)
+ACRPW=$(az acr credential show -n <acr> --query 'passwords[0].value' -o tsv)
+# 寫 <tmp>/aca.params.json：每個 param = {"value": …}；apiImage/webImage 用上面 $TAG；
+# Graph/ServiceNow 首次可 placeholder（constructor getOrThrow 只需非空值先 boot）；
+# databaseUrl = postgresql://uop:$DBPW@<pg>.postgres.database.azure.com:5432/platform?sslmode=require
+# （template 參數清單見 deploy/azure/aca.json 頂部 parameters）
 ```
-> 真數 curation(真 tenant catalog sync + 37-SKU businessAlias,DD-1 殘留)= 部署後 ops step,見 module spec / ADR-0004;**唔喺首次 bring-up 必需**。
 
-## 5. Deploy container apps [SP]
+## 5. Deploy ACA via ARM [SP]
 
 ```bash
-# api —— internal ingress(只俾 web + 環境內部叫);KV secret ref 注入
-az containerapp create -n uop-api -g <rg> --environment <env> \
-  --image <acr>.azurecr.io/uop-api:uat-<sha> \
-  --ingress internal --target-port 3000 \
-  --min-replicas 1 --max-replicas 1 \
-  --system-assigned \
-  --registry-server <acr>.azurecr.io
-#   → 授 uop-api 嘅 managed identity 讀 <kv>(RBAC: Key Vault Secrets User)
-#   → 用 `az containerapp secret set --secrets xxx=keyvaultref:...` 綁 KV,再
-#     `--env-vars` 將 GRAPH_CLIENT_SECRET=secretref:xxx / AUTH_JWT_SECRET=secretref:xxx 等注入;
-#     非 secret 直接 --env-vars:
-#       NODE_ENV=production PORT=3000 REQUEST_SUBMISSION_PROVIDER=direct
-#       GRAPH_TENANT_ID=... GRAPH_CLIENT_ID=... SERVICENOW_INSTANCE_URL=... SERVICENOW_USER=...
-#       SERVICENOW_DEFAULT_TABLE=sc_req_item
-#       ENTRA_TENANT_ID=<tenant> ENTRA_API_AUDIENCE=api://<uop-api-client-id>   ← Entra SSO
-#   → break-glass:AUTH_JWT_SECRET(KV)必設,令本地 admin 可登入(dual-provider)
-#   → 確認 AUTH_DEV_BYPASS 冇設(留空)
-
-# web —— external ingress(單一對外 hostname);API_UPSTREAM 指 api internal FQDN
-az containerapp create -n uop-web -g <rg> --environment <env> \
-  --image <acr>.azurecr.io/uop-web:uat-<sha> \
-  --ingress external --target-port 8080 \
-  --min-replicas 1 --max-replicas 2 \
-  --registry-server <acr>.azurecr.io \
-  --env-vars API_UPSTREAM=https://uop-api.internal.<env-default-domain>
+az deployment group validate -g <rg> --template-file deploy/azure/aca.json --parameters @<tmp>/aca.params.json -o json   # 先 validate
+az deployment group create   -g <rg> -n uop-aca-deploy --template-file deploy/azure/aca.json --parameters @<tmp>/aca.params.json -o json
+#   ↑ CLI 可能被殺，但 server-side 照跑。真結果：
+az deployment group show -g <rg> -n uop-aca-deploy --query properties.provisioningState -o tsv   # Succeeded
 ```
-> `uop-api` 嘅 internal FQDN 由 `az containerapp show -n uop-api --query properties.configuration.ingress.fqdn` 攞。
 
-## 6. Smoke test [SP]
+`aca.json` 會建:ACA env(`cae-…`)+ `ca-uop-api`(**internal** ingress,`allowInsecure:true`)+ `ca-uop-web`(external,單一 origin)。api env 已含 `RUN_MIGRATIONS_ON_START=true` / `RUN_SEED_ON_START=true` + break-glass `AUTH_JWT_SECRET`/`LOCAL_ADMIN_INITIAL_PASSWORD`。輸出 `webFqdn` / `apiFqdn`。
 
-- [ ] `curl -sf https://<uop-web-fqdn>/api/docs/api` → 200(前端 origin 反代到 api OpenAPI)
-- [ ] 瀏覽器開 `https://<uop-web-fqdn>` → Login 畫面(**唔係** dev-bypass 直入)
-- [ ] **Entra SSO**:撳 Microsoft 登入 → redirect login.microsoftonline.com → 回來已登入 → Overview 有 data(SSO user 需已 provision + 有 role)
-- [ ] **Break-glass**:`admin@uop.local` + `LOCAL_ADMIN_INITIAL_PASSWORD` 登入 → **強制改密** gate 出現(首個 admin,用嚟 provision SSO users)
-- [ ] DevTools:break-glass 登入後 cookie `uop_access` = `HttpOnly` + `Secure` + `SameSite=Strict`;SSO 登入後 API call 帶 `Authorization: Bearer`
-- [ ] 無 CORS error(單一 origin 應零 CORS)
+## 6. Migration + seed —— **自動**(container 啟動時) [自動]
 
-## 7. Rollback
+**唔使人手** —— api container entrypoint(`apps/api/docker-entrypoint.sh`)喺 `RUN_MIGRATIONS_ON_START=true`/`RUN_SEED_ON_START=true` 下自跑 `prisma migrate deploy` + `npm run seed`(兩者 idempotent,api 單 replica 無 race,失敗非致命)。原因:operator 喺公司網連唔到 Azure DB data-plane。
+> operator 有得連 DB(唔受限網路)→ 可改由 operator 跑 `npm run prisma:deploy -w @uop/api` + seed,並把兩個 `RUN_*` flag 設 false。
 
-- ACA revision-based:`az containerapp revision list` → `az containerapp ingress traffic set` 將 100% 導返上一個 good revision(對應舊 image tag)。
-- DB migration:Prisma migrate **無自動 down**;若 migration 有問題 → 由備份還原(RCI 預設 daily 備份,PAR Appendix)。故**部署前確認 DB 備份策略已生效**。
+## 7. Smoke test [SP]
 
-## 附:資源命名 checklist(填 PAR Section 1 用)
+逐層 curl(container log 睇唔到時,HTTP code 精準指層):
 
-`<rg>` / `<acr>` / `<pg>` / `<kv>` / `<env>` / `<law>` / region —— 一併填入 `05-rci-par-process.md` 嘅 Section 1 輸入 pack。
+```bash
+WEB=https://<web-fqdn>
+curl -sS -k -m 30 -o /dev/null -w "%{http_code}\n" $WEB/            # SPA → 200
+curl -sS -k -m 30 -L -o /dev/null -w "%{http_code}\n" $WEB/api/docs/api   # api via proxy → 200
+curl -sS -k -m 30 -X POST $WEB/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@uop.local","password":"<ADMINPW>"}' -w "\n%{http_code}\n"   # break-glass → 200 (ADMIN)
+```
+
+**HTTP code → 邊層壞咗**(W33 實戰對照):`404`「app does not exist」= nginx Host header 錯 / api replica 未 ready · `301` = ACA internal ingress 迫 https(要 `allowInsecure`)· `401` login = admin 未 seed(seed 失敗)· `500` = DB 連唔到(migrate 失敗)· `200` = 該層通。瀏覽器(信公司 CA)唔使 `-k`。
+
+## 8. 已烘入 artifact 嘅 4 個配置(唔使再踩)
+
+W33 落地踩過,已 fix 入 artifact —— **重部署唔會再遇**,但改動時要知:
+1. **entrypoint 非致命**(migrate/seed 失敗唔 crash container)—— `docker-entrypoint.sh`
+2. **nginx `Host $proxy_host`**(唔可 `$host`,否則 ACA internal ingress 404)—— `nginx.conf.template`
+3. **api ingress `allowInsecure:true`**(否則 http upstream 被 301→https)—— `aca.json`
+4. **runtime `npm ci --include=dev`**(否則 `NODE_ENV=production` omit ts-node → seed 跑唔到)—— `apps/api/Dockerfile`
+
+## 9. Rollback
+
+- ACA revision:每個 image tag = 一個 revision。改 `aca.params.json` 個 `apiImage`/`webImage` 返舊 tag → 重跑 §5 `az deployment group create`(宣告式,會 roll)。
+- DB:Prisma migrate 無 auto-down → 靠 RCI daily 備份還原(PAR Appendix)。部署前確認備份生效。
+
+## 10. Gotchas 清單
+
+- `az` **sequential**(並發互鎖 hang)· CLI charmap crash 查 management plane · 背景被殺 server-side 照完
+- `az postgres flexible-server create` 呢版本**無** `--database-name` → 分步建 DB
+- `NODE_ENV=production` + `npm ci` 會 omit devDeps(連累 ts-node seed)→ `--include=dev`
+- ACA app-to-app:Host = upstream host、internal ingress 要 `allowInsecure` 或 https upstream
+- `--public-access 0.0.0.0` = allow Azure services(ACA 到到);hardening 收窄
+
+## 附:資源命名(填 PAR Section 1 + as-built)
+
+`<rg>`/`<acr>`/`<pg>`/`<kv>`/`<env>`/`<law>`/region → `05-rci-par-process.md` Section 1 + `07-uat-as-built.md`。
