@@ -8,6 +8,7 @@ function req(overrides: Partial<OnboardingRequest>): OnboardingRequest {
     serviceNowSysId: null,
     serviceNowNumber: null,
     serviceNowStatus: null,
+    origin: 'onboarding-intake',
     rawRequestText: null,
     requesterEmail: null,
     targetUpn: 'u@x',

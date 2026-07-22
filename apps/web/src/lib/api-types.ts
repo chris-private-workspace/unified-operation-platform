@@ -460,6 +460,10 @@ export interface RequestLineItem {
   quantity: number;
   procurementRequired: boolean;
   stage: LineItemStage;
+  // Per-line ServiceNow RITM (ADR-0008 D6). null = platform-authored line with
+  // no SN presence → removable (CH-007 D5). Non-null = it exists in ServiceNow.
+  serviceNowSysId: string | null;
+  serviceNowNumber: string | null;
   quoteRef: string | null;
   poRef: string | null;
   quotedAt: string | null;
@@ -517,6 +521,9 @@ export interface OnboardingRequest {
   serviceNowSysId: string | null;
   serviceNowNumber: string | null;
   serviceNowStatus: string | null;
+  // 'onboarding-intake' (n8n mirror) | 'platform-created' (outbound). Decides
+  // whether lines can be added: platform-created is already fully in SN (CH-007 D6).
+  origin: string;
   rawRequestText: string | null;
   requesterEmail: string | null;
   targetUpn: string;
@@ -557,4 +564,24 @@ export interface CreateRequestBody {
   requesterEmail?: string;
   remark?: string;
   lineItems: CreateRequestLine[];
+}
+
+/**
+ * PATCH /fulfilment/requests/:id body (CH-007). Only header fields; sync keys /
+ * opcoId / origin are not accepted (the backend DTO omits them and the whitelist
+ * pipe strips them). targetUpn is accepted but sync-gated backend (D2).
+ */
+export interface UpdateRequestBody {
+  targetUpn?: string;
+  targetDisplayName?: string;
+  requesterEmail?: string;
+  rawRequestText?: string;
+}
+
+/** POST /fulfilment/requests/:id/line-items body (CH-007 — mirrors AddLineItemDto). */
+export interface AddLineItemBody {
+  skuCatalogId: string;
+  quantity?: number;
+  procurementRequired?: boolean;
+  note?: string;
 }

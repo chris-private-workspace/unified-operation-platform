@@ -159,3 +159,27 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   if (res.status === 204) return undefined as T; // No Content (e.g. change password)
   return res.json() as Promise<T>;
 }
+
+/**
+ * DELETE. Surfaces the server's `message` on non-2xx (e.g. the 409 a locked line
+ * item returns) so callers can toast the real reason rather than a generic string.
+ */
+export async function apiDelete<T>(path: string): Promise<T> {
+  const res = await doFetch(path, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json', ...(await authHeader()) },
+  });
+  if (!res.ok) {
+    let message = `DELETE ${path} failed (${res.status})`;
+    try {
+      const data = await res.json();
+      const m = (data as { message?: string | string[] }).message;
+      if (m) message = Array.isArray(m) ? m.join(', ') : m;
+    } catch {
+      // non-JSON error body — keep the generic message
+    }
+    throw new ApiError(res.status, message);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
