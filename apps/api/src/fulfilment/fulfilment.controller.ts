@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
@@ -8,6 +16,7 @@ import { StageService } from './stage.service';
 import { AssignService } from './assign.service';
 import { IntakeRequestDto } from './dto/intake.dto';
 import { AddLineItemDto } from './dto/line-item.dto';
+import { UpdateRequestDto } from './dto/update-request.dto';
 import { AdvanceStageDto } from './dto/advance-stage.dto';
 import { AssignLineItemDto } from './dto/assign.dto';
 import { RequestDto, RequestLineItemDto } from './dto/request-view.dto';
@@ -53,6 +62,16 @@ export class FulfilmentController {
     return this.requests.getRequestDetail(id, user);
   }
 
+  @Patch(':id')
+  @ApiOkResponse({ type: RequestDto })
+  updateHeader(
+    @Param('id') id: string,
+    @Body() dto: UpdateRequestDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<RequestDto> {
+    return this.requests.updateHeader(id, dto, user);
+  }
+
   @Post(':id/line-items')
   @ApiOkResponse({ type: RequestLineItemDto })
   addLineItem(
@@ -61,6 +80,15 @@ export class FulfilmentController {
     @CurrentUser() user: AuthUser,
   ): Promise<RequestLineItemDto> {
     return this.requests.addLineItem(id, dto, user);
+  }
+
+  @Delete(':id/line-items/:lineItemId')
+  removeLineItem(
+    @Param('id') id: string,
+    @Param('lineItemId') lineItemId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requests.removeLineItem(id, lineItemId, user);
   }
 
   @Patch(':id/line-items/:lineItemId/stage')
