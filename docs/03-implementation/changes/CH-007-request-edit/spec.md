@@ -1,7 +1,7 @@
 ---
 change_id: CH-007
 title: "Request 建單後可編輯 — header inline edit + line item 加減(發送前)"
-status: active          # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-07-22
 target_completion: 2026-07-23
 affects_components: [apps/api, apps/web]
@@ -136,6 +136,8 @@ Chris 要求:**header 起碼可改(除同步鍵)**;line item **發送 SN 前**�
 |---|---|---|---|
 | 2026-07-22 | Initial draft | 用戶要求 request 建單後可編輯;D1–D7 已拍板 | Chris Lai |
 | 2026-07-22 | Approved → active | Chris「approve 可以開工」 | Chris Lai |
+| 2026-07-22 | F3.2:permissions snapshot 加兩條新 route(`PATCH :id` + `DELETE …/:lineItemId`,access=roles) | 原估「不受影響」有誤 —— 新 route 落既有 controller 仍會入 derived 矩陣;刻意 -u,diff 只兩行 | AI(記錄) |
+| 2026-07-22 | status → done | C1–C12 全 pass(含 live 兩-origin 對照 + C8 ledger 不變 + dark) | AI(記錄) |
 
 ---
 
