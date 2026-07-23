@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ConnectorConfigService } from '../connector-config.service';
 
 // ── Types ──
 // The Table API returns records as flat maps. Reference fields come back as
@@ -13,23 +14,42 @@ export type ServiceNowUpdate = Record<string, string>;
 export type ServiceNowCreate = Record<string, string | number>;
 
 @Injectable()
-export class ServiceNowService {
+export class ServiceNowService implements OnModuleInit {
   private readonly logger = new Logger(ServiceNowService.name);
-  private readonly baseUrl: string;
-  private readonly authHeader: string;
-  private readonly defaultTable: string;
+  private baseUrl!: string;
+  private authHeader!: string;
+  private defaultTable!: string;
 
-  constructor(private readonly config: ConfigService) {
-    this.baseUrl = this.config
-      .getOrThrow<string>('SERVICENOW_INSTANCE_URL')
-      .replace(/\/$/, '');
+  constructor(
+    private readonly config: ConfigService,
+    private readonly connectorConfig: ConnectorConfigService,
+  ) {}
+
+  /**
+   * Resolve config at boot (C2, ADR-0013). Non-secret instance URL / default
+   * table come from the connector config (DB-then-env); the basic-auth user +
+   * password stay in env only (H4, OQ-2 — one pair, kept together). A missing
+   * instance URL still throws here, so a misconfigured connector fails the boot.
+   */
+  async onModuleInit(): Promise<void> {
+    const instanceUrl = await this.connectorConfig.resolve(
+      'servicenow',
+      'serviceNowInstanceUrl',
+    );
+    if (!instanceUrl) {
+      throw new Error('ServiceNow connector is not configured (instance URL)');
+    }
+    this.baseUrl = instanceUrl.replace(/\/$/, '');
     const user = this.config.getOrThrow<string>('SERVICENOW_USER');
     const pass = this.config.getOrThrow<string>('SERVICENOW_PASSWORD');
     this.authHeader =
       'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
     // Confirm this matches the table Phase 1 already uses (e.g. sc_req_item).
     this.defaultTable =
-      this.config.get<string>('SERVICENOW_DEFAULT_TABLE') ?? 'sc_req_item';
+      (await this.connectorConfig.resolve(
+        'servicenow',
+        'serviceNowDefaultTable',
+      )) ?? 'sc_req_item';
   }
 
   private async request<T>(

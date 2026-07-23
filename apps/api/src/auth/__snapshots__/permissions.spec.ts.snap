@@ -4,6 +4,7 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
 [
   "GET /admin/audit → roles [ADMIN]",
   "GET /admin/integrations → roles [ADMIN]",
+  "PATCH /admin/integrations/:key/config → roles [ADMIN]",
   "POST /admin/integrations/:key/test → roles [ADMIN]",
   "GET /admin/opcos → roles [ADMIN,REGIONAL]",
   "POST /admin/opcos → roles [ADMIN,REGIONAL]",

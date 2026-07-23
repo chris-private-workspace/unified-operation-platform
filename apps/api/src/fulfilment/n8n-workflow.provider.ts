@@ -33,12 +33,12 @@ export class N8nWorkflowProvider extends RequestSubmissionProvider {
   private readonly webhookUrl: string;
   private readonly webhookKey: string;
 
-  constructor(config: ConfigService) {
+  constructor(config: ConfigService, webhookUrl: string) {
     super();
-    // getOrThrow → when n8n is the selected provider, boot fails fast if its
-    // URL/key are unset (no silent broken outbound path). Only constructed when
-    // the module factory picks n8n, so direct mode never requires these.
-    this.webhookUrl = config.getOrThrow<string>('N8N_OUTBOUND_WEBHOOK_URL');
+    // URL is non-secret and resolved by the factory (DB-then-env, C2 / ADR-0013).
+    // The key is a secret — it stays in env only (H4). getOrThrow keeps the
+    // fail-fast: n8n selected with the key unset still stops the boot.
+    this.webhookUrl = webhookUrl;
     this.webhookKey = config.getOrThrow<string>('N8N_OUTBOUND_WEBHOOK_KEY');
   }
 

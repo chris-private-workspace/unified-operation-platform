@@ -1,4 +1,3 @@
-import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { N8N_KEY_HEADER, N8nWorkflowProvider } from './n8n-workflow.provider';
 
@@ -11,25 +10,20 @@ describe('N8nWorkflowProvider', () => {
   const WEBHOOK_URL = 'https://n8n.example.com/webhook/create-license-request';
   const WEBHOOK_KEY = 'n8n-secret';
 
-  beforeEach(async () => {
+  beforeEach(() => {
     (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
     fetchMock.mockReset();
 
-    const env: Record<string, string> = {
-      N8N_OUTBOUND_WEBHOOK_URL: WEBHOOK_URL,
-      N8N_OUTBOUND_WEBHOOK_KEY: WEBHOOK_KEY,
-    };
+    // The URL is now passed in by the factory (non-secret, DB-then-env); only the
+    // key is read from env. Constructed directly since the URL param is not DI.
     const config = {
-      getOrThrow: jest.fn((k: string) => env[k]),
+      getOrThrow: jest.fn((k: string) => {
+        if (k === 'N8N_OUTBOUND_WEBHOOK_KEY') return WEBHOOK_KEY;
+        throw new Error(`missing ${k}`);
+      }),
     } as unknown as ConfigService;
 
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        N8nWorkflowProvider,
-        { provide: ConfigService, useValue: config },
-      ],
-    }).compile();
-    provider = moduleRef.get(N8nWorkflowProvider);
+    provider = new N8nWorkflowProvider(config, WEBHOOK_URL);
   });
 
   const okResponse = (body: unknown) => ({

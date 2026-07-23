@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { TokenCredentialAuthenticationProvider } from '@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials';
 import { ClientSecretCredential } from '@azure/identity';
+import { ConnectorConfigService } from '../connector-config.service';
 
 // ── Types (importable by the catalog / reconciliation / fulfilment services) ──
 
@@ -30,19 +31,42 @@ export interface AssignLicenseOptions {
 }
 
 @Injectable()
-export class GraphService {
+export class GraphService implements OnModuleInit {
   private readonly logger = new Logger(GraphService.name);
-  private readonly client: Client;
+  private client!: Client; // built in onModuleInit (C2, ADR-0013)
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly connectorConfig: ConnectorConfigService,
+  ) {}
+
+  /**
+   * Build the Graph client at boot (C2, ADR-0013). Non-secret tenant/client id
+   * come from the connector config (DB-then-env); the secret stays in env only
+   * (H4). onModuleInit rather than the constructor because resolving the DB
+   * values is async — a missing id still throws here, so a misconfigured
+   * connector fails the boot exactly as getOrThrow did before.
+   */
+  async onModuleInit(): Promise<void> {
     // App-only (client credentials) auth. Application permissions required:
     //   Organization.Read.All  → /subscribedSkus
     //   Directory.Read.All     → /users lookup
     //   User.ReadWrite.All     → assignLicense + set usageLocation
+    const tenantId = await this.connectorConfig.resolve(
+      'graph',
+      'graphTenantId',
+    );
+    const clientId = await this.connectorConfig.resolve(
+      'graph',
+      'graphClientId',
+    );
+    if (!tenantId || !clientId) {
+      throw new Error('Graph connector is not configured (tenant/client id)');
+    }
     const credential = new ClientSecretCredential(
-      this.config.getOrThrow<string>('GRAPH_TENANT_ID'),
-      this.config.getOrThrow<string>('GRAPH_CLIENT_ID'),
-      this.config.getOrThrow<string>('GRAPH_CLIENT_SECRET'),
+      tenantId,
+      clientId,
+      this.config.getOrThrow<string>('GRAPH_CLIENT_SECRET'), // secret: env only (H4)
     );
     const authProvider = new TokenCredentialAuthenticationProvider(credential, {
       scopes: ['https://graph.microsoft.com/.default'],
