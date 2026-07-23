@@ -17,8 +17,8 @@
 | 資源 | 名 | 備註 |
 |---|---|---|
 | ACR | `acruopuat`(`acruopuat.azurecr.io`)| Basic · admin enabled |
-| api image | `uop-api:uat-mig3` | self-migrate entrypoint · devDeps |
-| web image | `uop-web:uat-web2` | nginx Host fix · break-glass(無 VITE_ENTRA)|
+| api image | `uop-api:uat-0cf0cf3` | **W34**(ADR-0013 connector config)· self-migrate entrypoint · devDeps |
+| web image | `uop-web:uat-0cf0cf3` | **W34** · nginx Host fix · break-glass(無 VITE_ENTRA)|
 | PostgreSQL | `psql-uop-uat`(v16 Burstable B1ms)| DB `platform` · public + "Allow Azure services" |
 | Log Analytics | `law-uop-uat` | ACA container log |
 | Key Vault | `kv-uop-uat` | **建咗但未 wire**(data-plane 被 proxy 擋;secret 暫用 ACA native)|
@@ -45,6 +45,20 @@
 ## 重部署 / 更新
 
 改 `deploy/azure/aca.json` 或 `aca.params.json` 個 image tag → 重跑 `04 §5`(宣告式,建新 revision)。secret 值喺 session-temp `aca.params.json`(session 結束會清;長期要重生成或改用 KV wiring)。
+
+### W34 re-deploy(2026-07-23,image-only,唔掂 secret — 推薦捷徑)
+
+W33 secret 喺 session-temp 已清 → 重跑 ARM §5 要重生成**全部** secret(含**重設 DB 密碼**,因舊 DBPW 冇咗),side-effect 大。實測 **`az containerapp update --image` 可行**(W33 記錄嘅 `containerapp` 擴充擋已解除),**只換 image、保留現有 secret/config**,DBPW / admin 密碼 / config 全部不變,rollback = 換返舊 tag:
+
+```bash
+TAG=uat-$(git rev-parse --short HEAD)
+# build（Azure 側；CLI 印 ✔/✓ 會 charmap crash exit 1 假象，查 az acr task list-runs 真 status）
+PYTHONIOENCODING=utf-8 az acr build --registry acruopuat --image uop-api:$TAG -f apps/api/Dockerfile .   # + uop-web
+# 換 image（保留 secret；建新 revision → 新 api 啟動自動跑 self-migrate，新 migration auto-apply）
+PYTHONIOENCODING=utf-8 az containerapp update -g RG-RCITest-RAPO-N8N -n ca-uop-api --image acruopuat.azurecr.io/uop-api:$TAG -o none   # + ca-uop-web
+```
+
+**驗**:`az containerapp revision list`(新 revision `image` 啱 + `RunningAtMaxScale`)+ §04 smoke test(curl **`-k --ssl-no-revoke`** 繞 schannel revocation)。**W34 專屬探測**:`PATCH /api/admin/integrations/graph/config` 無 token → **401=已部署 / 404=未部署**。`uat-mig3`/`uat-web2` → **`uat-0cf0cf3`**(revision api `--0000003` / web `--0000002`)。
 
 ## Deferred → BACKLOG `DEPLOY-harden`
 

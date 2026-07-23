@@ -1,0 +1,68 @@
+{
+  "name": "UOP Outbound Receiver — UOP → n8n (mock ServiceNow)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "uop-create-license-request",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-in-001",
+      "name": "Webhook (from UOP)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "UOP Outbound Key (X-N8n-Key)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 平台 N8nWorkflowProvider POST 過嚟嘅 body（CONTRACT-OUTBOUND §3）\n// { targetUpn, opcoCode, requesterEmail, remark, lineItems:[{skuId, skuPartNumber, quantity}] }\nconst body = $input.first().json.body || {};\nconst lines = (body.lineItems || []).map((l, i) => ({\n  skuId: l.skuId,                              // 必須對回 payload 次序（平台會核對）\n  sysId: 'RITM-mock-' + Date.now() + '-' + i,  // mock sc_req_item sysId\n  number: 'RITM' + (1000 + i)\n}));\n// 回 CONTRACT-OUTBOUND §4 格式（平台 fail-closed 會查 request.sysId + 每 line sysId + skuId 對次序）\nreturn [{ json: {\n  request: { sysId: 'REQ-mock-' + Date.now(), number: 'REQ-N8N-TEST' },\n  lineItems: lines\n} }];"
+      },
+      "id": "code-mock-001",
+      "name": "Mock ServiceNow REQ/RITM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-001",
+      "name": "Respond to UOP",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook (from UOP)": {
+      "main": [
+        [
+          { "node": "Mock ServiceNow REQ/RITM", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Mock ServiceNow REQ/RITM": {
+      "main": [
+        [
+          { "node": "Respond to UOP", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false,
+  "meta": {
+    "_comment": "UOP LicenseOps outbound receiver (ADR-0008 線② outbound). Platform N8nWorkflowProvider POSTs here with header X-N8n-Key (build a Header Auth credential in n8n: Name=X-N8n-Key, Value=your N8N_OUTBOUND_WEBHOOK_KEY — NOT baked in). Webhook auth verifies it. Code node mocks the ServiceNow REQ + per-line RITM sysIds; Respond node returns them synchronously in CONTRACT-OUTBOUND §4 shape so the platform builds its mirror. To go live you must ACTIVATE the workflow (Production webhook URL) and, on the platform side, wire N8N_OUTBOUND_WEBHOOK_URL + N8N_OUTBOUND_WEBHOOK_KEY + REQUEST_SUBMISSION_PROVIDER=n8n. If you change the response shape, the platform provider mapping must change too. See docs/05-usage/N8N-INTEGRATION-SETUP.md 線②."
+  }
+}

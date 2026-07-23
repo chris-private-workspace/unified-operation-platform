@@ -1,0 +1,57 @@
+{
+  "name": "UOP Intake Test — n8n → Azure UAT",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-manual-001",
+      "name": "When clicking Test workflow",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerapps.io/api/requests/intake",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"targetUpn\": \"test.newhire@rapo.com.hk\",\n  \"targetDisplayName\": \"Test Newhire (n8n)\",\n  \"opcoCode\": \"RHK\",\n  \"requesterEmail\": \"it.rhk@rapo.com.hk\",\n  \"serviceNowSysId\": \"n8n-test-001\",\n  \"serviceNowNumber\": \"REQ-N8N-TEST\",\n  \"lineItems\": [\n    { \"skuId\": \"00000000-0000-0000-0000-000000000000\", \"quantity\": 1 }\n  ]\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "http-intake-001",
+      "name": "POST /requests/intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "UOP Intake Key (X-Intake-Key)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking Test workflow": {
+      "main": [
+        [
+          { "node": "POST /requests/intake", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false,
+  "meta": {
+    "_comment": "UOP LicenseOps intake connection test (ADR-0008 線① inbound). Auth = Header Auth credential 'X-Intake-Key' (build it in n8n with your INTAKE_API_KEY; NOT baked into this file). serviceNowSysId is the idempotency key — change it to create a fresh request. skuId is a dummy GUID: UAT SkuCatalog is empty (Graph=placeholder), so expect HTTP 400 'SKU not found' = connection OK; swap in a real SkuCatalog.skuId once the catalog has SKUs to get 201. See docs/05-usage/N8N-INTEGRATION-SETUP.md."
+  }
+}
