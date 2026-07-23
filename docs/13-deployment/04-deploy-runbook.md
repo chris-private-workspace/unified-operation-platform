@@ -63,27 +63,38 @@ az acr task list-runs -r <acr> --top 3 -o table    # 睇 Status = Succeeded
 
 ## 4. Secrets → ARM params 檔(ACA native,非 KV) [SP]
 
-KV data-plane 被擋 → secret 用 ACA native secureString,經 ARM params 檔傳。**params 檔只落 session-temp,絕不入 git**(`deploy/azure/aca.json` 只有 `@secure()` param 定義,無值)。
+KV data-plane 被擋 → secret 用 ACA native secureString,經 ARM params 檔傳。
 
+**Secret store 策略(SSOT)** —— secret **唔存喺 `apps/api/.env`**(嗰個純本地 dev,部署唔會讀);Azure 部署嘅真值集中放一個 **gitignored persistent params 檔**:
+
+1. Copy 範本:`deploy/azure/aca.params.example.json` → `deploy/azure/aca.params.uat.json`(**gitignored**,owner 本地 secure 保管)。
+2. 填真值(範本每個 placeholder 有說明)。此檔 = 該環境 deployment secret 嘅 **single source of truth**,**persist 唔會 session 清**,重部署直接重用 —— key 一致、唔使重生成、唔會漏。
+3. 部署一律 `--parameters @deploy/azure/aca.params.uat.json`(見 §5)。
+
+**⚠️ 絕不 commit 真值檔**:`.gitignore` 已有 `deploy/azure/*.params.*.json`(只 commit template `aca.json` + 無值 `aca.params.example.json`)。
+
+**首次生成 secret 值**(填入 params 檔;url-safe DB 密碼要 3+ 類字元、base64 JWT):
 ```bash
-# 生成 secret（url-safe DB 密碼要 3+ 類字元；base64 JWT）
-DBPW="$(openssl rand -hex 20)Aa9x"; JWT="$(openssl rand -base64 48|tr -d '\n')"
-INTAKE="$(openssl rand -hex 32)"; ADMINPW="Uop-$(openssl rand -hex 6)-Aa9"
-# 攞 law id/key + acr pw（management plane）
-LAWID=$(az monitor log-analytics workspace show -g <rg> -n <law> --query customerId -o tsv)
-LAWKEY=$(az monitor log-analytics workspace get-shared-keys -g <rg> -n <law> --query primarySharedKey -o tsv)
-ACRPW=$(az acr credential show -n <acr> --query 'passwords[0].value' -o tsv)
-# 寫 <tmp>/aca.params.json：每個 param = {"value": …}；apiImage/webImage 用上面 $TAG；
-# Graph/ServiceNow 首次可 placeholder（constructor getOrThrow 只需非空值先 boot）；
-# databaseUrl = postgresql://uop:$DBPW@<pg>.postgres.database.azure.com:5432/platform?sslmode=require
-# （template 參數清單見 deploy/azure/aca.json 頂部 parameters）
+openssl rand -hex 20         # DB 密碼底（尾加 Aa9x 湊夠字類 → databaseUrl）
+openssl rand -base64 48      # authJwtSecret
+openssl rand -hex 32         # intakeApiKey / n8n outbound key
+# law id/key + acr pw（management plane）：
+az monitor log-analytics workspace show -g <rg> -n <law> --query customerId -o tsv
+az monitor log-analytics workspace get-shared-keys -g <rg> -n <law> --query primarySharedKey -o tsv
+az acr credential show -n <acr> --query 'passwords[0].value' -o tsv
 ```
+- Graph/ServiceNow 首次可 placeholder(constructor getOrThrow 只需非空值先 boot)。
+- `databaseUrl = postgresql://uop:<DBPW>@<pg>.postgres.database.azure.com:5432/platform?sslmode=require`。
+- **DB 密碼一入 params 檔即 persist** —— 唔會再重演 W34「舊 DBPW 唔知、要繞 image-only update」。
+
+> **⚠️ n8n outbound(線②)未 wire 落 template**:`aca.json` 現時無 `N8N_OUTBOUND_WEBHOOK_*` / `REQUEST_SUBMISSION_PROVIDER` param(provider 寫死 `direct`)。要部署 n8n outbound,先擴 `aca.json`(加 3 param + secret + env),再喺 params 檔加值。
+> **長遠 harden**:params 檔明文 secret → 遷 **Key Vault + Managed Identity**(見 `06-prod-hardening-checklist.md`)。
 
 ## 5. Deploy ACA via ARM [SP]
 
 ```bash
-az deployment group validate -g <rg> --template-file deploy/azure/aca.json --parameters @<tmp>/aca.params.json -o json   # 先 validate
-az deployment group create   -g <rg> -n uop-aca-deploy --template-file deploy/azure/aca.json --parameters @<tmp>/aca.params.json -o json
+az deployment group validate -g <rg> --template-file deploy/azure/aca.json --parameters @deploy/azure/aca.params.uat.json -o json   # 先 validate
+az deployment group create   -g <rg> -n uop-aca-deploy --template-file deploy/azure/aca.json --parameters @deploy/azure/aca.params.uat.json -o json
 #   ↑ CLI 可能被殺，但 server-side 照跑。真結果：
 az deployment group show -g <rg> -n uop-aca-deploy --query properties.provisioningState -o tsv   # Succeeded
 ```
