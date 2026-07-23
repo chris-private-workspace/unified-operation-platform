@@ -52,6 +52,12 @@ export const AUDIT_ACTIONS = {
    * between ServiceNow and the platform.
    */
   OUTBOUND_ABANDON: 'outbound.abandon',
+  /**
+   * W34 / ADR-0013 — an admin changed a connector's non-secret config. Secret
+   * fields never reach here: they are not columns on ConnectorConfig, and the
+   * whitelist below lists only non-secret keys.
+   */
+  CONNECTOR_CONFIG_UPDATE: 'connector.config_update',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -62,7 +68,8 @@ export type AuditTargetType =
   | 'SkuCatalog'
   | 'DriftAlert'
   | 'AllocationImport'
-  | 'OutboundFailure';
+  | 'OutboundFailure'
+  | 'ConnectorConfig';
 
 /**
  * Per-target allow-list. Only these keys can reach `before` / `after`.
@@ -100,6 +107,16 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
      * metadata carries the kind + attempt, which is what an auditor needs.
      */
     OutboundFailure: [],
+    // W34 / ADR-0013 — NON-SECRET columns only. Secrets are not columns on
+    // ConnectorConfig at all, so there is nothing secret to leak here.
+    ConnectorConfig: [
+      'graphTenantId',
+      'graphClientId',
+      'serviceNowInstanceUrl',
+      'serviceNowDefaultTable',
+      'requestSubmissionProvider',
+      'n8nOutboundWebhookUrl',
+    ],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */

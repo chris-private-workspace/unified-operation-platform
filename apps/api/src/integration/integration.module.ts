@@ -5,6 +5,7 @@ import { ServiceNowService } from './servicenow/servicenow.service';
 import { IntegrationController } from './integration.controller';
 import { IntegrationStatusService } from './integration-status.service';
 import { IntegrationProbeService } from './integration-probe.service';
+import { ConnectorConfigService } from './connector-config.service';
 
 /**
  * Integration layer — the platform's outbound edge.
@@ -24,7 +25,8 @@ import { IntegrationProbeService } from './integration-probe.service';
     ServiceNowService,
     IntegrationStatusService,
     IntegrationProbeService,
+    ConnectorConfigService,
   ],
-  exports: [GraphService, ServiceNowService],
+  exports: [GraphService, ServiceNowService, ConnectorConfigService],
 })
 export class IntegrationModule {}

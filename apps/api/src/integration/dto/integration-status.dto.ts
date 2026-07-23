@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsObject } from 'class-validator';
 
 /**
  * W30 / ADR-0010 D2 — the response allow-list.
@@ -19,6 +20,42 @@ export class ProbeResultDto {
   })
   message!: string;
   @ApiProperty() at!: Date;
+}
+
+// ── W34 / ADR-0013 — connector config (Model C) ────────────────
+// The allow-list extends to config: non-secret VALUES may appear (editable), but
+// a secret only ever reports configured/unset — never its value (D2 preserved).
+
+export class ConnectorFieldDto {
+  @ApiProperty() column!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty({
+    nullable: true,
+    description: 'non-secret value — a secret value never appears here',
+  })
+  value!: string | null;
+  @ApiProperty({
+    enum: ['db', 'env', 'unset'],
+    description:
+      'where the effective value came from (DB override / env / none)',
+  })
+  source!: string;
+}
+
+export class ConnectorSecretDto {
+  @ApiProperty() envKey!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty({
+    description: 'whether env holds a value — NEVER the value itself (D2)',
+  })
+  configured!: boolean;
+}
+
+export class ConnectorConfigDto {
+  @ApiProperty({ type: [ConnectorFieldDto] })
+  editable!: ConnectorFieldDto[];
+  @ApiProperty({ type: [ConnectorSecretDto] })
+  secrets!: ConnectorSecretDto[];
 }
 
 export class ConnectorStatusDto {
@@ -65,4 +102,27 @@ export class ConnectorStatusDto {
 
   @ApiProperty({ nullable: true })
   probeNote!: string | null;
+
+  @ApiProperty({
+    type: ConnectorConfigDto,
+    description:
+      'editable non-secret config (value + source) and secret configured-status — never a secret value (D2 / ADR-0013)',
+  })
+  config!: ConnectorConfigDto;
+}
+
+/**
+ * PATCH body (W34 / ADR-0013). `values` maps a non-secret field column to its
+ * new value; null / empty clears the override so it falls back to env. Only
+ * `values` is whitelisted by the global ValidationPipe — the service rejects any
+ * key that is not an editable field, so a secret column can never be written.
+ */
+export class UpdateConnectorConfigDto {
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: { type: 'string', nullable: true },
+    description: 'non-secret field column → new value (null / empty clears it)',
+  })
+  @IsObject()
+  values!: Record<string, string | null>;
 }

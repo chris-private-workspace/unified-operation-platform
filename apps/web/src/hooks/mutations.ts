@@ -4,6 +4,7 @@ import type {
   AddLineItemBody,
   AdminUser,
   ChangePasswordBody,
+  ConnectorConfig,
   CreateOpcoBody,
   CreateRequestBody,
   CreateUserBody,
@@ -177,6 +178,31 @@ export function useTestConnection() {
   return useMutation({
     mutationFn: (key: string) =>
       apiPost<ProbeResult>(`/admin/integrations/${key}/test`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'integrations'] });
+    },
+  });
+}
+
+/**
+ * PATCH /admin/integrations/:key/config — update a connector's non-secret config
+ * (W34 / ADR-0013). ADMIN-only. Returns the refreshed config and invalidates the
+ * connector list so the row reflects the new values. Changes take effect on the
+ * next API restart (C2) — the panel says so.
+ */
+export function useUpdateConnector() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      key,
+      values,
+    }: {
+      key: string;
+      values: Record<string, string | null>;
+    }) =>
+      apiPatch<ConnectorConfig>(`/admin/integrations/${key}/config`, {
+        values,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'integrations'] });
     },

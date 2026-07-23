@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ServiceNowService } from './servicenow.service';
+import { ConnectorConfigService } from '../connector-config.service';
 
 // ServiceNowService talks to the Table API via global fetch. We stub fetch +
 // ConfigService (no real tenant — H5 §3.4). D1 covers the new createRecord path.
@@ -13,22 +14,32 @@ describe('ServiceNowService.createRecord', () => {
     fetchMock.mockReset();
 
     const env: Record<string, string> = {
-      SERVICENOW_INSTANCE_URL: 'https://sn.example.com',
       SERVICENOW_USER: 'svc',
       SERVICENOW_PASSWORD: 'pw',
     };
     const config = {
       getOrThrow: jest.fn((k: string) => env[k]),
-      get: jest.fn(() => 'sc_req_item'),
     } as unknown as ConfigService;
+    // Non-secret instance URL / table now come from the resolver (DB-then-env).
+    const connectorConfig = {
+      resolve: jest.fn((_c: string, column: string) =>
+        column === 'serviceNowInstanceUrl'
+          ? 'https://sn.example.com'
+          : column === 'serviceNowDefaultTable'
+            ? 'sc_req_item'
+            : undefined,
+      ),
+    } as unknown as ConnectorConfigService;
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         ServiceNowService,
         { provide: ConfigService, useValue: config },
+        { provide: ConnectorConfigService, useValue: connectorConfig },
       ],
     }).compile();
     service = moduleRef.get(ServiceNowService);
+    await service.onModuleInit(); // C2: build baseUrl/authHeader/defaultTable
   });
 
   it('POSTs the fields to the table endpoint and returns the created record', async () => {

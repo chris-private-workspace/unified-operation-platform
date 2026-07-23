@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IntegrationModule } from '../integration/integration.module';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { ConnectorConfigService } from '../integration/connector-config.service';
 import { RequestService } from './request.service';
 import { StageService } from './stage.service';
 import { AssignService } from './assign.service';
@@ -28,13 +29,32 @@ import { ActivityService } from './activity.service';
  * required only when n8n is actually chosen. Exported so the selection is unit-
  * testable without compiling the whole module.
  */
-export function requestSubmissionProviderFactory(
+export async function requestSubmissionProviderFactory(
   config: ConfigService,
   snow: ServiceNowService,
-): RequestSubmissionProvider {
-  return config.get<string>('REQUEST_SUBMISSION_PROVIDER') === 'n8n'
-    ? new N8nWorkflowProvider(config)
-    : new DirectServiceNowProvider(snow);
+  connectorConfig: ConnectorConfigService,
+): Promise<RequestSubmissionProvider> {
+  // Provider selection is non-secret and resolved DB-then-env (C2 / ADR-0013):
+  // unset → direct, so existing behaviour never changes.
+  const provider =
+    (await connectorConfig.resolve(
+      'n8n-outbound',
+      'requestSubmissionProvider',
+    )) ?? 'direct';
+  if (provider !== 'n8n') return new DirectServiceNowProvider(snow);
+
+  // n8n selected: the webhook URL is non-secret (DB-then-env); the key stays in
+  // env (getOrThrow inside the provider). A missing URL fails the boot.
+  const url = await connectorConfig.resolve(
+    'n8n-outbound',
+    'n8nOutboundWebhookUrl',
+  );
+  if (!url) {
+    throw new Error(
+      'n8n outbound is selected but its webhook URL is not configured',
+    );
+  }
+  return new N8nWorkflowProvider(config, url);
 }
 
 /**
@@ -72,7 +92,7 @@ export function requestSubmissionProviderFactory(
     {
       provide: RequestSubmissionProvider,
       useFactory: requestSubmissionProviderFactory,
-      inject: [ConfigService, ServiceNowService],
+      inject: [ConfigService, ServiceNowService, ConnectorConfigService],
     },
   ],
   exports: [RequestService, StageService, AssignService],

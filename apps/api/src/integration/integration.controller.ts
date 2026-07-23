@@ -1,22 +1,28 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   HttpCode,
   HttpException,
   HttpStatus,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { IntegrationStatusService } from './integration-status.service';
 import { IntegrationProbeService } from './integration-probe.service';
+import { ConnectorConfigService } from './connector-config.service';
 import { CONNECTOR_KEYS, PROBEABLE, type ConnectorKey } from './connectors';
 import {
+  ConnectorConfigDto,
   ConnectorStatusDto,
   ProbeResultDto,
+  UpdateConnectorConfigDto,
 } from './dto/integration-status.dto';
 
 /**
@@ -34,6 +40,7 @@ export class IntegrationController {
   constructor(
     private readonly status: IntegrationStatusService,
     private readonly probes: IntegrationProbeService,
+    private readonly connectorConfig: ConnectorConfigService,
   ) {}
 
   @Get()
@@ -41,16 +48,19 @@ export class IntegrationController {
   async list(): Promise<ConnectorStatusDto[]> {
     const rows = await this.status.list();
     // Built field by field on purpose — never a spread (D2).
-    return rows.map((row) => ({
-      key: row.key,
-      label: row.label,
-      state: row.state,
-      lastSuccessAt: row.lastSuccessAt,
-      lastSuccessNote: row.lastSuccessNote,
-      lastProbe: this.probes.get(row.key),
-      probeable: PROBEABLE[row.key] === null,
-      probeNote: PROBEABLE[row.key],
-    }));
+    return Promise.all(
+      rows.map(async (row) => ({
+        key: row.key,
+        label: row.label,
+        state: row.state,
+        lastSuccessAt: row.lastSuccessAt,
+        lastSuccessNote: row.lastSuccessNote,
+        lastProbe: this.probes.get(row.key),
+        probeable: PROBEABLE[row.key] === null,
+        probeNote: PROBEABLE[row.key],
+        config: await this.connectorConfig.describe(row.key),
+      })),
+    );
   }
 
   /**
@@ -76,5 +86,26 @@ export class IntegrationController {
       );
     }
     return this.probes.run(connector, Date.now());
+  }
+
+  /**
+   * Update a connector's non-secret config (W34 / ADR-0013). ADMIN-only via the
+   * controller-level @Roles. The service validates each field and rejects any
+   * key that is not editable, so a secret can never be written; the change is
+   * audited in the same transaction. Returns the refreshed config view.
+   */
+  @Patch(':key/config')
+  @ApiOkResponse({ type: ConnectorConfigDto })
+  async updateConfig(
+    @CurrentUser() actor: AuthUser,
+    @Param('key') key: string,
+    @Body() dto: UpdateConnectorConfigDto,
+  ): Promise<ConnectorConfigDto> {
+    if (!CONNECTOR_KEYS.includes(key as ConnectorKey)) {
+      throw new BadRequestException(`Unknown connector: ${key}`);
+    }
+    const connector = key as ConnectorKey;
+    await this.connectorConfig.update(connector, dto.values, actor.id);
+    return this.connectorConfig.describe(connector);
   }
 }

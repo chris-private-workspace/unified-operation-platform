@@ -394,3 +394,30 @@ model OutboundFailure {
   @@index([status, createdAt])
   @@index([kind, status])
 }
+
+// ── Connector configuration (ADR-0013 / Model C) ──────────────
+// Non-secret connector settings an ADMIN can edit in the UI. ONE ROW PER
+// connector; any null column falls back to the env value (resolver =
+// DB-then-env, ConnectorConfigService). REAL SECRETS ARE NEVER STORED HERE
+// (H4) — GRAPH_CLIENT_SECRET, SERVICENOW_USER/PASSWORD, N8N_OUTBOUND_WEBHOOK_KEY,
+// INTAKE_API_KEY stay in env only. Changes apply on next app boot (C2, ADR-0013
+// D4). "Who changed what" is answered by AuditLog (ADR-0009) — no updatedById here.
+model ConnectorConfig {
+  id        String @id @default(cuid())
+  connector String @unique // 'graph' | 'servicenow' | 'n8n-outbound'
+
+  // Graph — non-secret only (GRAPH_CLIENT_SECRET stays in env)
+  graphTenantId String? // GRAPH_TENANT_ID override
+  graphClientId String? // GRAPH_CLIENT_ID override
+
+  // ServiceNow — non-secret only (SERVICENOW_USER/PASSWORD stay in env)
+  serviceNowInstanceUrl  String? // SERVICENOW_INSTANCE_URL override
+  serviceNowDefaultTable String? // SERVICENOW_DEFAULT_TABLE override
+
+  // n8n outbound — non-secret only (N8N_OUTBOUND_WEBHOOK_KEY stays in env)
+  requestSubmissionProvider String? // REQUEST_SUBMISSION_PROVIDER override ('direct' | 'n8n')
+  n8nOutboundWebhookUrl     String? // N8N_OUTBOUND_WEBHOOK_URL override
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

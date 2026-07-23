@@ -381,6 +381,26 @@ export interface ProbeResult {
   at: string;
 }
 
+/** W34 / ADR-0013 — an editable non-secret connector field. */
+export interface ConnectorField {
+  column: string;
+  label: string;
+  value: string | null; // non-secret value — a secret value never appears here
+  source: 'db' | 'env' | 'unset';
+}
+
+/** A secret field: env-only. `configured` says whether env has a value — never the value. */
+export interface ConnectorSecret {
+  envKey: string;
+  label: string;
+  configured: boolean;
+}
+
+export interface ConnectorConfig {
+  editable: ConnectorField[];
+  secrets: ConnectorSecret[];
+}
+
 export interface ConnectorStatus {
   key: string; // 'graph' | 'servicenow' | 'n8n-outbound' | 'n8n-inbound'
   label: string;
@@ -392,6 +412,8 @@ export interface ConnectorStatus {
   lastProbe: ProbeResult | null;
   probeable: boolean;
   probeNote: string | null;
+  /** Editable non-secret config + secret configured-status (W34 / ADR-0013). */
+  config: ConnectorConfig;
 }
 
 /** POST /admin/users body — create a local account (admin sets the password). */
