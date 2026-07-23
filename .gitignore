@@ -2,6 +2,10 @@
 .env
 .env.local
 .env.*.local
+# Azure deployment 真值 params 檔（含 DB 密碼 / API keys / JWT / admin 初始密碼）——
+# 絕不 commit;只 commit template aca.json + 無值範本 aca.params.example.json。
+deploy/azure/*.params.*.json
+!deploy/azure/aca.params.example.json
 
 # === AI agent 本機工具 ===
 # .claude/settings.json + commands/skills/hooks 團隊共享(track);只 ignore 本機 override。
