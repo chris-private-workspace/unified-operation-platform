@@ -129,25 +129,36 @@ Power BI Pro Sub Per User,20,,3,...,23
 
 ---
 
-### 步 5 — 建立已派座位 baseline(`assignedQuantity`)🚧 **實作中**
+### 步 5 — 建立已派座位 baseline(`assignedQuantity`)
 
-> **狀態(2026-07-25)**:機制已由 **[ADR-0014](../adr/0014-assigned-baseline-initialisation.md) Accepted** 定案 = **一次性 ops script**,但 **script 本身仲未寫**(W35 F3 進行中)。本步係**唯一**建立 baseline 嘅認可方式 —— 唔好用其他方法臨時頂替(見下「唔可以咁做」)。
-
-計劃形態(ADR-0014 Decision 1-7):
+> 機制 = **一次性 ops script**([ADR-0014](../adr/0014-assigned-baseline-initialisation.md) Accepted)。本步係**唯一**建立 baseline 嘅認可方式 —— 唔好用其他方法臨時頂替(見下「唔可以咁做」)。
 
 ```bash
 # dry-run(default):只印 before → target → delta + skipped,唔寫 DB
-npx ts-node apps/api/prisma/init-assigned-baseline.ts --file=<assigned.csv>
+npm run baseline:assigned -w @uop/api -- --file=<assigned.csv>
 
-# 確認後 commit
-npx ts-node apps/api/prisma/init-assigned-baseline.ts --file=<assigned.csv> --commit
+# 核對過 plan 之後才 commit(--actor 令 audit trail 有名有姓)
+npm run baseline:assigned -w @uop/api -- --file=<assigned.csv> --actor=<你的登入 email> --commit
 ```
 
-- **CSV 格式與步 4 完全相同**(header = `Opco.code`、col A = `businessAlias`、格 = 整數),只係數字語意由「買咗幾多」變成「**已經派咗幾多**」
-- **只寫 `assignedQuantity`**(鏡像反向 invariant:此 script 絕不改 `allocatedQuantity`)
-- row 唔存在會 create(`allocatedQuantity` 留 0,交由步 4 補)
-- 每格改動寫一條 `LedgerAdjustment`(`field=assignedQuantity`,reason 標 go-live baseline)= 與 ADR-0007 手動校正同一 audit 表
+輸出樣式(真實 dry-run):
+
+```
+Mapped: 23 OpCo columns · 8/8 SKU rows · 1 cell change(s)
+
+  OpCo            SKU                    before → target   delta
+  PFU-Asia        Microsoft_365_Copilot       0 → 7           +7
+
+DRY RUN — nothing written. Re-run with --commit to apply.
+```
+
+- **CSV 格式與步 4 完全相同**(header = `Opco.code`、col A = `businessAlias`、格 = 整數),只係數字語意由「買咗幾多」變成「**已經派咗幾多**」→ 所以**步 4 個範本可以直接改數字當步 5 用**
+- **只寫 `assignedQuantity`**(鏡像反向 invariant:此 script 絕不改 `allocatedQuantity`;有 test 鎖死,亦已對真 DB 驗過 —— commit 後 `allocatedQuantity` 仍然係 0)
+- row 唔存在會 create(`allocatedQuantity` 留 0,交由步 4 補);cell 值同現況一樣就跳過 → **重跑安全**(idempotent,唔會生重複 audit)
+- 每格改動寫一條 `LedgerAdjustment`(`field=assignedQuantity`,`reason='go-live baseline (init-assigned-baseline)'`)= 與 ADR-0007 手動校正同一 audit 表
+- 唔傳 `--actor` 都行(`LedgerAdjustment.actorId` 可為 null),但 script 會出 warning —— **建議一律傳**
 - ⚠️ **執行者權限等同 DB 直連**(script 唔經 API role guard)—— 只應由部署執行者跑
+- ⚠️ **唔可以**擴呢個 script 做重複性批量更新;有該需求 = 寫新 ADR 升級成 bulk endpoint(ADR-0014 Consequences)
 
 **唔可以咁做**:
 

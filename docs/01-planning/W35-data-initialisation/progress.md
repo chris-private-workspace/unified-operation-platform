@@ -173,6 +173,50 @@ Chris 問四件事:(1) 部署後點初始化 license assets(2) 唔用 template �
 
 ---
 
+## Day 4 — 2026-07-25:F3 assigned baseline script 完成(ADR-0014 落地)
+
+### Done
+- **抽共用對映層** `src/license/matrix-csv.ts` —— ADR-0014 明文要求「唔重寫對映邏輯,避免兩處 drift」。header→`Opco.code` / col-A→`businessAlias` / cell 消毒(`toQuantity`)集中一處,兩個 consumer(import 寫 allocated · baseline 寫 assigned)共用。**`allocation-import.service.ts` refactor 用佢,既有 8 個 spec 全綠 = 零行為改動**(呢個係我做 refactor 嘅 gate,跑咗先繼續)
+- **`src/license/assigned-baseline.ts`**:`planAssignedBaseline`(純函數,dry-run 同 commit 用同一計算)+ `applyAssignedBaseline`(一個 transaction:逐格 upsert → 一次 `createMany` 寫 `LedgerAdjustment`)。**故意用結構型別而唔用 `PrismaClient`** —— 令「只可以掂 `OpcoSkuLedger` 同 `LedgerAdjustment`」寫在簽名上,唔止寫在 body
+- **`prisma/init-assigned-baseline.ts`** 薄殼(argv / 讀檔 / DB 查詢 / 印表);`package.json` 加 `baseline:assigned`
+- **23 個新 test**(api 367 → **390**):10 個 plan/apply + 13 個 mapper。`src/` lint 0 · `tsc --noEmit` 0
+- runbook 步 5 由佔位改成真(含真實 dry-run 輸出樣式 + `--actor` 用法 + 兩個 ⚠️)
+
+### 真跑驗證(H7 —— 全部貼真 output;dev DB 只讀,寫入用 scratch DB)
+
+**A. dev DB dry-run ×2(read-only)** —— 用真 `/opcos`+`/license/catalog`+`/license/ledger` 砌兩個 CSV:
+- 同值 CSV → `Mapped: 23 OpCo columns · 8/8 SKU rows · 0 cell change(s)` → `Nothing to do`(184 格全對得上 = idempotent 對真數據成立)
+- 改一格 CSV → `1 cell change(s)`,`PFU-Asia Microsoft_365_Copilot 0 → 7 +7`,收 `DRY RUN — nothing written`
+
+**B. scratch DB `platform_w35_f3` 真 `--commit` ×2**(建→驗→drop,**真 `platform` DB 全程未動**):
+- 第一次:`Committed 3 assignedQuantity change(s); 3 LedgerAdjustment row(s) recorded.`;未 curate 嘅 row 正確報 skipped
+- DB 實查 `OpcoSkuLedger`:RHK×E3=120 · RTH×E3=45 · RHK×E1=8,而 **`allocatedQuantity` 三行全部 = 0** ⇒ **鏡像反向 invariant 對真 DB 成立**(唔止 mock)
+- DB 實查 `LedgerAdjustment`:3 行,`field=assignedQuantity` · `0→120/45/8` · `reason='go-live baseline (init-assigned-baseline)'` · actor 解析到 `chris.lai@rapo.com.hk`
+- `RTH×E1` CSV 值係 0 而 baseline 亦係 0 → **冇建 row**(0===0 no-op),符合設計
+- 第二次 commit:`0 cell change(s)` + `adjustment_rows` 仍然係 **3** ⇒ 重跑唔會生重複 audit
+- drop 後確認 dev DB:`ledger_rows=148 · total_assigned=6049 · adjustments=8`(同 CH-007 記錄一致,未被污染)
+
+### Decisions / Open-Questions Resolved
+- **refactor 邊界**:ADR-0014 要求共用對映,而 §1.3 又要求唔好亂 refactor。取捨 = **只抽 parse/mapping 呢一層**(兩個 consumer 真正共用嘅部分),**寫入語意各自保留**(import 寫 allocated + 一條 summary audit;baseline 寫 assigned + 逐格 `LedgerAdjustment`)。既有 spec 做安全網,先跑綠才繼續
+- **新增 `matrix-csv.spec.ts` 補一個真空白**:`toQuantity` 嘅負數 / 小數 / 垃圾輸入**從來冇 test 覆蓋過**(舊 service 有段 code 但冇 spec)。抽出嚟順手鎖死:`-5→0` · `12.9→12` · `abc→0`。若無呢層,CSV 一個負數就會寫負 assigned 落 ledger
+- **actor 處理**:script 冇認證 context;`LedgerAdjustment.actorId` schema 本身 optional(ADR-0007)→ 支援可選 `--actor=<email>` 解析,唔傳就 null 並印 warning。**唔加新 auth 機制**(會係 scope 蔓延)
+
+### Blockers
+- 無新增。**F1 / F2 / F3 全部完成**,只剩 F4(仍 `[BLOCKER]`,依 plan 等 F3 落地後重評)+ F2 嘅 G3(browser light+dark,等 Chrome extension)
+
+### F4 重評(依 plan 承諾,F3 落地後即做)
+F3 嘅 `upsert` **本身就會 create 唔存在嘅 row**(scratch DB 實證:3 行由零建出嚟,`allocatedQuantity` 留 default 0)。即係「批量建 row」已經有路。剩落嘅唯一缺口 = 「**唔用 CSV、唔靠 assign,想單獨開一格空 row**」,而我搵唔到真實使用場景(要管一個未 import 未 assign 嘅組合)。→ **AI 建議 F4 = 選項 C(唔做),登入 `DEFERRED_REGISTER` 等真實需求**。⚠️ **等 Chris 拍板,唔自行 close**
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F3 實作(ADR-0014) | 6.0 | ~5.5 | −0.5(含未計劃嘅共用層抽取 + mapper test) |
+
+### Commits
+- `<hash>` — `feat(license): W35 F3 — assigned baseline ops script(ADR-0014)`
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked

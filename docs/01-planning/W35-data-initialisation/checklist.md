@@ -40,14 +40,17 @@ last_updated: 2026-07-25
 - [x] 向 Chris 提 A/B/C/D 四選項(plan §2 F3 對照表)
 - [x] Chris 拍板 **選項 C**(一次性 ops script)→ 記入 progress Day 1
 - [x] 寫 **ADR-0014**(Accepted;`docs/adr/README.md` index 加行)
-- [ ] 建 `apps/api/prisma/init-assigned-baseline.ts`:讀 CSV → 對映(**抽用** `csv.ts` `parseCsv` + ADR-0004 對映做法,唔重寫)
-- [ ] dry-run 為 default(印 before → target → delta + skipped);commit 要 explicit flag
-- [ ] **只寫 `assignedQuantity`**(鏡像反向 invariant);row 唔存在則 create(allocated 留 default 0)
-- [ ] 每格改動寫一條 `LedgerAdjustment`(field=`assignedQuantity`,reason 標 go-live baseline)
-- [ ] H5:ledger write critical path → 同步寫 test(Graph / SN mock)
-- [ ] 加 test 鎖死**反向 invariant**:script 絕不改 `allocatedQuantity`
-- [ ] 加 `package.json` script entry + runbook 講明「執行者權限等同 DB 直連」(ADR-0014 Negative)
-- [ ] ⚠️ 唔可以擴 script 做重複性批量更新 —— 有該需求 = 回頭寫新 ADR 升級去選項 B
+- [x] **抽共用對映層** `src/license/matrix-csv.ts`(ADR-0014「唔重寫對映邏輯」)+ refactor `allocation-import.service.ts` 用佢 —— 既有 **8 個 spec 全綠 = 零行為改動**
+- [x] 建 `apps/api/prisma/init-assigned-baseline.ts`(薄殼:只做 argv / 檔案 / DB 查詢 / 印表)+ 邏輯放 `src/license/assigned-baseline.ts` 令 jest 覆蓋得到
+- [x] dry-run 為 default(印 before → target → delta + skipped);commit 要 explicit `--commit`
+- [x] **只寫 `assignedQuantity`**(鏡像反向 invariant);row 唔存在則 create(allocated 留 default 0)
+- [x] 每格改動寫一條 `LedgerAdjustment`(field=`assignedQuantity`,reason=`go-live baseline (init-assigned-baseline)`)+ 可選 `--actor=<email>` 解析
+- [x] H5:ledger write critical path → **23 個新 test**(10 plan/apply + 13 mapper;無 Graph/SN 依賴)
+- [x] test 鎖死**反向 invariant**:`update` keys 必須 `['assignedQuantity']`、`create` 必須只有三個 key、兩邊都唔可以出現 `allocatedQuantity`
+- [x] 加 `package.json` script entry `baseline:assigned` + runbook 步 5 由佔位改成真(含真實輸出樣式)+ 講明「執行者權限等同 DB 直連」
+- [x] ⚠️ 「唔可以擴 script 做重複性批量更新」已寫入 `assigned-baseline.ts` 檔頭 + script 檔頭 + runbook 步 5
+- [x] **verify:真跑**(見 progress Day 4)—— dev DB dry-run ×2(同值 0 change / 改一格剛好 1 change)+ scratch DB `--commit` ×2(3 格寫入 · `allocatedQuantity` 全 0 · 3 條 LedgerAdjustment 帶 actor · 重跑 0 change 且 audit 冇增)
+- [x] api test 367 → **390** 全綠;`src/` lint 0;`tsc --noEmit` 0
 - [ ] verify(G5):**乾淨 DB**(唔跑 demo seed,R5)跑完全鏈 → `POST /license/reconcile` **drift 清零**,貼真 response
 - [ ] F1 runbook 補回步 5(baseline 建立)
 
