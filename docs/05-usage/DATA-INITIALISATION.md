@@ -160,6 +160,10 @@ DRY RUN — nothing written. Re-run with --commit to apply.
 - ⚠️ **執行者權限等同 DB 直連**(script 唔經 API role guard)—— 只應由部署執行者跑
 - ⚠️ **唔可以**擴呢個 script 做重複性批量更新;有該需求 = 寫新 ADR 升級成 bulk endpoint(ADR-0014 Consequences)
 
+> **已知限制(DD-3)**:CSV 格值 0 而現況亦係 0 → **唔會建 ledger row**(no-op)。後果係:日後若 drift 落喺呢類 (OpCo, SKU) 組合,`PATCH /license/ledger/:id` 會 **404**(冇 row 可改),而平台**冇** endpoint 可以憑空建 row。
+> **現有 workaround**(ADMIN / ops):喺 CSV 該格填一個真數(或用步 4 import 填 allocated)令 row 物化,之後就 PATCH 得。⚠️ **OPCO_IT 冇 workaround** —— 佢改得但 create 唔到。
+> 詳情同解封條件見 `docs/01-planning/DEFERRED_REGISTER.md` **DD-3**。
+
 **唔可以咁做**:
 
 | 唔可以 | 點解 |

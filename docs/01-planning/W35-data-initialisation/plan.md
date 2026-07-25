@@ -86,7 +86,7 @@ prior_phase: W34-connector-config-ui
 - **Effort estimate**:決策 1h + 實作 6h(視選項)
 - **Owner**:決策 = Chris Lai · 實作 = AI
 
-### F4 — 🔴 `POST /license/ledger` 建空 row?【H1 決策 gate】
+### F4 — ✅ `POST /license/ledger` 建空 row?【已決:**C = defer → DD-3**】
 - **Spec ref**:`license.controller.ts`(現無此 endpoint)· `ledger-write.service.ts:58-62`(PATCH 需 row 存在,否則 404)· `ADR-0007`
 - **問題**:建 ledger row 只有兩條路 —— CSV import(`upsert` create)· assign 真人(`assign.service.ts:163` upsert)。**純手動由零開一格 = 目前做唔到**。
 - **🔴 觸發 H1** → 需決策:
@@ -97,10 +97,11 @@ prior_phase: W34-connector-config-ui
   | **B** | 唔加 endpoint,改為 import 加 `createMissingRows` flag(現時 `target === before` 即 `0 === 0` 會 skip,所以 0 值格唔會建 row) |
   | **C** ⭐ | **唔做** —— 若 F3 揀 B/C,批量機制順手會建齊所有需要嘅 row,F4 就係偽需求 → 登入 `DEFERRED_REGISTER` 等真實需求出現 |
 
-- **AI 建議**:**C,但要等 F3 決策先** —— F4 係唔係真需求,完全取決於 F3 揀咩。誠實講:如果 F3 解決咗批量建 row,「憑空開一格」嘅真實使用場景我搵唔到(用戶想手動管一個未 import 未 assign 嘅組合 = 罕見)。
-- **Acceptance criteria**:決策記入 progress;若揀 C → 寫入 `DEFERRED_REGISTER`(DD-N)並講清恢復條件;若揀 A/B → ADR + test + live 驗
-- **Effort estimate**:決策 0.5h + 實作 0–3h
-- **Owner**:決策 = Chris Lai · 實作 = AI
+- **決策**:**C = defer ✅**(Chris 2026-07-25;登記 **DD-3**)。⚠️ 決定所依據嘅理由**唔係**「冇需求」—— F3 落地後正式重評(progress Day 5)證實真場景存在:**drift 對回**撞上「該 (OpCo,SKU) 之前 assigned=0 故冇 row」→ `PATCH` 404,而 F3 script 對 `0===0` skip 所以幫唔到。defer 理由 = 需求**未到**(咬人場景全落喺未動工嘅 `Drift-resolve` / 未開放嘅 OpCo self-service 之內),且 A/B/D 嘅取捨取決於對回流程點設計。
+- **重評新增選項 D**(**未實作**,只留檔做將來候選):F3 script 加 `--materialise-zeros`,go-live 建齊 23×N 全格 → PATCH 永遠唔 404;零新 API surface,但只解 go-live 當刻。runbook 步 5 寫嘅係**限制 + 現有 workaround**,**冇**假裝有此 flag。
+- **Acceptance criteria**:✅ 決策記入 progress Day 6 · ✅ `DEFERRED_REGISTER` **DD-3**(兩個解封條件 + OPCO_IT 不對稱)· ✅ BACKLOG 同步(R7)· 無 code 改動、無 ADR(選項 C 唔新增 API surface)
+- **Effort estimate**:決策 0.5h + 實作 0h
+- **Owner**:決策 = Chris Lai
 
 ## 3. Success Criteria(Phase Gate)
 
@@ -155,6 +156,8 @@ Carry-over from `W34-connector-config-ui/progress.md`:
 | 2026-07-25 | **F2 deviation ①**:順手修 panel 一句過時文案(「only curated **M365** … D365 skipped」→ 「only SKUs you have curated …」) | 該句自 ADR-0008 D5 / W27 起已錯,且喺我改動嘅同一段文案內 | AI(記錄待 owner 過目) |
 | 2026-07-25 | **F2 deviation ②**:plan 只要求純函數 unit test,實際另加 **5 個 component test** | G3(browser light+dark)被 Chrome extension 未連上封鎖 → 補償性自動驗證,否則 UI 層零驗證 | AI(記錄待 owner 過目) |
 | 2026-07-25 | **G3 未達標**(browser light+dark 未驗)—— 唔阻 F2 其餘項,但 closeout 前必須補 | Chrome extension not connected | — |
+| 2026-07-25 | **F4 決:C = defer → DD-3**(重評揭真場景存在,故 defer 理由由「冇需求」改為「需求未到 + 形狀待對回流程定」);新增選項 D 留檔並寫入 runbook 做可選緩解 | Chris 拍板;分析見 progress Day 5 | **Chris Lai** |
+| 2026-07-25 | **G3 第二次嘗試仍失敗** —— `list_connected_browsers` 回 `[]`(零 extension instance),非 tab 選錯 | 環境問題,唔係 code 問題 | — |
 
 ---
 

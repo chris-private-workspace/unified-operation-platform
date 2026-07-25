@@ -54,12 +54,14 @@ last_updated: 2026-07-25
 - [ ] verify(G5):**乾淨 DB**(唔跑 demo seed,R5)跑完全鏈 → `POST /license/reconcile` **drift 清零**,貼真 response
 - [ ] F1 runbook 補回步 5(baseline 建立)
 
-## F4 — 🔴 `POST /license/ledger` 建空 row?【鎖住:等 F3 決策先】
+## F4 — ✅ `POST /license/ledger` 建空 row?【已決:C = defer → DD-3】
 
-- [ ] **[BLOCKER]** F3 決策後重評 F4 是否仍係真需求
-- [ ] Chris 拍板(A 加 endpoint / B import flag / C 唔做)→ 記入 progress
-- [ ] 若 C:寫入 `DEFERRED_REGISTER`(DD-N)+ 恢復條件
-- [ ] 若 A/B:ADR + 實作 + test + live 驗
+- [x] F3 落地後正式重評(progress **Day 5**:六條有依據事實 + 真場景推導 + 四選項);**修正** Day 4 初步結論(「冇真實場景」係錯)
+- [x] Chris 拍板 **C = defer**(2026-07-25)→ 記入 progress Day 6
+- [x] 寫入 `DEFERRED_REGISTER` **DD-3**:兩個解封條件(`Drift-resolve` 動工 / OpCo self-service 開放)+ **OPCO_IT 改得但 create 唔到**嘅不對稱 + 屆時屬 H1 需 ADR
+- [x] runbook 步 5 加「**已知限制(DD-3)**」段:0 值格唔建 row → 日後 PATCH 404 + 現有 workaround + OPCO_IT 冇 workaround。**冇**寫成有 `--materialise-zeros` flag(選項 D 未實作,只留喺 DD-3 做將來候選)
+- [x] BACKLOG 同步(R7)
+- [x] 無 code 改動 · 無 ADR(選項 C 唔新增 API surface)
 
 ---
 

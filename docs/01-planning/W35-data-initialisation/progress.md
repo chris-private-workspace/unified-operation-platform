@@ -269,6 +269,37 @@ Chris 問四件事:(1) 部署後點初始化 license assets(2) 唔用 template �
 
 ---
 
+## Day 6 — 2026-07-25:F4 拍板 = C(defer → DD-3)· G3 第二次嘗試仍失敗
+
+### Done
+- **F4 決策落地**(Chris 2026-07-25 揀 **C = defer**):
+  - `DEFERRED_REGISTER` 新增 **DD-3** —— 現況欄寫明真場景(drift 對回撞 0-assigned 無 row → `PATCH` 404,F3 script 因 `0===0` skip 故幫唔到)、**OPCO_IT 改得但 create 唔到**嘅不對稱(`license.controller.ts:127` vs `:93`)、ADMIN/ops workaround;**兩個解封條件**任一達成即重開(①`Drift-resolve` 動工 ②OpCo self-service 開放)+ 註明屆時屬 **H1 需 ADR**
+  - `plan.md` F4 段由「決策 gate」改「已決 C」+ changelog · `checklist.md` F4 全 tick · BACKLOG 同步(R7)
+  - **零 code 改動、零 ADR**(選項 C 唔新增 API surface)
+- **runbook 步 5 加「已知限制(DD-3)」段**:0 值格唔建 row → 日後 PATCH 404、現有 workaround、OPCO_IT 冇 workaround
+
+### ⚠️ 一個自我修正(避免文件講大話)
+我原本打算把選項 **D**(`--materialise-zeros`)當「可選緩解」寫入 runbook —— **停手改咗**:呢個 flag **根本未實作**,寫落 runbook 等於叫操作者用一個唔存在嘅功能。改為只寫**限制 + 現有 workaround**,D 留喺 DD-3 做將來候選。checklist / plan 相應措辭亦已改正。
+
+### G3(F2 browser light + dark)—— 第二次嘗試,仍然失敗
+- Chris 表示 extension 已連上 → 重試 `tabs_context_mcp{createIfEmpty:true}` → 同一個錯:`Browser extension is not connected`
+- 追加診斷 `list_connected_browsers` → **回 `[]`**(零個 extension instance)⇒ **唔係 tab 揀錯,而係我這邊完全冇 browser 連上**
+- 依 browser 工具紀律(失敗 2-3 次即停,唔盲重試)→ **停手,交還畀 Chris 決定點做**
+- 🔴 **G3 仍然未驗證。唔造假。** F2 嘅補償措施(5 個 component test)仍然有效,但**視覺 light/dark 對比零證據**
+
+### Decisions / Open-Questions Resolved
+- **OQ-W35-3(F4)→ resolved = C(defer,DD-3)**(R4:已同步 plan / checklist / DEFERRED_REGISTER / BACKLOG)
+- **仍 open**:`OQ-W35-2`(真實有存量嘅 (OpCo,SKU) 組合數量級)—— 已證實唔阻塞,建議 retro 一齊收
+- **仍未達標**:**G3**(唯一未 tick 嘅 acceptance)
+
+### Blockers
+- **G3** —— 需要一個真正連上嘅 Chrome extension,或者由 Chris 人眼確認 Settings › Integrations 嘅 light + dark。**呢個係 W35 closeout 前最後一項**
+
+### Commits
+- `<hash>` — `docs(planning): W35 F4 決 C defer(DD-3)+ runbook 限制註記`
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked
