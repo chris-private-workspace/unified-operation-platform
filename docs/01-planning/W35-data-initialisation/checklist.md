@@ -13,14 +13,16 @@ last_updated: 2026-07-25
 
 ## F1 — 端到端生產數據初始化 runbook
 
-- [ ] 起 `docs/05-usage/DATA-INITIALISATION.md` 骨架(7 步 + 每步驗證欄)
-- [ ] 步 1-2:migrate / seed / `POST /license/catalog/sync` —— 寫清需真 Graph 憑證(標 honest gap,R1)
-- [ ] 步 3:`businessAlias` / `category` curation —— 指向 Catalog 頁 Edit dialog(CH-003),講清 curation-as-scope = scope 邊界
-- [ ] 步 4:`POST /license/ledger/import` dry-run → 核 `skippedSkuLabels` / `unknownOpcoHeaders` → commit
-- [ ] 步 6-7:`POST /license/reconcile` 清零 + 開放前驗證清單
-- [ ] 修正 `W27-d365-scope/CURATION-D365.md:20` 過時句(「直接改 DB;未來 admin UI」→ CH-003 Edit dialog 已有)
-- [ ] H4 自檢:全文零真實 secret / 零真實 PII(範例全 placeholder)
-- [ ] verify(G1):本地由乾淨 DB 照 runbook 走一次,catalog sync 步標明未驗;實際跑到嘅步逐步貼真 output
+- [x] 起 `docs/05-usage/DATA-INITIALISATION.md` 骨架(7 步 + 每步驗證欄 + FAQ)
+- [x] 步 1-2:migrate(dev `prisma:migrate` / 部署 `prisma:deploy`)/ seed / `POST /license/catalog/sync` —— 標明需真 Graph 憑證(honest gap,R1);加警告 `demo:ledger` 絕不落生產
+- [x] 步 3:`businessAlias` / `category` curation —— 指向 Catalog 頁 Edit dialog(CH-003),講清 curation-as-scope = scope 邊界
+- [x] 步 4:`POST /license/ledger/import` dry-run → 核 `skippedSkuLabels` / `unknownOpcoHeaders` → commit;附真 CSV 例 + 三條對映規則表
+- [x] 步 5 佔位:ADR-0014 script 形態 + 「唔可以咁做」四項(等 F3 實作填實)
+- [x] 步 6-7:`POST /license/reconcile` 清零 + 開放前 8 項驗證清單(含假數清查)
+- [x] 修正 `W27-d365-scope/CURATION-D365.md:20` 過時句 + 加上位文件連結(避免兩份 runbook 重複)
+- [x] H4 自檢:全文零真實 secret / 零真實 PII —— 只列 env **變數名**(源自已 commit 嘅 `.env.example`),值全 placeholder
+- [x] **verify(G1)**:見 progress Day 2 —— scratch DB(`platform_w35_verify`,**唔碰** dev DB)跑 migrate deploy + seed 真 output;步 4 dry-run 三張清單行為真 output;步 2 / 步 6 因無 Graph 憑證**未驗**(誠實標明)
+- [x] **新發現補入 runbook**:步 6 reconcile **同樣硬依賴 Graph**(`reconcile.service.ts:22` live `consumedUnits`)→ 冇憑證連 go-live gate 都過唔到(前置表 + 步 6 + FAQ 三處同步)
 
 ## F2 — CSV 範本下載 + upload UI 格式說明
 

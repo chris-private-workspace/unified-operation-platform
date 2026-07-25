@@ -6,6 +6,8 @@ kind: deploy-time ops runbook
 
 # D365 SKU Curation Runbook（deploy-time ops）
 
+> **上位文件(2026-07-25,W35 F1)**:整體初始化流程(空 DB → 開放使用七步)見 **[`docs/05-usage/DATA-INITIALISATION.md`](../../05-usage/DATA-INITIALISATION.md)**。本文件 = 該流程**步 3(curation)嘅 D365 專門版**,兩者唔重複:通用步驟睇上位文件,D365 特定約定值同邊界睇本文件。
+
 > **用途**:令 D365 license SKU 全流程參與 catalog / ledger / 對帳(方案甲）/ drift / assign。**ADR-0008 D5 已將 D365 license 納入 scope**;平台機制**早就 SKU-agnostic**(見 W27 grounding),所以「納入 D365」= **純 curation / data 動作,零 code 改**。真 skuId curation 一律 **deploy-time**(真 tenant sync 後),同 M365 curation(ADR-0004)一致。
 
 ## 0. 前提(點解只需 curation)
@@ -17,7 +19,7 @@ kind: deploy-time ops runbook
 
 1. **Sync**:跑 `POST /license/catalog/sync`(ADMIN)→ D365 SKU 以 `skuId`(GUID)入 `SkuCatalog`,`businessAlias=null`、`category=null`、`displayName=skuPartNumber`(placeholder)。
    - ⚠️ sync **永不覆寫** human-curated 欄位(`businessAlias`/`category`/`displayName`/`isBaseLicense`)—— 見 `catalog.service.ts` 註;curate 咗唔會被下次 sync 沖走。
-2. **Curate**(直接改 DB;未來 admin UI)每個 D365 SKU:
+2. **Curate**(**SKU Catalog 頁逐行 Edit** —— `PATCH /license/catalog/:id`,CH-003 已建;無需直改 DB)每個 D365 SKU:
    - **`category = "Dynamics 365"`** ← 本 phase 約定值(asset-list view 分組用;`category` 係自由 `String?`,非 enum);與現有 `"Base"`/`"Add-on"`/`"Power Platform"`/`"Security"` 並列。
    - **`businessAlias = <Excel/import label>`** ← **只在要行 allocation-import(CSV budget)時需要**,值 = O365 Summary CSV col-A 對應 D365 row 嘅 label(如 `"D365 Sales Sub Per User"`)。若唔經 CSV import(靠 assign +1 / PATCH ledger 建 ledger row),可留 null。
    - `displayName`:可改成 human-friendly 官方名(選）。

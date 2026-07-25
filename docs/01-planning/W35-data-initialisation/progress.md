@@ -81,6 +81,53 @@ Chris 問四件事:(1) 部署後點初始化 license assets(2) 唔用 template �
 
 ---
 
+## Day 2 — 2026-07-25:F1 runbook 完成
+
+### Done
+- **`docs/05-usage/DATA-INITIALISATION.md`** 建成(依 `_TEMPLATE-how-to.md` 格式):前置表 → 七步(每步含 UI 路徑 + endpoint + 預期輸出 + 驗證)→ 驗證段 → 8 行 FAQ → 相關文件
+- 步 4 附**真 CSV 例** + 三條對映規則表(header exact `Opco.code` / col-A exact `businessAlias` / 格非負整數)
+- 步 5 = ADR-0014 script 佔位(形態 + dry-run/commit 用法),並列「**唔可以咁做**」四項(期望 import 填 assigned · 靠 assign 補歷史 · 逐格填 851 格 · 擴 script 做重複更新)
+- `CURATION-D365.md`:修正過時句(`:20`「直接改 DB;未來 admin UI」→ CH-003 Edit dialog 已建)+ 加上位文件連結,明確分工(通用步驟睇 runbook / D365 約定值睇該文件)
+
+### G1 驗證實據(唔碰現有 dev DB)
+
+**步 1 —— scratch DB `platform_w35_verify`**(`CREATE DATABASE` → 驗 → `DROP DATABASE`;真 `platform` DB 全程未動,drop 後 `\l` 確認只剩 platform/postgres/template*):
+- `npx prisma migrate deploy` datasource 行確認打中 **`platform_w35_verify`**(shell env 蓋過 `.env`),**11 個 migration 全部 applied**
+- `npm run seed` 真 output 兩行,與 runbook 步 1 寫嘅**逐字一致**:`LOCAL_ADMIN_INITIAL_PASSWORD not set — skipping local admin seed.` + `Seeded 23 OpCos + admin + RHK OPCO_IT user.`
+- `ANALYZE` + `pg_stat_user_tables`:**15 表**,有 row 嘅只有 `AppUser`=2 · `Opco`=23 · `_prisma_migrations`=11 → **`SkuCatalog` / `OpcoSkuLedger` / `DriftAlert` 全 0**,實證 runbook「seed 唔建 catalog / ledger」嘅聲明(`seed.ts:105` 註)
+
+**步 4 —— dry-run 真 round-trip**(現有 dev DB,`dryRun: true` 寫唔到 DB,`committed: 0` 佐證):
+餵一個**刻意含三種情況**嘅 CSV(真 `Opco.code` ×2 + `Grand Total` + 假 code `NOSUCHOPCO`;真 curated alias `F3 Frontline` + 未 curate label),回應逐條印證 runbook 步 4 嘅規則:
+- `opcoColumns: 2` —— `Grand Total` 被忽略 ✅
+- `unknownOpcoHeaders: ["NOSUCHOPCO"]` —— 對唔上唔會靜靜食咗 ✅
+- `mappedSkuRows: 1` · `skippedSkuLabels: ["Definitely Not A Curated Label"]` —— curation-as-scope ✅
+- `changes` 逐格列 before → target → delta(含 `70 → 3` = `-67`)✅
+
+**真實數據佐證 curation 就係 scope 閘門**:本地 `GET /license/catalog` = **99 個 active SKU,只有 8 個有 `businessAlias`** —— 即現狀下 91 個 SKU 永遠入唔到 ledger,直到有人 curate。
+
+### 🔴 未驗證(honest gap,唔造假)
+- **步 2**(`catalog/sync`)+ **步 6**(`reconcile`)**都未 live 驗** —— 兩者都 live 讀 tenant,本地同 UAT 都冇真 Graph 憑證(UAT 係 placeholder,W33 D3)
+- 步 5 script 本身未存在(F3 待實作)→ 步 5 只有形態,未有真 output
+- 步 7 第 4-5 項(`tenant-skus` 合理性 / **零 OPEN drift**)未驗 —— 依賴步 2/6
+
+### Decisions / Open-Questions Resolved
+- **新發現(runbook 已補)**:步 6 reconcile **同樣硬依賴 Graph**(`reconcile.service.ts:22` live `consumedUnits`)。原本 plan 只當步 2 有此限制;實際係**冇真憑證連 go-live gate(零 drift)都過唔到** → 真憑證唔係「之後補」,係初始化硬前置。已同步落 runbook 三處(前置表 / 步 6 / FAQ),並令 `DEPLOY-harden` 對本 phase 嘅阻塞關係更明確(R1 影響範圍由一步擴至兩步)
+- **驗證手法決定**:用 scratch DB 而非重置 dev DB —— dev DB 有 demo 數據,重置屬破壞性且對驗證無額外價值(R5 只要求「驗 baseline 用乾淨 DB」,scratch DB 已滿足)
+
+### Blockers
+- 無新增。F1 完成;F2 可即開;F3 script 可即開(ADR-0014 已 Accepted)
+- F4 仍 `[BLOCKER]`(等 F3 落地後重評)
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F1 runbook | 4.0 | ~3.5 | −0.5 |
+
+### Commits
+- `<hash>` — `docs(usage): W35 F1 — license assets 生產數據初始化 runbook`
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked
