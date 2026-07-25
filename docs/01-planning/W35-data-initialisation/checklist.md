@@ -26,13 +26,14 @@ last_updated: 2026-07-25
 
 ## F2 — CSV 範本下載 + upload UI 格式說明
 
-- [ ] `lib/` 加範本生成純函數(header ← 真 `Opco.code`;rows ← 已 curate `businessAlias`)+ unit test
-- [ ] 未 curate 情境:唔生空檔,改出提示 + 另列未 curate SKU
-- [ ] `allocation-import.tsx` 加 Download template 按鈕(`Blob` + `createObjectURL`,零新 dep)
-- [ ] upload 卡加三條對映規則說明 + curation 前提
-- [ ] H6 自檢:跑 `ui-design` skill(token-only · 一個 view 一個 primary action · lucide · light+dark)
-- [ ] verify(G2):下載 → 原封上傳 → dry-run 真 response `changes: 0` + `unknownOpcoHeaders: []`,貼真 output
-- [ ] verify(G3):browser light + dark 實看格式說明
+- [x] `lib/allocation-template.ts` 純函數(header ← 真 `Opco.code`;rows ← 已 curate `businessAlias`)+ **10 unit test**
+- [x] 未 curate 情境:唔生空檔(`ok:false` + `no-curated-sku`),UI 出提示 + 另列未 curate SKU(capped 12)
+- [x] `allocation-import.tsx` 加 Download template 按鈕(`Blob` + `createObjectURL`,**零新 dep**)
+- [x] upload 卡加三條對映規則說明 + curation 前提 + 「更新 allocated only」講明
+- [x] H6 自檢:跑 `ui-design` skill —— **揪到兩個真問題並修**(DS-2 唔好發明新間距值 → `gap-[6px]`/`mt-[8px]` 對齊檔內既有 scale;DS-5 未 curate 嘅 `skuPartNumber` 係識別碼 → 加 `mono` prop)
+- [x] **verify(G2)**:真 round-trip 通過 —— 真 `/opcos`+`/license/catalog`+`/license/ledger` → 生成 → POST dry-run 回 `opcoColumns:23 · skuRows:8 · mappedSkuRows:8 · changes:0` · `skipped:[]` · `unknownOpcoHeaders:[]`(臨時 test 檔驗完已刪,唔入 repo)
+- [ ] ⚠️ **verify(G3):browser light + dark 未驗** —— Chrome extension 未連上("Browser extension is not connected")。改為加 **5 個 component test** 覆蓋 UI wiring(格式文案 / 下載 blob / 未 curate 唔生檔 / out-of-scope 提示 / 資料未齊 disabled);**視覺 light+dark 仍需人眼確認**
+- [x] web test 136 → **151**(+10 純函數 +5 component);lint 0 · `tsc --noEmit` 0 · `npm run build` 成功(最大 chunk 254KB,無變化)
 
 ## F3 — ✅ `assignedQuantity` baseline 機制【已解鎖:選項 C · ADR-0014】
 

@@ -1,24 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
   Check,
+  Download,
   FileText,
   Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Toast } from '@/components/ui/toast';
 import { useAllocationImport } from '@/hooks/mutations';
+import { useCatalog, useLedger, useOpcos } from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
+import { buildAllocationTemplate } from '@/lib/allocation-template';
 import type { LedgerImportResult } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 
 const MAX_ROWS = 100; // preview table cap — long imports note the remainder
+const MAX_UNCURATED = 12; // uncurated list can be ~90 long — cap it, note the rest
 
 // Allocation import (ADR-0004 / W13). Regional IT uploads the O365 List sheet as
 // CSV; the panel previews the server's classified dry-run (mapped changes +
 // skipped rows) before an explicit commit. allocatedQuantity only — the backend
 // never touches the assigned baseline. token-only, light + dark (H6).
+//
+// W35 F2: the mapping rules are exact-match and unforgiving (header === Opco.code,
+// col A === SkuCatalog.businessAlias), so the panel now states them and offers a
+// dynamically generated template — without one, an operator cannot know what to
+// feed and every row lands in skippedSkuLabels.
 export function AllocationImportPanel() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -31,6 +40,23 @@ export function AllocationImportPanel() {
   } | null>(null);
 
   const imp = useAllocationImport();
+
+  // Template sources are live so the file can never go stale as OpCos (CH-004) or
+  // curated aliases (CH-003) change. Only fetched while this tab is mounted.
+  const opcos = useOpcos();
+  const catalog = useCatalog();
+  const ledger = useLedger();
+  const template = useMemo(
+    () =>
+      opcos.data && catalog.data && ledger.data
+        ? buildAllocationTemplate({
+            opcos: opcos.data,
+            catalog: catalog.data,
+            ledger: ledger.data,
+          })
+        : null,
+    [opcos.data, catalog.data, ledger.data],
+  );
 
   // Auto-dismiss the toast (Toast itself has no timer — caller owns it, FE-3).
   useEffect(() => {
@@ -55,6 +81,33 @@ export function AllocationImportPanel() {
     setCsv(text);
     setPreview(null);
     setCommitted(null);
+  };
+
+  // Client-side generation → zero new dependency, and nothing to keep in sync
+  // server-side. Blocked results explain themselves rather than emitting an empty
+  // file (an empty template would import 0 rows and read as a broken import).
+  const downloadTemplate = () => {
+    if (!template) return;
+    if (!template.ok) {
+      setToast({
+        message:
+          template.reason === 'no-curated-sku'
+            ? 'No SKU has a business alias yet — curate at least one in SKU Catalog first.'
+            : 'No OpCos found — seed OpCos before importing allocations.',
+        tone: 'danger',
+      });
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([template.csv], { type: 'text/csv;charset=utf-8' }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = template.fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const runPreview = () => {
@@ -104,12 +157,65 @@ export function AllocationImportPanel() {
         </h3>
         <p className="mt-[6px] text-[11.5px] leading-[1.5] text-fg-subtle">
           Upload the O365 license summary exported as CSV. Each SKU row maps to
-          a catalog entry by its business alias; only curated M365 SKUs are
-          imported — D365 and other rows are listed as skipped. You’ll preview
-          every change before it’s written.
+          a catalog entry by its business alias; only SKUs you have curated are
+          imported — uncurated rows are listed as skipped and never written.
+          You’ll preview every change before it’s written. This updates the
+          allocated budget only — the assigned baseline is never touched.
         </p>
 
-        <div className="mt-[14px] flex items-center gap-[12px]">
+        {/* Format contract — the mapping is exact-match, so state it explicitly. */}
+        <div className="mt-[14px] rounded-[10px] border border-border bg-hover p-[12px]">
+          <div className="text-[11.5px] font-medium text-fg-muted">
+            CSV format
+          </div>
+          <ul className="mt-[7px] flex flex-col gap-[6px] text-[11.5px] leading-[1.5] text-fg-subtle">
+            <li>
+              <span className="text-fg-muted">Row 1</span> — one column per
+              OpCo, matching the OpCo{' '}
+              <span className="font-mono text-[11px] text-fg-muted">code</span>{' '}
+              exactly. A{' '}
+              <span className="font-mono text-[11px] text-fg-muted">
+                Grand Total
+              </span>{' '}
+              column is ignored; anything unrecognised is reported, never
+              guessed.
+            </li>
+            <li>
+              <span className="text-fg-muted">Column A</span> — the SKU’s
+              business alias, exactly as curated in SKU Catalog. No match →
+              skipped.
+            </li>
+            <li>
+              <span className="text-fg-muted">Cells</span> — whole seat counts.
+              Blank or non-numeric reads as{' '}
+              <span className="font-mono text-[11px] text-fg-muted">0</span>.
+            </li>
+          </ul>
+          {template?.ok && (
+            <p className="mt-[8px] text-[11.5px] leading-[1.5] text-fg-subtle">
+              The template below is generated from your{' '}
+              <span className="font-mono text-[11px] text-fg-muted">
+                {template.opcoCount}
+              </span>{' '}
+              OpCos and{' '}
+              <span className="font-mono text-[11px] text-fg-muted">
+                {template.skuCount}
+              </span>{' '}
+              curated SKUs, pre-filled with the current allocation — edit the
+              numbers and upload it back. Re-uploading it unchanged is a no-op.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-[14px] flex flex-wrap items-center gap-[12px]">
+          <Button
+            variant="secondary"
+            icon={<Download size={15} strokeWidth={2} />}
+            onClick={downloadTemplate}
+            disabled={!template}
+          >
+            Download template
+          </Button>
           <Button
             variant="secondary"
             icon={<Upload size={15} strokeWidth={2} />}
@@ -124,6 +230,20 @@ export function AllocationImportPanel() {
             </span>
           )}
         </div>
+
+        {/* Curation is the scope gate (ADR-0004 #3) — surface what is outside it
+            here, before an import silently skips those rows. */}
+        {template?.ok && template.uncuratedSkus.length > 0 && (
+          <SkippedNote
+            title={`${template.uncuratedSkus.length} active ${plural(
+              template.uncuratedSkus.length,
+              'SKU',
+            )} have no business alias — they are out of scope until curated in SKU Catalog`}
+            items={template.uncuratedSkus}
+            max={MAX_UNCURATED}
+            mono
+          />
+        )}
 
         {csv && !preview && !committed && (
           <div className="mt-[16px]">
@@ -322,7 +442,21 @@ function Chip({
   );
 }
 
-function SkippedNote({ title, items }: { title: string; items: string[] }) {
+function SkippedNote({
+  title,
+  items,
+  max,
+  mono,
+}: {
+  title: string;
+  items: string[];
+  /** Cap the listed items (the uncurated list can run to ~90) — the rest is counted. */
+  max?: number;
+  /** Items are identifiers (skuPartNumber) rather than prose labels → mono (DS-5). */
+  mono?: boolean;
+}) {
+  const shown = max ? items.slice(0, max) : items;
+  const hidden = items.length - shown.length;
   return (
     <div className="mt-[14px] rounded-[10px] border border-border bg-hover p-[12px]">
       <div className="flex items-center gap-[7px] text-[12px] font-medium text-fg-muted">
@@ -330,11 +464,22 @@ function SkippedNote({ title, items }: { title: string; items: string[] }) {
         {title}
       </div>
       <div className="mt-[7px] flex flex-col gap-[3px]">
-        {items.map((it) => (
-          <span key={it} className="text-[11.5px] text-fg-subtle">
+        {shown.map((it) => (
+          <span
+            key={it}
+            className={cn(
+              'text-[11.5px] text-fg-subtle',
+              mono && 'font-mono text-[11px]',
+            )}
+          >
             {it}
           </span>
         ))}
+        {hidden > 0 && (
+          <span className="text-[11.5px] text-fg-subtle">
+            +{hidden} more not shown
+          </span>
+        )}
       </div>
     </div>
   );

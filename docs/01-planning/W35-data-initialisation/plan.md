@@ -152,6 +152,9 @@ Carry-over from `W34-connector-config-ui/progress.md`:
 | 2026-07-25 | Initial plan(**draft**) | Chris 要求開 phase 統籌四個 data-init 缺口 | — |
 | 2026-07-25 | **status draft → active**;plan version 1.0 → 1.1 | Chris approve plan(R1 pre-doc gate 達成)| **Chris Lai** |
 | 2026-07-25 | **F3 H1 gate 解除** → 選項 **C**(一次性 ops script);寫 **ADR-0014**;D3 決策提早於 D1 完成 | Chris 同日拍板,唔需等 D3 | **Chris Lai** |
+| 2026-07-25 | **F2 deviation ①**:順手修 panel 一句過時文案(「only curated **M365** … D365 skipped」→ 「only SKUs you have curated …」) | 該句自 ADR-0008 D5 / W27 起已錯,且喺我改動嘅同一段文案內 | AI(記錄待 owner 過目) |
+| 2026-07-25 | **F2 deviation ②**:plan 只要求純函數 unit test,實際另加 **5 個 component test** | G3(browser light+dark)被 Chrome extension 未連上封鎖 → 補償性自動驗證,否則 UI 層零驗證 | AI(記錄待 owner 過目) |
+| 2026-07-25 | **G3 未達標**(browser light+dark 未驗)—— 唔阻 F2 其餘項,但 closeout 前必須補 | Chrome extension not connected | — |
 
 ---
 

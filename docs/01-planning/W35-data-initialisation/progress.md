@@ -128,6 +128,51 @@ Chris 問四件事:(1) 部署後點初始化 license assets(2) 唔用 template �
 
 ---
 
+## Day 3 — 2026-07-25:F2 CSV 範本 + UI 格式說明完成
+
+### Done
+- **`lib/allocation-template.ts`** 純函數(零新 dep):header ← 真 `Opco.code`(sorted)· rows ← 已 curate `businessAlias`(sorted)· RFC 4180 引號逃逸 · BOM 前置(Excel UTF-8,後端 `parseCsv` 會 strip)· `Grand Total` 刻意唔生
+- **`allocation-import.tsx`**:Download template 掣(secondary)· CSV format 說明卡(三條規則)· 未 curate SKU 提示(capped 12 + 「+N more」)· 描述補「只更新 allocated,assigned 永不受影響」
+- **test**:10 純函數 + 5 component;web **136 → 151**;lint 0 · tsc 0 · build 成功(最大 chunk 254KB 不變)
+
+### 兩個設計決定(值得記錄)
+1. **動態生成,唔用靜態檔** —— OpCo(CH-004 可改)同 curated alias(CH-003 可改)都會變,靜態範本必然過時。
+2. **格填「當前 `allocatedQuantity`」而唔係空白** —— 令「下載 → 原封上傳」= 零改動(import `target === before` 就 skip),操作者係**改現有數字**而唔係由白紙打 23×N 格。全新系統仲未有 ledger row → 每格自然係 0,退化成純結構範本,round-trip 一樣零改動。**呢個決定係 G2 acceptance(`changes: 0`)成立嘅前提** —— 若範本留空白,原封上傳會把所有現有 allocation 歸零,`changes` 等於現有非零格數,G2 反而唔可能過。
+
+### G2 驗證實據(真 round-trip)
+用**真嘅生成函數**打**真後端**(臨時 test 檔,驗完已刪,唔入 repo):
+- 生成:`opcos=23 curatedSkus=8 uncurated=91`;header 第一行含真 code(`PFU-Asia,PFU-HK,RAP,RAPO/APTC,…,RVN`)
+- dry-run 回應:`{"opcoColumns":23,"skuRows":8,"mappedSkuRows":8,"changes":0}` · `skippedSkuLabels: []` · `unknownOpcoHeaders: []` · `committed: 0`
+- ⇒ **範本格式真係食得落**,而且 idempotent
+
+### H6 / ui-design 自檢 —— 揪到兩個真問題(已修)
+- **DS-2(唔 eyeball)**:我原本寫 `gap-[5px]` / `mt-[9px]`,係檔內冇出現過嘅新間距值 = 憑感覺調 → 改用既有 scale `gap-[6px]` / `mt-[8px]`
+- **DS-5(識別碼 mono)**:未 curate 列表出嘅係 `skuPartNumber`(識別碼,唔同於既有 skipped list 嘅 business alias 散文標籤)→ 加 `mono` prop,只套用喺新 note(唔改既有 alias 列表,out of scope)
+- 其餘:DS-1 色 ✅ 零 hex(grep 實查)· DS-3 ✅ Download = secondary,唯一 primary 仍係 Preview/Commit · DS-6 ✅ lucide `Download` stroke · DS-7 ✅ 無陰影/gradient,深度靠 1px border + `bg-hover` · DS-9 ✅ 零 motion · DS-10 ✅ sentence case 短 label · DS-11 N/A(prototype 無此 panel;panel 本身 W13 已存在,design-system §6 登記嘅係**畫面/導航**而唔係畫面內 panel)· DS-12 ✅
+- 🟡 **DS-1 附註(唔係本次引入)**:design-system §0.1 字面要求「唔 hardcode … 間距 / 半徑 hex/**px**」,但全 repo(含本檔改動前)一律用 arbitrary px class(`p-[18px]` / `text-[13px]` / `rounded-[12px]`)。我跟咗檔內既有 idiom(§1.3 match existing style),**冇擅自發起 repo-wide refactor**。契約與實作之間呢個張力值得 owner 拍板(要就開獨立 change,唔應夾喺 F2)
+
+### 🔴 未驗證(honest gap)
+- **G3 browser light + dark 未驗** —— Chrome extension 未連上(工具回 "Browser extension is not connected")。**唔造假**:token class 理論上會 swap,但我冇親眼見過。補償措施 = 5 個 component test 鎖住 UI wiring(格式文案 / 下載真係出 CSV blob / 未 curate 唔生檔 / out-of-scope 提示 / 資料未齊 disabled),但**視覺對比仍需人眼**
+- jsdom 喺 `a.click()` 打印 `Not implemented: navigation` stderr —— 係 jsdom 冇實作 blob URL 導航,**test 通過**,同既有 React Router warning 同類噪音
+
+### Decisions / Open-Questions Resolved
+- **順手修一句錯文案(R3 deviation,已記)**:panel 原描述寫「only curated **M365** SKUs are imported — **D365** and other rows are listed as skipped」,呢句自 **ADR-0008 D5 / W27** 起已經錯(D365 curate 咗就一視同仁入 ledger)。改為「only SKUs you have curated are imported — uncurated rows …」。屬我改動範圍內嘅同一段文案,故一併修正而非留錯
+- **plan 外增補(R3 deviation,已記)**:plan F2 只要求純函數 unit test,冇要求 component test。因 G3 browser 驗證被封,加 5 個 component test 作為補償性自動驗證。若唔加,F2 嘅 UI 層將**完全冇驗證**
+
+### Blockers
+- **G3 需要 Chrome extension** —— 要 Chris 連上 extension 之後我再跑,或者 Chris 自己 browser 睇一眼 Settings › Integrations(light + dark)
+- F4 仍 `[BLOCKER]`(等 F3 落地後重評)
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F2 範本 + UI 說明 | 5.0 | ~4.5 | −0.5(G3 未計,被 extension 封) |
+
+### Commits
+- `<hash>` — `feat(web): W35 F2 — allocation CSV 範本下載 + import 格式說明`
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked
