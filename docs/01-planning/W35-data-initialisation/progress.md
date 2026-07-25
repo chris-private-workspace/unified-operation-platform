@@ -204,8 +204,8 @@ Chris 問四件事:(1) 部署後點初始化 license assets(2) 唔用 template �
 ### Blockers
 - 無新增。**F1 / F2 / F3 全部完成**,只剩 F4(仍 `[BLOCKER]`,依 plan 等 F3 落地後重評)+ F2 嘅 G3(browser light+dark,等 Chrome extension)
 
-### F4 重評(依 plan 承諾,F3 落地後即做)
-F3 嘅 `upsert` **本身就會 create 唔存在嘅 row**(scratch DB 實證:3 行由零建出嚟,`allocatedQuantity` 留 default 0)。即係「批量建 row」已經有路。剩落嘅唯一缺口 = 「**唔用 CSV、唔靠 assign,想單獨開一格空 row**」,而我搵唔到真實使用場景(要管一個未 import 未 assign 嘅組合)。→ **AI 建議 F4 = 選項 C(唔做),登入 `DEFERRED_REGISTER` 等真實需求**。⚠️ **等 Chris 拍板,唔自行 close**
+### F4 初步重評 —— ⚠️ **已被 Day 5 取代,結論有誤,勿引用**
+當時寫:「批量建 row 已有路,剩落嘅缺口搵唔到真實使用場景 → 建議唔做」。**錯咗**:真場景存在,而且就喺已寫入 DESIGN 嘅 drift 對回流程裡面(`DESIGN.md:98/101/172`)。完整、有依據嘅重評見 **Day 5**。保留本段只為留下修正軌跡。
 
 ### Actual vs Planned Effort
 | Deliverable | Planned (h) | Actual (h) | Variance |
@@ -214,6 +214,58 @@ F3 嘅 `upsert` **本身就會 create 唔存在嘅 row**(scratch DB 實證:3 行
 
 ### Commits
 - `<hash>` — `feat(license): W35 F3 — assigned baseline ops script(ADR-0014)`
+
+---
+
+## Day 5 — 2026-07-25:F4 正式重評(**分析留檔,唔含決定**)
+
+> 依 plan §2 F4 承諾「F3 落地後重評」。本段係**證據 + 選項 + 建議**;F4 觸發 **H1**,決定權在 Chris,**未拍板前唔動 code、唔寫 `DEFERRED_REGISTER`**。
+> 🔁 **修正**:Day 4 嘅初步重評結論(「搵唔到真實使用場景」)**係錯嘅**,本段取代之。
+
+### 查證到嘅事實(逐條有依據)
+
+| # | 事實 | 依據 |
+|---|---|---|
+| 1 | Assets By-OpCo 只列**已存在**嘅 ledger row;inline edit 係 per-row `✎`。**全站冇任何 create 入口** | `apps/web/src/components/assets/by-opco-view.tsx:252`(`rows = ledger.data ?? []`) |
+| 2 | `PATCH /license/ledger/:id` 容許 **OPCO_IT**(scope-gated),但 `POST /license/ledger/import` 係 **ADMIN/REGIONAL only** ⇒ **OPCO_IT 改得,但永遠 create 唔到 row** | `license.controller.ts:127` vs `:93` |
+| 3 | 平台**冇** `POST /license/ledger`;建 row 只有三條路,全部 upsert 副作用:import(ADMIN)· assign 真人(W04)· F3 baseline script(ops) | `license.controller.ts` 全查 · `assign.service.ts:163` · `assigned-baseline.ts` |
+| 4 | **drift 對回機制嘅正式定義 = 手動編輯 by-OpCo `assignedQuantity`** | `DESIGN.md:98` · `:101` · `:172`(ADR-0007 / W23-A) |
+| 5 | F3 script 對 `0 === 0` 會 skip ⇒ fresh 系統**只有 assigned > 0 嘅組合有 row** | scratch DB 實證:`RTH×E1` CSV 值 0、baseline 0 → 冇建 row(Day 4) |
+| 6 | 「OpCo self-service 開放時機」仍係 open question | `DESIGN.md:173` · `:20`(「license 數量管理責任屬 OpCo,將來 self-service 交回」) |
+
+### 真實場景(Day 4 判斷錯咗嘅地方)
+
+事實 4 + 5 + 1 合埋就有一個**功能洞**,而且落喺已文件化嘅流程:
+
+> 某 SKU 爆 drift(tenant `consumedUnits` > 平台 Σ assigned),operator 查到差異落喺 OpCo X。
+> 但 X 對該 SKU 之前 assigned = 0 → **冇 ledger row** → `PATCH /license/ledger/:id` 回 **404** → **對回做唔到**。
+
+呢個情境普通到不行:有人喺 tenant 直接被 assign(繞過平台),平台從來冇該 (OpCo, SKU) 組合。F3 baseline **幫唔到** —— 0 值格本來就唔建 row(事實 5)。再加事實 2,OPCO_IT 連 workaround 都冇。
+
+### 選項(比 plan 原本三個多一個)
+
+| | 做法 | 評價 |
+|---|---|---|
+| **A** | `POST /license/ledger` 建 0/0 空 row(roles 鏡像 PATCH:ADMIN/REGIONAL/OPCO_IT + `assertOpcoScope` fail-closed) | 直接;但要為「建空 row」定 audit 語意 —— before/after 都係 0,`LedgerAdjustment`(ADR-0007)唔貼切 → 可能要加 `AuditLog` 第 15 個 action,**掂 ADR-0009 Decision 4** |
+| **B** | `PUT /license/ledger/:opcoId/:skuCatalogId`(按 natural key upsert) | REST 上最貼 schema(`@@unique([opcoId, skuCatalogId])`),**一個 endpoint 同時解 create + edit-missing**;代價 = 同 W23-A 既有 PATCH 重疊,兩條寫入路並存 |
+| **C** | **唔做,defer**,解封條件寫明:`Drift-resolve` 動工 **或** OpCo self-service 開放 | 洞只喺對回流程咬人,而對回本身係未建候選;期間 ADMIN/ops 有 workaround(跑 baseline script / import 物化 row) |
+| **D** | F3 script 加 `--materialise-zeros`:go-live 把 23×N 全格建齊(今日 23×8 = 184 行;全 curate 後 23×37 = 851 行,對 Postgres 微不足道)⇒ PATCH 永遠唔 404 | 純 data 解法、零新 API surface;**但只解 go-live 當刻** —— 之後新 curate 嘅 SKU / 新增 OpCo 又會再出現同一個洞 |
+
+### AI 建議 = **C**(理由同 Day 4 完全唔同)
+
+**唔係**「冇需求」,而係:
+1. 需求真實但**未到** —— 咬人場景全部落喺 `Drift-resolve`(BACKLOG 候選,未動工)同 OpCo self-service(`DESIGN.md:173` open)之內
+2. A / B / D 三個形狀嘅取捨**取決於對回流程點設計**(邊個 role 對回?逐格定批量?)—— 現在拍板等於猜
+3. 期間唔卡死任何人:ADMIN/ops 有 workaround
+
+配套建議(若揀 C):`DEFERRED_REGISTER` 條目要寫明**兩個解封條件** + **事實 2 嘅不對稱**(OPCO_IT 改得但 create 唔到),並把 **D** 記入 runbook 做 go-live 可選緩解。
+
+### 仍 open
+- **OQ-W35-3(F4)** —— 待 Chris 揀 A / B / C / D。**未拍板前唔寫 `DEFERRED_REGISTER`、唔動 code**(H1)
+- **OQ-W35-2**(真實有存量嘅 (OpCo,SKU) 組合數量級)—— 到今日仍未答,但已證實唔阻塞任何嘢
+
+### Commits
+- `<hash>` — `docs(planning): W35 F4 重評留檔(analysis only,未拍板)`
 
 ---
 
