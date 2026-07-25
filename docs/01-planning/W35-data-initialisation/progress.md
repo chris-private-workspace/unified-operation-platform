@@ -2,7 +2,7 @@
 phase: W35-data-initialisation
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | closed
+status: closed    # in-progress | closed
 ---
 
 # Phase W35 — Progress
@@ -339,26 +339,64 @@ Playwright 預設把截圖寫落 **repo root**(兩個 PNG,未被 gitignore)→ �
 
 ---
 
-## Retro(填於 phase 結束)
+## Retro(2026-07-25 closeout)
 
 ### What worked
 
+- **Runbook 先行係正確次序**。F1 逼我把七步逐個對返 code / endpoint,結果**喺寫文件過程中就揭到兩個 code 事實**:①`reconcile` 同 `catalog/sync` 一樣硬依賴 Graph(原本 plan 只當步 2 有此限制)②F3 script 嘅使用步驟有咗歸宿(步 5 佔位 → 落地後回填)。若先寫 code 後補文件,呢兩點會漏。
+- **既有 spec 當 refactor gate**。F3 要抽共用對映層 → 動到 critical-path 嘅 `allocation-import.service.ts`。做法係「改完即刻跑該檔 8 個 spec,綠咗才繼續」,而唔係最後一次跑全套。呢個習慣令 refactor 風險由「事後發現」變「即時發現」。
+- **scratch DB 係寫入路徑嘅正解**。F3 嘅 `--commit` 用 mock 驗唔到「`allocatedQuantity` 真係冇被寫」。建一個 `platform_w35_f3` 真跑 + `psql` 實查,得到最強證據(三行 alloc 全 0),而 dev DB 全程未動(收尾 148 rows / assigned 6049 對得返 CH-007 記錄)。
+- **決策 gate 分兩段(拍板 → 落地)**。F3/F4 都係先 STOP 出選項表、拍板、寫 ADR/DD,再落 code。F4 更證明呢個做法有用 —— 重評推翻咗我自己嘅初步結論。
+
 ### What didn't work / unexpected friction
+
+- **`claude-in-chrome` 三次都連唔上**(第二次 `list_connected_browsers` 回 `[]`;Chris 重啟 extension 後仍然一樣)。我頭兩次嘅反應係「標 honest gap 然後等」,拖到第三次才想起**同一 session 有另一條工具路(Playwright MCP)**。→ **教訓:驗證被工具鏈卡住時,第一問應該係「有冇第二條工具路」,唔係「幾時再試一次」。**
+- **我自己嘅初步結論錯過一次**(F4 Day 4「搵唔到真實使用場景」)。原因係只睇「建 row 有冇路」,冇睇「邊個 role 有路 + 對回流程需要咩」。正式重評(Day 5)逐條查 controller roles + DESIGN 對回定義才見到真洞。→ **快速判斷同正式重評唔可以混為一談**;plan 幸好寫咗「F3 落地後重評」呢個 checkpoint。
+- **兩次差啲令文件講大話**,都係中途自己截住:①想把未實作嘅 `--materialise-zeros` 寫入 runbook 做「可選緩解」②F2 checklist 一度寫成「選項 D 已寫入 runbook」。兩次都改成「只寫限制 + 現有 workaround」。→ 寫文件時「呢個功能存在嗎?」要同「呢個做法好嗎?」分開問。
+- **Playwright 預設把截圖寫落 repo root**(兩個 PNG 未被 gitignore)→ 污染工作樹,收尾才發現要移。下次指定輸出路徑。
+- **prettier / eslint 反覆咬**(BOM 字面字元觸 `no-irregular-whitespace`、`_blob` unused、多次 format 錯)。BOM 一役最花時間:Edit 工具匹配隱形字元失敗 → 最後改用 `String.fromCharCode(0xfeff)` 反而更易讀。
 
 ### Surprises / discoveries
 
+- **`reconcile` 同 `catalog/sync` 一樣要真 Graph** → 「真憑證」唔係部署後補嘅 hardening 項,而係**初始化嘅硬前置**:冇憑證連 go-live gate(零 drift)都過唔到。R1 影響範圍由一步擴至兩步。
+- **本地 catalog 現況 = 99 個 active SKU,只有 8 個有 `businessAlias`** → 即現狀下 **91 個 SKU 永遠入唔到 ledger**。呢個數字令「curation = scope 閘門」由抽象規則變成可量化工作量,亦成為 F2 動態範本嘅最佳論據(靜態範本會漏掉 curation 狀態)。
+- **`toQuantity` 嘅負數 / 小數 / 垃圾輸入從來冇 test**(舊 service 有 code 冇 spec)。抽共用層時順手鎖死 `-5→0` / `12.9→12` / `abc→0` —— 若無呢層,CSV 一個負數會寫負 `assignedQuantity` 落 ledger。**「抽出舊 code 去共用」係發現舊測試空白嘅好時機。**
+- **`Blob.text()` 會 strip BOM**(Encoding Standard 行為)→ 一度以為範本冇 BOM。要讀**檔案 bytes**(`EF BB BF`)才知真相。
+- **F4 嘅洞有 role 不對稱**:`PATCH` 容許 OPCO_IT 但 `import` 唔容許 ⇒ ADMIN/ops 有 workaround,**OPCO_IT 完全冇**。呢個不對稱比「冇 endpoint」本身更值得記(已入 DD-3)。
+
 ### Carry-overs to W36
+
+1. 🔴 **G5 終局未驗**:baseline → `reconcile` → **drift 清零**呢個 go-live gate 需真 Graph 憑證(UAT 現 placeholder,W33 D3)→ 屬 **`DEPLOY-harden`**。F1 runbook 步 2 / 步 6 亦因此**只寫得,未 live 驗**。
+2. 🟡 **DD-3**(F4 defer):解封 = `Drift-resolve` 動工 **或** OpCo self-service 開放;屆時屬新 API surface = **H1 需 ADR**。形狀候選 A/B/D 已留檔。
+3. 🟡 **design-system §0.1 契約 vs repo idiom 張力**:§0.1 字面禁 hardcode 間距 / 半徑 **px**,但全 repo 一律用 arbitrary px class(`p-[18px]` / `text-[13px]`)。F2 跟咗檔內既有 idiom,**冇**發起 repo-wide refactor。建議開獨立 change 由 owner 拍板(要麼放寬契約措辭,要麼立 token scale)。
+4. 🟢 `OQ-W35-2`(真實有存量嘅 (OpCo,SKU) 組合數量級)—— **收為 moot**:ADR-0014 按最壞情況(851 格)設計,F3 已對真數據驗過且對細數據集一樣適用,該數字唔再影響任何決定。
 
 ### ADR triggers
 
-### Phase Gate result
-- G1 – G7:_(填實測值)_
+- **ADR-0014**(Accepted)—— `assignedQuantity` baseline 機制屬新寫入路徑 + 掂 locked ledger 語意 = **H1**,已寫。
+- **F4 = defer** → **唔需要 ADR**(選項 C 唔新增 API surface),改為 `DEFERRED_REGISTER` **DD-3** 記解封條件。
+- F1 / F2 **唔觸發 ADR**:純文件 + 前端組合既有 primitive、零新 dependency、零 schema。
+
+### Phase Gate result(最終實測)
+
+| # | Criterion | 結果 |
+|---|---|---|
+| G1 | runbook 可被第三者照做 | **Pass** —— 七步齊,scratch DB 真走過步 1;步 2 / 6 標明需真憑證(未驗) |
+| G2 | CSV 範本 round-trip | **Pass** —— 真撳 Download → 真檔(BOM `EF BB BF`)→ 原封 POST 真後端:`changes:0` · `skipped:[]` · `unknownOpcoHeaders:[]` |
+| G3 | UI 講清格式 | **Pass** —— Playwright light + dark 實看 + 截圖;token 真 swap(`#f5f5f6`↔`#08080a`) |
+| G4 | H1 決策留痕 | **Pass** —— ADR-0014 Accepted · DD-3 · plan changelog 9 行 |
+| G5 | baseline → drift 清零 | **⚠️ 部分** —— 機制對真 DB 驗過(3 格寫入 · alloc 全 0 · 3 條 audit · 重跑零改動);**「drift 清零」終局需真 Graph,未驗**(carry-over 1) |
+| G6 | test 不降 + lint clean | **Pass** —— api **367 → 390**(41 suites)· web **136 → 151**(19 files)· 兩邊 lint **0** · `tsc --noEmit` **0** · build OK(最大 chunk 254KB 不變) |
+| G7 | H4 零洩漏 | **Pass** —— runbook 只列 env **變數名**(源自已 commit 嘅 `.env.example`),值全 placeholder;生成範本只含 OpCo code + alias + 數字,零 secret / 零 PII |
+
+### Anti-pattern 自檢(closeout 掃)
+`AP-1` ⚠️(F1 步 2/6 未真行過,已列 carry-over)· `AP-2` ✅(F3 寫入路徑用真 Postgres 驗,唔止 mock;G3 用真 browser + 真 API,但身分係注入 local-profile —— 已交代)· `AP-3` ✅(seed 輸出逐字對真 output;script 名對真 `package.json`)· `AP-4` ⚠️→✅(**掃到 F3 兩項 deviation 只記喺 progress 冇入 plan changelog,closeout 已補**)· `AP-5` ✅ · `AP-6` ✅(範本寧可 `ok:false` 都唔生空檔)· `AP-7` ✅(api listener pid 47884→**43200**,啟動 17:15:43 晚於最後 source 改動 16:24:45,`dist/license/matrix-csv.js` 已編譯 ⇒ G3 打嘅係 refactor 後 code)· `AP-8` ✅(alias 只係 curated 指向,寫入一律用 `skuCatalogId`)· `AP-9` N/A · `AP-10` ✅(F3 核心 invariant,test + 真 DB 雙重鎖)
 
 ### Phase status
 - Closeout commit:`<hash>`
-- Frontmatter status flipped to `closed`
-- BACKLOG synced(R7)
-- Phase W36 kickoff trigger:{date / blocker}
+- `plan.md` / `progress.md` frontmatter status → **`closed`**;`checklist.md` → **`complete`**
+- BACKLOG synced(R7)· `DEFERRED_REGISTER` DD-3 · `adr/README.md` ADR-0014
+- **Phase W36 kickoff trigger**:由 Chris 揀下一個 —— BACKLOG A 區候選中,`DEPLOY-harden`(解 carry-over 1 + 真憑證)同 `Drift-resolve`(解 DD-3)係同 W35 直接相關嘅兩個
 
 ---
 

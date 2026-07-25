@@ -4,7 +4,7 @@ name: "License assets 生產數據初始化(runbook + CSV 範本 + baseline 機�
 sprint_week: W35
 start_date: 2026-07-25
 end_date: 2026-07-30          # planned, may slip with changelog log
-status: active                # draft | active | closed —— Chris approve 2026-07-25(R1)
+status: closed                # draft | active | closed —— approve 2026-07-25 · closeout 2026-07-25
 spec_refs:
   - DESIGN.md §5(初始化流程 / ledger 兩層數字 / 對帳方案甲)
   - ADR-0004(allocation import 機制 · curation-as-scope · allocatedQuantity-only invariant)
@@ -160,6 +160,9 @@ Carry-over from `W34-connector-config-ui/progress.md`:
 | 2026-07-25 | **G3 第二次嘗試仍失敗** —— `list_connected_browsers` 回 `[]`(零 extension instance),非 tab 選錯 | 環境問題,唔係 code 問題 | — |
 | 2026-07-25 | **G3 ✅ Pass**(第三次,改用 **Playwright MCP** 代替連唔上嘅 `claude-in-chrome`);順帶令 **G2 亦走完真 UI 路徑**(真撳 Download → 真檔 → 原封 POST → `changes:0`) | 工具路線改變,acceptance 不變 | — |
 | 2026-07-25 | **G5 標註為「只達機制層」** —— baseline script 對真 DB 驗過,但 `reconcile`「drift 清零」需真 Graph 憑證,仍未 live 驗(R1) | 誠實標註,唔當 G5 完全 pass | — |
+| 2026-07-25 | **F3 deviation ①(closeout 補記)**:抽新檔 `src/license/matrix-csv.ts` 並**改動 critical-path 檔** `allocation-import.service.ts` 用佢 | ADR-0014 Decision 2 要求「唔重寫對映邏輯,避免兩處 drift」;既有 8 個 spec 當 gate 先跑綠才繼續 → 零行為改動 | AI(closeout 補 changelog,原本只記喺 progress Day 4) |
+| 2026-07-25 | **F3 deviation ②(closeout 補記)**:新增 `matrix-csv.spec.ts`(13 test),plan 未要求 | 抽出時發現 `toQuantity` 嘅負數 / 小數 / 垃圾輸入**從來無 test 覆蓋** —— 唔補則 CSV 一個負數會寫負 assigned 落 ledger | AI(同上) |
+| 2026-07-25 | **Phase closeout**:`plan.md` status `active` → `closed`;`OQ-W35-2` 收為 moot;三項 carry-over 交 W36 | 全部 deliverable 完成,G1–G7 達標(G5 帶限制) | — |
 
 ---
 

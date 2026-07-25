@@ -1,7 +1,7 @@
 ---
 phase: W35-data-initialisation
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete    # in-progress | complete
 last_updated: 2026-07-25
 ---
 
@@ -68,15 +68,16 @@ last_updated: 2026-07-25
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker(R4)
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
-- [ ] verify(G6):`npm test`(api ≥ 367 · web ≥ 136)+ `npm run lint` 0 warning,貼真 output
-- [ ] verify(G7):H4 零洩漏實查(runbook + 生成範本 + 前端)
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro
+- [x] All deliverables committed to git(branch `docs/w35-data-init-kickoff`,PR **#27**)
+- [x] All open-question status changes reflected in decision tracker(R4):OQ-W35-1 → C(ADR-0014)· OQ-W35-3 → C(DD-3)· OQ-W35-2 → **moot**(retro)
+- [x] All architectural-adjacent decisions documented as ADR:**ADR-0014**(F3);F4 = defer 唔需 ADR → DD-3
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)+ `DEFERRED_REGISTER` DD-3 + `adr/README.md`
+- [x] **verify(G6)**:api **390**(41 suites / 1 snapshot)· web **151**(19 files)· 兩邊 `npm run lint` **零 output** · `tsc --noEmit` **0** · `npm run build` OK(最大 chunk 254KB 不變)
+- [x] **verify(G7)**:H4 零洩漏 —— runbook 只列 env **變數名**(源自已 commit 嘅 `.env.example`)· 生成範本只含 OpCo code + alias + 數字 · script 唔印 secret
+- [x] **anti-patterns skill 掃過**(AP-1…AP-10;掃到 AP-4 漏記 changelog **已補**,AP-7 用 pid + 時間戳實證)
+- [x] `progress.md` retro section written(what worked / friction / discoveries / carry-over ×4 / gate 實測表)
+- [x] `progress.md` + `plan.md` frontmatter → `closed`;本檔 → `complete`
+- [x] Phase W36 kickoff trigger noted in retro(候選:`DEPLOY-harden` 解 carry-over 1 · `Drift-resolve` 解 DD-3)
 
 ---
 
