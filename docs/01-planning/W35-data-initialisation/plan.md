@@ -4,7 +4,7 @@ name: "License assets 生產數據初始化(runbook + CSV 範本 + baseline 機�
 sprint_week: W35
 start_date: 2026-07-25
 end_date: 2026-07-30          # planned, may slip with changelog log
-status: draft                 # draft | active | closed —— 等 Chris approve 先 flip active(R1)
+status: active                # draft | active | closed —— Chris approve 2026-07-25(R1)
 spec_refs:
   - DESIGN.md §5(初始化流程 / ledger 兩層數字 / 對帳方案甲)
   - ADR-0004(allocation import 機制 · curation-as-scope · allocatedQuantity-only invariant)
@@ -16,9 +16,9 @@ prior_phase: W34-connector-config-ui
 
 # Phase W35 — License assets 生產數據初始化
 
-> **Plan version**:1.0(initial · **draft,未 approve**)
+> **Plan version**:1.1(**active** — plan approved + F3 決策落地)
 > **Owner**:AI(執行)
-> **Approved by**:_(Chris Lai — status flips draft → active 時填)_
+> **Approved by**:**Chris Lai**(2026-07-25;同日拍板 **F3 = 選項 C** → **ADR-0014**)
 
 ## 1. Scope
 
@@ -64,10 +64,11 @@ prior_phase: W34-connector-config-ui
 - **Effort estimate**:5h
 - **Owner**:AI
 
-### F3 — 🔴 `assignedQuantity` go-live baseline 機制【H1 決策 gate】
+### F3 — ✅ `assignedQuantity` go-live baseline 機制【H1 gate 已解 → ADR-0014】
 - **Spec ref**:`DESIGN.md:96`(上線前建 baseline)· `DESIGN.md:101`(assigned 寫入路徑)· `ADR-0004` Decision #5(**allocatedQuantity-only invariant**)· `ADR-0007`(手動校正)
 - **問題(本 phase 最嚴重缺口)**:`assignedQuantity` 係**唯一參與對帳 / drift** 嘅數字,但寫入路徑只有三條 —— allocation-import **明確拒絕**寫它(`allocation-import.service.ts:24-28` 硬 invariant)· assign 每次 +1(要真人 onboarding)· `PATCH /license/ledger/:id` **逐格一個 HTTP call 且 row 必須先存在**。23 OpCo × 37 SKU ≈ **851 格**。若 go-live 唔填 baseline,首次 `reconcile` 會令**每個 SKU 都爆 drift**(tenant `consumedUnits` 對 0)。
-- **🔴 觸發 H1** → **STOP,唔寫 code**,先由 Chris 在下列選項拍板,approve 後寫 ADR:
+- **✅ H1 gate 已解**(2026-07-25):Chris 拍板 **選項 C —— 一次性 ops script `apps/api/prisma/init-assigned-baseline.ts`** → **[ADR-0014](../../adr/0014-assigned-baseline-initialisation.md) Accepted**。實作規格見該 ADR Decision 1-7(沿用 ADR-0004 CSV 格式 + 對映邏輯 · dry-run 先行 · **只寫 assigned**[鏡像反向 invariant]· 每格寫 `LedgerAdjustment` · **ADR-0004 Decision #5 invariant 不變**)。
+- 原四選項對照(留檔;被否理由詳見 ADR-0014 Alternatives):
 
   | 選項 | 做法 | 代價 / 風險 |
   |---|---|---|
@@ -76,7 +77,7 @@ prior_phase: W34-connector-config-ui
   | **C** ⭐ | 一次性 ops script `prisma/init-assigned-baseline.ts`(讀 CSV → set assigned,dry-run + commit) | 唔加永久 API surface、唔動 ADR-0004;ADR-0004 當年 reject CLI 嘅理由(「每次 re-import 要 dev 介入」)**對一次性 baseline 唔適用**;但將來要重複做就要回頭揀 B |
   | **D** | 唔加機制,靠 W23-B 既有 inline edit 逐格填 | 零 code;但 851 格不現實 —— **除非**實際有存量嘅 (OpCo, SKU) 組合遠少於 851(需 Chris 提供真實數量級) |
 
-- **AI 建議**:**C**(理由:DESIGN §5 定義 baseline 建立係**上線前一次性**動作,唔係重複自助流程;唔擴 API surface、唔動 ADR-0004 invariant = 最少代價;真有重複需求再升級去 B)。**但唔會自行決定** —— 呢個掂到方案甲 drift 基準。
+- **決策**:**C ✅**(Chris 2026-07-25 approve;AI 建議一致)。⚠️ **B 保留為升級路徑** —— 若日後需要**重複**做批量 assigned 更新(例:`Drift-resolve` 批量對回),訊號係回頭寫新 ADR 升級去 B,**唔好靜靜擴 script 功能**(ADR-0014 Consequences Negative)。
 - **Acceptance criteria**(選定後):
   - Chris 拍板記入 progress + ADR(`docs/adr/00NN-*`)
   - dry-run 先行(同 ADR-0004 OD4 精神一致)· 每格改動有 audit trail(`LedgerAdjustment` 或等效)
@@ -148,9 +149,11 @@ Carry-over from `W34-connector-config-ui/progress.md`:
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
-| 2026-07-25 | Initial plan(**draft**) | Chris 要求開 phase 統籌四個 data-init 缺口 | _(待 Chris approve)_ |
+| 2026-07-25 | Initial plan(**draft**) | Chris 要求開 phase 統籌四個 data-init 缺口 | — |
+| 2026-07-25 | **status draft → active**;plan version 1.0 → 1.1 | Chris approve plan(R1 pre-doc gate 達成)| **Chris Lai** |
+| 2026-07-25 | **F3 H1 gate 解除** → 選項 **C**(一次性 ops script);寫 **ADR-0014**;D3 決策提早於 D1 完成 | Chris 同日拍板,唔需等 D3 | **Chris Lai** |
 
 ---
 
 **Lifecycle reminder**:呢份 plan locked after status=active。重大 deviation 入第 7 節 changelog,小 detail 變動可直接 inline edit。
-**H1 提醒**:F3 / F4 未有 Chris explicit approve 之前,**一行 code 都唔寫**(CLAUDE.md §5.1)。
+**H1 提醒**:F3 已 approve(ADR-0014,可實作)。**F4 仍未拍板 —— 未 approve 之前一行 code 都唔寫**(CLAUDE.md §5.1)。

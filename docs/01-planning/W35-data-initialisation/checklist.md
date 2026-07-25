@@ -9,7 +9,7 @@ last_updated: 2026-07-25
 
 > Atomic checkbox(每 item ≤ 1–2 hour effort)。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
-> ⚠️ **F3 / F4 全部 item 鎖住** —— 未有 Chris 對應決策之前唔可以開始(H1)。
+> ✅ **F3 已解鎖**(Chris 2026-07-25 approve 選項 C → ADR-0014)。⚠️ **F4 仍鎖住** —— 未拍板唔可以開始(H1)。
 
 ## F1 — 端到端生產數據初始化 runbook
 
@@ -32,14 +32,19 @@ last_updated: 2026-07-25
 - [ ] verify(G2):下載 → 原封上傳 → dry-run 真 response `changes: 0` + `unknownOpcoHeaders: []`,貼真 output
 - [ ] verify(G3):browser light + dark 實看格式說明
 
-## F3 — 🔴 `assignedQuantity` baseline 機制【鎖住:等 Chris 決策】
+## F3 — ✅ `assignedQuantity` baseline 機制【已解鎖:選項 C · ADR-0014】
 
-- [ ] **[BLOCKER]** 向 Chris 提 A/B/C/D 四選項 + 問「實際有存量嘅 (OpCo,SKU) 組合數量級」(定 D 是否可行)
-- [ ] **[BLOCKER]** Chris 拍板 → 記入 progress Day-N
-- [ ] 寫 ADR(`docs/adr/00NN-*`)—— 若揀 A 必須寫明 ADR-0004 invariant 修訂範圍
-- [ ] 實作(視選項)+ dry-run 先行
+- [x] 向 Chris 提 A/B/C/D 四選項(plan §2 F3 對照表)
+- [x] Chris 拍板 **選項 C**(一次性 ops script)→ 記入 progress Day 1
+- [x] 寫 **ADR-0014**(Accepted;`docs/adr/README.md` index 加行)
+- [ ] 建 `apps/api/prisma/init-assigned-baseline.ts`:讀 CSV → 對映(**抽用** `csv.ts` `parseCsv` + ADR-0004 對映做法,唔重寫)
+- [ ] dry-run 為 default(印 before → target → delta + skipped);commit 要 explicit flag
+- [ ] **只寫 `assignedQuantity`**(鏡像反向 invariant);row 唔存在則 create(allocated 留 default 0)
+- [ ] 每格改動寫一條 `LedgerAdjustment`(field=`assignedQuantity`,reason 標 go-live baseline)
 - [ ] H5:ledger write critical path → 同步寫 test(Graph / SN mock)
-- [ ] 若揀 A:加 test 鎖死「budget 數唔會流入 assignedQuantity」(R3)
+- [ ] 加 test 鎖死**反向 invariant**:script 絕不改 `allocatedQuantity`
+- [ ] 加 `package.json` script entry + runbook 講明「執行者權限等同 DB 直連」(ADR-0014 Negative)
+- [ ] ⚠️ 唔可以擴 script 做重複性批量更新 —— 有該需求 = 回頭寫新 ADR 升級去選項 B
 - [ ] verify(G5):**乾淨 DB**(唔跑 demo seed,R5)跑完全鏈 → `POST /license/reconcile` **drift 清零**,貼真 response
 - [ ] F1 runbook 補回步 5(baseline 建立)
 
