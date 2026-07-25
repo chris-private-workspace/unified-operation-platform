@@ -32,7 +32,8 @@ last_updated: 2026-07-25
 - [x] upload 卡加三條對映規則說明 + curation 前提 + 「更新 allocated only」講明
 - [x] H6 自檢:跑 `ui-design` skill —— **揪到兩個真問題並修**(DS-2 唔好發明新間距值 → `gap-[6px]`/`mt-[8px]` 對齊檔內既有 scale;DS-5 未 curate 嘅 `skuPartNumber` 係識別碼 → 加 `mono` prop)
 - [x] **verify(G2)**:真 round-trip 通過 —— 真 `/opcos`+`/license/catalog`+`/license/ledger` → 生成 → POST dry-run 回 `opcoColumns:23 · skuRows:8 · mappedSkuRows:8 · changes:0` · `skipped:[]` · `unknownOpcoHeaders:[]`(臨時 test 檔驗完已刪,唔入 repo)
-- [ ] ⚠️ **verify(G3):browser light + dark 未驗** —— Chrome extension 未連上("Browser extension is not connected")。改為加 **5 個 component test** 覆蓋 UI wiring(格式文案 / 下載 blob / 未 curate 唔生檔 / out-of-scope 提示 / 資料未齊 disabled);**視覺 light+dark 仍需人眼確認**
+- [x] **verify(G3)✅ 通過**(2026-07-25,第三次嘗試改用 **Playwright MCP**;`claude-in-chrome` 全程連唔上)—— light + dark 真 browser 驗證 + 截圖;token 真 swap(`--bg` `#f5f5f6`↔`#08080a` · card `#141417` · accent `#ff3355`);**額外**:真撳 Download → 真檔落地(`EF BB BF` BOM 在檔) → **原封 POST 真後端 dry-run 回 `changes:0` · `skipped:[]` · `unknownOpcoHeaders:[]`** = G2 亦走完真 UI 路徑
+- [x] 5 個 component test 保留(UI wiring 回歸網,唔因為 G3 過咗就刪)
 - [x] web test 136 → **151**(+10 純函數 +5 component);lint 0 · `tsc --noEmit` 0 · `npm run build` 成功(最大 chunk 254KB,無變化)
 
 ## F3 — ✅ `assignedQuantity` baseline 機制【已解鎖:選項 C · ADR-0014】

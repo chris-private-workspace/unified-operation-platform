@@ -300,6 +300,45 @@ Chris 問四件事:(1) 部署後點初始化 license assets(2) 唔用 template �
 
 ---
 
+## Day 7 — 2026-07-25:G3 通過(第三次嘗試,改用 Playwright MCP)· **W35 全部 acceptance 達標**
+
+### 點解第三次先得
+`claude-in-chrome` 三次都連唔上(第二次追加 `list_connected_browsers` → `[]`)。Chris 重啟 extension 後**仍然**係同一個錯 → 唔再糾纏,改用 session 內另一個已連上嘅 **Playwright MCP**(唔同工具,唔算盲重試)。**教訓**:驗證被工具鏈卡住時,先問「有冇第二條工具路」,唔好一味重試同一個。
+
+### 驗證設定(誠實交代)
+Playwright 開嘅係乾淨 browser,冇 session。**冇**用真密碼登入(禁止處理密碼),改為 `browser_evaluate` 注入 `localStorage['uop.localProfile']`(`require-auth.tsx:16` 嘅 gate 條件),後端本來已 `AUTH_DEV_BYPASS=true` 所以 API 照返數。**本機 dev 技巧,非繞過真實系統權限** —— 記低以免日後誤讀成「已驗真 SSO 流程」。
+
+### G3 結果(light + dark)
+| 檢查 | light | dark |
+|---|---|---|
+| `--bg` token | `#f5f5f6` | `#08080a` |
+| card / border / accent | `#fff` 系 · — | `#141417` · `#242427` · **`#ff3355`**(dark accent) |
+| format card 背景(computed) | — | `rgb(27,27,31)` |
+| Download 掣(computed) | — | bg `rgb(20,20,23)` / fg `rgb(243,243,245)` |
+| CSV format 三條規則 | ✅ | ✅ |
+| uncurated note | ✅ `91 active SKUs…` + `+79 more not shown`(cap 12 生效) | ✅ |
+| primary action 數 | **0**(未揀檔;揀檔後才出 Preview)⇒ 一 view 一 primary 唔違反 | 同 |
+| DS-5 mono | ✅ `code` / `Grand Total` / `0` / `23` / `8` / `AAD_PREMIUM_P2` 等 part number 全部 mono(實測 `fontFamily` 含 mono) | 同 |
+
+截圖:`w35-f2-integrations-light.png` / `w35-f2-integrations-dark.png`(存 scratchpad,**唔入 repo**)。
+
+### 額外收穫:G2 亦走完真 UI 路徑
+喺真 browser hook `URL.createObjectURL` → 撳真 Download 掣 → 捕到 blob(`text/csv;charset=utf-8` · 706 bytes · 9 行 = 1 header + 8 curated · 23 個真 OpCo code · **冇** `Grand Total`)→ 檔案真落地 → 讀檔頭三個 byte = **`EF BB BF`**(BOM 確實在檔;之前 `Blob.text()` 顯示冇 BOM 係因為規範會 strip)→ **把真下載檔原封 POST 真後端** dry-run:`opcoColumns:23 · skuRows:8 · mappedSkuRows:8 · changes:0 · skipped:[] · unknownOpcoHeaders:[]`。
+⇒ 「下載 → 原封上傳 → 零改動」**全程走真 UI + 真後端**,比 Day 3 嘅 node-level round-trip 強。
+
+### 順手清理
+Playwright 預設把截圖寫落 **repo root**(兩個 PNG,未被 gitignore)→ 已移去 scratchpad,`git status` 回復 clean。`.playwright-mcp/` 本身已喺 `.gitignore:40`,冇動。
+
+### Decisions / Open-Questions Resolved
+- **G3 → Pass**。W35 **G1–G7 全部達標**(G1 runbook · G2 round-trip · G3 light+dark · G4 H1 決策留痕[ADR-0014 + DD-3]· G5 baseline→drift[**部分**:機制 live 驗,但「drift 清零」本身需真 Graph,見下]· G6 test 不降 · G7 H4 零洩漏)
+- ⚠️ **G5 只達到機制層**:baseline script 對真 DB 驗過(scratch),但 `reconcile` 需真 Graph 憑證 → **「drift 清零」呢個終局仍未 live 驗**(R1,屬 `DEPLOY-harden`)。呢點 retro 要寫清,唔可以當 G5 完全 pass
+- **仍 open**:`OQ-W35-2`(組合數量級)—— 已證唔阻塞,retro 一齊收
+
+### Commits
+- `<hash>` — `docs(planning): W35 G3 pass(Playwright light+dark + 真下載 round-trip)`
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked

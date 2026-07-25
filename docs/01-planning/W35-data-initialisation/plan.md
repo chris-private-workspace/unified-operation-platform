@@ -158,6 +158,8 @@ Carry-over from `W34-connector-config-ui/progress.md`:
 | 2026-07-25 | **G3 未達標**(browser light+dark 未驗)—— 唔阻 F2 其餘項,但 closeout 前必須補 | Chrome extension not connected | — |
 | 2026-07-25 | **F4 決:C = defer → DD-3**(重評揭真場景存在,故 defer 理由由「冇需求」改為「需求未到 + 形狀待對回流程定」);新增選項 D 留檔並寫入 runbook 做可選緩解 | Chris 拍板;分析見 progress Day 5 | **Chris Lai** |
 | 2026-07-25 | **G3 第二次嘗試仍失敗** —— `list_connected_browsers` 回 `[]`(零 extension instance),非 tab 選錯 | 環境問題,唔係 code 問題 | — |
+| 2026-07-25 | **G3 ✅ Pass**(第三次,改用 **Playwright MCP** 代替連唔上嘅 `claude-in-chrome`);順帶令 **G2 亦走完真 UI 路徑**(真撳 Download → 真檔 → 原封 POST → `changes:0`) | 工具路線改變,acceptance 不變 | — |
+| 2026-07-25 | **G5 標註為「只達機制層」** —— baseline script 對真 DB 驗過,但 `reconcile`「drift 清零」需真 Graph 憑證,仍未 live 驗(R1) | 誠實標註,唔當 G5 完全 pass | — |
 
 ---
 
