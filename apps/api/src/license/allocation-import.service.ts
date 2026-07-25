@@ -2,19 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
-import { parseCsv } from './csv';
+import { parseAllocationMatrix } from './matrix-csv';
 import {
   LedgerImportChangeDto,
   LedgerImportRequestDto,
   LedgerImportResultDto,
 } from './dto/ledger-import.dto';
-
-/** A parsed OpCo header column: which CSV index it sits at and the Opco it maps to. */
-interface OpcoColumn {
-  index: number;
-  opcoId: string;
-  opcoCode: string;
-}
 
 /**
  * Allocation import (ADR-0004, W13). Loads the manual O365 matrix (CSV) into
@@ -44,33 +37,17 @@ export class AllocationImportService {
     dto: LedgerImportRequestDto,
   ): Promise<LedgerImportResultDto> {
     const commit = dto.dryRun === false;
-    const rows = parseCsv(dto.csv);
 
-    const header = rows[0] ?? [];
-    const dataRows = rows.slice(1);
-
-    // ── Map OpCo header columns to Opco.code (exact; DESIGN — seed built from
-    // this Excel, so header === code). "Grand Total" and unmatched → reported. ──
     const opcos = await this.prisma.opco.findMany({ where: { active: true } });
-    const opcoByCode = new Map(opcos.map((o) => [o.code, o]));
-    const opcoColumns: OpcoColumn[] = [];
-    const unknownOpcoHeaders: string[] = [];
-    for (let i = 1; i < header.length; i++) {
-      const label = (header[i] ?? '').trim();
-      if (label === '' || label.toLowerCase() === 'grand total') continue;
-      const opco = opcoByCode.get(label);
-      if (opco)
-        opcoColumns.push({ index: i, opcoId: opco.id, opcoCode: label });
-      else unknownOpcoHeaders.push(label);
-    }
-
-    // ── SKU rows map to skuId via businessAlias (curation-as-scope). ──
     const catalog = await this.prisma.skuCatalog.findMany({
       where: { active: true, businessAlias: { not: null } },
     });
-    const skuByAlias = new Map(
-      catalog.map((s) => [(s.businessAlias as string).trim(), s]),
-    );
+
+    // Header → Opco.code, col-A → businessAlias (shared mapper, W35 F3 —
+    // the baseline script parses the same matrix, so the rules live in one place).
+    const parsed = parseAllocationMatrix(dto.csv, opcos, catalog);
+    const { opcoColumns, unknownOpcoHeaders, skippedSkuLabels, skuByAlias } =
+      parsed;
 
     // Current allocatedQuantity for every ledger row → before/delta baseline.
     const ledger = await this.prisma.opcoSkuLedger.findMany();
@@ -79,26 +56,16 @@ export class AllocationImportService {
     );
 
     const changes: LedgerImportChangeDto[] = [];
-    const skippedSkuLabels: string[] = [];
-    let mappedSkuRows = 0;
+    const mappedSkuRows = parsed.rows.length;
 
-    for (const row of dataRows) {
-      const label = (row[0] ?? '').trim();
-      if (label === '') continue; // blank spacer row
-      const sku = skuByAlias.get(label);
-      if (!sku) {
-        skippedSkuLabels.push(label);
-        continue;
-      }
-      mappedSkuRows++;
-      for (const col of opcoColumns) {
-        const target = toQuantity(row[col.index]);
-        const before = currentAlloc.get(`${col.opcoId}:${sku.id}`) ?? 0;
+    for (const row of parsed.rows) {
+      for (const { column, value: target } of row.cells) {
+        const before = currentAlloc.get(`${column.opcoId}:${row.sku.id}`) ?? 0;
         if (target === before) continue; // no-op (incl. 0 === 0)
         changes.push({
-          opcoCode: col.opcoCode,
-          skuBusinessAlias: label,
-          skuPartNumber: sku.skuPartNumber,
+          opcoCode: column.opcoCode,
+          skuBusinessAlias: row.label,
+          skuPartNumber: row.sku.skuPartNumber,
           before,
           target,
           delta: target - before,
@@ -142,8 +109,7 @@ export class AllocationImportService {
             actorId,
             after: {
               opcoColumns: opcoColumns.length,
-              skuRows: dataRows.filter((r) => (r[0] ?? '').trim() !== '')
-                .length,
+              skuRows: parsed.skuRowCount,
               mappedSkuRows,
               changes: changes.length,
               committed: changes.length,
@@ -165,7 +131,7 @@ export class AllocationImportService {
       committed,
       summary: {
         opcoColumns: opcoColumns.length,
-        skuRows: dataRows.filter((r) => (r[0] ?? '').trim() !== '').length,
+        skuRows: parsed.skuRowCount,
         mappedSkuRows,
         changes: changes.length,
       },
@@ -174,12 +140,4 @@ export class AllocationImportService {
       unknownOpcoHeaders,
     };
   }
-}
-
-/** Parse a matrix cell → a non-negative integer seat count (blank / junk → 0). */
-function toQuantity(raw: string | undefined): number {
-  const t = (raw ?? '').trim();
-  if (t === '') return 0;
-  const n = Number(t);
-  return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
 }
