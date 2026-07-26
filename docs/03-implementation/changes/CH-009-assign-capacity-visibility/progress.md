@@ -121,7 +121,72 @@ A6 要**真 assign** 才驗得到,但:
 
 **A1-A6 + A9** 全部未做(要起服務 + Playwright)。A7 / A8 已過。
 
-**Commit**:`<hash>` — `feat(web): CH-009 assign 前可用量可見度`
+**Commit**:`f15f17c` — `feat(web): CH-009 assign 前可用量可見度`
+
+---
+
+## Day 3 — 2026-07-26:Live 驗(**A1-A5 + A9 過**;A6 誠實拆解)
+
+### 環境
+
+跑 `restart-stack` skill 四步。**全 stack 真重起兩次**:
+- 第一輪(ADMIN):api pid 41280 → **57232** · web 48968 → **86028** · 三個 endpoint 真 200 · leak watch **11**(健康)
+- 第二輪(OPCO_IT run-as):api → **56528** · web → **51364**
+- 還原:api → **100124** · web → **93752**
+
+kill list 15 個逐行核對全部 trace 得返本項目;preflight 嘅兩個 `[other]`(worktree setup-runner、Claude Code 自己嘅 pwsh)**冇入 list** ⇒ 冇誤殺。
+
+### 選單:一張單覆蓋三個 acceptance,**零 DB 改動**
+
+`cmrdnmi7w000h8yb0h8ieqpol`(PFU-Asia)三個 line item 剛好齊:
+
+| SKU | stage | ledger | 驗到 |
+|---|---|---|---|
+| Power BI Pro | READY | 43/36 | **A1 / A3** |
+| Microsoft 365 Copilot | OPCO_APPROVED | **冇 row** | **A4** |
+| Office 365 F3 ×5 | READY | **冇 row** | **A4** |
+| Office 365 F3 ×1 | **ASSIGNED** | — | ➕ 終態唔顯示 |
+
+> 💡 **A4 唔需要造 0/0**:ledger 只有 148 行而組合空間有 2369 個 ⇒ 天然大量缺 row。⇒ **dev DB 零改動、零 `LedgerAdjustment` 污染、唔需要 scratch DB**。
+
+### 結果(全部真證據)
+
+- **A1 ✅** 三個 line item 都渲染兩層。
+- **A3 ✅** `36/43 · 7 left` 對 DB `43/36`;tenant 三個都對得返 `TenantSkuSnapshot`:`0/263` → `0 free of 0`(**證 `Math.max(0,·)` floor 生效**)· `761/769` 超用 → `0 free of 761` · `0/52` → `0 free of 0`。
+- **A4 ✅** 兩個缺 row 顯示 `0/0 · no allocation set`;network 只見 `/api/license/ledger`(**無 query string** ⇒ 冇傳 `includeEmpty`,守 §2.4)。
+- **A5 ✅** 3 個 SKU → `/api/license/ledger` **只出現一次**(network #100)⇒ 零 N+1。
+- **A2 ✅** OPCO_IT 對照:**先驗 `/me` 真返 `OPCO_IT`/`RHK`**(關鍵 —— `resolveDevUser` 用 `where:{email,active:true}`,inactive 會**靜靜 fallback 到 ADMIN**,唔驗就係假驗證);scoped `/fulfilment/requests` 返 **1 張**(ADMIN 6 張);開單後 `/license/tenant-skus` **完全唔喺 network list**(ADMIN 有 `#101 200`)+ DOM `hasTenantSeats:false` + **0 console error**;role label `RHK — RHK only`。
+- **A9 ✅** light + dark 都實看(截圖);`getComputedStyle` 證 token 隨 `.dark` swap(`rgb(157,157,167)` on `rgb(8,8,10)`,對比充足)。
+- **➕ 終態唔顯示 ✅** 同一張單 `Assigned` 嗰個 F3 **完全冇容量行**。
+
+### `ui-design` 逐條(A9)
+
+DS-1 ✅ 零 hex,全部 `text-fg-subtle`/`text-fg-muted`/`text-danger`/`font-mono` · DS-2 ✅ 色階**直接鏡射** `by-opco-view.tsx:112` 既有判斷,冇自己調數值 · DS-3 ✅ 冇加任何 action,Assign 仍唯一 primary · DS-4 ✅ 兩個都行過 · DS-5 ✅ 數字全 mono(DOM class 為證)· DS-6 ✅ 冇加 icon · DS-7 ✅ 冇 shadow/gradient/blur · DS-8 ✅ 冇自創狀態色 · DS-9 ✅ 冇 motion · DS-10 ✅ 短名詞 + sentence case(`OpCo budget` / `Tenant seats` / `no allocation set` / `last sync`)· DS-12 N/A。
+
+⚠️ **DS-11(對住 prototype 睇)= 部分**:prototype **冇**呢個容量資訊行(佢係新資訊層)。依 H6「組合既有 primitive / 用 token 砌 = OK」,我用既有 token + 同 `pathLabel` 同級嘅排版慣例(`text-[11.5px] text-fg-subtle`)。**但既然 prototype 冇對應物,視覺可接受度最終要 owner 睇截圖拍板。**
+
+### ⚠️ A6 —— 代理驗證證明唔到,冇砌假驗證
+
+Chris 揀咗「代理驗證」。落手時發現**代理本身證明唔到目標命題**:
+- 要用 By OpCo inline edit 觸發 invalidate,就必須 **navigate 離開** request detail;返嚟時係 **re-mount 觸發 fetch**,唔係 invalidate 生效 ⇒ 見到新數字係「睇落成功」但**完全冇驗到 invalidate**(正是 memory `verification-that-proves-nothing`)。
+- `window.__TANSTACK_QUERY_CLIENT__` **唔 expose**(實測 `hasClient:false`)⇒ 冇法喺同一頁手動觸發 invalidate。
+- 唔可以撳 `Assign now` —— 會嘗試打**真 tenant Graph**。
+
+**誠實拆解**:
+
+| 命題 | 狀態 |
+|---|---|
+| 容量數字真來自 `['license','ledger']`(key 冇打錯) | ✅ **A1 已證**(36/43 正確顯示) |
+| invalidate 該 key → re-fetch | TanStack Query 框架保證,唔屬項目要驗 |
+| assign 成功後**有** invalidate 該 key | ⚠️ **一行 code(已加),未經真 assign live 驗** |
+
+⇒ **A6 留 unchecked**,等 owner 決定(加 component test / 接受 code review / 等有 mock Graph 路徑)。
+
+### 環境還原(證據)
+
+run-as env 已清(`/me` 驗返 **ADMIN** / `opcoScope:null`)· 注入嘅 `uop.localProfile` 已 `removeItem`(只剩 `uop.ui`)· theme 復原 light · repo root 嘅 `ch009-light.png` 已刪(`.playwright-mcp/` 本身喺 `.gitignore:40`)· `git status` 乾淨(只餘一個**唔屬本 change** 嘅 untracked `docs/06-reference/03-n8n-workflow/`,未碰)。
+
+**Commit**:`<hash>` — live 驗結果入 checklist + progress
 
 ---
 

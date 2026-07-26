@@ -31,16 +31,18 @@ last_updated: 2026-07-26
 
 ## Verification
 
-- [ ] **A1** ADMIN:兩層都見(貼截圖 / DOM 證據)
-- [ ] **A2** OPCO_IT 對照:只見 OpCo 層 + **Network 面板證冇發 `/license/tenant-skus`**
-- [ ] **A3** 數字對得返 Assets → By OpCo 同一格
-- [ ] **A4** 0/0 格 → `no allocation set`;**且確認 request detail 冇傳 `includeEmpty`**
-- [ ] **A5** ≥3 個唔同 SKU 嘅單 → **只一次** ledger query(Network 面板數)
+- [x] **A1** ADMIN:兩層都見 —— 單 `cmrdnmi7w…`(PFU-Asia)三個 line item 全部渲染;DOM + light/dark 截圖為證
+- [x] **A2** OPCO_IT 對照:**Network 面板證冇發 `/license/tenant-skus`**(ADMIN 有 `#101 200`,OPCO_IT 該 request **完全唔存在**)+ DOM `hasTenantSeats: false` + 0 console error;run-as 已先驗 `/me` 真返 `OPCO_IT`/`RHK`(**唔係** ADMIN fallback)· ⚠️ **caveat**:dev DB 冇 RHK pending 單,所以呢個對照做喺**冇 line item** 嘅 RHK 單上 ⇒ 係「網絡層+文字層雙重證明唔出現」,**唔係**「有 line item 而只見 OpCo 層」嘅並排對照
+- [x] **A3** 數字對得返 —— Power BI Pro `36/43 · 7 left` 對 DB `alloc 43 / assigned 36`;tenant 三個 SKU 全部對得返 `TenantSkuSnapshot`(0/263 → `0 free of 0` 證 floor 生效 · 761/**769** 超用 → `0 free of 761`)。⚠️ 對照嘅係 **DB 真值**而唔係 Assets 頁面(兩頁同一 endpoint,對 DB 更根本)
+- [x] **A4** 冇 ledger row 嘅組合 → **`0/0 · no allocation set`**(Copilot + F3 兩個);**確認冇傳 `includeEmpty`**(network 只見 `/api/license/ledger` 無 query string)· ✅ **零 DB 改動達成** —— 用「ledger 148 行 vs 2369 個可能組合」自然缺 row,唔使造 0/0
+- [x] **A5** 3 個唔同 SKU → **`/api/license/ledger` 只出現一次**(network #100),`tenant-skus` 一次 ⇒ 零 N+1
+- [x] ➕ **終態唔顯示**(checklist 要求):同一張單第一個 `Office 365 F3` 係 `Assigned` ⇒ **完全冇容量行**,截圖為證
 - [ ] **A6** assign 成功後數字即時 +1(唔靠 reload)—— ⚠️ **前提已修**(見 spec §7);**live 驗方式待 owner 決定**:真 assign 會打真 tenant Graph(§3.4 禁),而 `GraphService` 唔 env-mockable
 - [x] **A7** web test 不降 + capacity helper 三分支覆蓋 —— **163 passed / 20 files**(基線 151 + 12 新)
 - [x] **A8** lint(web)零 output · `tsc --noEmit` 0 · `npm run build` OK —— 改 `mutations.ts` 後**重跑過**(chunk hash 由 `index-CVE27SYE` → `index-DqNaGsZl`,證非 cache)
-- [ ] **A9** 跑 `ui-design` skill;**light + dark 實看**;mono / 零新色 / 零新 primitive / Assign 仍唯一 primary
-- [ ] 造 0/0 test 格用 **scratch DB**(唔污染 dev DB;見 memory `scratch-db-verification`);若用 dev DB PATCH 則**必須還原**並貼還原證據
+- [x] **A9** `ui-design` 逐條自檢(見 progress Day 3);**light + dark 都實看**(截圖 + `getComputedStyle` 證 token 隨 `.dark` swap:`rgb(157,157,167)` on `rgb(8,8,10)`);所有數字 `font-mono`(DOM class 為證)· 零新色 / 零新 primitive / 零新 icon · Assign 仍唯一 primary
+- [x] ~~造 0/0 test 格用 scratch DB~~ —— **唔需要**:A4 改用「ledger 天然缺 row」嘅組合達成 ⇒ **dev DB 零改動、零 `LedgerAdjustment` 污染**,亦唔需要 scratch DB
+- [x] 環境還原:run-as env 已清(`/me` 驗返 ADMIN)· 注入嘅 `uop.localProfile` 已 `removeItem` · theme 復原 light · repo root 嘅 `ch009-light.png` 已刪(`.playwright-mcp/` 本身已喺 `.gitignore:40`)
 
 ## Cross-Cutting
 
