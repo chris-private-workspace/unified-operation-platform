@@ -1,7 +1,7 @@
 ---
 change_id: CH-009
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-07-26
 ---
 
@@ -37,7 +37,7 @@ last_updated: 2026-07-26
 - [x] **A4** 冇 ledger row 嘅組合 → **`0/0 · no allocation set`**(Copilot + F3 兩個);**確認冇傳 `includeEmpty`**(network 只見 `/api/license/ledger` 無 query string)· ✅ **零 DB 改動達成** —— 用「ledger 148 行 vs 2369 個可能組合」自然缺 row,唔使造 0/0
 - [x] **A5** 3 個唔同 SKU → **`/api/license/ledger` 只出現一次**(network #100),`tenant-skus` 一次 ⇒ 零 N+1
 - [x] ➕ **終態唔顯示**(checklist 要求):同一張單第一個 `Office 365 F3` 係 `Assigned` ⇒ **完全冇容量行**,截圖為證
-- [ ] **A6** assign 成功後數字即時 +1(唔靠 reload)—— ⚠️ **前提已修**(見 spec §7);**live 驗方式待 owner 決定**:真 assign 會打真 tenant Graph(§3.4 禁),而 `GraphService` 唔 env-mockable
+- [x] **A6** assign 成功後數字即時更新 —— ⚠️ **前提已修**(見 spec §7)。Chris 拍板改用 **component test**:新 `hooks/mutations.assign.test.ts`(4 test,真 `QueryClient` + spy `invalidateQueries`,唔似其他 component test 咁 mock 走 hooks)。🔴 **並跑咗 mutation check 證明佢守得住** —— 暫時移走該行 invalidate → test **真係紅**(`expected [ …(3) ] to include '["license","ledger"]'`,1 failed / 3 passed),加返 → 綠;`git diff HEAD -- mutations.ts` 零 output + build chunk hash 不變 = 還原有證據。**⚠️ 真 assign 端到端仍未 live 驗**(打真 tenant,§3.4)—— 見 progress Day 4 三句拆解
 - [x] **A7** web test 不降 + capacity helper 三分支覆蓋 —— **163 passed / 20 files**(基線 151 + 12 新)
 - [x] **A8** lint(web)零 output · `tsc --noEmit` 0 · `npm run build` OK —— 改 `mutations.ts` 後**重跑過**(chunk hash 由 `index-CVE27SYE` → `index-DqNaGsZl`,證非 cache)
 - [x] **A9** `ui-design` 逐條自檢(見 progress Day 3);**light + dark 都實看**(截圖 + `getComputedStyle` 證 token 隨 `.dark` swap:`rgb(157,157,167)` on `rgb(8,8,10)`);所有數字 `font-mono`(DOM class 為證)· 零新色 / 零新 primitive / 零新 icon · Assign 仍唯一 primary
@@ -46,13 +46,13 @@ last_updated: 2026-07-26
 
 ## Cross-Cutting
 
-- [ ] Each commit references `progress.md` Day-N entry(R2)
-- [ ] Commit message 標 component tag(`feat(web):`,標 `(CH-009)`)
-- [ ] **無 ADR**(零 backend、零 schema、零新 endpoint,唔觸發 H1)—— 若實作中發現要改 backend → **STOP**,回頭問 owner
-- [ ] 若 CH-008 已 merge → 重跑 A4 確認交互(§2.4)
-- [ ] `BACKLOG.md` 同步(R7)
-- [ ] `progress.md` closeout summary written
-- [ ] `progress.md` frontmatter status flipped to `done`
+- [x] Each commit references `progress.md` Day-N entry(R2)
+- [x] Commit message 標 component tag(`feat(web):` / `docs(changes):`)
+- [x] **無 ADR** —— 確認全程零 backend / 零 schema / 零新 endpoint;唯一超出 spec 原文嘅改動 = `hooks/mutations.ts` 一行 invalidate(前端),已 log spec §7
+- [ ] 🚧 **CH-008 落地後重跑 A4 交互驗**(§2.4)—— CH-008 spec 已 approved 但**未實作**,所以「0/0 被隱藏後 lookup 落空」呢條路徑今日驗唔到(今日驗嘅係「天然冇 row」,結論相同但唔係同一條路徑)。**target:CH-008 實作時**
+- [x] `BACKLOG.md` 同步(R7)
+- [x] `progress.md` closeout summary written
+- [x] `progress.md` frontmatter status flipped to `done`
 
 ---
 

@@ -2,7 +2,7 @@
 change_id: CH-009
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | done
+status: done           # in-progress | done
 ---
 
 # CH-009 — Progress
@@ -186,10 +186,58 @@ Chris 揀咗「代理驗證」。落手時發現**代理本身證明唔到目標
 
 run-as env 已清(`/me` 驗返 **ADMIN** / `opcoScope:null`)· 注入嘅 `uop.localProfile` 已 `removeItem`(只剩 `uop.ui`)· theme 復原 light · repo root 嘅 `ch009-light.png` 已刪(`.playwright-mcp/` 本身喺 `.gitignore:40`)· `git status` 乾淨(只餘一個**唔屬本 change** 嘅 untracked `docs/06-reference/03-n8n-workflow/`,未碰)。
 
-**Commit**:`<hash>` — live 驗結果入 checklist + progress
+**Commit**:`3be9f03` — live 驗結果入 checklist + progress
 
 ---
 
-## Completion summary(填於 done)
+## Day 4 — 2026-07-26:A6 收尾(component test)· **CH-009 done**
 
-_(待實作)_
+Chris 拍板 A6 用 **component test** 收尾。
+
+### 新 `apps/web/src/hooks/mutations.assign.test.ts`(4 test)
+
+專門用**真 `QueryClient` + `vi.spyOn(client, 'invalidateQueries')`**,而唔係跟其餘 component test 嘅慣例 mock 走 hooks —— 因為 mock 走 hooks 對「有冇 invalidate」呢個命題**證明唔到任何嘢**。
+
+四條:① 有 invalidate `['license','ledger']` ② **冇** invalidate `['license','tenant-skus']`,亦**冇**用更闊嘅 `['license']`(守 D1 刻意決定:tenant 層係 as-of-last-sync,擴 prefix 會令 `last sync` 標籤變成謊話)③ 既有三個 invalidate 仍在(requests / requests list / drift)④ assign **失敗**時一個都唔 invalidate。
+
+### 🔴 跑咗 mutation check —— 證明呢個 test 真守得住
+
+綠色本身唔證明 test 有效,所以真做一次:
+
+1. 暫時移走 `qc.invalidateQueries({ queryKey: ['license', 'ledger'] })`
+2. 跑 → **真係紅**:`× invalidates the ledger … → expected [ …(3) ] to include '["license","ledger"]'`(**1 failed / 3 passed** —— 其餘三條仍綠 = 各驗自己命題,冇互相掩蓋)
+3. 加返 → 綠
+
+**還原有證據**(唔靠「我加返咗」):`git diff HEAD -- apps/web/src/hooks/mutations.ts` **零 output** + build chunk hash 仍然 `index-DqNaGsZl`(同還原前一致)。
+
+### A6 最終狀態(三句)
+
+| 命題 | 狀態 |
+|---|---|
+| 容量數字真來自 `['license','ledger']` | ✅ A1 live 證 |
+| assign 成功後**有** invalidate 該 key | ✅ **本 test 證,且經 mutation check 證明守得住** |
+| 真 assign 端到端(Graph → ledger +1 → UI) | ⚠️ **仍未 live 驗** —— 打真 tenant(§3.4),`GraphService` 唔 env-mockable |
+
+### Gate(真 output)
+
+**web test 167 passed / 21 files**(151 基線 → 163 → **167**)· lint **零 output**(修咗一個 prettier 換行)· `tsc --noEmit` + `vite build` OK。
+
+---
+
+## Completion summary
+
+**CH-009 done(2026-07-26)。** Request detail 每個未 assign 嘅 line item 顯示兩層容量,操作員撳 Assign 之前就知有冇位。
+
+**交付**:`lib/capacity.ts` + `capacity.test.ts`(12)· `pages/request-detail.tsx` 接線 · `hooks/mutations.ts` 一行 invalidate 修正 · `hooks/mutations.assign.test.ts`(4)。**零 backend / 零 schema / 零新 endpoint / 零新 dep / 無 ADR。**
+
+**Spec 之外做咗三件**(全部已 log spec §7):① 修 `useAssignLineItem` 缺 invalidate(A6 前提錯,唔修則本 change 反效果)② tenant 層標 `last sync` + `owned=null` 顯示 `unknown` 而唔係 0(查證確認係 snapshot 唔係 live Graph)③ 加 tenant helper。
+
+**驗證**:A1-A5 + A7-A9 全過(live + DOM + network 面板證據);A6 由 component test + mutation check 覆蓋。**測試 151 → 167**。
+
+**兩個 carry-over**:
+1. 🚧 **CH-008 落地後重跑 A4 交互驗**(§2.4)—— 今日驗嘅係「天然冇 ledger row」,而 CH-008 嘅「0/0 被隱藏」係另一條路徑(結論相同,路徑未驗)。
+2. ⚠️ **真 assign 端到端未 live 驗** —— 需要 mock Graph 路徑(`GraphService` 目前唔 env-mockable),或者等 UAT 有真 tenant。
+
+**一個要 owner 留意嘅視覺點**:`ui-design` DS-11 = 部分 —— prototype **冇**呢個容量資訊行(新資訊層)。已依 H6 用既有 token + 同 `pathLabel` 同級排版,light/dark 截圖已交 owner,**未收到視覺異議**。
+
+**Commit**:`<hash>` — A6 component test + mutation check + closeout
