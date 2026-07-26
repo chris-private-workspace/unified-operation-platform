@@ -20,7 +20,12 @@ import { Stepper } from '@/components/ui/stepper';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Toast } from '@/components/ui/toast';
 import { Loading } from '@/components/ui/feedback-states';
-import { useCatalog, useRequest } from '@/hooks/queries';
+import {
+  useCatalog,
+  useLedger,
+  useRequest,
+  useTenantSkus,
+} from '@/hooks/queries';
 import {
   useAddLineItem,
   useAdvanceStage,
@@ -42,6 +47,14 @@ import {
   STAGE_TONE,
   stepsFor,
 } from '@/lib/requests';
+import {
+  buildLedgerIndex,
+  buildTenantIndex,
+  opcoCapacity,
+  tenantCapacity,
+} from '@/lib/capacity';
+import { useCurrentUser } from '@/lib/auth/use-current-user';
+import { canSeePlatform } from '@/lib/roles';
 import { formatDateTime } from '@/lib/format';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -95,6 +108,24 @@ export function RequestDetail() {
   const baseBySkuId = useMemo(
     () => new Map((catalog.data ?? []).map((s) => [s.skuId, s.isBaseLicense])),
     [catalog.data],
+  );
+
+  // CH-009 capacity. OpCo budget is per-actor scoped server-side (AUTH-3a) and
+  // open to every role, so one list covers whichever request this operator can
+  // even see. Tenant seats are ADMIN / REGIONAL only — the query is lazy so an
+  // OPCO_IT operator never fires it (it 403s) and never sees the layer.
+  // Indexed once here, not per line item: a request can carry many lines (D4).
+  const { role } = useCurrentUser();
+  const showTenant = canSeePlatform(role);
+  const ledger = useLedger();
+  const tenantSkus = useTenantSkus(showTenant);
+  const ledgerIndex = useMemo(
+    () => buildLedgerIndex(ledger.data ?? []),
+    [ledger.data],
+  );
+  const tenantIndex = useMemo(
+    () => buildTenantIndex(tenantSkus.data ?? []),
+    [tenantSkus.data],
   );
 
   if (detail.isLoading) return <Loading label="Loading request…" />;
@@ -470,6 +501,17 @@ export function RequestDetail() {
                 const pathLabel = item.procurementRequired
                   ? `Procurement path${item.quoteRef ? ` · ref ${item.quoteRef}` : ''}`
                   : 'Short path · no quote/PO';
+                // CH-009: capacity only matters while a seat is still pending —
+                // once the line is ASSIGNED / CANCELLED it is just noise.
+                const showCapacity = !cancelled && item.stage !== 'ASSIGNED';
+                const budget = opcoCapacity(
+                  ledgerIndex,
+                  req.opcoId,
+                  item.skuCatalogId,
+                );
+                const seats = showTenant
+                  ? tenantCapacity(tenantIndex, item.skuCatalogId)
+                  : null;
                 return (
                   <div
                     key={item.id}
@@ -488,6 +530,62 @@ export function RequestDetail() {
                       <span className="text-[11.5px] text-fg-subtle">
                         {pathLabel}
                       </span>
+                      {/* Two layers, never merged: OpCo budget is live + scoped;
+                          tenant seats are as-of the last sync (snapshot, not
+                          Graph) so they are labelled as such. Neither gates
+                          anything — the backend stays the only authority. */}
+                      {showCapacity && (
+                        <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[2px] text-[11.5px] text-fg-subtle">
+                          <span>
+                            OpCo budget{' '}
+                            <span
+                              className={cn(
+                                'font-mono',
+                                budget.headroom < 0
+                                  ? 'text-danger'
+                                  : 'text-fg-muted',
+                              )}
+                            >
+                              {budget.assigned}/{budget.allocated}
+                            </span>{' '}
+                            ·{' '}
+                            {/* Keyed on allocated, not on `present`: a missing
+                                row and an existing 0-budget row are the same
+                                thing to an operator — nothing is allocated. */}
+                            {budget.allocated === 0
+                              ? 'no allocation set'
+                              : budget.headroom > 0
+                                ? `${budget.headroom} left`
+                                : 'no headroom'}
+                          </span>
+                          {seats && (
+                            <span>
+                              Tenant seats{' '}
+                              {seats.known ? (
+                                <>
+                                  <span
+                                    className={cn(
+                                      'font-mono',
+                                      seats.exhausted
+                                        ? 'text-danger'
+                                        : 'text-fg-muted',
+                                    )}
+                                  >
+                                    {seats.available}
+                                  </span>{' '}
+                                  free of{' '}
+                                  <span className="font-mono">
+                                    {seats.owned}
+                                  </span>{' '}
+                                  · last sync
+                                </>
+                              ) : (
+                                'unknown — no tenant snapshot'
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {!cancelled && (
                         <div className="mt-[2px] flex items-center gap-[10px]">
                           <Stepper steps={steps} current={item.stage} />
