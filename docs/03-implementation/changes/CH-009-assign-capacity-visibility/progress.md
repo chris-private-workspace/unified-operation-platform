@@ -48,7 +48,23 @@ CH-008 令 `GET /license/ledger` 預設排除 0/0 row,而本 change 靠同一 en
 
 - **spec 未 approve**(`proposed`)→ 依 R1.change,一行 code 都唔寫
 
-**Commit**:`<hash>` — `docs(changes): CH-009 spec — assign 前可用量可見度`
+**Commit**:`e5ca84e` — `docs: onboarding 流程三個缺口 — CH-009 spec + ADR-0015/0016 + n8n intake handoff`
+
+---
+
+## Day 1 — 2026-07-26:**Spec approved**,gate 解除
+
+**Chris approve**(spec 內容零改動)⇒ `status: proposed → approved`,checklist 解鎖,可以開工。
+
+**ADR-0016 同日 Accepted** ⇒ spec §6 建議嘅次序成立:**本 change 先做**,令 gate 上線時操作員已經睇到嗰個數字,唔會突然被一個從來睇唔到嘅數字擋住。
+
+### 開工提醒(三個最易踩)
+
+1. **`?includeEmpty=true` 唔可以傳**(§2.4 / R3)—— A4 專門守。CH-008 同日 approve,兩者對同一 endpoint 有交互。
+2. **OPCO_IT 唔可以扮 0**(D3 / R1)—— `tenant-skus` 對佢係 403,要用 `useTenantSkus(canSeePlatform)` lazy gate;**A2 要用 Network 面板證冇發 request**,唔可以靠肉眼睇 UI 就當過。
+3. **唔可以 per-line-item 開 query**(D4 / R5)—— 一次 list + client index;A5 數 request 數目。
+
+**Commit**:`<hash>` — approve gate flip + ADR-0015/0016 Accepted + 文檔同步
 
 ---
 

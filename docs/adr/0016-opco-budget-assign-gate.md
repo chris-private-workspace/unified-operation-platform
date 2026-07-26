@@ -1,8 +1,8 @@
 # ADR-0016: OpCo 預算(`allocatedQuantity`)成為 assign 硬 gate,ADMIN 可具名 override
 
 **Date**: 2026-07-26
-**Status**: Proposed
-**Approver**: Chris Lai
+**Status**: Accepted
+**Approver**: Chris Lai(2026-07-26 —— 連 D3 override 形狀[body + 必填理由]同 D4 status code[400]兩處偏離 preview 之處一併 approve)
 
 ## Context
 
@@ -154,4 +154,7 @@ Message 要 actionable,帶實數:
 - 相關 ADR:**ADR-0004**(allocation import;invariant 不變)· **ADR-0007**(ledger 手動管理 = override 之外嘅正路)· **ADR-0009**(audit 契約)· **ADR-0014**(assigned baseline —— 22 行超支嘅可能來源)
 - 姊妹 ADR:**ADR-0015**(sync sweep)
 - 扣連:**CH-008**(0/0 隱藏)· **DD-3**(冇 ledger create endpoint)
-- **Accepted 後必須同步**:`DESIGN.md §5` line 100 · `docs/02-architecture/licenseops/allocation-editing-and-drift-correction.md`(多處「純顯示」)· `SYSTEM-SPEC-AND-SOW.md` §311
+- **Accepted 後嘅文檔同步 —— ✅ 已於 2026-07-26(Accepted 同日)完成**:
+  - ✅ `DESIGN.md §5`(line 100):「→ 顯示/反映」改成明確分開兩件事(不參與 drift ✅ 仍成立 / 純顯示 ❌ 已不成立)
+  - ✅ `licenseops/allocation-editing-and-drift-correction.md`:加 header 補註。**刻意唔逐處改寫內文** —— 該檔 `status: draft` 且自述「留做佐證」,逐處改寫等於篡改當時語境
+  - ⛔ `SYSTEM-SPEC-AND-SOW.md` §7.3 item 2(line 311):**逐字查證後確認唔需要改** —— 該行只講「唔參與對帳」(仍然準確),並冇「純顯示」字眼。本 ADR 起草時列入清單係未逐字核對所致,此處更正

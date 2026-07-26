@@ -1,8 +1,8 @@
 # ADR-0015: Phase 1 sync gate 由「宣稱」升級為「平台證實」——排程 sync sweep
 
 **Date**: 2026-07-26
-**Status**: Proposed
-**Approver**: Chris Lai
+**Status**: Accepted
+**Approver**: Chris Lai(2026-07-26)
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 change_id: CH-009
 title: "Assign 前可用量可見度(OpCo 預算 headroom + tenant seat)"
-status: proposed           # draft | proposed | approved | active | done | cancelled
+status: approved           # draft | proposed | approved | active | done | cancelled
 created: 2026-07-26
 target_completion: 2026-07-29
 affects_components: [apps/web/src/pages/request-detail.tsx, apps/web/src/hooks/queries.ts, apps/web/src/lib (new capacity helper)]
@@ -16,7 +16,7 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:AI(執行)· 決策 = Chris Lai
-> **Approved by**:_(status flips proposed → approved 時填)_
+> **Approved by**:**Chris Lai(2026-07-26)**
 
 ## 1. Context (Why)
 
@@ -140,6 +140,7 @@ CH-008 令 `GET /license/ledger` **預設排除 0/0 row**。而本 change 靠同
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-26 | Initial draft(**proposed**) | Chris 提出「冇檢查可用量」;查證修正前提(tenant seat gate 已存在)後,確認真缺口 = 事前可見度;Chris approve 開 change | — |
+| 2026-07-26 | **proposed → approved**(spec 內容零改動) | Chris approve。**ADR-0016 同日 Accepted** ⇒ §6 建議嘅「本 change 先行」次序成立:先令操作員睇到數字,gate 才上線 | **Chris Lai** |
 
 ---
 

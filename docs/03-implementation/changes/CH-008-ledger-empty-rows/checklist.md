@@ -9,7 +9,8 @@ last_updated: 2026-07-25
 
 > Atomic checkbox items derived from `spec.md §3` acceptance criteria。每 item ≤ 1-2h effort。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
-> ⚠️ **全部 item 鎖住** —— spec 仍係 `proposed`,等 Chris approve 先開工(PROCESS R1.change)。
+> ✅ **Spec approved(Chris Lai,2026-07-26)—— 可以開工。**
+> ⚠️ 開工前必讀 **CH-009 spec §2.4**:本 change 令 `GET /license/ledger` 預設排除 0/0,而 CH-009 靠同一 endpoint lookup。兩者結論一致,但**唔可以**為對方傳 `?includeEmpty=true`。
 
 ## Implementation
 

@@ -57,7 +57,25 @@ Chris 問:「某 OpCo 某種 license 冇數量了,記錄改成 0 之後仍然存
 - **spec 未 approve**(`proposed`)→ 依 R1.change,一行 code 都唔寫
 - ⚠️ **R1 要 Chris 特別留意**:隱藏之後,因為冇 create endpoint(**DD-3**),用戶會冇路徑把該格由 0 調返非零 ⇒ toggle 係**必需品而非裝飾**。若 Chris 覺得呢個 trade-off 唔可接受,應該考慮連 DD-3 一次過做(即 spec §2.3 講嘅「留返 `Drift-resolve`」)
 
-**Commit**:`<hash>` — `docs(changes): CH-008 spec — ledger 空白行預設隱藏 + 修正誤導狀態`
+**Commit**:`40105a8` — `docs(changes): CH-008 spec — ledger 空白行預設隱藏 + 修正誤導狀態`
+
+---
+
+## Day 1 — 2026-07-26:**Spec approved**,gate 解除
+
+**Chris approve**(spec 內容零改動)⇒ `status: proposed → approved`,checklist 解鎖,可以開工。
+
+Chris 明確接受 §4 **R1** 嘅 trade-off:隱藏之後因為冇 create endpoint(**DD-3**),用戶要靠 toggle 搵返該格 ⇒ toggle 係**必需品而唔係裝飾**。DD-3 本身仍然未解(留 `Drift-resolve`)。
+
+### ⚠️ 開工前必讀 —— 同 CH-009 嘅交互(同日 approve)
+
+CH-009(assign 前可用量可見度)靠**同一個** `GET /license/ledger` 做 `(opco, sku)` lookup。本 change 令該 endpoint **預設排除 0/0** ⇒ CH-009 嘅 lookup 對 0/0 格會落空。
+
+**兩者結論一致**(落空 = `allocated = 0` = 「未設預算」),所以唔需要為對方改任何嘢。但 **唔可以**為圖方便而喺 request detail 傳 `?includeEmpty=true` —— 咁會令本 change 嘅預設失效。詳見 CH-009 spec **§2.4**;CH-009 **A4** 專門守呢點。
+
+> 三者一致:本 change 隱藏 0/0 → CH-009 顯示「未設預算」→ **ADR-0016**(同日 Accepted)擋 assign。同一個狀態,三個層面講同一件事。
+
+**Commit**:`<hash>` — approve gate flip + ADR-0015/0016 Accepted + 文檔同步
 
 ---
 

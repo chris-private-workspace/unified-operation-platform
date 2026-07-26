@@ -8,7 +8,7 @@ last_updated: 2026-07-26
 # CH-009 — Checklist
 
 > Atomic checkbox items derived from `spec.md §3` acceptance criteria。每 item ≤ 1-2h effort。
-> ⚠️ **全部 item 鎖住** —— spec 仍係 `proposed`,等 Chris approve 先開工(PROCESS R1.change)。
+> ✅ **Spec approved(Chris Lai,2026-07-26)—— 可以開工。**
 
 ## Implementation
 

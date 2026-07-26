@@ -97,7 +97,7 @@
 - **SKU 唯一主鍵 = `skuId`(GUID)**。需要一張字典 `skuId ⇄ skuPartNumber ⇄ 業務別名`。**別信 Excel 的名稱、也別信記憶中的 part number**;初始化時直接從 tenant 拉真實 `subscribedSkus` 反向對業務名。(Excel 的名稱是同事網上找的 friendly name,對不上 API。)
 - **對帳方式 = 方案甲**:平台維護 per-OpCo 手動 ledger(onboarding +1 並同時 assign);偵測只在**每個 SKU 的總量層**:`sum(所有 OpCo 的 assignedQuantity) vs M365 tenant consumedUnits`,對不上就 `DriftAlert`。差異落在哪個 OpCo 要人去查 —— **對回機制 = 手動編輯 by-OpCo `assignedQuantity`(ADR-0007 / W23-A activated;配 `LedgerAdjustment` audit)**。
 - **兩層數字分開**(By-OpCo 內部帳 = 人手管理;寫入路徑見 ADR-0007):
-  - `allocatedQuantity` = OpCo budget / 擁有(對應 Excel 格子,OpCo 自己管)→ **顯示/反映**,不參與 drift。**寫入**:allocation import(W13)+ 手動逐格編輯(W23-A `PATCH /license/ledger/:id`)。
+  - `allocatedQuantity` = OpCo budget / 擁有(對應 Excel 格子,OpCo 自己管)→ **不參與 drift**(對帳只用 `assignedQuantity`,方案甲不變)。⚠️ **自 ADR-0016 起唔再係「純顯示」** —— 佢兼任 **assign 硬 gate**(`assigned + 1 > allocated` → 拒絕;ADMIN 可具名 override 並入 audit)。即「不參與對帳」同「不影響行為」係兩件事,前者仍然成立、後者已不再成立。**寫入**:allocation import(W13)+ 手動逐格編輯(W23-A `PATCH /license/ledger/:id`)。
   - `assignedQuantity` = 實際已指派 baseline → **只有這個**拿去對帳。**寫入**:fulfilment assign 自動 +1(W04)+ **手動校正 / 對回**(W23-A,ADR-0007)。對帳邏輯不變 —— 手動編輯正是把 drift 差異對回落某 OpCo。
 - **分層真相(ADR-0007)**:Platform 層 = tenant 真相(`owned`=prepaidEnabled + `consumed`=consumedUnits,Graph 自動、唯讀);By-OpCo 層 = 內部管理帳(上述兩數,人手維護)。Graph 唔知 OpCo 劃分,故 By-OpCo 靠人手。
 - **baseline vs in-flight**:baseline(已 assign)要 reconcile 到準;在途(報價 / 等批 / 等 vendor / ready 未 assign)是浮動 overlay,由 request 的 line item 狀態算出來,不落進 ledger baseline。兩層分開。
@@ -113,7 +113,7 @@
 - **ledger 兩個數字分開**(見 §5)。
 - **`SkuCatalog` 以 `skuId` 為真相**,`businessAlias` 只是 Excel 舊名對照。
 - **ServiceNow 欄位只是 mirror**(`serviceNowSysId/Number/Status`);`rawRequestText` 存原始 remark(人手判讀 → 未來 AI 抽結構化清單的入口)。
-- **Phase 1 sync gate** = `Request.azureSyncedAt`;assign 動作檢查它有值才執行。
+- **Phase 1 sync gate** = `Request.azureSyncedAt`;assign 動作檢查它有值才執行。**寫入(ADR-0015)**:排程 sync sweep 向 Graph `findUser` **真命中**後自動開 gate ⇒ 該欄語意 = 「平台曾經證實過」;n8n intake 帶嘅值同人手 `PATCH /sync` 保留做 **break-glass**(未經 Graph 證實,靠 `RequestEvent.message` 分辨)。
 - **`RequestEvent`** = 平台自己的 operational 歷史(stage 轉換 / assign / reconcile),不同於 ServiceNow 的 ITSM audit。
 
 **欄位增補(對著 ops portal 實際需要)**:`SkuCatalog.category`、`SkuCatalog.lastSyncedAt`、`Request.requesterEmail`、`Request.handledById`(+relation)、`RequestLineItem.quoteRef/poRef`、`AppUser.lastLoginAt`。保留 `isBaseLicense`(驅動 triage UI 預設,非硬 gate)。

@@ -1,7 +1,7 @@
 ---
 change_id: CH-008
 title: "By-OpCo ledger 空白行(0/0)預設隱藏 + 修正誤導狀態"
-status: proposed           # draft | proposed | approved | active | done | cancelled
+status: approved           # draft | proposed | approved | active | done | cancelled
 created: 2026-07-25
 target_completion: 2026-07-28
 affects_components: [apps/api/src/license (ledger read-model), apps/web (assets By-OpCo view), apps/web/src/lib/ledger.ts]
@@ -15,7 +15,7 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:AI(執行)· 決策 = Chris Lai
-> **Approved by**:_(status flips proposed → approved 時填)_
+> **Approved by**:**Chris Lai(2026-07-26)**
 
 ## 1. Context (Why)
 
@@ -108,6 +108,7 @@ Chris 2026-07-25 提出:「某個 OpCo 某種 license 冇數量了,記錄改成 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-25 | Initial draft(**proposed**) | Chris 提出 0/0 row 唔會消失;查證確認 + 揪到 `assetStatus` 顯示 bug;Chris 揀選項 A(顯示層解決) | — |
+| 2026-07-26 | **proposed → approved**(spec 內容零改動) | Chris approve,含明確接受 §4 R1 嘅 trade-off(隱藏後靠 toggle 搵返,DD-3 仍未解)。⚠️ 開工前必讀 **CH-009 spec §2.4** —— 兩個 change 對同一個 `GET /license/ledger` 有交互 | **Chris Lai** |
 
 ---
 

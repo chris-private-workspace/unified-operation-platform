@@ -12,6 +12,21 @@ affects_components: [LicenseModule (apps/api), apps/web Assets, apps/web Drift]
 > 跨 component 設計方案,落 code 前把問題想清楚 + 畀 owner review。
 > **本檔係探討 + 選項,唔係已拍板決定。** 方案定案後,關鍵決定沉澱入 **ADR-0007**,本檔留做佐證。
 > **Owner 拍板點**:§4.2(SSOT 定位)、§8(Open Questions)—— 呢幾點未 resolve,唔應該開 code。
+>
+> ---
+>
+> ### ⚠️ 2026-07-26 補註 —— 本檔多處「`allocated` 純顯示 / 純管理決定」已被 ADR-0016 部分推翻
+>
+> 本檔寫於 **2026-07-14**,當時「`allocated` 不參與 drift ⇒ 手改零風險 ⇒ 純管理決定」係準確描述。**ADR-0016(2026-07-26 Accepted)之後要分開兩件事**:
+>
+> | 講法 | 今日是否仍然成立 |
+> |---|---|
+> | `allocated` **不參與 drift 對帳** | ✅ **仍然成立**(`reconcile` 零改動,方案甲原封) |
+> | `allocated` **純顯示 / 唔影響行為 / 手改零風險** | ❌ **已不成立** —— 佢成為 **assign 硬 gate**(`assigned + 1 > allocated` → 拒絕) |
+>
+> ⇒ 手改 `allocated` 而家**會直接影響邊個 assign 得成**,唔再係純帳面動作。**本檔內文刻意不逐處改寫**(佢係當時語境嘅佐證記錄,ADR-0007 才係定案)——但引用本檔之前,先讀本註。
+>
+> 連帶:§4.2 未解嘅「`allocated` SSOT = Excel 定平台」張力,因為 `allocated` 而家會擋人,**逼切度上升**(ADR-0016 Consequences 有記)。
 
 ---
 
