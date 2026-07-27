@@ -58,6 +58,26 @@ export const AUDIT_ACTIONS = {
    * whitelist below lists only non-secret keys.
    */
   CONNECTOR_CONFIG_UPDATE: 'connector.config_update',
+  /**
+   * W36 / ADR-0016 — an admin assigned a licence THROUGH the OpCo budget gate.
+   * Its own action, not a flag on a generic assign event, for one reason: R4
+   * (override degenerating into routine) can only be watched if `/admin/audit`
+   * can filter "every override" in one query. A boolean buried in the metadata
+   * of a busy action is not a monitoring surface.
+   *
+   * Only the override is audited here. An ordinary assign is not an audit event
+   * (it has its own RequestEvent timeline); breaking the budget is.
+   */
+  ASSIGN_BUDGET_OVERRIDE: 'assign.budget_override',
+  /**
+   * W37 / ADR-0015 — one row per sweep ROUND that changed something, not per
+   * request opened: a round can open many gates and the per-request trail
+   * already exists as RequestEvent(SYNC). Same shape as allocation.import.
+   *
+   * A round that opened nothing writes nothing — an audit row that only says
+   * "the cron ran" is noise, and the sweep runs every 10 minutes forever.
+   */
+  SYNC_SWEEP: 'sync.sweep',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -69,7 +89,9 @@ export type AuditTargetType =
   | 'DriftAlert'
   | 'AllocationImport'
   | 'OutboundFailure'
-  | 'ConnectorConfig';
+  | 'ConnectorConfig'
+  | 'RequestLineItem'
+  | 'SyncSweep';
 
 /**
  * Per-target allow-list. Only these keys can reach `before` / `after`.
@@ -117,6 +139,27 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'requestSubmissionProvider',
       'n8nOutboundWebhookUrl',
     ],
+    /**
+     * W36 / ADR-0016 — event-only, following the OutboundFailure precedent.
+     * The line item hangs off a Request that carries the target UPN; copying
+     * any of it here would duplicate PII into a table with a DIFFERENT read
+     * permission (audit is ADMIN-only). The numbers an auditor needs — how far
+     * over budget the override went — travel in `metadata`, which is itself
+     * key-restricted, and the UPN is reachable via targetId for anyone who
+     * already has access to the request.
+     */
+    RequestLineItem: [],
+    /**
+     * W37 / ADR-0015 — batch summary, exactly like AllocationImport: counts
+     * only, and they live in `after` rather than `metadata` because that is
+     * where the import precedent already puts batch totals.
+     *
+     * Both are integers. There is deliberately no room here for WHICH requests
+     * were opened — that would put target UPNs one join away from an
+     * ADMIN-only table, and RequestEvent(SYNC) already records it per request
+     * under the request's own (narrower) read permission.
+     */
+    SyncSweep: ['scanned', 'opened'],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */
@@ -131,6 +174,15 @@ export const AUDIT_METADATA_KEYS = [
    * lockout triage impossible.
    */
   'emailAttempted',
+  /**
+   * W36 / ADR-0016 — the shape of a budget override. All three are non-PII
+   * (a boolean and two seat counts); they exist so the audit row answers "how
+   * far over?" without a join back to a ledger that will have moved on by the
+   * time anyone reads it. `reason` above carries the operator's justification.
+   */
+  'budgetOverride',
+  'allocated',
+  'assignedBefore',
 ] as const;
 
 /**

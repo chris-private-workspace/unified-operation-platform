@@ -77,6 +77,68 @@ describe('useAssignLineItem invalidation', () => {
     expect(keys).toContain(JSON.stringify(['license', 'drift']));
   });
 
+  // ── W36 / ADR-0016 D3: what actually goes on the wire ──
+  //
+  // This matters more than it looks. A non-admin sending budgetOverrideReason
+  // gets a 403 (the backend refuses to silently ignore it), so an accidentally
+  // always-present field would break every OPCO_IT assign — a failure mode the
+  // invalidation tests above cannot see.
+  describe('request body', () => {
+    /** Run one assign and return the body passed to apiPatch. */
+    async function bodyFor(vars: {
+      lineItemId: string;
+      usageLocation?: string;
+      budgetOverrideReason?: string;
+    }) {
+      const client = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      });
+      vi.mocked(apiPatch).mockResolvedValue({ id: 'li-1' } as never);
+
+      const { result } = renderHook(() => useAssignLineItem(REQUEST_ID), {
+        wrapper: wrapperFor(client),
+      });
+      result.current.mutate(vars);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      return vi.mocked(apiPatch).mock.calls[0][1];
+    }
+
+    it('sends no body at all for a plain assign (pre-W36 behaviour)', async () => {
+      expect(await bodyFor({ lineItemId: 'li-1' })).toBeUndefined();
+    });
+
+    it('carries the override reason when an admin supplies one', async () => {
+      expect(
+        await bodyFor({
+          lineItemId: 'li-1',
+          budgetOverrideReason: 'RHK urgent hire, tops up next week',
+        }),
+      ).toEqual({ budgetOverrideReason: 'RHK urgent hire, tops up next week' });
+    });
+
+    it('still carries usageLocation alone, and both together', async () => {
+      expect(
+        await bodyFor({ lineItemId: 'li-1', usageLocation: 'HK' }),
+      ).toEqual({ usageLocation: 'HK' });
+
+      vi.clearAllMocks();
+      expect(
+        await bodyFor({
+          lineItemId: 'li-1',
+          usageLocation: 'HK',
+          budgetOverrideReason: 'documented exception here',
+        }),
+      ).toEqual({
+        usageLocation: 'HK',
+        budgetOverrideReason: 'documented exception here',
+      });
+    });
+  });
+
   it('invalidates nothing when the assign fails (backend gates fail closed)', async () => {
     const client = new QueryClient({
       defaultOptions: {

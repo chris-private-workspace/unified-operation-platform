@@ -35,7 +35,7 @@ Unified Operation Platform 係一個自建嘅 **admin portal**,統一管理 IT o
 
 1. **State layer** — 平台真相:live M365(Graph)、AD/sync 狀態、entitlement/allocation ledger(Postgres via Prisma)。
 2. **Integration layer**(✅ 已建,`src/integration/`)— 對外唯一邊界;Graph + ServiceNow client;domain 層唔掂 vendor SDK。
-3. **Orchestration / Action layer** — 執行 + 人手介入控制點;`@nestjs/schedule` `@Cron`(sync poll / daily reconcile)+(planned)Redis + BullMQ。n8n 今天、AI 明天接呢層。
+3. **Orchestration / Action layer** — 執行 + 人手介入控制點;`@nestjs/schedule` `@Cron`(**sync sweep ✅ 已實作** — ADR-0015 / W37,`SyncSweepService`;daily reconcile 仍然 planned)+(planned)Redis + BullMQ。n8n 今天、AI 明天接呢層。
 4. **API + UI layer** — REST + OpenAPI(`/docs/api`);呢個 OpenAPI contract 就係 n8n / AI 未來受控接入點。
 
 - **Monorepo**(ADR-0001):`apps/api`(NestJS 後端)+ `apps/web`(React 前端);`docs/` 同 `design_handoff_licenseops/` 留 root。

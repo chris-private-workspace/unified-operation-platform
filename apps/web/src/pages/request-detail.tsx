@@ -13,6 +13,7 @@ import {
 import { Card } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
@@ -51,10 +52,11 @@ import {
   buildLedgerIndex,
   buildTenantIndex,
   opcoCapacity,
+  overrideReasonError,
   tenantCapacity,
 } from '@/lib/capacity';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
-import { canSeePlatform } from '@/lib/roles';
+import { canOverrideBudget, canSeePlatform } from '@/lib/roles';
 import { formatDateTime } from '@/lib/format';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -97,6 +99,16 @@ export function RequestDetail() {
     skuCatalogId: string;
     qty: number;
   } | null>(null);
+  // W36 / ADR-0016: null = no override in progress. The numbers are captured
+  // when the dialog opens so the confirmation states what the operator was
+  // actually looking at, even if a refetch moves them underneath.
+  const [override, setOverride] = useState<{
+    lineItemId: string;
+    skuLabel: string;
+    assigned: number;
+    allocated: number;
+    reason: string;
+  } | null>(null);
 
   function flash(message: string, tone: 'ok' | 'danger') {
     setToast({ message, tone });
@@ -117,6 +129,7 @@ export function RequestDetail() {
   // Indexed once here, not per line item: a request can carry many lines (D4).
   const { role } = useCurrentUser();
   const showTenant = canSeePlatform(role);
+  const mayOverride = canOverrideBudget(role);
   const ledger = useLedger();
   const tenantSkus = useTenantSkus(showTenant);
   const ledgerIndex = useMemo(
@@ -194,6 +207,26 @@ export function RequestDetail() {
         onSuccess: () => {
           flash('Line item added', 'ok');
           setNewLine(null);
+        },
+        onError,
+      },
+    );
+  }
+
+  // W36 / ADR-0016 D3. Kept open on failure: the reason the operator typed is
+  // the expensive part, and a 400 from a *different* gate (seats, sync) is not a
+  // reason to make them write it again.
+  function submitOverride() {
+    if (!override || overrideReasonError(override.reason)) return;
+    assign.mutate(
+      {
+        lineItemId: override.lineItemId,
+        budgetOverrideReason: override.reason.trim(),
+      },
+      {
+        onSuccess: () => {
+          flash('Assigned — OpCo budget overridden', 'ok');
+          setOverride(null);
         },
         onError,
       },
@@ -647,6 +680,38 @@ export function RequestDetail() {
                               {synced ? 'Assign now' : 'Blocked · sync'}
                             </Button>
                           )}
+                          {/* W36 / ADR-0016 D3 — the exceptional path, offered
+                              ONLY to an admin and ONLY once the OpCo has no
+                              headroom left. Non-admins never see it (the
+                              backend 403s them anyway), and nobody sees it while
+                              there is still budget: an override that is always
+                              on screen becomes the normal way to assign (R4).
+
+                              Deliberately does NOT disable "Assign now" above:
+                              `exhausted` comes from a cached ledger figure, and
+                              gating the normal path on client data would let a
+                              stale number block a legitimate assign. Being
+                              wrong here only costs an extra button. */}
+                          {mayOverride && canAssign && budget.exhausted && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={pending}
+                              title="Assign beyond the OpCo allocation (recorded with your reason)"
+                              onClick={() =>
+                                setOverride({
+                                  lineItemId: item.id,
+                                  skuLabel:
+                                    item.sku?.displayName ?? item.skuCatalogId,
+                                  assigned: budget.assigned,
+                                  allocated: budget.allocated,
+                                  reason: '',
+                                })
+                              }
+                            >
+                              Override budget
+                            </Button>
+                          )}
                           {/* Remove only an unsent REQUESTED line (D5). Locked
                               lines show NO trash at all — not a disabled one —
                               so the UI never implies the lock can be undone. */}
@@ -739,8 +804,113 @@ export function RequestDetail() {
         </div>
       </div>
 
+      {override && (
+        <OverrideBudgetDialog
+          state={override}
+          pending={pending}
+          onReason={(reason) => setOverride({ ...override, reason })}
+          onClose={() => setOverride(null)}
+          onConfirm={submitOverride}
+        />
+      )}
+
       <Toast message={toast?.message} tone={toast?.tone} />
     </div>
+  );
+}
+
+/**
+ * W36 / ADR-0016 D3 — the ADMIN-only budget override.
+ *
+ * The reason is mandatory because it is the entire audit value: `override=1`
+ * records that a rule was broken, "RHK urgent hire, allocation tops up next
+ * week" records WHY. Confirm stays disabled until the reason clears the same
+ * rule the backend enforces (overrideReasonError), so the operator finds out
+ * before typing a paragraph and losing it to a 400.
+ *
+ * The way OUT of needing an override at all is stated here on purpose (R2 /
+ * OQ2): buying licences does not raise `allocatedQuantity`, so someone who just
+ * completed procurement would otherwise override forever without ever learning
+ * that the allocation is what needs changing.
+ */
+function OverrideBudgetDialog({
+  state,
+  pending,
+  onReason,
+  onClose,
+  onConfirm,
+}: {
+  state: {
+    skuLabel: string;
+    assigned: number;
+    allocated: number;
+    reason: string;
+  };
+  pending: boolean;
+  onReason: (reason: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const error = overrideReasonError(state.reason);
+  return (
+    <Dialog
+      open
+      title="Override OpCo budget"
+      onClose={onClose}
+      width={460}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={onConfirm}
+            disabled={Boolean(error) || pending}
+          >
+            Assign with override
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-[6px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
+          <span className="text-[12.5px] font-medium">{state.skuLabel}</span>
+          <span className="text-[11.5px] text-fg-subtle">
+            OpCo budget{' '}
+            <span className="font-mono text-danger">
+              {state.assigned}/{state.allocated}
+            </span>{' '}
+            — this assign takes it to{' '}
+            <span className="font-mono text-danger">
+              {state.assigned + 1}/{state.allocated}
+            </span>
+          </span>
+        </div>
+        <div className="flex flex-col gap-[6px]">
+          <label className="text-[12px] text-fg-muted">
+            Reason for the override
+          </label>
+          <Input
+            value={state.reason}
+            placeholder="Urgent hire — allocation tops up next week"
+            onChange={(e) => onReason(e.target.value)}
+          />
+          {/* Show the specific problem only once they have started typing —
+              scolding an empty field they have not touched yet is noise. */}
+          <span className="text-[11.5px] leading-[1.5] text-fg-subtle">
+            {state.reason && error
+              ? error
+              : 'Recorded in the audit trail and on this request’s timeline, against your name.'}
+          </span>
+        </div>
+        <p className="text-[11.5px] leading-[1.5] text-fg-subtle">
+          Buying licences does not raise the allocation on its own. If this OpCo
+          has been topped up, raise its allocated figure in License assets
+          instead of overriding.
+        </p>
+      </div>
+    </Dialog>
   );
 }
 

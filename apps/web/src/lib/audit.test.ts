@@ -36,6 +36,8 @@ describe('auditActionTone (DS-8 semantic map)', () => {
     expect(auditActionTone('auth.login_failed')).toBe('warn');
     expect(auditActionTone('auth.locked')).toBe('danger');
     expect(auditActionTone('drift.resolve')).toBe('ok');
+    // W36 / ADR-0016 — a deliberate budget breach must not render as routine.
+    expect(auditActionTone('assign.budget_override')).toBe('warn');
   });
 
   it('keeps routine changes neutral and unknown actions safe', () => {
@@ -45,12 +47,25 @@ describe('auditActionTone (DS-8 semantic map)', () => {
 });
 
 describe('filter option constants', () => {
-  // Guards against the frontend mirror drifting from the backend AUDIT_ACTIONS
-  // in count — a renamed action still needs a human eye, but a forgotten one
-  // shows up here.
-  it('offers all 14 recorded actions and 5 target types', () => {
-    expect(AUDIT_ACTION_OPTIONS).toHaveLength(14);
-    expect(AUDIT_TARGET_TYPE_OPTIONS).toHaveLength(5);
+  /**
+   * ⚠️ A count against a hard-coded number cannot detect the backend gaining an
+   * action — which is exactly what happened: this list is KNOWN to be behind by
+   * `outbound.retry` / `outbound.abandon` / `connector.config_update` and the
+   * `OutboundFailure` / `ConnectorConfig` target types (W31 + W34 never added
+   * their filter options). Left as-is deliberately — closing that gap is not
+   * W36's change to make (reported to owner, tracked in BACKLOG). So read this
+   * as "the list is this long", NOT "the list is complete".
+   */
+  it('is the expected length (mirror-drift smoke test only, NOT completeness)', () => {
+    expect(AUDIT_ACTION_OPTIONS).toHaveLength(15);
+    expect(AUDIT_TARGET_TYPE_OPTIONS).toHaveLength(6);
+  });
+
+  // W36 / ADR-0016 R4: the override's whole monitoring story is "an admin can
+  // filter for these", so the option existing is part of the feature.
+  it('makes budget overrides filterable', () => {
+    expect(AUDIT_ACTION_OPTIONS).toContain('assign.budget_override');
+    expect(AUDIT_TARGET_TYPE_OPTIONS).toContain('RequestLineItem');
   });
 
   // Both credential events must be filterable — an auditor asking "what

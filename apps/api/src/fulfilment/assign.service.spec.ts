@@ -11,11 +11,36 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { OutboundFailureService } from './outbound-failure.service';
+import { AuditService } from '../audit/audit.service';
+import {
+  AUDIT_ACTIONS,
+  pickAuditFields,
+  pickAuditMetadata,
+} from '../audit/audit-fields';
+import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
 
 // Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
-const ADMIN = { id: 'admin', opcoScopeId: null } as unknown as AppUser;
-const O1_IT = { id: 'o1-it', opcoScopeId: 'o1' } as unknown as AppUser;
-const OTHER_IT = { id: 'ox-it', opcoScopeId: 'oX' } as unknown as AppUser;
+// `role` matters from W36 on: the budget override is ADMIN-only (ADR-0016 D3).
+const ADMIN = {
+  id: 'admin',
+  opcoScopeId: null,
+  role: 'ADMIN',
+} as unknown as AppUser;
+const REGIONAL = {
+  id: 'reg',
+  opcoScopeId: null,
+  role: 'REGIONAL',
+} as unknown as AppUser;
+const O1_IT = {
+  id: 'o1-it',
+  opcoScopeId: 'o1',
+  role: 'OPCO_IT',
+} as unknown as AppUser;
+const OTHER_IT = {
+  id: 'ox-it',
+  opcoScopeId: 'oX',
+  role: 'OPCO_IT',
+} as unknown as AppUser;
 
 describe('AssignService', () => {
   let service: AssignService;
@@ -24,6 +49,7 @@ describe('AssignService', () => {
   let graph: any;
   let snow: any;
   let failures: any;
+  let audit: any;
 
   // A READY line item wired for a successful assign; individual tests tweak it.
   const readyItem = (over: Record<string, any> = {}) => ({
@@ -42,8 +68,15 @@ describe('AssignService', () => {
     ...over,
   });
 
+  /** Ledger row for the OpCo budget gate; default has plenty of headroom. */
+  const ledgerRow = (allocatedQuantity = 10, assignedQuantity = 3) => ({
+    allocatedQuantity,
+    assignedQuantity,
+  });
+
   const arrangeHappy = () => {
     prisma.requestLineItem.findUnique.mockResolvedValue(readyItem());
+    prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow());
     graph.findUser.mockResolvedValue({
       id: 'aad-1',
       userPrincipalName: 'new.user@rhk.com',
@@ -79,6 +112,8 @@ describe('AssignService', () => {
       requestLineItem: { findUnique: jest.fn() },
       request: { findUnique: jest.fn(), update: jest.fn() },
       requestEvent: { create: jest.fn() },
+      // W36 / ADR-0016 — the OpCo budget gate reads the ledger row before Graph.
+      opcoSkuLedger: { findUnique: jest.fn() },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
     graph = {
@@ -92,6 +127,10 @@ describe('AssignService', () => {
     // omitted so the tests below can assert it is (and is NOT) called.
     failures = { record: jest.fn().mockResolvedValue(undefined) };
 
+    // ADR-0016 D6 — the override audit row. Mocked, but the tests below run the
+    // captured payload through the REAL whitelist (see the audit describe).
+    audit = { log: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AssignService,
@@ -99,6 +138,7 @@ describe('AssignService', () => {
         { provide: GraphService, useValue: graph },
         { provide: ServiceNowService, useValue: snow },
         { provide: OutboundFailureService, useValue: failures },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(AssignService);
@@ -320,6 +360,253 @@ describe('AssignService', () => {
     });
   });
 
+  // ── W36 / ADR-0016 — OpCo budget gate ──
+  describe('assignLineItem — OpCo budget gate (ADR-0016)', () => {
+    it('assigns while the OpCo still has headroom', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 3));
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(graph.assignLicense).toHaveBeenCalled();
+    });
+
+    // Off-by-one guard: the LAST free seat must still go through. A gate written
+    // as `assigned >= allocated - 1` would pass every other test here.
+    it('assigns the last free seat (assigned = allocated - 1)', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 9));
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(graph.assignLicense).toHaveBeenCalled();
+    });
+
+    it('refuses when the budget is exactly used up (assigned = allocated)', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    // D1: a missing row means nothing was ever allocated — NOT "unlimited".
+    it('refuses when the OpCo has no ledger row at all', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // D5: the gate sits BEFORE the Graph inventory read, so busting the OpCo
+    // budget must not cost a vendor round-trip. Asserting only the 400 would
+    // still pass with the gate in the wrong place — this is what pins it down.
+    it('does not touch Graph at all when the budget is busted', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(5, 5));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(graph.getSubscribedSkus).not.toHaveBeenCalled();
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    it('states the real numbers so the operator knows what to fix', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(12, 12));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(/12 assigned of 12 allocated/);
+    });
+  });
+
+  describe('assignLineItem — budget override (ADR-0016 D3)', () => {
+    const REASON = 'RHK urgent hire, allocation tops up next week';
+
+    it('lets an ADMIN through with a reason', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await service.assignLineItem('li1', undefined, ADMIN, REASON);
+
+      expect(graph.assignLicense).toHaveBeenCalled();
+    });
+
+    it('records the override on the request timeline, not only in the audit log', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await service.assignLineItem('li1', undefined, ADMIN, REASON);
+
+      const event = tx.requestEvent.create.mock.calls[0][0].data;
+      expect(event.message).toContain('budget overridden');
+      expect(event.message).toContain(REASON);
+    });
+
+    // D3 — fail closed for everyone else, and LOUDLY: silently ignoring the
+    // field would let an OPCO_IT operator believe the override took effect.
+    it('403s an OPCO_IT that supplies a reason', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, O1_IT, REASON),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('403s a REGIONAL that supplies a reason (deliberately excluded)', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, REGIONAL, REASON),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a whitespace-only reason (it defeats the audit)', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN, '            '),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // The override is for the BUDGET and nothing else. These two pin that down —
+    // an override that waved through the sync gate or the tenant seat gate would
+    // be a far worse bug than the one it solves.
+    it('does not bypass the tenant seat gate', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'guid-1',
+          skuPartNumber: 'SPE_E3',
+          prepaidEnabled: 100,
+          consumedUnits: 100,
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN, REASON),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    it('does not bypass the Phase 1 sync gate', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { azureSyncedAt: null } }),
+      );
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN, REASON),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    // An admin may send a reason on an assign that never hit the gate. Nothing
+    // was overridden, so nothing may claim one was — otherwise the "how often
+    // is override used?" number R4 depends on is inflated by non-events.
+    it('a reason on an in-budget assign is not an override', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 3));
+
+      await service.assignLineItem('li1', undefined, ADMIN, REASON);
+
+      expect(audit.log).not.toHaveBeenCalled();
+      expect(
+        tx.requestEvent.create.mock.calls[0][0].data.message,
+      ).not.toContain('overridden');
+    });
+  });
+
+  // ── W36 / ADR-0016 D6 + ADR-0009 — the override in the audit trail ──
+  describe('assignLineItem — budget override audit (D6)', () => {
+    const REASON = 'RHK urgent hire, allocation tops up next week';
+
+    const overrideAndCapture = async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(12, 12));
+      await service.assignLineItem('li1', undefined, ADMIN, REASON);
+      return audit.log.mock.calls[0];
+    };
+
+    it('writes an assign.budget_override row against the line item', async () => {
+      const [, entry] = await overrideAndCapture();
+
+      expect(entry.action).toBe(AUDIT_ACTIONS.ASSIGN_BUDGET_OVERRIDE);
+      expect(entry.targetType).toBe('RequestLineItem');
+      expect(entry.targetId).toBe('li1');
+      expect(entry.actorId).toBe('admin');
+    });
+
+    /**
+     * The blocker this phase hit: a payload can be perfectly formed and still
+     * be dropped on the floor by the ADR-0009 whitelist. Asserting the call
+     * args alone would have gone green while the stored row held only `reason`.
+     * So run the captured metadata through the REAL pickAuditMetadata.
+     */
+    it('every field survives the ADR-0009 whitelist (not silently dropped)', async () => {
+      const [, entry] = await overrideAndCapture();
+
+      expect(pickAuditMetadata(entry.metadata)).toEqual({
+        budgetOverride: true,
+        reason: REASON,
+        allocated: 12,
+        assignedBefore: 12,
+      });
+    });
+
+    // Event-only target, like OutboundFailure: the request behind this line item
+    // carries the target UPN, and the audit table is read by a different (wider
+    // on this axis) audience than the request itself. H4.
+    it('copies no line-item fields into before/after (no PII widening)', async () => {
+      const [, entry] = await overrideAndCapture();
+
+      expect(entry.before).toBeUndefined();
+      expect(entry.after).toBeUndefined();
+      expect(pickAuditFields('RequestLineItem', readyItem())).toBeUndefined();
+    });
+
+    // ADR-0009 D8.1 — the audit row and the assign it describes commit together.
+    // Passing `prisma` instead of `tx` would leave "assigned but unrecorded"
+    // possible, which is the exact outcome the trail exists to prevent.
+    it('writes inside the assign transaction, not outside it', async () => {
+      const [handle] = await overrideAndCapture();
+
+      expect(handle).toBe(tx);
+      expect(handle).not.toBe(prisma);
+    });
+
+    it('writes nothing when the gate blocked the assign (no state changed)', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing on an ordinary in-budget assign', async () => {
+      arrangeHappy();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+  });
+
   describe('assignLineItem — failure isolation', () => {
     it('does not touch the ledger if Graph assignLicense throws', async () => {
       arrangeHappy();
@@ -386,9 +673,34 @@ describe('AssignService', () => {
         data: {
           requestId: 'r1',
           type: 'SYNC',
-          message: expect.any(String),
+          message: SYNC_GATE_MESSAGE.MANUAL,
         },
       });
+    });
+
+    /**
+     * W37 / ADR-0015 D3. The break-glass path must not read as equivalent to
+     * the sweep's evidence-backed one — an operator looking at a stalled
+     * onboarding needs to know whether the gate was opened by a Graph hit or by
+     * someone asserting it. `expect.any(String)` above would have passed
+     * whatever wording; this pins the claim itself.
+     */
+    it('says outright that a manual confirm is NOT Graph-verified', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        accountCreatedAt: null,
+      });
+      prisma.request.update.mockImplementation(({ data }: any) => ({
+        id: 'r1',
+        ...data,
+      }));
+
+      await service.markSynced('r1', ADMIN);
+
+      const { message } = prisma.requestEvent.create.mock.calls[0][0].data;
+      expect(message).toContain('not verified against Graph');
+      expect(message).not.toBe(SYNC_GATE_MESSAGE.VERIFIED);
     });
 
     it('throws NotFound when the request is missing', async () => {

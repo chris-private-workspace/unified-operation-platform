@@ -63,6 +63,7 @@ describe('assetStatus', () => {
   it('over-allocated → danger', () => {
     const s = assetStatus({
       allocatedQuantity: 10,
+      assignedQuantity: 14,
       headroom: -4,
       overAllocated: true,
     });
@@ -72,6 +73,7 @@ describe('assetStatus', () => {
   it('budget set with no headroom left → warn (fully allocated)', () => {
     const s = assetStatus({
       allocatedQuantity: 10,
+      assignedQuantity: 10,
       headroom: 0,
       overAllocated: false,
     });
@@ -81,7 +83,39 @@ describe('assetStatus', () => {
   it('headroom available → ok', () => {
     const s = assetStatus({
       allocatedQuantity: 10,
+      assignedQuantity: 4,
       headroom: 6,
+      overAllocated: false,
+    });
+    expect(s).toEqual({ label: 'Headroom', tone: 'ok' });
+  });
+
+  // ── CH-008 ────────────────────────────────────────────────────────
+  it('0 / 0 → Empty / neutral (before CH-008 this fell through to green Headroom)', () => {
+    const s = assetStatus({
+      allocatedQuantity: 0,
+      assignedQuantity: 0,
+      headroom: 0,
+      overAllocated: false,
+    });
+    expect(s).toEqual({ label: 'Empty', tone: 'neutral' });
+  });
+
+  it('allocated=0 with assigned>0 stays Over-allocated — Empty must not out-rank it (A5)', () => {
+    const s = assetStatus({
+      allocatedQuantity: 0,
+      assignedQuantity: 5,
+      headroom: -5,
+      overAllocated: true,
+    });
+    expect(s).toEqual({ label: 'Over-allocated', tone: 'danger' });
+  });
+
+  it('budget set with nobody assigned is NOT empty — still Headroom (A4)', () => {
+    const s = assetStatus({
+      allocatedQuantity: 80,
+      assignedQuantity: 0,
+      headroom: 80,
       overAllocated: false,
     });
     expect(s).toEqual({ label: 'Headroom', tone: 'ok' });

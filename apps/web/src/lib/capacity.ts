@@ -13,6 +13,10 @@ import type { LedgerRow, TenantSkuRow } from './api-types';
 //                  INDICATIVE, not authoritative — the real assign gate reads
 //                  live Graph subscribedSkus. The UI must say "last sync".
 //
+// W36: the OpCo layer is now an enforced backend gate (ADR-0016), not just a
+// number. This file gained the override-reason rule so the dialog and the
+// backend cannot disagree about what counts as a valid reason.
+//
 // Neither figure gates anything here: the backend stays the only authority
 // (assign.service.ts fails closed). Showing a stale number can mislead, but it
 // can never cause a wrong assign.
@@ -49,9 +53,12 @@ export interface OpcoCapacity {
   /**
    * No room for one more seat. Mirrors ADR-0016's gate condition
    * (assigned + 1 > allocated ⇔ assigned >= allocated).
-   * ⚠️ ADR-0016 is Accepted but NOT yet implemented — today nothing blocks on
-   * this. It is a display-layer warning only, so the wording must state the
-   * fact ("no headroom"), never promise a block that does not happen yet.
+   *
+   * W36: the gate is now LIVE in assign.service.ts, so this predicate no longer
+   * only warns — it also decides whether an admin is offered the override.
+   * It is still not a gate: the button stays clickable for everyone, because
+   * this number can be stale and the backend is the only authority (see the
+   * header note). Being wrong here costs a 400 toast, never a wrong assign.
    */
   exhausted: boolean;
 }
@@ -72,6 +79,26 @@ export function opcoCapacity(
     headroom: allocated - assigned,
     exhausted: assigned >= allocated,
   };
+}
+
+/**
+ * Mirrors the backend's two rules for `budgetOverrideReason` (ADR-0016 D3):
+ * `@MinLength(10)` on the DTO, and a `trim()` in the service because ten spaces
+ * pass MinLength but say nothing. Both are checked here so the dialog can
+ * disable Confirm instead of letting the operator type, submit and get a 400.
+ *
+ * The backend remains the authority — this only spares a round-trip.
+ */
+export const OVERRIDE_REASON_MIN = 10;
+
+/** null = acceptable; otherwise the message to show under the field. */
+export function overrideReasonError(reason: string): string | null {
+  const trimmed = reason.trim();
+  if (trimmed.length === 0) return 'A reason is required.';
+  if (trimmed.length < OVERRIDE_REASON_MIN) {
+    return `At least ${OVERRIDE_REASON_MIN} characters — this is what the audit trail will show.`;
+  }
+  return null;
 }
 
 /** Index tenant rows by SKU. ADMIN / REGIONAL only — OPCO_IT never fetches. */
