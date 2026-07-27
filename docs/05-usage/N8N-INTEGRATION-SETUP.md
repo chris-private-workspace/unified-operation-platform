@@ -11,19 +11,30 @@
 | | 線 ①  Inbound | 線 ②  Outbound |
 |---|---|---|
 | 方向 | **n8n → 平台** | **平台 → n8n** |
-| 邊個暴露 endpoint | **平台**(`POST /requests/intake`) | **n8n**(webhook URL) |
+| 邊個暴露 endpoint | **平台**(`POST /requests/intake` **或** `/requests/intake/n8n`,見 §1.5) | **n8n**(webhook URL) |
 | 用途 | onboarding 完成 → n8n 推單入平台建 `Request` | IT 喺平台開單 → 平台叫 n8n 去 ServiceNow 開飛 |
 | Auth header | `X-Intake-Key`(**平台**發 key,n8n 帶入) | `X-N8n-Key`(**n8n**發 key,平台帶出) |
 | 觸發時機 | AD 建好後 fire-and-forget push | IT `POST /requests` 時 provider 選路 = `n8n` |
-| 成熟度 | ✅ **真 endpoint,已 build + test,合約 LOCKED** | ⚠️ **provider 已 build,合約代表性,欄名待 live 對齊** |
+| 成熟度 | ✅ **平台側兩條 route 都 build + test 齊,canonical 合約 LOCKED**<br>⚠️ **但未真接過 n8n** —— n8n 側仲有 3 個接線缺口(見下) | ⚠️ **provider 已 build,合約代表性,欄名待 live 對齊** |
 
-> 兩線可以獨立啟用:線 ① 而家就用得;線 ② 要 owner 開 webhook + 對齊欄名先 live。
+> **線 ① 平台側 ready,n8n 側未 ready。** W36 實讀 n8n workflow 揪出三個 blocking 缺口:
+> ① 兩個 `WF1 - Call UOP Intake` **完全冇送 `X-Intake-Key`** → 一 enable 就全部 **401**;
+> ② `UOP_INTAKE_URL` 要指去 `/requests/intake/n8n`(§1.5);③ 1005 個 Call node 仲係 disabled。
+> 補完先算通 —— 逐 node 改動見 `docs/01-planning/W36-n8n-intake-adapter/N8N-WF1-CHANGES.md §2.5`;
+> **上線次序 + 平台側前置 + 分階段驗收表(401→400→503→201)見 `docs/13-deployment/08-n8n-integration-go-live.md`**。
+>
+> 線 ② 要 owner 開 webhook + 對齊欄名先 live。
 
 ---
 
 ## 線 ① — Inbound:平台提供畀 n8n(n8n call 入嚟建單)
 
-**狀態:production-ready,唔使再開發。** 實作:`intake.controller.ts:23` + `intake-key.guard.ts` + `intake.service.ts` + `dto/n8n-intake.dto.ts`。
+**狀態:平台側唔使再開發**(兩條 route 都 build + test 齊)**;但整條線未真接過 n8n**,見 §0 三個缺口。
+實作:`intake.controller.ts` + `intake-key.guard.ts` + `intake.service.ts` + `dto/n8n-intake.dto.ts`(adapter route 另見 §1.5)。
+
+> **驗到邊?**(W36 F4,誠實邊界)平台側 8 個 case live 打過:401 / 201 / 冪等 / 三種 resolve 失敗 / 新 OpCo / 壞信封,DB 逐行查過。
+> **但 ServiceNow 反查行嘅係本地 mock**(憑證仍係 placeholder),而且 payload 係照 n8n node 嘅 `jsCode` 重砌,**唔係 n8n 真打入嚟**。
+> ⇒ **真 SN + 真 n8n 端到端 = 未驗證。**
 
 ### 1.1 平台交付畀 n8n team
 
@@ -77,6 +88,22 @@
 ### 1.4 平台側前提(deploy 要 confirm)
 
 - [ ] `INTAKE_API_KEY` 喺目標環境(UAT / prod)**已設真值**(`.env.example` 只係 `change-me-intake-secret` placeholder;`IntakeKeyGuard` getOrThrow → 未設會 boot fail)
+- [ ] 若行 §1.5 adapter route:目標環境**已補 OpCo `RAPO/IT (RDC2)`**(W36 新增,`POST /admin/opcos`)
+
+### 1.5 🆕 兩條 inbound route —— canonical vs adapter(W36 / ADR-0017 戊)
+
+線 ① 而家有**兩個入口,同一個 `X-Intake-Key`,同一個 `IntakeService` 寫入**:
+
+| | `POST /requests/intake`(canonical) | `POST /requests/intake/n8n`(**adapter**) |
+|---|---|---|
+| Body | §1.2 扁平合約 | n8n 自己個 nested 信封 |
+| 要平台內部 identifier? | ✅ 要 `skuId` GUID · `opcoCode` · REQ **sysId** | ❌ 唔使 —— 送 **licence 名 · Job Function · REQ number** 就得 |
+| 合約 | W24 `CONTRACT.md` **LOCKED**(W36 零改動) | 跟 n8n 實際 payload,`N8N-INTAKE-HANDOFF.md §8` |
+| 用嚟做咩 | 手上已有 GUID 嘅 caller | **n8n onboarding workflow(1001 即時 / 1005 排程)** |
+
+**點解要開第二條而唔係放鬆第一條**:n8n 手上根本冇 GUID。改 LOCKED 合約去遷就一個 caller,等於所有 caller 都失去「GUID 直對主鍵、零 map」呢個保證。改為喺 adapter 入面 resolve —— 唯一命中先收,否則 **400 兼零寫入**(ADR-0017 D0 fail-closed)。
+
+⚠️ **兩條 route 唯一嘅行為差異**:adapter route resolve OpCo 之後**會 check `active`**(收緊咗 HANDOFF §7 落差 #5);canonical route **維持原狀**,仍然接受 inactive OpCo —— 刻意唔郁 LOCKED 合約。
 
 ---
 
@@ -194,10 +221,12 @@ N8N_OUTBOUND_WEBHOOK_KEY=change-me-n8n-outbound-secret  # 🔴 n8n 發,平台帶
 - [ ] `INTAKE_API_KEY` 設真值(線 ① 必需)
 - [ ] 決定線 ②:`REQUEST_SUBMISSION_PROVIDER`(唔用 n8n outbound = 留 `direct`)
 - [ ] 若用 n8n outbound:填 `N8N_OUTBOUND_WEBHOOK_URL` + `N8N_OUTBOUND_WEBHOOK_KEY`
-- [ ] 交平台 base URL + `/requests/intake` + `INTAKE_API_KEY` 畀 n8n(線 ①)
+- [ ] 交平台 base URL + `/requests/intake`(**或 `/requests/intake/n8n`**)+ `INTAKE_API_KEY` 畀 n8n(線 ①)
+- [ ] 若行 adapter route:補 OpCo `RAPO/IT (RDC2)`(§1.4)
 
 **n8n 側:**
-- [ ] 線 ①:HTTP Request node POST `/requests/intake`,帶 `X-Intake-Key`,body 跟 §1.2,掛 onboarding 尾段 fire-and-forget
+- [ ] 線 ①:HTTP Request node POST **`/requests/intake/n8n`**(onboarding workflow 用呢條,§1.5),帶 `X-Intake-Key`,body 跟 `N8N-INTAKE-HANDOFF.md §8.1`,掛 onboarding 尾段 fire-and-forget
+- [ ] 線 ①:1005(排程路徑)個 `WF1 - Call UOP Intake` node **要 enable** —— 未到入職日走呢條,disabled = 排程單永遠唔會入平台
 - [ ] 線 ②(如啟用):建 Webhook node → 畀 URL + 驗證 key 畀平台;落實收 §2.3 / 回 §2.4;答齊 §2.5 五條
 
 ---
@@ -207,8 +236,9 @@ N8N_OUTBOUND_WEBHOOK_KEY=change-me-n8n-outbound-secret  # 🔴 n8n 發,平台帶
 | 關注 | 檔案 |
 |---|---|
 | Inbound endpoint / guard / DTO / service | `apps/api/src/fulfilment/intake.controller.ts` · `intake-key.guard.ts` · `dto/n8n-intake.dto.ts` · `intake.service.ts` |
+| Inbound **adapter** route(§1.5) | `apps/api/src/fulfilment/intake-adapter.service.ts` · `dto/n8n-native-intake.dto.ts` · `opco-department-map.ts` |
 | Outbound provider / 選路 | `apps/api/src/fulfilment/n8n-workflow.provider.ts` · `fulfilment.module.ts`(`requestSubmissionProviderFactory`) |
 | Outbound payload 抽象 | `apps/api/src/fulfilment/request-submission.provider.ts` |
 | Connector config(W34 非機密欄 vs secret) | `apps/api/src/integration/connectors.ts`(`CONNECTOR_CONFIG`) |
 | env 範本 | `apps/api/.env.example` |
-| 決策 / 合約 | `docs/adr/0008-request-creation-n8n-d365-scope.md` · `docs/01-planning/W24-request-intake/CONTRACT.md` · `docs/01-planning/W26-request-n8n-outbound/CONTRACT-OUTBOUND.md` |
+| 決策 / 合約 | `docs/adr/0008-request-creation-n8n-d365-scope.md` · **`docs/adr/0017-n8n-execution-seams-switchable-integration.md`** · `docs/01-planning/W24-request-intake/CONTRACT.md` · `docs/01-planning/W26-request-n8n-outbound/CONTRACT-OUTBOUND.md` |

@@ -3,8 +3,17 @@ import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
-// The 23 OpCo entities from the FY26 M365 license summary (company + cost-center).
-// code is the unique key; "COMPANY/CC" splits into company + costCenter.
+// OpCo entities. code is the unique key; "COMPANY/CC" splits into company +
+// costCenter.
+//
+// Provenance is mixed, deliberately:
+//   - 23 rows come from the FY26 M365 license summary (the original import).
+//   - 'RAPO/IT (RDC2)' was added in W36 from n8n's `deptMapping` (Job Function
+//     "RAPO IT (RDC2)"), NOT from that summary. AD keeps it under department
+//     code RAPO/IT — the platform tracks it separately on purpose, so its seats
+//     do not roll up into RAPO/IT (OQ-2, Chris 2026-07-27). Consequence worth
+//     remembering when comparing against FY26 figures: RAPO/IT totals before
+//     and after this split are not directly comparable.
 const OPCOS: { code: string; company: string; costCenter?: string }[] = [
   { code: 'PFU-Asia', company: 'PFU-Asia' },
   { code: 'PFU-HK', company: 'PFU-HK' },
@@ -14,6 +23,7 @@ const OPCOS: { code: string; company: string; costCenter?: string }[] = [
   { code: 'RAPO/FNA', company: 'RAPO', costCenter: 'FNA' },
   { code: 'RAPO/IT', company: 'RAPO', costCenter: 'IT' },
   { code: 'RAPO/IT (RBS)', company: 'RAPO', costCenter: 'IT (RBS)' },
+  { code: 'RAPO/IT (RDC2)', company: 'RAPO', costCenter: 'IT (RDC2)' },
   { code: 'RAPO/SCM', company: 'RAPO', costCenter: 'SCM' },
   { code: 'RAPP', company: 'RAPP' },
   { code: 'RBS', company: 'RBS' },

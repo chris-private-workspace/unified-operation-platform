@@ -21,6 +21,8 @@ description: 項目反模式自檢清單 — review / commit / 驗收 user-facin
 | AP-8 | **SKU 靠名唔靠 GUID** | 用 Excel friendly name / 記憶中 part number 對 SKU,對唔返 tenant | SKU 操作全部用 `skuId`(GUID)做鍵? |
 | AP-9 | **跳 sync gate 就 assign** | user 未 sync(`findUser` null / `azureSyncedAt` 空)就叫 `assignLicense` → fail | assign 前確認過 Phase 1 sync gate? |
 | AP-10 | **對帳撈錯數字** | 用 `allocatedQuantity`(budget)去 reconcile,而唔係 `assignedQuantity`(baseline) | drift 只比 `sum(assignedQuantity)` vs tenant `consumedUnits`? |
+| AP-11 | **驗錯咗第二個 checkout** | 呢部機有**多個 worktree**(`orca/workspaces/*` + `C:\Users\CLai03\unified-operation-platform`)。W36 F4:port 3100 個 API 係**另一棵樹**跑,新 route 回 404 —— 差啲當咗 stale build 去重啟,實情重啟幾多次都唔會有你啲 code | 落 curl 之前查過 `(Get-CimInstance Win32_Process).CommandLine` 個**路徑**係咪你而家改緊嗰個 worktree? |
+| AP-12 | **只驗 happy path,冇驗「唔應該發生嘅嘢真係冇發生」** | 拒收 case 淨係睇到 4xx 就收貨,冇查佢**有冇偷偷寫咗嘢**(W36 G3 實證:守衛一拆走,歧義 case 靜靜建咗完整 Request) | 每個 reject case 有冇查過 DB 零行 / 下游服務 log 冚唔到佢? |
 | … | {加你項目踩到嘅坑} | {實證} | {檢查} |
 
 ## 輸出
