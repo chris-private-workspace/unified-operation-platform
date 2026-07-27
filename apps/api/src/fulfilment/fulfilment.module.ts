@@ -9,6 +9,7 @@ import { AssignService } from './assign.service';
 import { FulfilmentController } from './fulfilment.controller';
 import { IntakeController } from './intake.controller';
 import { IntakeService } from './intake.service';
+import { IntakeAdapterService } from './intake-adapter.service';
 import { IntakeKeyGuard } from './intake-key.guard';
 import { OutboundRequestController } from './outbound-request.controller';
 import { OutboundRequestService } from './outbound-request.service';
@@ -82,6 +83,7 @@ export async function requestSubmissionProviderFactory(
     StageService,
     AssignService,
     IntakeService,
+    IntakeAdapterService, // ADR-0017 D4 — n8n native envelope → canonical intake
     IntakeKeyGuard,
     OutboundRequestService,
     OutboundFailureService, // ADR-0011 — outbound failure queue

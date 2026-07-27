@@ -47,5 +47,6 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
   "GET /opcos → roles [ADMIN,REGIONAL,OPCO_IT]",
   "POST /requests → roles [ADMIN,REGIONAL,OPCO_IT]",
   "POST /requests/intake → m2m []",
+  "POST /requests/intake/n8n → m2m []",
 ]
 `;

@@ -10,8 +10,8 @@ last_updated: 2026-07-27
 > Atomic checkbox(每 item ≤ 1–2 hour effort)。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
 >
-> ✅ **Gate 已解**(2026-07-27):OQ-1 = **code 常數表** · OQ-2 = **平台新增 OpCo**。plan flip `active`。
-> 仍未解:**G1(Chris 確認 18/18 mapping)** —— F1 未 tick 完之前 F2 嘅 `department` resolve 冇表可用。
+> ✅ **全部 gate 已解**(2026-07-27):OQ-1 = **code 常數表** · OQ-2 = **平台新增 OpCo** · **G1 = 18/18 已確認**。plan `active`,F2/F3 完成。
+> 剩返:**F1b**(seed row)+ **F4**(live + doc-sync)+ n8n 側改動(Chris)。
 
 ## F1 — 對接落差 grounding + mapping 表(doc,pre-code gate)
 
@@ -38,38 +38,38 @@ last_updated: 2026-07-27
 - [ ] 改完之後對一次真 payload(F4 R5)
 - [x] **OQ-1 mapping 表放邊 拍板** → **code 常數表**(Chris,2026-07-27)
 - [x] **OQ-2 `RAPO IT (RDC2)` 拍板** → **平台新增一個 OpCo**(Chris,2026-07-27)→ F1b
-- [ ] **交 Chris 確認 18/18**(G1 —— 仍未解,F2 `department` resolve 等呢張表)
+- [x] **交 Chris 確認 18/18** → **全部確認,G1 達標**(2026-07-27);mapping 表已落 `opco-department-map.ts` + 4 條 drift-guard test
 
 ## F1b — 新增 OpCo `RAPO/IT (RDC2)`(code + 各環境 ops)
 
-- [ ] `seed.ts` `OPCOS` 加 `{ code: 'RAPO/IT (RDC2)', company: 'RAPO', costCenter: 'IT (RDC2)' }`(跟 `RAPO/IT (RBS)` 格式)
-- [ ] 更新 `seed.ts:6` 註解 provenance(「23 … from the FY26 M365 license summary」→ 分清 FY26 來源 vs n8n `deptMapping` 來源)
-- [ ] **scratch DB 實跑重 seed 證冪等**(既有 23 行零改動,只多一行)—— 唔碰 dev DB
-- [ ] 確認零 schema 改動(`Opco` model git diff = 0)
-- [ ] 記 ops carry-over:**UAT / prod 各自要補一次**(建議走 CH-004 `POST /admin/opcos`,唔使重跑全 seed)
+- [x] `seed.ts` `OPCOS` 加 `{ code: 'RAPO/IT (RDC2)', company: 'RAPO', costCenter: 'IT (RDC2)' }`(跟 `RAPO/IT (RBS)` 格式)
+- [x] 更新 `seed.ts:6` 註解 provenance(「23 … from the FY26 M365 license summary」→ 分清 FY26 來源 vs n8n `deptMapping` 來源)
+- [x] **scratch DB 實跑重 seed 證冪等** —— seed×1 → **24** 行 + RDC2 欄位正確;seed×2 → 仍 **24**、RDC2 **恰好 1 行**;scratch DB 已 drop
+- [x] 確認零 schema 改動(`schema.prisma` 零 diff,只改 `seed.ts` data + 註解)
+- [x] 記 ops carry-over:**本機 dev DB / UAT / prod 各自要補一次**(建議走 CH-004 `POST /admin/opcos`,唔使重跑全 seed)—— ⚠️ **本機 dev DB 未補**,F4 live 測 RDC2 前要做
 
 ## F2 — Adapter endpoint + resolver(code)
 
-- [ ] `dto/n8n-native-intake.dto.ts` —— n8n 原生信封 + class-validator
-- [ ] `intake-adapter.service.ts`:`licenseCode → skuId` resolve(**唯一命中,≥2 候選 fail-closed**)
-- [ ] `intake-adapter.service.ts`:`department → opcoCode` resolve(F1 表 + `active: true` 要求,落差 #5)
-- [ ] `intake-adapter.service.ts`:REQ number → sysId 反查(`snow.getRecordByNumber`)
-- [ ] `intake-adapter.service.ts`:攤平信封 → canonical DTO(`quantity` 預設 1)
-- [ ] `POST /requests/intake/n8n` 掛 `IntakeController` + **同一個 `IntakeKeyGuard`**
-- [ ] 驗證 `IntakeService` / canonical DTO / `CONTRACT.md` **零 diff**(G2 — `git diff --stat`)
-- [ ] H4 自查:log / 錯誤訊息零 UPN、零 email、零 secret、零 payload 全文
+- [x] `dto/n8n-native-intake.dto.ts` —— n8n 原生信封 + class-validator
+- [x] `intake-adapter.service.ts`:`licenseCode → skuId` resolve(**唯一命中,≥2 候選 fail-closed**)
+- [x] `intake-adapter.service.ts`:`department → opcoCode` resolve(F1 表 + `active: true` 要求,落差 #5)
+- [x] `intake-adapter.service.ts`:REQ number → sysId 反查(`snow.getRecordByNumber`)
+- [x] `intake-adapter.service.ts`:攤平信封 → canonical DTO(`quantity` 預設 1)
+- [x] `POST /requests/intake/n8n` 掛 `IntakeController` + **同一個 `IntakeKeyGuard`**
+- [x] 驗證 `IntakeService` / canonical DTO / `CONTRACT.md` **零 diff**(G2 — `git diff --stat`)
+- [x] H4 自查:log / 錯誤訊息零 UPN、零 email、零 secret、零 payload 全文
 
 ## F3 — H5 test
 
-- [ ] **先寫紅**:兩個「E5」歧義 test → assert 拋錯 **且** 零 `request.create`(G3 硬紅線)
-- [ ] 記低 fails-before 證據入 `progress.md`
-- [ ] `licenseCode` resolve happy / not-found / 歧義 三 case
-- [ ] `department` resolve happy / not-found / OpCo `active: false` 三 case
-- [ ] REQ number 反查 happy / not-found(SN mock)
-- [ ] 冪等:同 REQ number 推兩次 → 一個 request
-- [ ] H4 test:餵假 secret / PII assert 回應零洩漏(G7,仿 W30 G1)
-- [ ] canonical route 迴歸:既有 intake test 全綠 **且零 assertion 要改**
-- [ ] `npm test -w apps/api` 全綠(G5)
+- [x] **先寫紅**:兩個「E5」歧義 test → assert 拋錯 **且** 零 `request.create`(G3 硬紅線)
+- [x] 記低 fails-before 證據入 `progress.md`
+- [x] `licenseCode` resolve happy / not-found / 歧義 三 case
+- [x] `department` resolve happy / not-found / OpCo `active: false` 三 case
+- [x] REQ number 反查 happy / not-found(SN mock)
+- [x] 冪等:同 REQ number 推兩次 → 一個 request
+- [x] H4 test:餵假 secret / PII assert 回應零洩漏(G7,仿 W30 G1)
+- [x] canonical route 迴歸:既有 intake test 全綠 **且零 assertion 要改**
+- [x] `npm test -w apps/api` 全綠(G5)
 
 ## F4 — Live 驗證 + doc-sync
 
@@ -84,7 +84,7 @@ last_updated: 2026-07-27
 - [ ] doc-sync:`N8N-INTAKE-HANDOFF.md` §0 + §7 落差 #1(blocking → adapter 解決)
 - [ ] doc-sync:`N8N-INTAKE-HANDOFF.md` §7 落差 #5(已收緊)
 - [ ] doc-sync:`N8N-INTEGRATION-SETUP.md` 加 adapter route
-- [ ] `npm run lint` 0 warning(G8)
+- [x] `npm run lint` 0 warning(G8)
 
 ---
 

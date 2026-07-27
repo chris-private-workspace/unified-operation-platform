@@ -149,6 +149,141 @@ jobFunction: jobFunction,                 // ✅ 1004 form 精確值 ← 應該�
 
 ---
 
+## Day 2 — 2026-07-27:F2 code 寫完,但 **build / test 喺本 worktree 驗唔到**(R1)
+
+### Done
+
+- commit `6bc32c8` —— ADR-0017 + W36 kickoff + F1(9 files;**`docs/06-reference/03-n8n-workflow/` 刻意冇 stage**,因為含明文 WinRM 密碼)
+- F2 code:3 個新檔 + 2 個改動
+  - `opco-department-map.ts` —— 18 條常數表(OQ-1)+ `opcoCodeForJobFunction()` 精確查,**零 fallback**
+  - `dto/n8n-native-intake.dto.ts` —— n8n 原生信封,`event` 用 `@IsIn` 鎖死
+  - `intake-adapter.service.ts` —— 三個 resolver + 攤平,cheapest-first(常數 → DB → SN)
+  - `intake.controller.ts` —— 加 `POST /requests/intake/n8n`(**同一個 `IntakeKeyGuard`**,OQ-3)
+  - `fulfilment.module.ts` —— 註冊 service
+- 設計上兩個刻意決定(寫入 code comment):
+  - **`accountCreatedAt` / `azureSyncedAt` 一律留 null** —— n8n 冇送,而由 `sentAt` 推導「已 sync」= 憑 n8n 貼文時間開 assign gate。留空即係要平台自己喺 Graph 見到個 user 先算,同 ADR-0015 方向一致
+  - **`requesterEmail` 格式唔啱就丟棄** —— canonical DTO 宣告佢係 email,但我哋喺 code 砌 DTO 唔經 ValidationPipe,Outlook 嚟嘅怪值會照存。呢個係 optional metadata,唔值得為佢 fail 一單 onboarding
+
+### 🔴 Blocker —— RISK **R1** 實錘,本 worktree 驗唔到 build / test
+
+| 檢查 | 結果 | 證據 |
+|---|---|---|
+| **lint** | ✅ **exit 0**(全 repo clean) | 4 個 prettier error 全部喺我新檔 → `--fix` → 重跑 exit 0 |
+| **build** | ❌ **exit 1,101 個 TS error** | **但 ANSI-stripped grep 證實我 5 個檔一個 error 都冇**(先前有 1 個 `TS7006 implicit any`,由 stub 類型引起,已加 annotation 修好:102 → 101) |
+| **test** | ❌ 跑唔到 | `intake.service.spec.ts` → `TS2339: Property 'PrismaClientKnownRequestError' does not exist on type 'typeof Prisma'` |
+
+**同一個 root cause**:呢個 worktree 嘅 Prisma client **從來冇 generate 過** —— `node_modules/.prisma/client/index.d.ts` 得 **3989 bytes**(stub;真嘅係幾百 KB),而且成個 `.prisma` 底下**冇任何 engine binary**。另一個 worktree(`deployment-prepare-...`)一樣。
+
+`npx prisma generate` 失敗:
+
+```
+Error: request to https://binaries.prisma.sh/.../query_engine.dll.node.gz.sha256
+failed, reason: self-signed certificate in certificate chain
+```
+
+加 `--no-engine` 一樣死(佢仍然要 `schema-engine.exe`)。即公司 proxy TLS 攔截,**RISK R1** 原文所述。
+
+⚠️ **冇用 `NODE_TLS_REJECT_UNAUTHORIZED=0` 繞過** —— 嗰個係關掉整個 process 嘅 TLS 驗證,屬安全決定,唔應該由 AI 靜靜做。
+
+### 誠實結論(H7)
+
+**F2 未算完成。** 可以講嘅只有:lint 綠、且喺可做到嘅靜態檢查範圍內我嘅 code 零 error。**未證明**佢 compile 得、未證明行為正確 —— 因為呢個環境根本 type-check 唔到。**F3 亦開唔到工**(test 跑唔起)。
+
+### Blockers
+
+🔴 **Prisma client 未 generate** → build / test 全線封。解封選項(要 Chris 決):
+1. **轉流動網路**跑一次 `npx prisma generate`(R1 記錄嘅原有做法,cache 好之後就唔使再落)
+2. `NODE_EXTRA_CA_CERTS` 指向公司 root CA(正解,但要由 Windows cert store 匯出)
+3. 公司內部 `PRISMA_ENGINES_MIRROR`(如果有)
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F1c | 1.5 | 1.0 | −0.5 |
+| F2 | 6.0 | 3.5(code 完,驗證未做) | 驗證部分卡 R1,未計入 |
+
+### Commits
+- `6bc32c8` — `docs(integration): ADR-0017 n8n 執行接縫化 + W36 戊階段 kickoff & F1`
+- F2 code **未 commit** —— 等 build 驗到先
+
+---
+
+## Day 2(續)— 2026-07-27:R1 解封 + F2 驗證 + F3 完成
+
+### 🟢 RISK R1 精確診斷 —— 原來係**兩個獨立問題**,以前混為一談
+
+| 層 | 診斷 | 解 |
+|---|---|---|
+| **TLS** | `SELF_SIGNED_CERT_IN_CHAIN` | ✅ **Node v22.21.0 `--use-system-ca`**(信 Windows 憑證存放區,公司 root CA 本來就喺入面)。實證:預設 `fetch` → cert error;加 flag → `OK 404` |
+| **檔案傳輸** | TLS 通咗之後變 **503** | ❌ 公司 DLP 硬擋。抽 body 出嚟睇:「**File Transfer Blocked** … File name: `query_engine.dll.node.gz`」= **按檔名擋含 `.dll` 嘅下載** |
+
+對照實證:同路徑 `.sha256`(細 text)→ **200**;`.gz` binary → **503 連續三次一致**(body 6816 bytes = 封鎖頁)。`--no-engine` 救唔到(6.19 一樣 fetch)。
+⚠️ 全程**冇**用 `NODE_TLS_REJECT_UNAUTHORIZED=0`。
+
+**Chris 轉 hotspot 跑一次**(`NODE_OPTIONS=--use-system-ca npx prisma generate`)→ 507ms 完成。驗:`index.d.ts` **3,989 → 1,088,929 bytes**,`query_engine-windows.dll.node` 在。已寫入 memory `project_prisma-generate-proxy-block`(含「點認呢個病」:stub client → ~101 個假 TS error,而 lint 唔受影響故仍係有效 gate)。
+
+### F2 驗證(engine 到手後)
+
+| 檢查 | 結果 |
+|---|---|
+| build | ✅ **exit 0 · 0 個 TS error**(之前 101 個全部係 stub 引起,證實無誤) |
+| lint | ✅ exit 0 |
+
+### W28 迴歸網再次當日見效
+
+加 `POST /requests/intake/n8n` → `permissions.spec.ts` snapshot **即刻紅**。新增行 =
+
+```
+"POST /requests/intake/n8n → m2m []"
+```
+
+同既有 `POST /requests/intake → m2m []` 一致 ⇒ 證實 route **正確報成 m2m + `IntakeKeyGuard`**,唔係 `public`、唔係 `unguarded`。確認正確後先 `-u` 更新 snapshot。
+
+### F3 交付 —— `intake-adapter.service.spec.ts`(17 個 test)
+
+**設計決定:wire 真 `IntakeService`(唔 mock)** —— 咁「零寫入」呢個負面斷言先係貫穿成條路徑嘅真證據,而唔係「一個 mock 冇被叫」。
+
+覆蓋:happy path · sync gate 留 null · alias→partNumber fallback · **歧義 fail-closed(紅線)** · 歧義訊息列出兩個候選 · 未知 licenceCode · **未知 Job Function 唔 fallback**(仲 assert 冇掂過 DB / SN,證 cheapest-first)· inactive OpCo(落差 #5)· REQ 查唔到 · **SN 死 → 503 而唔係 400** · H4 唔洩 UPN · 壞 requesterEmail 丟棄 · 冪等 · mapping 表 4 條(18 條齊 / 11 條 RHK 多對一 / RDC2 獨立 / ASPC 合併)
+
+### 🔴 G3 fails-before 實證(唔係口講)
+
+暫時把 `matches.length > 1` 改成 `> 99`(等於拆走歧義守衛)→ 跑紅線 test:
+
+```
+● REJECTS an ambiguous licence code and writes NOTHING
+  expect(received).rejects.toThrow()
+  Received promise resolved instead of rejected
+  Resolved to value: {"id": "r1", "opcoId": "o-rhk", "serviceNowSysId": "req-sys-abc", ...}
+```
+
+守衛一爛,歧義 case **靜靜建咗一張完整 Request** —— 正正係個 test 要擋嘅失敗模式。確認後即時還原。
+
+### 最終 gate
+
+| # | Criterion | 結果 |
+|---|---|---|
+| G1 | mapping 18/18 確認 | ✅ |
+| G2 | `IntakeService`/canonical DTO/`CONTRACT.md` 零改動 | ✅ 三個檔零 diff |
+| G3 | 歧義 fail-closed | ✅ **含 fails-before 實證** |
+| G4 | 每項 resolve fail-closed 且可診斷 | ✅ 4/4 |
+| G5 | api test 不降 | ✅ **390 → 407**(42 suites 全綠) |
+| G7 | 零 PII 零 secret | ✅ |
+| G8 | lint 0 | ✅ |
+| G6 / G9 | live 4 case · doc-sync | ⏳ **F4 未做** |
+
+### Blockers
+
+無。**F4 剩返**:live 端到端(⚠️ SN 憑證仍係 placeholder,plan R2 —— 反查嗰步大機會要記「未驗證」)+ doc-sync(handoff §0/§7 + INTEGRATION_SETUP)。
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F2(含驗證) | 6.0 | 5.0 | −1.0 |
+| F3 | 5.0 | 3.0 | −2.0(真 IntakeService wiring 令 test 寫得快過預期) |
+| R1 診斷 | 0(計劃外) | 1.5 | 換返一條永久可用嘅 `--use-system-ca` 解 + memory |
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked
