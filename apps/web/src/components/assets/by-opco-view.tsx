@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { Toast } from '@/components/ui/toast';
@@ -226,8 +227,12 @@ function LedgerTableRow({
 /** By-OpCo assets view (W15) — per-(OpCo,SKU) ledger rows, opco-scoped by the API.
  *  Inline manual edit of allocated/assigned (W23-B / ADR-0007). */
 export function ByOpcoView() {
-  const ledger = useLedger();
-  const stats = useLedgerStats();
+  // CH-008: 0/0 rows are hidden by default, server-side. The stats query takes
+  // the same flag so the "N SKUs · N OpCos tracked" subtitle can never disagree
+  // with the rows actually on screen (spec §2.2 D2).
+  const [showEmpty, setShowEmpty] = useState(false);
+  const ledger = useLedger(showEmpty);
+  const stats = useLedgerStats(showEmpty);
   const update = useUpdateLedger();
   const [opco, setOpco] = useState<string>('all'); // OpCo code, or 'all'
   const [q, setQ] = useState('');
@@ -373,28 +378,44 @@ export function ByOpcoView() {
             );
           })}
         </div>
-        <div className="relative">
-          <Search
-            size={14}
-            strokeWidth={2}
-            className="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-fg-subtle"
-          />
-          <input
-            value={q}
+        <div className="flex items-center gap-[14px]">
+          <Checkbox
+            checked={showEmpty}
             onChange={(e) => {
-              setQ(e.target.value);
+              setShowEmpty(e.target.checked);
               setPage(0);
+              setEditingId(null);
             }}
-            placeholder="Filter SKU…"
-            className="h-[32px] w-[190px] rounded-lg border border-border bg-card pl-[30px] pr-[10px] text-[12px] text-fg outline-none placeholder:text-fg-subtle focus:border-border-strong"
+            title="Rows with 0 allocated and 0 assigned. Hidden by default — they are not deleted and can still be edited."
+            label={<span className="text-fg-muted">Show empty rows</span>}
           />
+          <div className="relative">
+            <Search
+              size={14}
+              strokeWidth={2}
+              className="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-fg-subtle"
+            />
+            <input
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(0);
+              }}
+              placeholder="Filter SKU…"
+              className="h-[32px] w-[190px] rounded-lg border border-border bg-card pl-[30px] pr-[10px] text-[12px] text-fg outline-none placeholder:text-fg-subtle focus:border-border-strong"
+            />
+          </div>
         </div>
       </div>
 
       <Card
         padded={false}
         title="Ledger by OpCo & SKU"
-        subtitle="Owned budget per OpCo vs assigned to users"
+        subtitle={
+          showEmpty
+            ? 'Owned budget per OpCo vs assigned to users · including empty rows (0 / 0)'
+            : 'Owned budget per OpCo vs assigned to users · empty rows (0 / 0) hidden, not deleted'
+        }
         action={
           overCount > 0 ? (
             <Badge tone="danger">

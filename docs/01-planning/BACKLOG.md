@@ -58,7 +58,8 @@
 >
 > **路線更新(2026-07-27)**:Chris 提出兩個 onboarding 缺口 → **CH-009**(assign 前可用量可見度,✅ PR #29)+ **ADR-0015**(sync sweep,Accepted **未實作**)+ **ADR-0016**(預算 gate)→ **W36 ✅ 收官**(gate + ADMIN 具名 override + 前端入口 + preflight SQL/runbook;api 410 · web 180)。
 > **W37 ✅ 收官**(2026-07-27):**SYNC-sweep** 落地,全 repo 第一個 `@Cron`;**RISK R3** 由 ⚠️ Open → 🟡 Mitigating。
-> **下一個候選**(全部無新阻塞):**CH-008**(spec approved;⚠️ W36 之後 toggle 由「方便」變「必需」)· **DEPLOY-harden** / **AUTH-2b**(兩者都卡 IT app reg)· **TD-1**(`/audit` 篩選 option 補齊)· **OD1 daily reconcile**(W37 已鋪好 `@Cron` pattern,但 ADR-0015 明文只係「鋪路」,要做就開新 phase)。
+> **CH-008 ✅ 收官**(2026-07-27):0/0 ledger 行**預設隱藏**(server-side,兩個 GET 收 `?includeEmpty=true`)+ `assetStatus` 加 `Empty`/neutral 修正「0/0 顯示成綠色 Headroom」誤導。零 schema / 零 dep / 零 ADR;api **433** · web **188**。⚠️ **R1 仍然成立**:隱藏之後靠 toggle 搵返該格,因為 **DD-3**(冇 create endpoint)未解 —— toggle = 唯一入口,唔可以之後順手收埋。
+> **下一個候選**(全部無新阻塞):**DEPLOY-harden** / **AUTH-2b**(兩者都卡 IT app reg)· **TD-1**(`/audit` 篩選 option 補齊)· **OD1 daily reconcile**(W37 已鋪好 `@Cron` pattern,但 ADR-0015 明文只係「鋪路」,要做就開新 phase)· **Drift-resolve**(⬆️ 相對更值錢咗:CH-008 之後 DD-3 嘅 create 缺口更加浮面)。
 
 ---
 
@@ -145,7 +146,7 @@
 |---|---|---|
 | DD-1 | Prepaid `allocatedQuantity` Excel import 方式未定 → 卡 BE-ledger-read / FE-Assets | ✅ **Close**（2026-07-13,W13;admin CSV upload ADR-0004 建成;殘留生產 curation = deploy ops step） |
 | DD-2 | npm dev/build-chain vulns 需 breaking major 先清（全 dev-only 唔入 production） | defer（等 vite@8 生態 stabilize + 專門升級 phase） |
-| DD-3 | **「憑空建一個 ledger row」冇路徑**（冇 `POST /license/ledger`;⚠️ OPCO_IT **改得但 create 唔到**）→ drift 對回撞 0-assigned 組合會 404 | defer（Chris 2026-07-25,W35 F4;解封 = `Drift-resolve` 動工 **或** OpCo self-service 開放,屆時 H1 需 ADR） |
+| DD-3 | **「憑空建一個 ledger row」冇路徑**（冇 `POST /license/ledger`;⚠️ OPCO_IT **改得但 create 唔到**）→ drift 對回撞 0-assigned 組合會 404。**⬆️ CH-008 之後更浮面**(2026-07-27):0/0 格預設隱藏,搵返佢**只得 toggle 一條路**;真係想「開返一格」仍然無門 | defer（Chris 2026-07-25,W35 F4;解封 = `Drift-resolve` 動工 **或** OpCo self-service 開放,屆時 H1 需 ADR） |
 
 ---
 

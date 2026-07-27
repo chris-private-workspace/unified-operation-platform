@@ -77,19 +77,36 @@ export function useDrift() {
   });
 }
 
-/** GET /license/ledger — per-OpCo per-SKU ledger rows (opco-scoped, active-only). */
-export function useLedger() {
+/**
+ * GET /license/ledger — per-OpCo per-SKU ledger rows (opco-scoped, active-only).
+ * CH-008: 0/0 rows are excluded server-side unless includeEmpty. It is part of
+ * the query key so the two variants cannot serve each other from cache; the
+ * ['license','ledger'] invalidation prefix still covers both.
+ *
+ * Only the Assets By-OpCo toggle passes true. Request detail (CH-009) must NOT
+ * — see CH-009 spec §2.4: a missing row there already reads as "no allocation
+ * set", which is exactly what a 0/0 cell means.
+ */
+export function useLedger(includeEmpty = false) {
   return useQuery({
-    queryKey: ['license', 'ledger'],
-    queryFn: () => apiGet<LedgerRow[]>('/license/ledger'),
+    queryKey: ['license', 'ledger', { includeEmpty }],
+    queryFn: () =>
+      apiGet<LedgerRow[]>(
+        includeEmpty ? '/license/ledger?includeEmpty=true' : '/license/ledger',
+      ),
   });
 }
 
 /** GET /license/ledger/stats — scoped aggregate for the Assets + Overview KPIs. */
-export function useLedgerStats() {
+export function useLedgerStats(includeEmpty = false) {
   return useQuery({
-    queryKey: ['license', 'ledger', 'stats'],
-    queryFn: () => apiGet<LedgerStats>('/license/ledger/stats'),
+    queryKey: ['license', 'ledger', 'stats', { includeEmpty }],
+    queryFn: () =>
+      apiGet<LedgerStats>(
+        includeEmpty
+          ? '/license/ledger/stats?includeEmpty=true'
+          : '/license/ledger/stats',
+      ),
   });
 }
 
