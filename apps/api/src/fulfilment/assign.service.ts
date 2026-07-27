@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { type AppUser, EventType, LineItemStage } from '@prisma/client';
+import { type AppUser, EventType, LineItemStage, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   GraphService,
@@ -72,6 +73,7 @@ export class AssignService {
     lineItemId: string,
     usageLocationOverride: string | undefined,
     actor: AppUser,
+    budgetOverrideReason?: string,
   ) {
     const item = await this.prisma.requestLineItem.findUnique({
       where: { id: lineItemId },
@@ -82,6 +84,24 @@ export class AssignService {
     // ── Gates (fail closed, in order) ──
     // AUTH-3a scope gate first: an OPCO_IT actor may only assign within its OpCo.
     assertOpcoScope(actor, item.request.opcoId);
+
+    // ADR-0016 D3/D4 — the budget override is ADMIN-only, and a non-admin
+    // supplying it is a PERMISSION error (403), not something to ignore:
+    // silently dropping it would let an OPCO_IT operator believe the override
+    // took effect. REGIONAL is deliberately excluded too (D3, fail-closed).
+    const overrideReason = budgetOverrideReason?.trim();
+    if (budgetOverrideReason !== undefined && actor.role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        'Only an admin may override the OpCo budget',
+      );
+    }
+    // Whitespace-only survives the DTO's MinLength — but a blank reason defeats
+    // the whole point of requiring one.
+    if (budgetOverrideReason !== undefined && !overrideReason) {
+      throw new BadRequestException(
+        'budgetOverrideReason cannot be blank — the reason is what makes the override auditable',
+      );
+    }
     if (item.stage !== LineItemStage.READY) {
       throw new BadRequestException(
         `Line item must be READY to assign (currently ${item.stage})`,
@@ -114,6 +134,38 @@ export class AssignService {
         'User has no usageLocation; provide one to assign',
       );
     }
+    // ── OpCo budget gate (ADR-0016) ──
+    // Placed BEFORE the Graph inventory read (D5): a request that busts the
+    // OpCo's own budget must not cost a vendor round-trip, and "your OpCo has no
+    // allocation left" is the more actionable message of the two.
+    //
+    // NOTE the boundary this does NOT cross: allocatedQuantity still does not
+    // take part in drift reconciliation (reconcile.service.ts is untouched, and
+    // must stay that way — ADR-0016 Context / AP-10). What changed is only that
+    // it stopped being purely decorative.
+    const ledger = await this.prisma.opcoSkuLedger.findUnique({
+      where: {
+        opcoId_skuCatalogId: {
+          opcoId: request.opcoId,
+          skuCatalogId: item.sku.id,
+        },
+      },
+      select: { allocatedQuantity: true, assignedQuantity: true },
+    });
+    // No ledger row = nothing was ever allocated → refuse. There is no
+    // "unlimited by default" (D1); the way out is to set an allocation.
+    const allocated = ledger?.allocatedQuantity ?? 0;
+    const assignedBefore = ledger?.assignedQuantity ?? 0;
+    // +1, not + item.quantity: one assign moves the ledger by exactly one seat
+    // (see the increment in the transaction below). D1 keeps that unchanged.
+    const overBudget = assignedBefore + 1 > allocated;
+    if (overBudget && !overrideReason) {
+      throw new BadRequestException(
+        `OpCo budget exceeded for ${item.sku.skuPartNumber}: ${assignedBefore} assigned of ${allocated} allocated. ` +
+          'Raise the allocation or ask an admin to override.',
+      );
+    }
+
     let skus;
     try {
       skus = await this.graph.getSubscribedSkus();
@@ -172,7 +224,12 @@ export class AssignService {
           fromStage: LineItemStage.READY,
           toStage: LineItemStage.ASSIGNED,
           actorId: actor.id,
-          message: `Assigned ${item.sku.skuPartNumber}`,
+          // ADR-0016 D6: an override has to be visible on the request's own
+          // timeline, not only in the admin-only audit log — the people reading
+          // this request are the ones who need to know the budget was busted.
+          message: overrideReason
+            ? `Assigned ${item.sku.skuPartNumber} — OpCo budget overridden (${assignedBefore}/${allocated}): ${overrideReason}`
+            : `Assigned ${item.sku.skuPartNumber}`,
         },
       });
       const siblings = await tx.requestLineItem.findMany({

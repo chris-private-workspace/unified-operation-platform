@@ -4,7 +4,7 @@ name: "OpCo 預算 assign 硬 gate + ADMIN 具名 override(ADR-0016 落地)"
 sprint_week: W36
 start_date: 2026-07-27
 end_date: 2026-07-29          # planned, may slip with changelog log
-status: draft                 # draft | active | closed —— 等 Chris approve + 答 OQ1
+status: active                # draft | active | closed —— approved 2026-07-27(OQ1 = 選項 A)
 spec_refs:
   - ADR-0016(**Accepted 2026-07-26** — 本 phase 就係佢嘅落地;Decision D1-D7 = 實作規格)
   - DESIGN.md §5(ledger 兩層數字;line 100 已同步「純顯示 ❌ 已不成立」)
@@ -16,9 +16,9 @@ prior_phase: W35-data-initialisation
 
 # Phase W36 — OpCo 預算 assign 硬 gate
 
-> **Plan version**:1.0(**draft** — 等 approve;**OQ1 未答則 F3 scope 未定**)
+> **Plan version**:1.1(**active** — approved;**OQ1 = 選項 A**,F3 做)
 > **Owner**:AI(執行)· 決策 = Chris Lai
-> **Approved by**:_(approve 時填)_
+> **Approved by**:**Chris Lai**(2026-07-27;答 OQ1 = 選項 A 前端 override 入口做)
 
 ## 1. Scope
 

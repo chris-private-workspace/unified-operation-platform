@@ -119,6 +119,11 @@ export class FulfilmentController {
     @Body() dto: AssignLineItemDto,
     @CurrentUser() user: AuthUser,
   ): Promise<RequestLineItemDto> {
-    return this.assign.assignLineItem(lineItemId, dto.usageLocation, user);
+    return this.assign.assignLineItem(
+      lineItemId,
+      dto.usageLocation,
+      user,
+      dto.budgetOverrideReason,
+    );
   }
 }

@@ -1,7 +1,7 @@
 ---
 phase: W36-opco-budget-gate
 plan_ref: ./plan.md
-status: draft            # draft | active | closed
+status: active           # draft | active | closed
 last_updated: 2026-07-27
 ---
 
@@ -12,20 +12,20 @@ last_updated: 2026-07-27
 
 ## F1 — Backend gate
 
-- [ ] `assign.service.ts`:gate 加喺 `usageLocation` 之後、**`getSubscribedSkus()` 之前**(D5 —— 撞預算就唔打 Graph)
-- [ ] 條件 `assigned + 1 > allocated`;**ledger row 唔存在 = allocated 0 ⇒ 擋**(D1)
-- [ ] 用 `+1` 而唔係 `+ lineItem.quantity`(既有 increment 行為**唔改**)
-- [ ] 400 message 帶實數 + 出路(`… <n> assigned of <m> allocated. Raise the allocation or ask an admin to override.`)
-- [ ] 🔴 確認**冇**碰 `reconcile.service.ts`(收工用 diff 驗)
+- [x] `assign.service.ts`:gate 加喺 `usageLocation` 之後、**`getSubscribedSkus()` 之前**(D5)
+- [x] 條件 `assigned + 1 > allocated`;**ledger row 唔存在 = allocated 0 ⇒ 擋**(D1)
+- [x] 用 `+1` 而唔係 `+ lineItem.quantity`(既有 increment 行為**唔改**)
+- [x] 400 message 帶實數 + 出路
+- [x] 🔴 **`reconcile.service.ts` diff 為空**(`git diff --stat HEAD` 零 output 為證,R5)
 
 ## F2 — Override + audit
 
-- [ ] `AssignLineItemDto` 加 `budgetOverrideReason?: string` + 長度驗證(空白 / 太短 → 400)
-- [ ] 非 ADMIN 帶該欄 → **403**(唔可以靜靜忽略)
-- [ ] `OPCO_IT` / `REGIONAL` 撞預算 → **一律 400,零 override 路徑**(D3)
-- [ ] Override 成功 → `AuditLog`(`actorType:'user'` + `metadata:{ budgetOverride:true, reason, allocated, assignedBefore }`)
-- [ ] Override 成功 → `RequestEvent(ASSIGN)` message 標明,令 timeline 睇得出
-- [ ] 被擋 → **唔寫 AuditLog**,只 `logger.warn`;**H4 唔 log UPN**
+- [x] `AssignLineItemDto` 加 `budgetOverrideReason?: string` + `@MinLength(10)`;service 再 trim 擋純空白(DTO 擋唔到 10 個空格)
+- [x] 非 ADMIN 帶該欄 → **403**(唔靜靜忽略)
+- [x] `OPCO_IT` / `REGIONAL` 撞預算 → **一律 400,零 override 路徑**(D3)
+- [ ] 🚧 **BLOCKED — `AuditLog` 寫入**:ADR-0016 **D6 同 ADR-0009 白名單機制唔兼容**(`AUDIT_ACTIONS` 冇 `ASSIGN` · `AuditTargetType` 冇 line item / ledger · `AUDIT_METADATA_KEYS` 只有 4 個 ⇒ `budgetOverride`/`allocated`/`assignedBefore` 會被 `pickAuditMetadata` **靜靜丟棄**)。**等 owner 揀 A/B/C**,見 progress Day 1
+- [x] Override 成功 → `RequestEvent(ASSIGN)` message 標明(帶 `assignedBefore/allocated` + reason 原文),令 request timeline 睇得出 —— **唔受 audit blocker 影響**,因為 `RequestEvent` 唔行白名單
+- [x] 被擋 → 零 `AuditLog`(**目前自然成立**,因為 audit 寫入未落);**H4:錯誤訊息同 log 都唔含 UPN**
 
 ## F3 — 前端 override 入口【🚧 **OQ1 未答前唔開工**】
 
@@ -38,11 +38,13 @@ last_updated: 2026-07-27
 
 ## F4 — Test(H5)
 
-- [ ] `assign.service.spec.ts`:未超放行 / 剛好用盡擋 / **最後一格放行**(off-by-one)/ row 缺擋
-- [ ] **撞預算時 `getSubscribedSkus` 零 call**(證 D5 位置,唔止證 400)
-- [ ] Override:ADMIN 成功 + 寫 audit / 非 ADMIN 帶 reason 403 / 空白 reason 400
-- [ ] Graph + ServiceNow **全 mock**,零真 tenant(§3.4)
-- [ ] api test **≥ 390** + lint(api)零 output
+- [x] `assign.service.spec.ts`:未超放行 / 剛好用盡擋 / **最後一格放行**(off-by-one)/ row 缺擋 / 訊息帶實數
+- [x] **撞預算時 `getSubscribedSkus` 零 call**(證 D5 位置,唔止證 400)
+- [x] Override:ADMIN 成功 / **OPCO_IT 帶 reason 403** / **REGIONAL 帶 reason 403** / 純空白 reason 400 / timeline message 帶 reason
+- [x] ➕ **override 唔繞過其他 gate**(spec 冇明列但係真風險):唔繞過 **tenant seat gate** · 唔繞過 **Phase 1 sync gate**
+- [ ] 🚧 audit assertion —— 隨上面 audit blocker
+- [x] Graph + ServiceNow **全 mock**,零真 tenant(§3.4)
+- [x] api test **403 passed / 41 suites**(基線 390,+13)+ lint(api)**零 output**
 
 ## F5 — 部署前置
 
