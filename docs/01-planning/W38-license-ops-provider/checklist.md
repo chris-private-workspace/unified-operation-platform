@@ -19,18 +19,21 @@ last_updated: 2026-07-27
 
 ## F1 — `LicenseOperationsProvider` 介面 + `AssignOutcome` 詞彙
 
-- [ ] 建 `apps/api/src/integration/license-ops/` + `license-ops.provider.ts`(abstract class / interface token)
-- [ ] 定義 `AssignOutcome` union 5 個 variant(`assigned` / `already_assigned` / `not_synced` / `no_seats` / `error`)
-- [ ] 介面方法按 OQ-1/OQ-3 拍板結果收窄
-- [ ] verify:介面檔**零 vendor import** —— `grep -c "microsoft-graph" license-ops.provider.ts` = 0
+- [x] 建 `apps/api/src/integration/license-ops/` + `license-ops.provider.ts`(abstract class 做 DI token —— 免除 magic string)
+- [x] 定義 `AssignOutcome` union 5 個 variant(`assigned` / `already_assigned` / `not_synced` / `no_seats` / `error`)
+- [x] 介面方法按 OQ-1/OQ-3 拍板結果收窄 → **3 個**(`listTenantSkus` / `findUser` / `assignLicense`)
+- [x] 加 vendor-neutral type `TenantSkuSeats` / `DirectoryUser`(**刻意窄過** Graph 型別:唔逼 n8n 實作虛構 `capabilityStatus`/`appliesTo`;`displayName`/`accountEnabled` 係冇人讀嘅 PII,唔過 seam)
+- [x] **error 契約**(Chris 2026-07-27 拍板,plan §7 changelog):transport 失敗 **throw**,唔入 outcome
+- [x] verify:介面檔**零 vendor import** —— 實跑 `grep -c` = **0**
 
 ## F2 — `GraphLicenseProvider` 實作
 
-- [ ] `graph-license.provider.ts` —— 注入既有 `GraphService`,**唔改 `graph.service.ts` 一行**
-- [ ] Graph 404 → `not_synced`;座位不足 → `no_seats`;其餘 throw → 經 `graphUnavailable()` → `error`
-- [ ] 逐 outcome 寫 test(5 個 variant 全覆蓋)
-- [ ] **H4 test**:餵一個含 UPN 嘅 Graph error,assert outcome `details` **唔含該 UPN**
-- [ ] verify:`git diff apps/api/src/integration/graph/graph.service.ts` = **空**
+- [x] `graph-license.provider.ts` —— 注入既有 `GraphService`,**唔改 `graph.service.ts` 一行**
+- [x] `action` 字串**逐字照抄** `assign.service`(佢哋會出現喺 503 message,純重構唔可以郁一個字)
+- [x] ~~逐 outcome 寫 test(5 個 variant 全覆蓋)~~ → 🚧 **改為:GraphLicenseProvider 實際產生得到嘅 variant 全覆蓋**。**Graph 只產生 `assigned`**,唔係遺漏(見 progress Day 2 / plan §7 changelog):`not_synced`+`no_seats` 由 caller 喺入 provider **之前**攔截(移入嚟 = provider 變決策者,違反 D0)· `already_assigned` **Graph 根本分唔到**(POST 冪等且唔報告)· `error` 留畀庚
+- [x] **H4 test**:餵含 UPN 嘅 vendor error,assert 503 **message** 唔含該 UPN(9 test 全綠)
+- [x] 🔴 **test 意外揪到既有缺陷**:`graphUnavailable()` 把 vendor error 原封 `logger.error`,而 Graph 404 body 帶 UPN ⇒ **UPN 真係入咗 log**。非 W38 引入、影響**全部**直接 Graph caller;修佢 = 改 log 行為 = 唔屬純重構 ⇒ 登 BUG 候選,**test 描述已收窄到只宣稱 message 乾淨**
+- [x] verify:`git diff apps/api/src/integration/graph/` = **空**(實跑)
 
 ## F3 — `assign.service` 換依賴(行為零改變)
 

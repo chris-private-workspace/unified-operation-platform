@@ -99,3 +99,64 @@ D2 表列 5 個方法,拍板之後實際只需要 **3 個**:
 **下一步**:F1 介面 + `AssignOutcome` 詞彙。
 
 ---
+
+## Day 2 — 2026-07-27:F1 介面 + F2 Graph 實作(**比 plan 快一日**)
+
+`apps/api/src/integration/license-ops/` 三個新檔,**working tree 淨係多咗呢一個目錄**(`git status --short` 得一行 `?? license-ops/`)—— 零既有檔改動。
+
+### 落手前要 Chris 拍嘅第四個板:error 契約
+
+ADR §D2 寫「把 Graph 例外(**現時經 `graphUnavailable()` wrap**)map 入呢個詞彙」。但 `graphUnavailable()` wrap 嘅係**網絡 / auth / throttle 失敗**,即「vendor 掛咗」。呢樣**唔係呢次 assign 嘅結果,係冇結果** —— caller 應該重試而唔係詮釋。
+
+照字面做 ⇒ provider 返 `{status:'error'}` ⇒ `assign.service` 要**人手複製**一個逐字相同嘅 503 message,而任何一個字唔同就係行為改變。
+
+**Chris 拍板:transport 失敗照 throw。** `error` variant 收窄成「provider 答咗,但答案係失敗語意」(例:2003 返 `{result:'failed'}`)。呢個契約對兩個實作都成立,亦令 W38 真係企得住「純重構」。已入 plan §7 changelog **D1**。
+
+### 🔴 寫實作先發現 plan G3 做唔到 —— 而且**唔應該**做到
+
+plan 寫「5 個 variant 全覆蓋」。但 `GraphLicenseProvider` **只產生得到 `assigned`**:
+
+| variant | 點解 Graph 產生唔到 |
+|---|---|
+| `not_synced` / `no_seats` | caller 喺**入 provider 之前**已經攔截(sync gate + 座位檢查)。移入嚟 = provider 開始做決策 = **違反 D0** |
+| `already_assigned` | Graph 個 POST **冪等而且唔報告** —— 呢個實作**根本分唔到**。n8n 2003 分得到 |
+| `error` | Graph 靠 throw,而 throw = transport = 503(見上) |
+
+為咗夾夠 5 個而喺 Graph 側虛構 mapping,就係**憑空造行為**。G3 改成「實際產生得到嘅 variant 全覆蓋」,plan §7 changelog **D2**。
+
+➕ **順帶留低一個庚必須面對嘅真問題**(已寫入 provider doc comment,唔係散落喺 progress):**同一個 replay,Graph 會講 `assigned`,n8n 會講 `already_assigned`。** 呢個係真 cross-provider 不對稱。庚要拍板係「caller 一視同仁」(今日就係咁 —— replay 唔當錯)定係「Graph 側先探一次 user licenses」(每次 assign 多一個 round-trip)。**唔准喺 Graph 側靜靜加個 probe 當修好咗。**
+
+### 🔴 條 test 意外揪到一個**既有** H4 缺陷
+
+跑 F2 個 H4 test 見到:
+
+```
+[GraphLicenseProvider] Microsoft Graph unavailable while trying to
+look up the target user: Request failed for /users/sensitive.person@example.com
+```
+
+Exception message 乾淨(test 證到),但 **`graphUnavailable()` 把 vendor error 原封放入 `logger.error`**,而 Graph 404 body 個 request path 帶 UPN ⇒ **UPN 真係入咗 log**。
+
+`graph-unavailable.ts` 自己個 comment 仲寫住「H4: never log the target UPN」—— **佢做唔到自己聲稱嘅嘢**。
+
+- **唔係 W38 引入**:影響**全部**直接 Graph caller(assign / reconcile / catalog / sweep),由 BE-graph-harden 起就存在
+- **唔喺 W38 修**:修佢 = 改 log 行為 = 唔再係純重構
+- **即刻做咗嘅事**:把 test 描述由「no PII escapes through the error path」**收窄**成「the 503 **MESSAGE** never carries the target UPN」+ 喺 test 檔寫明 log 側仍然漏。原本個名會被讀成「H4 呢條路徑已經守住」,而佢只證到一半 —— 呢個正正係 `feedback_verification-that-proves-nothing` 講嗰種
+
+⇒ 登 **BUG 候選**(Sev3,H4;fix = `graphUnavailable()` 唔好把 `err.message` 原封 log,或者 scrub UPN pattern)。closeout 時入 BACKLOG。
+
+### 交付 + verify(全部實跑)
+
+| 項 | 結果 |
+|---|---|
+| `graph-license.provider.spec.ts` | **9 passed / 9 total** |
+| 介面檔 vendor import | `grep -c` = **0** |
+| `git diff apps/api/src/integration/graph/` | **空**(`graph.service.ts` 一行冇郁) |
+| `schema.prisma` + 3 個 `package.json` diff | **空**(G4) |
+| working tree | 得一行 `?? license-ops/` |
+
+介面按三個 OQ 收窄到 **3 個方法**(D2 表 5 個),加咗兩個 vendor-neutral type(`TenantSkuSeats` / `DirectoryUser`)**刻意窄過** Graph 型別 —— 唔逼 n8n 實作虛構 `capabilityStatus`/`appliesTo`,亦唔畀 `displayName`/`accountEnabled` 呢啲冇人讀嘅 PII 過 seam。
+
+**下一步**:F3 —— `assign.service` 換依賴,G2「既有 spec assertion 零改動」係硬 gate。
+
+---

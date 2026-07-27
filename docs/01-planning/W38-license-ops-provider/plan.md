@@ -68,7 +68,7 @@ ADR-0017 三個可切換接縫嘅**第二個**(接縫 ②)。本 phase **只做�
 |---|---|---|---|---|
 | G1 | 全部既有 test 綠 | api 433 → ≥433 | `npm test -w @uop/api` | Yes |
 | G2 | **`assign.service.spec.ts` 既有 assertion 零改動** | diff = 0 | `git diff` 該檔只有新增 | Yes |
-| G3 | 新 provider 逐 outcome 有 test | 5 個 variant 全覆蓋 | test 檔逐條對 | Yes |
+| G3 | 新 provider 逐 outcome 有 test | ~~5 個 variant 全覆蓋~~ → **實際產生得到嘅 variant 全覆蓋**(Graph = 只有 `assigned`,見 §7 D2) | test 檔逐條對 | Yes |
 | G4 | **零 schema / 零新 dep** | diff = 0 | `schema.prisma` + 3 個 `package.json` | Yes |
 | G5 | 邊界鎖 test 真捉得到 | fails-before 實證 | 故意令 reconcile 走 provider → test 紅 | Yes |
 | G6 | H4:outcome 零 PII | 餵 UPN 唔洩漏 | 專門 test | Yes |
@@ -104,7 +104,9 @@ Carry-over from `W36-n8n-intake-adapter/progress.md` retro:
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
-| 2026-07-27 | Initial plan | — | _(待 Chris)_ |
+| 2026-07-27 | Initial plan | — | Chris Lai |
+| 2026-07-27 | **D1 — error 契約偏離 ADR-0017 §D2 字面**:transport 失敗(網絡/auth/throttle)**照 throw 503**,唔 map 入 `AssignOutcome`;`error` variant 只留畀「provider 答咗,但答案係失敗語意」(例:2003 返 `{result:'failed'}`) | ADR §D2 寫「把 Graph 例外(現時經 `graphUnavailable()` wrap)map 入詞彙」,但 `graphUnavailable()` wrap 嘅係 **vendor 掛咗** —— 嗰個唔係呢次 assign 嘅**結果**,係**冇結果**,caller 應該重試而唔係詮釋。照字面做會逼 `assign.service` 人手複製一個逐字相同嘅 503 message,而任何一個字唔同就係行為改變 | **Chris Lai** |
+| 2026-07-27 | **D2 — G3 由「5 個 variant 全覆蓋」改為「實際產生得到嘅 variant 全覆蓋」** | 寫實作先發現 plan 呢條**做唔到而且唔應該做到**:`GraphLicenseProvider` 只產生得到 `assigned`。`not_synced`/`no_seats` 由 caller 喺**入 provider 之前**攔截(移入嚟 = provider 變決策者,違反 D0);`already_assigned` **Graph 根本分唔到**(POST 冪等且唔報告);`error` 留畀庚。為咗夾夠 5 個而喺 Graph 側虛構 mapping = 憑空造行為 | AI(照 §1.2;**已 surface 畀 Chris**) |
 
 ---
 
