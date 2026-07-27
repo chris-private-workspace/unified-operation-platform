@@ -1,7 +1,7 @@
 ---
 phase: W38-license-ops-provider
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete       # in-progress | complete
 last_updated: 2026-07-27
 ---
 
@@ -56,29 +56,37 @@ last_updated: 2026-07-27
 
 ## F5 — Doc-sync
 
-- [ ] ADR-0017 加**實作補註**(唔改 Accepted 內容):OQ-1/2/3 拍板 + 「D2 表當時未計 sync-sweep」
-- [ ] `BACKLOG.md` N8N-SEAMS-己庚辛 row 更新(己 ✅ / 庚解封)
-- [ ] `SESSION_SUMMARY.md` 座標更新
+- [x] ADR-0017 加**實作補註**(Accepted 內容一個字冇改):四項拍板 + 「D2 表當時未計 sync-sweep」嘅時序空白 + 🔴 留畀庚嘅 replay 不對稱
+- [x] ➕ 補註順帶標明 **Consequences → Positive 有一句已 stale**:「`listUsersBySku` 補上平台一直缺嘅 per-SKU 用戶清單」**W38 未兌現**(OQ-3 拍板唔加)
+- [x] `BACKLOG.md` —— **BUG-004 新登**(A 區)+ N8N-SEAMS-己庚辛 row 更新(己 ✅ / 庚解封)
+- [x] `SESSION_SUMMARY.md` 座標更新
 
 ## Verify(closeout 前全跑)
 
-- [ ] `npm test -w @uop/api` —— 全綠,≥433
-- [ ] `npm run lint` 兩邊 0 warning + `tsc --noEmit`
-- [ ] **G4**:`schema.prisma` + 3 個 `package.json` diff **全 0**
-- [ ] **G8 live**:dev 真跑一次 assign,stage / ledger 增量同重構前一致(前後 DB 對照)
-- [ ] `anti-patterns` skill 自檢(尤其 **AP-1 假驗收** / **AP-12 冇驗唔應該發生嘅嘢**)
+- [x] `npm test -w @uop/api` —— **467 / 467**(45 suites),基線 450 + F2 9 + F4 8
+- [x] `npm run lint` **exit 0** + `tsc --noEmit` **exit 0**
+- [x] **G4**:`schema.prisma` + 3 個 `package.json` diff **全 0**(實跑)
+- [x] **G8 live** —— 🚧 **達成到可以達成嘅程度,唔扮全綠**(詳見 progress Day 4):
+  - ✅ **真 boot**(port 3200,本 worktree 嘅 code)—— DI graph 完整,`LicenseOperationsProvider` 解析得到。呢樣 unit test 驗唔到
+  - ✅ **真 HTTP `PATCH …/assign` → 503**,message **逐字**同重構前一致:`Microsoft Graph is unavailable — could not look up the target user. Please retry.`
+  - ✅ log 出自 **`[GraphLicenseProvider]`**(唔係 `AssignService`)⇒ 真係經咗 seam;錯誤係真 `AADSTS900021` ⇒ 真係打咗去 Microsoft,唔係 mock
+  - ✅ **零副作用**:四個 count 前後一樣(`2 | 6049 | 18 | 16`);`SYNC_SWEEP_ENABLED=false` 生效,log 零 sweep 活動
+  - 🚧 **未驗**:assign **成功**路徑。要真 Graph 憑證,而跑通就會**真派 licence 畀真人**(W36 同一理由拒絕過)。**唔當 pass**
+- [x] 🔴 **AP-11 當場中招**:port 3100 跑緊嘅係 `C:\Users\CLai03\unified-operation-platform\apps\api\dist\main` —— **另一個 checkout 嘅 build**,一行 W38 code 都冇。查咗 process ancestry 先發現 ⇒ 改用 3200 自起
+- [x] ➕ 發現本 worktree **根本冇 `apps/api/.env`**(得 `.env.example`)⇒ 6 個 env 全部用 placeholder 從 `Start-Process` 傳(**冇改 `.env`**,跟 restart-stack skill 硬規則)
+- [x] `anti-patterns` 自檢(見 progress retro)
 
 ---
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker(R4)
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro(= **庚** `N8nLicenseProvider`)
+- [x] All deliverables committed to git
+- [x] All open-question status changes reflected in decision tracker(R4)—— 四項拍板入 ADR-0017 實作補註
+- [x] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **無新 ADR**:ADR-0017 事前 Accepted,本 phase 只**收緊**唔推翻;零 schema / 零新 dep ⇒ H1/H2 不觸發
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)—— BUG-004 新登 + 己庚辛 row
+- [x] `progress.md` retro section written(含 anti-patterns 12 條自檢,兩條 🔴 中過招)
+- [x] `progress.md` frontmatter status flipped to `closed`
+- [x] Phase N+1 kickoff trigger noted in retro(= **庚** `N8nLicenseProvider`)
 
 ---
 

@@ -4,7 +4,7 @@ name: "N8N-SEAMS 己 — LicenseOperationsProvider + GraphLicenseProvider(純重
 sprint_week: W38
 start_date: 2026-07-27
 end_date: 2026-07-29          # planned, may slip with changelog log
-status: active                # draft | active | closed —— 2026-07-27 Chris approve + 三個 OQ 全跟建議拍板
+status: closed                # draft | active | closed —— 2026-07-27 收官(G1–G8 達標,G8 邊界見 progress Day 4)
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md §D0 · §D2 · rollout「己」
   - docs/adr/0015-sync-gate-scheduled-sweep.md(OQ-2 直接相關)

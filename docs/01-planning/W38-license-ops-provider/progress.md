@@ -2,7 +2,7 @@
 phase: W38-license-ops-provider
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: active         # active | closed
+status: closed         # active | closed
 last_updated: 2026-07-27
 ---
 
@@ -227,5 +227,87 @@ F4 另外加咗兩樣 plan 冇要求但缺咗就唔成立嘅嘢:
 `graphUnavailable()` 把 vendor error 原封 `logger.error`,而 Graph 404 body 帶 UPN ⇒ UPN 入咗 log。**非 W38 引入**,影響全部直接 Graph caller。已入 BACKLOG A 區。
 
 **下一步**:F5 doc-sync + live 驗證(G8)+ retro。
+
+---
+
+## Day 4 — 2026-07-27:F5 doc-sync + G8 live + closeout
+
+### G8 —— 做到嘅做足,做唔到嘅唔扮
+
+**先撞咗 AP-11。** plan 寫「dev 真跑一次 assign」,但查 process ancestry 揭穿:
+
+```
+port 3100 → node C:\Users\CLai03\unified-operation-platform\apps\api\dist\main
+                  ↑ 另一個 checkout,而且係 dist build,一行 W38 code 都冇
+```
+
+用佢驗證就係 W36 踩過嗰個坑(**驗錯咗第二棵樹**)。改為喺 **3200** 自起本 worktree 嘅 code。
+
+**再發現本 worktree 根本冇 `apps/api/.env`**(得 `.env.example`)—— 即係呢個 worktree 從來冇跑過 runtime。Boot 硬性要 5 個 `getOrThrow` key + `DATABASE_URL`。跟 restart-stack skill 硬規則:**唔改 `.env`**,6 個值全部用 placeholder 由 `Start-Process` 傳。
+
+⚠️ **連帶後果要講清楚**:`GRAPH_CLIENT_SECRET` 只可以係 placeholder ⇒ **驗到嘅係 503 路徑,唔係 assign 成功路徑**。
+
+#### 驗到嘅(全部真 output)
+
+| # | 證據 |
+|---|---|
+| 1 | **真 boot OK**(~15s)—— DI graph 完整,`LicenseOperationsProvider` 喺真 Nest app 解析得到。**呢樣 unit test 驗唔到**(`Test.createTestingModule` 只砌得到自己列嗰幾個 provider,驗唔到 `IntegrationModule` 有冇漏 export) |
+| 2 | 真 HTTP `PATCH /fulfilment/requests/…/assign` → **503**,message **逐字**同重構前一致:`Microsoft Graph is unavailable — could not look up the target user. Please retry.` |
+| 3 | log 出自 **`[GraphLicenseProvider]`** 而唔係 `[AssignService]` ⇒ 真係經咗 seam;錯誤內容係真 **`AADSTS900021`**(dummy tenant GUID 被 Microsoft 拒絕)⇒ 真係打咗出去,唔係 mock |
+| 4 | **零副作用**:`2 \| 6049 \| 18 \| 16` 前後一模一樣(ASSIGNED line items / ledger assigned 總和 / RequestEvent / AuditLog) |
+| 5 | `SYNC_SWEEP_ENABLED=false` 生效 —— log **零 sweep 活動**。唔關佢就會每 10 分鐘打真 Graph **兼寫 `azureSyncedAt`** |
+
+#### 🚧 驗唔到嘅(明寫,唔當 pass)
+
+**assign 成功路徑。** 要真 Graph 憑證,而跑得通就會**真派一個 licence 畀一個真人** —— W36 用同一個理由拒絕過(gate 一有 bug 就真嘢出街)。W38 唔開呢個先例。
+
+**點解可以收貨**:呢條路徑嘅回歸保護喺 `assign.service.spec` 52 條 test 入面,而 **G2 證咗嗰 52 條一條都冇改過**。live 補嘅係 test 覆蓋唔到嘅嗰兩樣 —— DI graph 同真 HTTP 邊界 —— 兩樣都驗到咗。
+
+---
+
+## Retro
+
+### 做啱咗嘅
+
+**① 唔 mock provider,改為 wire 真 provider 包住既有 mock。** 呢個決定令 G2 由「勉強達成」變成 `16 加 / 0 刪`,而且**救返兩條 BUG-002 regression 嘅意義**。當時嘅誘惑係「改 33 個引用,快手」——結果會係兩條 test 照樣綠,但已經冇再測緊當初要佢測嗰樣嘢。
+
+**② 三個 OQ 落手前問。** 全部係查 code 先浮出嚟,ADR 寫嗰陣冇。特別係 OQ-2:**若果照 D2 個表做落去,W37 一日之前先做嘅嘢就會被靜靜推翻。**
+
+**③ G5 fails-before。** 冇佢,「8 條 boundary test 全綠」同「8 條 test 乜都冇鎖住」外觀一模一樣。
+
+**④ 唔幫庚預先揀。** 非 `assigned` outcome 寫 fail-loud 而唔係「順手處理埋」。replay 語意係真決策,埋喺一個今日 unreachable 嘅分支 = 將來冇人記得有得揀過。
+
+### 學到 / 下次注意
+
+**① `graph.service.ts` 「一行冇郁」係整個 phase 最抵嗰條 acceptance。** 佢令好幾個「順手優化」嘅衝動(清走重複 `findUser`、統一 error 處理)自動出局 —— 唔使每次都重新辯論。
+
+**② live 驗證前必查 process ancestry。** AP-11 已經係第二次喺同一部機出現(W36 一次、W38 一次)。`preflight.ps1` 個 [3] 段其實已經印咗線索(3100 個 pid **唔喺**本項目名單),但要特登去對先睇得出。
+
+**③ 一個未解嘅張力**:本 worktree 冇 `.env` ⇒ 每次 live 驗證都要手砌 6 個 placeholder env。今次可以接受(唯讀路徑),但下個 phase 若要驗**寫入**路徑,應該學 W36 起 scratch DB,唔好對住 dev DB 玩。
+
+### anti-patterns 自檢
+
+| AP | 判定 |
+|---|---|
+| **AP-1 假驗收** | ✅ 有真行 HTTP + 真 boot,唔淨係睇 test 綠 |
+| **AP-2 mock 當 real** | ✅ live 段落明寫「Graph 憑證係 placeholder」;成功路徑**明標未驗** |
+| **AP-3 stale 數字** | ✅ 順帶捉到 ADR-0017 Consequences 一句因 OQ-3 而 stale,已標 |
+| **AP-4 silent scope drift** | ✅ 兩處偏離全部入 plan §7 changelog(D1 error 契約 / D2 G3 修正) |
+| **AP-5 over-engineering** | ✅ 介面由 5 個方法收到 3 個;`checkSync`/`listUsersBySku` 零 caller 唔加 |
+| **AP-6 fallback 假象** | N/A |
+| **AP-7 stale running process** | 🔴 **中過招** —— 見上,已即場改用 3200 |
+| **AP-8 SKU 靠名** | ✅ 介面 `skuId` GUID;`TenantSkuSeats` 註明「Never the part number」 |
+| **AP-9 跳 sync gate** | ✅ gate 位置冇郁,live 個 503 正是過咗 gate 之後先出 |
+| **AP-10 對帳撈錯數字** | ✅ `reconcile` 零改動 + boundary test 鎖死 |
+| **AP-11 驗錯 checkout** | 🔴 **中過招**,已修正(呢條 AP 就係 W36 寫落嚟嘅,今次真係捉到嘢) |
+| **AP-12 冇驗「唔應該發生嘅嘢」** | ✅ 零副作用四個 count + log 零 sweep + boundary 負面斷言 |
+
+### 🚧 Carry-over
+
+1. **BUG-004**(H4 log 洩 UPN)—— 已登 BACKLOG A 區,W38 刻意唔修
+2. **assign 成功路徑 live 未驗** —— 隨真憑證環境(`DEPLOY-harden`)
+3. **🔴 留畀庚**:Graph 講 `assigned` / n8n 講 `already_assigned` 嘅 replay 不對稱,已寫入 ADR-0017 補註 + provider doc comment + `assign.service` fail-loud 三處
+
+**Status**:✅ **closed**。G1–G8 全部達標(G8 部分,邊界明寫)。**下一個 = 庚**(`N8nLicenseProvider`)。
 
 ---
