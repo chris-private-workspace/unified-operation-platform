@@ -4,14 +4,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { type AppUser, EventType, LineItemStage, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  GraphService,
-  type GraphUser,
-} from '../integration/graph/graph.service';
-import { graphUnavailable } from '../integration/graph/graph-unavailable';
+  LicenseOperationsProvider,
+  type DirectoryUser,
+} from '../integration/license-ops/license-ops.provider';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { assertOpcoScope } from '../auth/opco-scope';
 import { AuditService } from '../audit/audit.service';
@@ -32,7 +32,10 @@ export class AssignService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly graph: GraphService,
+    // ADR-0017 seam ② (W38). The concrete provider is chosen in the module —
+    // this service must never learn which one it got, or the two paths start
+    // to diverge (D0).
+    private readonly licenseOps: LicenseOperationsProvider,
     private readonly snow: ServiceNowService,
     private readonly failures: OutboundFailureService,
     private readonly audit: AuditService,
@@ -124,14 +127,12 @@ export class AssignService {
       );
     }
     // findUser returns null for a genuine 404 (not synced yet) but *throws* on
-    // an auth / network / throttle failure — wrap that so a raw Graph error
-    // never propagates unhandled (BUG-002: it crashes the Nest process).
-    let user: GraphUser | null;
-    try {
-      user = await this.graph.findUser(request.targetUpn);
-    } catch (err) {
-      throw graphUnavailable(this.logger, 'look up the target user', err);
-    }
+    // an auth / network / throttle failure. The provider wraps that into the
+    // same 503 this service used to build itself (BUG-002: a raw Graph error
+    // carries status -1 and crashes the Nest process).
+    const user: DirectoryUser | null = await this.licenseOps.findUser(
+      request.targetUpn,
+    );
     if (!user) {
       throw new BadRequestException(
         'Target user not found in Azure AD (not synced yet)',
@@ -186,16 +187,7 @@ export class AssignService {
     // actually stopped this assign (R4 counts on that number being honest).
     const budgetOverridden = overBudget && !!overrideReason;
 
-    let skus;
-    try {
-      skus = await this.graph.getSubscribedSkus();
-    } catch (err) {
-      throw graphUnavailable(
-        this.logger,
-        'read the tenant license inventory',
-        err,
-      );
-    }
+    const skus = await this.licenseOps.listTenantSkus();
     const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
     if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
       throw new BadRequestException(
@@ -203,16 +195,25 @@ export class AssignService {
       );
     }
 
-    // ── Graph assignment (external side-effect, BEFORE the DB transaction) ──
-    try {
-      await this.graph.assignLicense(request.targetUpn, item.sku.skuId, {
-        usageLocation,
-      });
-    } catch (err) {
-      throw graphUnavailable(
-        this.logger,
-        'assign the license in Microsoft Graph',
-        err,
+    // ── The assignment itself (external side-effect, BEFORE the DB transaction) ──
+    // A transport failure throws (503) exactly as before; what comes back here
+    // is a semantic outcome (ADR-0017 D2, W38 plan §7 D1).
+    const outcome = await this.licenseOps.assignLicense(
+      request.targetUpn,
+      item.sku.skuId,
+      { usageLocation },
+    );
+    if (outcome.status !== 'assigned') {
+      // GraphLicenseProvider only ever produces 'assigned' today, so this is
+      // unreachable on the default wiring. It is deliberately a loud failure
+      // rather than a handled case: deciding here what a replay
+      // ('already_assigned') or a provider-reported failure should do to the
+      // stage machine and the ledger is 庚's call, and it needs a caller to
+      // reason about. Guessing now would bury a real decision in a branch no
+      // test can reach.
+      // H4: the status word only — outcome.details may quote the vendor.
+      throw new ServiceUnavailableException(
+        `License provider returned an outcome this path does not handle yet: ${outcome.status}`,
       );
     }
 

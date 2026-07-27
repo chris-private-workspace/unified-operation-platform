@@ -160,3 +160,72 @@ Exception message 乾淨(test 證到),但 **`graphUnavailable()` 把 vendor erro
 **下一步**:F3 —— `assign.service` 換依賴,G2「既有 spec assertion 零改動」係硬 gate。
 
 ---
+
+## Day 3 — 2026-07-27:F3 換依賴 + F4 邊界鎖(**G2 / G5 兩個硬 gate 都真證咗**)
+
+### G2 = `16 insertions, 0 deletions` —— 零刪除,即零 assertion 改動
+
+第一次跑 `assign.service.spec` 全部炸(42 failed):spec 一直 `{ provide: GraphService, useValue: graph }`,而 `AssignService` 而家要 `LicenseOperationsProvider`。
+
+直覺做法係 mock 走個 provider,再逐處 `graph.` 改 `licenseOps.`(33 處)。**冇咁做,因為咁會靜靜整死兩條 BUG-002 regression**:
+
+```
+611  graph.assignLicense.mockRejectedValue(new Error('graph 500'))   ← RAW vendor error
+618  .rejects.toThrow(ServiceUnavailableException)                    ← 期望 clean 503
+```
+
+mock 走 provider ⇒ raw→503 嗰個 wrap **跌出測試鏈** ⇒ 條 test 變成「我 mock 咗 503,佢真係 503」= 廢話,但**照樣綠**。
+
+改為 wire **真嘅 `GraphLicenseProvider` 包住原本個 `GraphService` mock`**:
+
+```ts
+{ provide: GraphService, useValue: graph },
+{ provide: LicenseOperationsProvider,
+  useFactory: (g) => new GraphLicenseProvider(g), inject: [GraphService] },
+```
+
+結果:**33 處引用一處都唔使改**,而且測到嘅係 `AssignService + GraphLicenseProvider` 成條真鏈。跑出嚟 log 亦印住 raw error 真係經 provider wrap:
+
+```
+[GraphLicenseProvider] Microsoft Graph unavailable while trying to
+assign the license in Microsoft Graph: graph 500
+```
+
+⇒ `git diff --numstat` = **`16  0`**。零刪除係最硬嘅「零行為改變」證據。
+
+### 非 `assigned` outcome:fail loud,唔幫庚預先揀
+
+`GraphLicenseProvider` 今日只返 `assigned`,所以呢個分支 unreachable。但**唔可以就咁當成功往下行** —— 庚一落地就會行到。同時亦**唔喺度預先決定**「replay 應該點影響 stage machine 同 ledger」:嗰個係真決策,埋喺一個冇 test 到得到嘅分支入面 = 最差做法。所以 throw 一個講明「呢條路仲未處理呢個 outcome」嘅 503,庚必須正面處理佢。
+
+### G5 —— 條邊界 test 真係捉得到
+
+淨係「寫咗 test 而且綠」證明唔到嘢。喺 `reconcile.service.ts` 插一行 seam import:
+
+```
+Tests:  1 failed, 7 passed, 8 total      ← 啱啱好紅嗰條,其餘七條照綠
+```
+
+`git checkout --` 還原 → diff 空 + `grep -c license-ops` = **0**。
+
+F4 另外加咗兩樣 plan 冇要求但缺咗就唔成立嘅嘢:
+- **每個 case 加正面半邊**「still talks to GraphService directly」—— 淨係 assert「冇 import seam」,個檔被刪 / 唔再打 vendor 都會照綠
+- **`assign.service` 係唯一過 seam 嗰個**呢條正面斷言,兼驗佢**唔再自己掂 vendor**(否則兩條路並存,庚只換到一半)
+
+### Verify(全部實跑)
+
+| 項 | 結果 |
+|---|---|
+| api test | **467 / 467**(45 suites)—— 基線 450 + F2 9 + F4 8 |
+| lint | **exit 0**(修咗一個 prettier 引號:字串含 apostrophe 要雙引號) |
+| `tsc --noEmit` | **exit 0** |
+| G2 `assign.service.spec` diff | **16 加 / 0 刪** |
+| G5 fails-before | **1 failed / 7 passed** → 還原乾淨 |
+| 改動檔數 | **3 個改 + 2 個新**(`fulfilment.module` 零改動 —— 佢 import `IntegrationModule`,新 export 自動到手) |
+
+### 🔴 登 BUG-004(Day 2 揪到嘅 H4 缺陷,Chris 2026-07-27 批准登記)
+
+`graphUnavailable()` 把 vendor error 原封 `logger.error`,而 Graph 404 body 帶 UPN ⇒ UPN 入咗 log。**非 W38 引入**,影響全部直接 Graph caller。已入 BACKLOG A 區。
+
+**下一步**:F5 doc-sync + live 驗證(G8)+ retro。
+
+---

@@ -37,18 +37,22 @@ last_updated: 2026-07-27
 
 ## F3 — `assign.service` 換依賴(行為零改變)
 
-- [ ] `fulfilment.module` / `integration.module` wire provider(DI token + 預設 `GraphLicenseProvider`)
-- [ ] `assign.service` 改用 provider;移除 `GraphService` / `GraphUser` / `graphUnavailable` import
-- [ ] 🔴 **保留** `graph.assignLicense()` 內部嗰次重複 `findUser`(R2 —— 唔准順手優化)
-- [ ] verify:ADR-0016 預算 gate 仍然喺 inventory read **之前**(逐行對 `assign.service.ts`)
-- [ ] **G2 verify**:`assign.service.spec.ts` **既有 assertion 零改動**(`git diff` 只可以有新增行)
+- [x] `integration.module` wire provider(`{ provide: LicenseOperationsProvider, useClass: GraphLicenseProvider }` + export)。**`fulfilment.module` 零改動** —— 佢 import `IntegrationModule`,新 export 自動到手
+- [x] `assign.service` 改用 provider;移除 `GraphService` / `GraphUser` / `graphUnavailable` import
+- [x] 非 `assigned` outcome **fail loud**(`ServiceUnavailableException`)而唔係靜靜當成功。今日 unreachable,但庚一落地就會行到 —— 喺度預先幫庚揀 replay/失敗點影響 stage machine 同 ledger,等於把真決策埋喺一個冇 test 到得到嘅分支
+- [x] 🔴 **保留** `graph.assignLicense()` 內部嗰次重複 `findUser`(R2 —— `graph.service.ts` diff 係空,冇得順手優化)
+- [x] verify:ADR-0016 預算 gate 仍然喺 inventory read **之前**(逐行對過 `assign.service.ts`)
+- [x] **G2 verify** ✅✅ —— `git diff --numstat` = **`16  0`**(16 加 **0 刪**),即**一條既有 assertion 都冇郁**。做法:spec **唔 mock provider**,而係 wire **真嘅 `GraphLicenseProvider` 包住原本個 `GraphService` mock` —— 咁兩條 BUG-002 regression 先仲係餵 **raw vendor error** 去驗 503;mock 走個 provider 就會令 raw→503 嘅 wrap 跌出測試鏈,嗰兩條會靜靜降級成「503 會向上傳」,證明唔到嘢
 
 ## F4 — 邊界鎖 test(負面斷言)
 
-- [ ] test:`reconcile.service` 唔經 provider(仍直接 `GraphService`)+ 註明**點解**(對帳基準)
-- [ ] test:`integration-probe` 唔經 provider + 註明**點解**(探針要探 Graph 本身)
-- [ ] test:`sync-sweep` 按 OQ-2 結果 + 註明**點解**(ADR-0015「平台證實」)
-- [ ] **G5 fails-before 實證**:故意令 reconcile 走 provider → 上面 test 真係變紅 → 還原
+- [x] `license-ops.boundary.spec.ts` —— **8 test**,靜態 source 檢查(鎖嘅係「呢個檔**完全冇**伸手去 seam」,import list 直接答得到,行為 mock 只答到佢行過嘅路徑)
+- [x] test:`reconcile.service` 唔經 provider + **理由寫入 test 名**(對帳基準會變成「睇你 config 咗邊個 provider」)
+- [x] test:`integration-probe` 唔經 provider + 理由(探針要探嘅**正是**被換走嗰個執行器,經 seam 就變成探 n8n 而標籤寫住 Graph)
+- [x] test:`sync-sweep` 唔經 provider + 理由(ADR-0015「平台證實」)
+- [x] ➕ 加埋 `catalog.service`(OQ-1 第四個 consumer)+ **正面斷言** `assign.service` 係**唯一**過 seam 嗰個(兼驗佢唔再自己掂 vendor,否則兩條路並存,庚只換到一半)
+- [x] ➕ 每個 case 加**正面半邊**「still talks to GraphService directly」—— 淨係 assert「冇 import seam」嘅話,個檔被刪咗 / 唔再打 vendor 都會照綠
+- [x] **G5 fails-before 實證** ✅ —— 喺 `reconcile.service.ts` 插一行 seam import → **`1 failed / 7 passed`**(啱啱好紅嗰條,其餘七條照綠)→ `git checkout --` 還原 → diff 空 + `grep -c license-ops` = **0**
 
 ## F5 — Doc-sync
 
