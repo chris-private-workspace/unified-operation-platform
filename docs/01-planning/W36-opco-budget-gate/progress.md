@@ -197,7 +197,45 @@ web **180 passed / 21 files**(F2 後 167 → **+13**)· web lint 零 output · `
 
 **未做**:F5 runbook + SQL · ADR-0016 Decision 逐條 closeout 核對。
 
-**Commit**:`<hash>` — F3 前端 override 入口
+**Commit**:`e796c80` — `feat(web): W36 F3 — ADMIN 前端 budget override 入口(ADR-0016 D3,OQ1 = A)`
+
+---
+
+## Day 4 — 2026-07-27:**F5 preflight SQL + rollout runbook** · SQL 真跑捉到 plan 自己錯
+
+交付兩件:`docs/05-usage/sql/opco-budget-gate-preflight.sql`(唯讀,可重跑)+ `docs/05-usage/OPCO-BUDGET-GATE-ROLLOUT.md`。
+
+### 🔴 「SQL 真跑要對得返 §2」呢條 acceptance 做到嘢 —— 佢捉到嘅係 plan
+
+| | plan §2 寫 | SQL 真跑 |
+|---|---|---|
+| `assigned >= allocated` | 22 | **22** ✅ |
+| 其中 inactive | 6 | **12** ❌ |
+| ⇒ active 影響面 | 16 | **10** ❌ |
+
+成因:Day 0 點算時只當 `VISIO_PLAN1` / `WIN_DEF_ATP` 係 inactive,漏咗 `SPE_E3` / `STANDARDPACK` **各自都有一個 inactive 嘅 catalog row**。
+
+⇒ 順藤摸到更根本嗰件事:**`skuPartNumber` 唔係唯一鍵**。dev 有兩個 `SPE_E3`、兩個 `STANDARDPACK`(各一 active 一 inactive,唔同 `skuId`)。正正係 CLAUDE.md **§13「一律 `skuId` GUID,唔信 part number」**嗰條規矩,而我第一版 SQL 就係只出 part number ⇒ 一個操作員讀到「SPE_E3 — inactive,唔使理」會**漏咗處理另一個 active 嘅 E3**。已改成一律出 `skuId`,並加多一段 [4] 專門列出「一個 part number 幾多個 catalog row」。
+
+老實補一筆:嗰兩個 inactive 嘅 `skuId` 係 **`test-e3` / `test-e1`** = dev 測試 fixture,唔係真 legacy 訂閱 ⇒ **dev 嗰 22 行入面有 6 行係假數**。所以 runbook 明文寫死「唔可以引用 dev 數字,一定要喺目標環境自己跑」。
+
+### 第二個發現:plan 完全冇計過嘅一類
+
+原本 grounding 只掃**已存在**嘅 ledger row。但 D1 之下,**完全冇 ledger row** 嗰啲組合先係最嚴重 —— allocated 0 ⇒ **每一次** assign 都擋,唔止「下一次」。dev 有 3 個組合(全部 PFU-Asia)、共 4 條 pending line item 中招,而佢哋喺原本嘅 22 行名單裡面**完全隱形**。已入 SQL 第 [3] 段。
+
+呢個同 **DD-3**(冇 ledger create endpoint)扣埋一齊就係一個死結:gate 一開就 assign 唔到,而 assign 正正係唯一會 upsert 出 ledger row 嘅路徑 ⇒ **只能靠 import 建**。runbook 步 2 已寫死。
+
+### Runbook 內容
+
+四步:目標環境跑 SQL → 逐行決定點處理(三種情況各有出路)→ 通知操作員 → **部署後第一項檢查**。
+
+最後一步就係接住 Day 3 驗唔到嗰半:gate 嘅 400 要有**真 synced user** 先驗得到,所以寫成部署後動作,連「驗完即刻查:仍 READY / `assignedAt` 空 / 零 audit row / tenant 冇多咗 assignment,任何一項唔對即回滾」都寫埋。
+
+另外兩段刻意寫得重:**override 唔係加 allocation 嘅捷徑**(R4,並指明 `/admin/audit` filter `assign.budget_override` 要定期睇)· **買咗 licence 唔會自動加 allocated**(OQ2;並明講「唔指定人負責,呢步就會冇人做,然後大家學識用 override 頂住,直到 allocated 完全失去意義」)。
+
+**未做**:ADR-0016 Decision 逐條 closeout 核對 · BACKLOG 同步 · phase closeout。
+
+**Commit**:`<hash>` — F5 preflight SQL + rollout runbook
 
 ---
 

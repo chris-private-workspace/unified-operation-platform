@@ -42,10 +42,13 @@ total 148 | alloc_zero 0 | at_or_over 22 | strictly_over 20
 | | 數 |
 |---|---|
 | `assigned >= allocated` 嘅 row | **22** |
-| 其中 SKU 本身 `active = false`(`VISIO_PLAN1` ×3 · `WIN_DEF_ATP` ×3) | **6** |
-| ⇒ **實際會被凍結嘅 active 組合** | **16** |
+| 其中 SKU 本身 `active = false` | ~~6~~ → **12**(F5 修正) |
+| ⇒ **實際會被凍結嘅 active 組合** | ~~16~~ → **10**(F5 修正) |
 
-理由:intake 拒 inactive SKU(`intake.service.ts:57-60`),所以 inactive SKU 唔會有新 line item 要 assign ⇒ 嗰 6 個組合永遠撞唔到本 gate。**ADR-0016 寫「22 行」係上界,真實影響面 16。**
+理由:intake 拒 inactive SKU(`intake.service.ts:57-60`),所以 inactive SKU 唔會有新 line item 要 assign ⇒ 嗰啲組合永遠撞唔到本 gate。**ADR-0016 寫「22 行」係上界。**
+
+> 🔴 **上面「6 / 16」係錯嘅,F5 跑真 SQL 時修正為「12 / 10」**(見 changelog 2026-07-27)。原本點算只當 `VISIO_PLAN1` / `WIN_DEF_ATP` 係 inactive,漏咗 `SPE_E3` / `STANDARDPACK` **各自都有一個 inactive 嘅 catalog row**(part number **唔唯一**,§13)。
+> 另外 F5 揪出一類本表**完全冇計過**嘅:**完全冇 ledger row 但有 pending line item** 嘅組合(dev 有 3 個,共 4 條 line item)—— 冇 row = allocated 0 ⇒ **每一次** assign 都擋,唔止「下一次」。
 
 Overage 分佈(active 組合):最大 8(`RTMAP/POWERAUTOMATE_ATTENDED_RPA` 36→44 · `RKR/STANDARDPACK` 89→97 · `PFU-HK/SPE_E3` 108→116 · `RCN/Microsoft_365_Copilot` 51→59),最小 0(`RKR/Microsoft_365_Copilot` 38/38 = 剛好用盡)。
 
@@ -156,6 +159,8 @@ Overage 分佈(active 組合):最大 8(`RTMAP/POWERAUTOMATE_ATTENDED_RPA` 36→4
 | 2026-07-27 | Initial draft(**draft**) | ADR-0016 Accepted 後開 phase;grounding 重量確認 22 行並**精確化為 16 個 active**;揪出 OQ2 流程斷點 | — |
 | 2026-07-27 | `draft → active`;**OQ1 = 選項 A**(F3 前端 override 入口做) | Chris 拍板。override 係 ADR 明文設計嘅一半,冇 UI 等於半個 feature | **Chris Lai** |
 | 2026-07-27 | 🔴 **偏離 ADR-0016 D6 嘅 audit 形狀**(**owner approved**):`action` 由 D6 寫嘅 `ASSIGN` 改成**新 action `assign.budget_override`**;`targetType` = **新 `RequestLineItem`**(白名單 **`[]`**,event-only);`AUDIT_METADATA_KEYS` **加** `budgetOverride` / `allocated` / `assignedBefore` | D6 三個前提逐字核對後全部唔成立 —— `AUDIT_ACTIONS` **冇** `ASSIGN`、`AuditTargetType` 冇 line item、metadata 白名單只有 4 個 key ⇒ 照 D6 字面寫會令三個數字被 `pickAuditMetadata` **靜靜丟棄**,audit 只剩 `reason`。獨立 action 亦係 **R4 監控**(`/admin/audit` filter 「所有 override」)嘅唯一手段。掂 **ADR-0009 Decision 5**(白名單 = privacy decision)⇒ 已 STOP 並取得 owner 批准;新增三個 key **全部非 PII**(一個 boolean + 兩個 seat 數),`RequestLineItem` 白名單留空 = 唔複製 UPN(跟 `OutboundFailure` 先例) | **Chris Lai** |
+| 2026-07-27 | 🔴 **修正 §2 grounding 數字**:inactive 由 6 → **12**,active 影響面由 16 → **10** | F5 真跑 preflight SQL 揭出 —— 原本點算只當 `VISIO_PLAN1` / `WIN_DEF_ATP` 係 inactive,漏咗 `SPE_E3` / `STANDARDPACK` 各有一個 inactive catalog row(**part number 唔唯一**,§13:一律信 `skuId`)。**F5「SQL 真跑要對得返 §2」呢條 acceptance 就係為咗捉呢種嘢而設,佢做到嘢** | — (事實修正) |
+| 2026-07-27 | §2 新增一類:**完全冇 ledger row 但有 pending line item** 嘅組合(dev 3 個 / 4 條 line item) | 原本 grounding 只掃**已存在**嘅 ledger row,所以呢類完全隱形。但 D1 之下佢哋係**最嚴重**嗰種:allocated 0 ⇒ 每一次 assign 都擋。已入 SQL 第 [3] 段 + runbook 步 2 | — (事實修正) |
 | 2026-07-27 | F2 實作補一個 plan 冇明列嘅語意:**「帶咗理由」≠「發生咗 override」** —— 只有 `overBudget && reason` 先算 | ADMIN 可以喺完全未超預算嘅 assign 帶理由;若照「有 reason 就當 override」寫,timeline 同 audit 都會報一個從未發生嘅 override,**R4 靠嘅 override 次數會被非事件灌水** | — (spec-aligned) |
 
 ---

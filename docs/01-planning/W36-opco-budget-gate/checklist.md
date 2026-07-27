@@ -55,10 +55,14 @@ last_updated: 2026-07-27
 
 ## F5 — 部署前置
 
-- [ ] 可重跑 SQL 落 `docs/05-usage/`:列 `assigned >= allocated` + overage + **SKU active 狀態**
-- [ ] SQL 喺 dev 真跑,輸出對得返 plan §2(**22 total / 16 active**)
-- [ ] Runbook 段:上線前跑 → 交操作員 → 講明出路(加 allocated / 具名 override)
-- [ ] 🔴 寫明 **OQ2 流程斷點**:procurement 完成後仍要人手加 `allocated`,否則買咗都 assign 唔到
+- [x] 可重跑 SQL:`docs/05-usage/sql/opco-budget-gate-preflight.sql`(唯讀,四段:summary / 會被擋嘅組合 / **冇 ledger row 但有 pending line item** / **重複 part number**)
+- [x] SQL 喺 dev 真跑 —— **對唔返 plan §2,而係捉到 plan 錯咗**:22 total ✅ 但 inactive 係 **12 唔係 6** ⇒ active **10 唔係 16**。已修正 §2 + changelog(R3)
+- [x] ➕ SQL 一律輸出 **`skuId` GUID**(§13)—— 因為 dev 實測 `SPE_E3` / `STANDARDPACK` **各有兩個 catalog row**;淨睇 part number 會讀成「E3 唔使理」,但其實有另一個 active 嘅 E3
+- [x] ➕ 第 [3] 段:**冇 ledger row 但有 pending line item**(plan 完全冇計過嘅一類,D1 之下最嚴重 —— 每次 assign 都擋)
+- [x] Runbook `docs/05-usage/OPCO-BUDGET-GATE-ROLLOUT.md`:上線前跑 → 逐行點處理 → 交操作員 → 兩條出路(加 allocated / 具名 override)+ override 唔係捷徑 + override 唔放行任何其他 gate
+- [x] 🔴 寫明 **OQ2 流程斷點**:procurement 完成後仍要人手加 `allocated`,否則買咗都 assign 唔到;並明講「唔指定人就冇人做」
+- [x] 🔴 Runbook 步 4 = **部署後第一項檢查**(接住 F3 驗唔到嗰半:UAT 有真 synced user 先驗得到 gate 嘅 400 + 事後零副作用抽查)
+- [x] Runbook 明講**唔可以引用 dev 數字**,並老實標明 dev 22 行入面有 6 行係 `test-e3`/`test-e1` 測試 fixture
 
 ## Verification(phase 級)
 
@@ -70,7 +74,7 @@ last_updated: 2026-07-27
   - [x] Dialog:空理由 Confirm **disabled** → 打 `urgent` 仍 disabled + 顯示「At least 10 characters」→ 合法理由 **enabled**;light + dark 都睇過
   - [x] 端到端 wire:Confirm → PATCH **400** → toast 逐字顯示 backend 訊息 → **dialog 冇閂、理由保留**
   - [x] 事後 DB 抽查:line item 仍 `READY`、`assignedAt` 空、`assign.budget_override` audit **0 行**、無新 ledger row ⇒ **零副作用**
-- [ ] 🚧 **budget gate 本身嘅 400 喺 dev live 驗唔到** —— D5 把 gate 放喺 `graph.findUser` **之後**,而 seed 嘅 UPN 唔存在於真 tenant ⇒ 永遠停喺「Target user not found」。**唔用真人 UPN 硬闖**:嗰個做法一旦 gate 有 bug 就會真派 licence 畀真人(R6 本體)。⇒ 依賴 F4 嘅 mock test;**移去 F5 runbook 做部署後第一項檢查**(UAT 有真 synced user)
+- [x] 🚧→✅ **budget gate 本身嘅 400 喺 dev live 驗唔到**,**已交接**:D5 把 gate 放喺 `graph.findUser` **之後**,而 seed 嘅 UPN 唔存在於真 tenant ⇒ 永遠停喺「Target user not found」。**唔用真人 UPN 硬闖**(一旦 gate 有 bug 就會真派 licence 畀真人 = R6 本體)。⇒ 依賴 F4 mock test,**已寫入 runbook 步 4 做部署後第一項檢查**(含事後零副作用抽查 + 唔對就回滾)
 - [x] ⚠️ **絕不打真 Graph 完成 assign**(R6)—— 全程零 `assignLicense`;只有 `findUser` 讀取(read-only,而且返 not-found)
 - [x] `reconcile.service.ts` **diff 為空**(R5)
 - [ ] ADR-0016 每個 Decision 逐條對過,冇靜靜偏離;有偏離 → plan changelog + 問 owner(**D6 已記,見 changelog**;其餘待 closeout 逐條過)
