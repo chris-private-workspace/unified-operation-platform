@@ -4,6 +4,8 @@
 **Status**: Accepted
 **Approver**: Chris Lai
 
+> **範圍註記(2026-07-26,ADR-0017)**:本 ADR 嘅 **write-integration 抽象機制不變**,但**適用範圍隨 [ADR-0017](0017-n8n-execution-seams-switchable-integration.md) 擴至多兩個接縫** —— D3 原本只抽象「建單」(`RequestSubmissionProvider`),ADR-0017 沿用同一 pattern 加 `LicenseOperationsProvider`(Graph 操作,graph|n8n)同 `TicketUpdateProvider`(RITM 狀態,direct|n8n),即 D3 尾句「抽象目的 = 未來 D365、其他系統、AI 對外 write 皆可重用」正式兌現;D2 講嘅 n8n inbound/outbound 雙向亦擴至「n8n 可做 license 操作與 ticket 狀態嘅可選執行器」(H2 面擴大,由 ADR-0017 解鎖)。inbound 方向①嘅 canonical 合約**不變**,ADR-0017 D4 只喺其上加一層 adapter 解 n8n 實際 payload 落差。**決策內文不改**(§6);此為事實範圍註。
+
 ## Context
 
 觸發來源:業務需求(Chris,2026-07-14/15 討論)—— 除咗 onboarding 流程需要 M365/D365 license 分配之外,亦有**獨立於 onboarding 嘅 M365/D365 license 請求**。呢啲請求者好多時冇經 ServiceNow request form 提交,而係由 IT 同事代手開單。故希望平台提供功能,由 IT 同事喺平台建立 ServiceNow request。討論後亦釐清咗 onboarding request 嘅實際 intake 機制,以及 D365 與 M365 喺 license 指派上係同一套 Graph 機制。
