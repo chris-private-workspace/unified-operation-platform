@@ -11,6 +11,8 @@
 
 > **狀態 2026-07-27**:n8n 側三項(A/B/C)✅ **Chris 已做** · SEC-001 ✅ **已收**(§3)。
 > 卡住嘅變成 **P(平台未部署)· N(兩個環境未接通)· E/F(UAT placeholder 憑證)**。
+>
+> 🔴 **同日 `main` 收咗 `W36-opco-budget-gate`(ADR-0016)+ `W37-sync-sweep`(ADR-0015)** ⇒ **[P] 嗰步已經唔止係「部署一條 intake route」**,而係同時啟用兩個**靜默生效**嘅 gate。**部署前必讀 §1.0a**,唔好當佢係一次無害嘅 image 更新。
 
 ```
 n8n onboarding 完成
@@ -71,8 +73,36 @@ PYTHONIOENCODING=utf-8 az containerapp update -g RG-RCITest-RAPO-N8N -n ca-uop-a
 ```
 
 - ⚠️ `az acr build` 印 ✔ 會 charmap crash 出**假 exit 1** → 查 `az acr task list-runs` 真 status
-- **web container 唔使重 build**(W36 零前端改動)
-- 新 revision 起身會自動跑 self-migrate;W36 **零 schema 改動**,所以無 migration 要 apply
+- 新 revision 起身會自動跑 self-migrate;截至 2026-07-27 **零 schema 改動**,無 migration 要 apply
+- ⚠️ **web container 而家要一齊 build** —— W36-n8n 本身零前端改動,但 main 之後收咗 **CH-008 / CH-009 / ADR-0016 前端 override 入口**(見 §1.0a)
+
+### 1.0a 🔴 **部署 main 唔止帶 adapter route —— 仲會即時啟用兩個新 gate**
+
+> **呢節係 2026-07-27 之後先出現嘅。** 你嚟呢份 runbook 嘅目的多數只係「令 n8n 推得到單」,但今日 `main` 已經收埋 `W36-opco-budget-gate`(ADR-0016)同 `W37-sync-sweep`(ADR-0015)。**同一個 image 一部署,兩樣都即刻生效**,而且**兩樣都係靜默生效**。
+
+#### (i) 🔴 ADR-0016 OpCo 預算 gate —— 會**無預警凍結**若干 OpCo × SKU
+
+上線後 `assigned + 1 > allocated` → **400 硬擋**(唔係警告)。**冇 ledger row = allocated 0 ⇒ 一律拒絕**,冇「預設無限」。
+
+⇒ **部署前必須喺目標環境跑 preflight SQL**(唯讀,可重複跑):
+
+```bash
+psql "$DATABASE_URL" -f docs/05-usage/sql/opco-budget-gate-preflight.sql
+```
+
+🔴 **一定要喺目標環境跑,唔可以引用 dev 數字** —— dev 嗰 22 行入面有 6 行係 `test-e3` / `test-e1` 測試 fixture(假數)。
+
+完整步驟(逐行點處理 / 點通知操作員 / override 語意)= **`docs/05-usage/OPCO-BUDGET-GATE-ROLLOUT.md`**,本節唔重複。
+
+⚠️ **同本 runbook §1.2 直接相撞**:W36-n8n 叫你喺每個環境補 OpCo **`RAPO/IT (RDC2)`** —— 但淨係 `POST /admin/opcos` 建 OpCo **唔會**建 ledger row ⇒ 佢 `allocated = 0` ⇒ **gate 一開,呢個 OpCo 每一單都擋**。而且 🚧 **DD-3:目前冇 ledger row 嘅 create endpoint**,所以只能靠 **`POST /license/ledger/import`**(ADR-0004)建。**兩件事要一齊做,唔可以只做 §1.2。**
+
+#### (ii) ⚠️ ADR-0015 sync sweep —— 一部署就開始每 10 分鐘打 Graph
+
+`@Cron` 間隔**寫死 10 分鐘**;總開關 `SYNC_SWEEP_ENABLED` **只有明文 `'false'` 先會停**(唔設 / 打錯字 = **照跑**)。
+
+⇒ UAT 個 Graph 仍然係 placeholder(§1.1),所以部署之後會**每 10 分鐘產生一次 Graph 失敗 log**。錯誤有 catch,**唔會整壞數據**,但會製造持續噪音、亦會令人誤以為係新 bug。
+
+**兩個選擇**:接受噪音,或者部署時設 `SYNC_SWEEP_ENABLED=false`,等 §1.1 換咗真 Graph 憑證再開。
 
 ### 1.0b 🔴 **[N] n8n UAT ↔ 平台 Azure 環境未接通**
 
@@ -97,17 +127,28 @@ PYTHONIOENCODING=utf-8 az containerapp update -g RG-RCITest-RAPO-N8N -n ca-uop-a
 
 `RAPO/IT (RDC2)` 係 W36 新增嘅第 24 個 OpCo。**`seed.ts` 有,但已部署環境唔會自動有** —— 每個環境要各自補一次:
 
-- 建議走 **`POST /admin/opcos`**(CH-004),唔使重跑全 seed
-- 值:`code = RAPO/IT (RDC2)` · `company = RAPO` · `costCenter = IT (RDC2)`
-- 冇補 → Job Function `RAPO IT (RDC2)` 一律 **400**(其餘 17 條唔受影響)
+**兩步,唔可以只做第一步:**
+
+1. **建 OpCo** —— `POST /admin/opcos`(CH-004),唔使重跑全 seed
+   值:`code = RAPO/IT (RDC2)` · `company = RAPO` · `costCenter = IT (RDC2)`
+   冇補 → Job Function `RAPO IT (RDC2)` 一律 **400**(其餘 17 條唔受影響)
+2. 🔴 **為佢建 ledger row 兼設 allocated** —— 見 §1.3
 
 > 背景:AD 側呢個 OU 個 `description` 仍然係 `RAPO/IT`,**平台刻意切細過 AD**(OQ-2,Chris 2026-07-27)。連帶:`RAPO/IT` 嘅 FY26 數字前後**唔可以直接比較**。
 
-### 1.3 ⚠️ 同 ADR-0016 預算 gate 嘅交互(未上線,但要記住)
+### 1.3 🔴 同 ADR-0016 預算 gate 嘅交互(**已唔再係「未來」—— 一部署就生效**)
 
-新增嘅 `RAPO/IT (RDC2)` **`allocated = 0`**。ADR-0016 預算 gate 一旦上線,`assigned + 1 > allocated` 會擋 —— 即係**該 OpCo 一單都 assign 唔到**。
+新增嘅 `RAPO/IT (RDC2)` **冇 ledger row ⇒ `allocated = 0`**。ADR-0016 gate 而家已經喺 `main`(§1.0a),所以**一部署,該 OpCo 每一單都 assign 唔到**(`assigned + 1 > 0` 恆真)。
 
-⇒ **ADR-0016 上線前要先為佢設 allocation**(`PATCH /license/ledger/:id`,ADR-0007)。呢個唔阻 intake 建單,只阻 assign。
+⚠️ **唔阻 intake 建單,只阻 assign** —— 即係單會照入,操作員撳 Assign 先食 400。呢個時間差令佢好易被當成 intake 或 sync 出問題。
+
+**點做**:
+
+- 🚧 **DD-3:目前冇 ledger row 嘅 create endpoint。** `PATCH /license/ledger/:id`(ADR-0007)只可以改**已存在**嘅 row。
+- ⇒ 得一條路:**`POST /license/ledger/import`**(ADR-0004,只寫 `allocatedQuantity`,唔會掂 `assignedQuantity`)。
+- 呢個唔止影響 RDC2 —— preflight SQL **[3] 段**會列出**所有**「冇 ledger row 但有 pending line item」嘅組合,全部同一處理。
+
+詳見 `docs/05-usage/OPCO-BUDGET-GATE-ROLLOUT.md` 步 2。
 
 ### 1.4 `INTAKE_API_KEY`
 
@@ -219,7 +260,9 @@ UOP_INTAKE_URL = https://ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerap
 | 階段 | 做完 | 預期 | 見到唔同嘢即係 |
 |---|---|---|---|
 | **N** | n8n UAT ↔ Azure 接通(§1.0b)| 打得到,**收到 HTTP 回應**(任何 code 都算通) | timeout / DNS / connection refused = 仲未接通,**唔好去 debug payload** |
+| **P₀** | 🔴 部署**之前**:跑 preflight SQL + 處理名單(§1.0a)| 知道會凍結邊幾個 OpCo × SKU,已通知操作員 | 跳過呢步 = 上線即**無預警凍結**,而且冇人知係邊幾個 |
 | **P** | 平台新 build 部署上 UAT(§1.0)| **401**(無 key 探測)/ n8n 帶 key → 400 | **404** = 未部署。呢個最易當成 n8n 出錯 |
+| **P₁** | 部署**之後**第一項:驗預算 gate 個 400(要**真 synced user**)| 400 `OpCo budget exceeded…`,且 line item 仍 `READY`、`assignedAt` 空 | 任何一項唔對 = **即刻回滾,唔好繼續派**(`OPCO-BUDGET-GATE-ROLLOUT.md` 步 4)|
 | 1 | §2.1(a) key ✅ 已做 | **400**(講得出邊個值對唔到) | 401 = credential 冇 attach,或 key 值唔啱 |
 | 2 | §2.1(b) URL + §2.2 payload ✅ 已做 | **400 licence code …**(卡喺 E) | `Unknown department '…'` = payload 改動未生效 |
 | 3 | §1.1 換真 Graph + catalog sync | **503 ServiceNow is unavailable**(卡喺 F) | 仍然 400 licence = catalog 未 sync,或該 licence 名喺 catalog 無**唯一**命中 |
@@ -257,5 +300,7 @@ W36 嘅 live 驗證行嘅係 **demo-harness mock ServiceNow**,payload 亦係照 
 | 平台側實作 | `apps/api/src/fulfilment/intake-adapter.service.ts` · `opco-department-map.ts` · `dto/n8n-native-intake.dto.ts` |
 | 決策 | `docs/adr/0017-n8n-execution-seams-switchable-integration.md`(**D4**)· ADR-0008 · ADR-0012(單一 origin) |
 | UAT 實際環境 | `07-uat-as-built.md` · `02-environment-reference.md` |
+| 🔴 **預算 gate 上線**(§1.0a 完整版:逐行處理 / 通知 / override 語意) | `docs/05-usage/OPCO-BUDGET-GATE-ROLLOUT.md` · `docs/05-usage/sql/opco-budget-gate-preflight.sql` · ADR-0016 |
+| sync sweep(`@Cron` 10 分鐘 · `SYNC_SWEEP_ENABLED`) | `apps/api/src/fulfilment/sync-sweep.service.ts` · `apps/api/.env.example` · ADR-0015 |
 | 本地 smoke(唔使 n8n) | `apps/api/scripts/demo-harness/README.md` Scenario 3 · `npm run demo:mock-sn` |
 | 追蹤狀態 | `BACKLOG.md` A 區 **SEC-001** · `N8N-SEAMS-戊` row · W36 `progress.md` retro C1-C6 |
