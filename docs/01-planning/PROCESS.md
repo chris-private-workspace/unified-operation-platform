@@ -67,6 +67,22 @@ incoming task
 ### 2.1 Folder Convention
 `docs/01-planning/W{NN}-{phase-name-kebab}/`
 
+#### 🔴 `{NN}` 係**共享命名空間**,揀之前必須 fetch 兼掃晒所有 branch
+
+`{NN}` 冇 allocator,而平行 session 各自喺**獨立 worktree**,`git status` 睇唔到對方**未 merge** 嘅 branch。淨係睇 `main` 或者本地 folder listing **一定會撞**。
+
+```bash
+git fetch --all
+# 掃晒所有 remote branch 用咗嘅 phase 號,唔淨係 main
+git branch -r | while read b; do git ls-tree --name-only "$b" docs/01-planning/ 2>/dev/null; done \
+  | grep -oE 'W[0-9]{2}' | sort -u | tail -5
+```
+
+揀 **最大號 + 1**。號一旦 commit 就當 claim 咗,唔可以重用。
+
+> **實例(2026-07-27,兩個 W36)**:`W36-opco-budget-gate` 09:12 開,`W36-n8n-intake-adapter` 11:26 開 —— 後者只睇咗 `main`(當時 W35 係最新),睇唔到前者仲喺未 merge 嘅 branch 上面。兩個都 closed 咗先發現。
+> **冇改名**,因為 commit message / merge commit / PR 標題全部寫死咗「W36」,改 folder 只會令 history 同 tree 永久對唔上 —— 用一個外觀問題換一個修唔到嘅矛盾。**引用時一律帶後綴**。
+
 ### 2.2 Per-Phase Artifacts(3 docs)
 ```
 docs/01-planning/W{NN}-{phase}/
@@ -82,6 +98,8 @@ Phase N-1 retro signed
         │
         ▼
 Phase N kickoff:
+  0. 🔴 git fetch --all → 掃晒所有 remote branch 揀未用嘅 {NN}(見 §2.1)
+     —— 只睇 main 會撞到平行 session 未 merge 嘅 phase
   1. mkdir W{NN}-{phase}/
   2. cp _templates/phase/* → folder/(rename .md.tpl → .md)
   3. Fill plan.md(scope + carry-over from prev retro)
