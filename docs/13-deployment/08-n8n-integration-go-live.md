@@ -9,13 +9,19 @@
 
 ## 0. 一頁總覽 —— 邊樣卡住邊樣
 
+> **狀態 2026-07-27**:n8n 側三項(A/B/C)✅ **Chris 已做** · SEC-001 ✅ **已收**(§3)。
+> 卡住嘅變成 **P(平台未部署)· N(兩個環境未接通)· E/F(UAT placeholder 憑證)**。
+
 ```
 n8n onboarding 完成
    │
-   ├─[A] Call node 有冇送 X-Intake-Key ?  ── 冇 → 401,一張都入唔到  🔴 未做
-   ├─[B] UOP_INTAKE_URL 指啱 route ?      ── 錯 → 400(送名但打去要 GUID 嗰條)🔴 未做
-   ├─[C] payload 個 department 係咪       ── 唔係 → 400 unknown department  🔴 未做
+   ├─[A] Call node 有冇送 X-Intake-Key ?  ── 冇 → 401  ✅ 已做
+   ├─[B] UOP_INTAKE_URL 指啱 route ?      ── 錯 → 400  ✅ 已做
+   ├─[C] payload 個 department 係咪       ── 唔係 → 400 unknown department  ✅ 已做
    │     18 條 Job Function 之一 ?
+   │
+   ├─[N] n8n UAT ↔ 平台 Azure 環境接通未 ?  ── 未 → 打唔到,連 404 都冇  🔴 進行中
+   ├─[P] 平台新 build 部署咗上 UAT 未 ?     ── 未 → 404(route 唔存在)   🔴 未做
    │
    ▼ 到得呢度先輪到平台 resolve(cheapest-first,前面唔過就唔會行落去)
    │
@@ -27,13 +33,52 @@ n8n onboarding 完成
   201 Created
 ```
 
-**⇒ A/B/C 三個係 n8n 側(§2),E/F 兩個係平台側(§1)。兩邊都要掂先有 201。**
+**⇒ A/B/C 係 n8n 側(§2)· N 係網絡 / 環境對接 · P 係部署(§1.0)· E/F 係平台憑證(§1.1)。**
 
-> 分開做係有價值嘅:**淨做 §2** 已經令錯誤由「永遠 401 咩都睇唔到」變成「400 而且講得出邊個值對唔到」—— 第一張真單就會自報 ServiceNow `License` variable 實際係咩值(**OQ-4** 靠呢個攞答案)。
+> 分開做係有價值嘅:A/B/C 做咗之後,錯誤會由「永遠 401 咩都睇唔到」變成「400 而且講得出邊個值對唔到」—— 第一張真單就會自報 ServiceNow `License` variable 實際係咩值(**OQ-4** 靠呢個攞答案)。**但要 N 同 P 都通咗先見得到。**
 
 ---
 
 ## 1. 平台側前置(UAT)
+
+### 1.0 🔴 **[P] merge 入 main ≠ 部署到 UAT**(最易誤判嘅一步)
+
+W36 嘅 code 喺 **PR #33 已 merge 入 `main`**,但 **UAT 冇自動更新**:
+
+```
+.github/workflows/ci.yml  →  只有 lint / build / test
+                             ci.yml 自己寫住「另可加獨立 deploy workflow」= 未建
+```
+
+UAT 而家仍然跑緊 **`uop-api:uat-0cf0cf3`**(W34 image,2026-07-23)—— 嗰個 build **根本冇 `/requests/intake/n8n` 呢條 route**。
+
+⚠️ **誤判風險**:n8n 打過去收到嘅係 **404**,唔係 §4 表列嘅 400。**唔好當成 header / payload 出錯去 debug n8n** —— 係條 route 未存在。
+
+**點分辨**:向該 route POST **唔帶 key**(`07-uat-as-built.md` 記錄嘅探測法,無 key 喺 guard 層直接彈返,零副作用):
+
+| 回應 | 意思 |
+|---|---|
+| **404** | 未部署 |
+| **401** | 已部署,route 在 |
+
+**部署**(image-only,唔掂 secret / DB 密碼 —— `07-uat-as-built.md` §W34 re-deploy):
+
+```bash
+TAG=uat-$(git rev-parse --short main)
+PYTHONIOENCODING=utf-8 az acr build --registry acruopuat --image uop-api:$TAG -f apps/api/Dockerfile .
+PYTHONIOENCODING=utf-8 az containerapp update -g RG-RCITest-RAPO-N8N -n ca-uop-api \
+  --image acruopuat.azurecr.io/uop-api:$TAG -o none
+```
+
+- ⚠️ `az acr build` 印 ✔ 會 charmap crash 出**假 exit 1** → 查 `az acr task list-runs` 真 status
+- **web container 唔使重 build**(W36 零前端改動)
+- 新 revision 起身會自動跑 self-migrate;W36 **零 schema 改動**,所以無 migration 要 apply
+
+### 1.0b 🔴 **[N] n8n UAT ↔ 平台 Azure 環境未接通**
+
+**進行中(Chris,2026-07-27)。** n8n 側 UAT 要一段時間先接得到本項目個 Azure 環境。
+
+未接通之前,n8n 個 HTTP node **連 404 都收唔到**(打唔到出去 / 去唔到 ACA ingress)。⇒ **[N] 通咗先值得查 [P]**,否則分唔清「route 唔存在」定「根本去唔到」。
 
 ### 1.1 現況 —— 兩個 placeholder 卡住 E 同 F
 
@@ -72,7 +117,9 @@ n8n onboarding 完成
 
 ---
 
-## 2. n8n 側改動(全部喺 n8n UI 做)
+## 2. n8n 側改動(全部喺 n8n UI 做)—— ✅ **Chris 已完成 2026-07-27**
+
+> **保留全文做記錄同對數用**:一旦 [N]/[P] 通咗而仍然收到 401 / `Unknown department`,返嚟逐項對返呢節,唔使重新推理。
 
 > **精確 node-by-node 改動 = `docs/01-planning/W36-n8n-intake-adapter/N8N-WF1-CHANGES.md`。** 本節只講「做咩 + 點驗」,唔重複嗰份嘅逐欄表。
 > 🔴 **兩批要同一次做齊** —— 只做接線唔改 payload,`department` 仍然係 AI 抽嘅自由文本,一樣 400。
@@ -133,34 +180,35 @@ UOP_INTAKE_URL = https://ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerap
 
 ---
 
-## 3. SEC-001 —— WinRM 服務帳號憑證衛生
+## 3. SEC-001 —— WinRM 服務帳號憑證衛生 ✅ **已收(2026-07-27)**
 
-> 同 intake **無直接關係**,但屬同一批 n8n 交付揪出嚟嘅安全項,一齊追。狀態見 `BACKLOG` A 區 **SEC-001**。
+> 同 intake **無直接關係**,但屬同一批 n8n 交付揪出嚟嘅安全項。**已完成,呢節保留做記錄同教訓。** 狀態見 `BACKLOG` A 區 **SEC-001**。
 
-### 3.1 現況
+### 3.1 原本嘅問題
 
-`1002` 個 **disabled** node `Execute Command (Setup ABW Share Folder) (PRD)2` 內,Python `winrm.Session(auth=(...))` 曾**硬寫 AD 服務帳號 + 明文密碼**。
+`1002` 個 **disabled** node `Execute Command (Setup ABW Share Folder) (PRD)2` 內,Python `winrm.Session(auth=(...))` **硬寫咗 AD 服務帳號 + 明文密碼**。
 
-已做(2026-07-27):
+### 3.2 四步全做齊
 
-- ✅ 該路徑**從來冇入過 git history**(`git log --all` 零 commit)⇒ 唔使改寫歷史
-- ✅ 值已 **scrub** 成 placeholder(全目錄掃 52 處,只有呢一處係真 secret)
-- ✅ `docs/06-reference/03-n8n-workflow/` 已 **gitignore**(`git add -A --dry-run` 實證:連 `git add .` 都拉唔到)
-
-### 3.2 🔴 仲要做 —— 三步,缺一不可
-
-| 步 | 動作 | 點解唔可以省 |
+| 步 | 動作 | 狀態 |
 |---|---|---|
-| **①** | 喺 AD **rotate** 該服務帳號密碼 | scrub 只清咗檔案,**清唔到「已洩漏」呢件事** —— 密碼曾以明文躺喺本機檔案系統 |
-| **②** | 改該 node,**拆走硬寫** —— `auth=(...)` 改用 n8n credential 或 `$env`(如 `os.environ['WINRM_USER']` / `['WINRM_PASSWORD']`),值放 credential store / container env | 🔴 **淨做 ① 會兜返轉頭**:1002 有 sticky note 明寫呢個 node 係 `STUBBED 2026-07-23`、**「To restore on PRD: enable that node」** ⇒ 佢會復活。復活後再 export,**新密碼又會以明文出現喺 JSON**。做咗 ② 之後,將來 rotate 只需改 credential |
-| **③** | 確認該帳號**喺 workflow 以外仲有冇用途**(scheduled task / 其他 script / service logon) | rotate 會整跌所有用緊佢嘅嘢。**呢樣文件查唔到** —— 十個 workflow 掃過只出現一次,但 workflow 以外嘅用途要人手確認 |
+| **①** | git history 查證 —— `git log --all` 該路徑**零 commit** ⇒ 唔使改寫歷史 | ✅ 平台側 |
+| **②** | **scrub** 值成 placeholder(全目錄掃 52 處,**只有呢一處係真 secret**;精確 1 處命中、53 個 node 原封、JSON 仍 parse) | ✅ 平台側 |
+| **③** | **gitignore** `docs/06-reference/03-n8n-workflow/`(`git add -A --dry-run` 實證:連 `git add .` 都拉唔到) | ✅ 平台側 |
+| **④** | **rotate 密碼 + 拆走硬寫**(`auth=(...)` 改用 credential / `$env`) | ✅ **Chris,2026-07-27** |
 
-> 掃描時嘅實際教訓(值得記住):`ConvertTo-SecureString` / `-AsPlainText` 呢類「secret 應該長成點」嘅 pattern **命唔中呢個密碼**(佢係 Python tuple)。要有第二條路 —— **睇結構**(把所有字串 literal 遮罩再睇 shape),唔係淨睇值。
+🔴 **④ 兩件事必須一齊做,呢個係本次最重要嘅教訓**:1002 有 sticky note 明寫該 node 係 `STUBBED 2026-07-23`、**「To restore on PRD: enable that node」** —— 即係佢**會復活**。淨 rotate 唔拆硬寫,個 node 一復活再 export,**新密碼又會以明文出現喺 JSON**,兜返轉頭。拆咗之後,將來 rotate 只需改 credential,workflow export 永遠唔會帶住 secret。
 
-### 3.3 連帶(非 secret,唔急)
+### 3.3 仍然生效嘅約束
 
-- phase 2 四條 workflow 仍然 `CHANGE_ME_SHARED_SECRET` hardcoded(**係 placeholder,唔係真值**)
-- `2004` hardcode DEV host `ricohapdev.service-now.com`
+- `docs/06-reference/03-n8n-workflow/` **維持 gitignore**。要收返入 repo = **有意識決定**(刪 `.gitignore` 嗰段),因為仍帶內部 email / AI system prompt / 基建 hostname / n8n credential id。**真相 SSOT 係 n8n instance 本身**,唔入 repo 冇失去 source of truth。
+- 連帶(**非 secret,唔急**):phase 2 四條 workflow 仍 `CHANGE_ME_SHARED_SECRET` placeholder;`2004` hardcode DEV host `ricohapdev.service-now.com`。
+
+### 3.4 掃 secret 嘅教訓(下次照用)
+
+我原本個掃描器靠「secret 應該長成點」嘅 pattern(`ConvertTo-SecureString` / `-AsPlainText`)—— **命唔中呢個密碼**,因為佢係 Python tuple 唔係 PowerShell。最後係靠 email pattern 間接指到嗰個 node,再用**遮罩輸出**(所有 >3 字元字串 literal 打格)睇結構先定位到。
+
+⇒ **單靠值嘅 pattern 一定會漏,要有第二條路:睇結構。** 另外 scrub script 要**命中數目唔啱就拒寫**(本次設定「≠1 即 exit 2」)—— 靜靜部分 scrub 比唔 scrub 更差。
 
 ---
 
@@ -170,11 +218,14 @@ UOP_INTAKE_URL = https://ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerap
 
 | 階段 | 做完 | 預期 | 見到唔同嘢即係 |
 |---|---|---|---|
-| 0 | 咩都未做 | **401** | — |
-| 1 | §2.1(a) 加咗 key | **400**(講得出邊個值對唔到) | 仍然 401 = credential 冇 attach 上去,或者 key 值唔啱 |
-| 2 | §2.1(b) URL 改咗 + §2.2 payload 改咗 | **400 licence code …**(卡喺 E) | `Unknown department '…'` = payload 改動未生效 |
+| **N** | n8n UAT ↔ Azure 接通(§1.0b)| 打得到,**收到 HTTP 回應**(任何 code 都算通) | timeout / DNS / connection refused = 仲未接通,**唔好去 debug payload** |
+| **P** | 平台新 build 部署上 UAT(§1.0)| **401**(無 key 探測)/ n8n 帶 key → 400 | **404** = 未部署。呢個最易當成 n8n 出錯 |
+| 1 | §2.1(a) key ✅ 已做 | **400**(講得出邊個值對唔到) | 401 = credential 冇 attach,或 key 值唔啱 |
+| 2 | §2.1(b) URL + §2.2 payload ✅ 已做 | **400 licence code …**(卡喺 E) | `Unknown department '…'` = payload 改動未生效 |
 | 3 | §1.1 換真 Graph + catalog sync | **503 ServiceNow is unavailable**(卡喺 F) | 仍然 400 licence = catalog 未 sync,或該 licence 名喺 catalog 無**唯一**命中 |
 | 4 | §1.1 換真 SN | **201** ✅ | — |
+
+> 🔴 **次序唔可以跳。** N 未通就查 P、P 未通就 debug payload —— 都係浪費時間查一個唔存在嘅問題。逐級確認,每級有可分辨嘅 signature(timeout / 404 / 401 / 400 / 503 / 201)。
 
 ### 平台側點確認真係入咗
 

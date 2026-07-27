@@ -428,11 +428,13 @@ failed, reason: self-signed certificate in certificate chain
 | # | 項 | 誰 | 去邊 |
 |---|---|---|---|
 | C1 | 🔴 **真 SN 端到端未驗證**(R2,憑證 placeholder) | 平台 | `DEPLOY-harden` |
-| C2 | 🔴 **n8n UI 三項**:加 `X-Intake-Key` header · `UOP_INTAKE_URL` → `/requests/intake/n8n` · enable 1005 Call node | **Chris** | F1c(`N8N-WF1-CHANGES.md §2.5`) |
+| C2 | ~~🔴 **n8n UI 三項**~~ → ✅ **Chris 已完成(2026-07-27)** | — | — |
 | C3 | **各環境補 OpCo `RAPO/IT (RDC2)`**(本機 dev DB / UAT / prod 各一次,走 `POST /admin/opcos`) | 平台 ops | deploy checklist |
 | C4 | `RAPO/IT (RDC2)` allocated = 0 → **ADR-0016 預算 gate 上線前要設 allocation**,否則該 OpCo 一單都落唔到 | 平台 | ADR-0016 實作 phase |
 | C5 | **OQ-4**:SN `License` variable 實際值仍未知 —— 第一張真單嘅 4xx 會自報 | — | 屆時揀 (i) 常數表 /(ii) schema 加欄 |
-| C6 | ~~🔴 `docs/06-reference/03-n8n-workflow/` 仍 untracked 且未 gitignore~~ → 🟡 **技術面已封(2026-07-27,見下 SEC-001 段)**;**淨低 rotate 個 WinRM 帳號密碼** —— 平台側代做唔到 | **Chris / IT** | `BACKLOG` **SEC-001** |
+| C6 | ~~🔴 `docs/06-reference/03-n8n-workflow/` 明文憑證~~ → ✅ **SEC-001 已收(2026-07-27)**:git history 查證 + scrub + gitignore(平台側)+ **rotate + 拆走硬寫**(Chris) | — | `BACKLOG` **SEC-001** ✅ |
+| **C7** 🆕 | 🔴 **merge ≠ 部署** —— `ci.yml` 只有 lint/build/test,**冇 deploy workflow**。UAT 仍跑 `uat-0cf0cf3`(W34 image),冇 adapter route ⇒ n8n 打過去係 **404**,最易誤判成 n8n 出錯 | 平台 | runbook **§1.0** |
+| **C8** 🆕 | 🔴 **n8n UAT ↔ 平台 Azure 環境未接通**(Chris 2026-07-27:需時)⇒ 未通之前連 404 都收唔到,**唔好跳級 debug** | Chris | runbook **§1.0b** |
 
 ### ADR triggers
 
