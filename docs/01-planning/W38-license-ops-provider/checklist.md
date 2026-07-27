@@ -10,14 +10,12 @@ last_updated: 2026-07-27
 > Atomic checkbox(每 item ≤ 1–2 hour effort)。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
 
-## 🔴 D0 Gate —— 未拍板唔准開工(R1)
+## ✅ D0 Gate —— 已解除(2026-07-27,Chris Lai)
 
-- [ ] **OQ-1 拍板**:provider 收邊幾個 `getSubscribedSkus` consumer(建議 = 只收 assign)
-- [ ] **OQ-2 拍板**:`sync-sweep.findUser` 走唔走 provider(建議 = **唔走**,否則推翻 ADR-0015)
-- [ ] **OQ-3 拍板**:`listUsersBySku()` 加唔加(建議 = 唔加,零 caller)
-- [ ] Chris approve plan → `plan.md` frontmatter `status: draft → active`
-
-> 以上四項未全部 ✅ 之前,**一行 code 都唔寫**。
+- [x] **OQ-1 拍板** = **選項 A**:provider **只收 assign 路徑**;`reconcile` / `catalog` / `integration-probe` 明文不動
+- [x] **OQ-2 拍板** = **選項 A**:`sync-sweep.findUser` **永遠直接 `GraphService`**,唔走 provider(否則推翻 ADR-0015「平台證實」)
+- [x] **OQ-3 拍板** = **選項 B**:**唔加** `listUsersBySku()`(零 caller;介面加方法係 additive,唔會令庚返工)
+- [x] Chris approve plan → `plan.md` frontmatter `status: draft → active`
 
 ## F1 — `LicenseOperationsProvider` 介面 + `AssignOutcome` 詞彙
 

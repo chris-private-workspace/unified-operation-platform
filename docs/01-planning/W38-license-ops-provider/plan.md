@@ -4,7 +4,7 @@ name: "N8N-SEAMS 己 — LicenseOperationsProvider + GraphLicenseProvider(純重
 sprint_week: W38
 start_date: 2026-07-27
 end_date: 2026-07-29          # planned, may slip with changelog log
-status: draft                 # draft | active | closed —— 🔴 等 Chris approve + 三個 OQ 拍板先 flip
+status: active                # draft | active | closed —— 2026-07-27 Chris approve + 三個 OQ 全跟建議拍板
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md §D0 · §D2 · rollout「己」
   - docs/adr/0015-sync-gate-scheduled-sweep.md(OQ-2 直接相關)
@@ -16,7 +16,7 @@ prior_phase: W36-n8n-intake-adapter
 
 > **Plan version**:1.0(initial)
 > **Owner**:AI(Claude)
-> **Approved by**:_(待 Chris Lai —— 🔴 §8 三個 OQ 拍板之前唔開工,R1)_
+> **Approved by**:**Chris Lai(2026-07-27)** —— §8 三個 OQ **全部跟建議**:OQ-1 = 選項 A(provider 只收 assign)· OQ-2 = 選項 A(sync-sweep 永遠直接 Graph)· OQ-3 = 選項 B(唔加 `listUsersBySku`)
 
 ## 1. Scope
 

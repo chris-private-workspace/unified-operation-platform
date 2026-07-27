@@ -68,6 +68,34 @@ docs/01-planning/W38-license-ops-provider/
 - 🔴 **plan 未 approve**(`status: draft`)+ **三個 OQ 未拍板** → 依 R1,**一行 code 都唔寫**
 - ⚠️ 本 phase **唔依賴** UAT 部署([P]/[N] 仍未通),亦**唔掂** ServiceNow ⇒ 戊嘅 carry-over 唔阻本 phase
 
-**Commit**:`chore(planning): kickoff W38 — LicenseOperationsProvider(己)`
+**Commit**:`fe07eef` — `chore(planning): kickoff W38 — LicenseOperationsProvider(ADR-0017 己)`
+
+---
+
+## Day 1 — 2026-07-27:**三個 OQ 拍板**,D0 Gate 解除
+
+**Chris 三個 OQ 全部跟建議**,plan 內容零改動 ⇒ `status: draft → active`,checklist 解鎖。
+
+| OQ | 拍板 | 落到邊度 |
+|---|---|---|
+| **OQ-1** | **選項 A** —— provider **只收 assign 路徑** | `reconcile` / `catalog` / `integration-probe` 明文不動 + **F4 負面斷言鎖死** |
+| **OQ-2** | **選項 A** —— `sync-sweep.findUser` **永遠直接 `GraphService`** | F4 test + code comment 要寫**點解**,唔止鎖現狀 |
+| **OQ-3** | **選項 B** —— **唔加** `listUsersBySku()` | 介面收窄到真有 caller 嗰幾個 |
+
+### 呢三個拍板合埋嘅意思:介面**細過** ADR-0017 D2 個表
+
+D2 表列 5 個方法,拍板之後實際只需要 **3 個**:
+
+| D2 方法 | 收唔收 | 理由 |
+|---|---|---|
+| `listTenantSkus()` | ✅ 收 | assign 座位檢查(`assign.service:191`) |
+| `findUser(upn)` | ✅ 收 | assign 前置(`assign.service:131`)。⚠️ **`sync-sweep` 嗰個 `findUser` 唔經呢度**(OQ-2) |
+| `assignLicense(...)` | ✅ 收 | 核心(`assign.service:208`) |
+| `checkSync(upns[])` | ❌ 唔收 | 全 repo **零 caller**,同 OQ-3 一樣嘅理由(§1.2)—— 呢個係拍板之後推導出嚟嘅**第四個發現**,plan §8 冇明文提過,但適用同一條準則 |
+| `listUsersBySku()` | ❌ 唔收 | OQ-3 |
+
+> ⚠️ `checkSync()` 唔收係我按 OQ-3 同一準則推導,**唔係 Chris 明文拍板嘅第四個 OQ**。若果你想連 `checkSync` 一齊留位,講一聲我加返 —— 但佢而家真係一個 caller 都冇。
+
+**下一步**:F1 介面 + `AssignOutcome` 詞彙。
 
 ---
