@@ -97,6 +97,45 @@ jobFunction: data.jobFunction,
 
 ---
 
+## 2.5 🔴 三個 **blocking** wiring 缺口(2026-07-27 F4 實讀 node 參數發現)
+
+> 呢三個唔關 payload 內容事,係 HTTP node 本身嘅接線。**未補之前,無論 payload 幾正確都入唔到平台。**
+> 證據 —— 兩個 `WF1 - Call UOP Intake` 嘅 `parameters` 實際內容:
+> ```json
+> { "method": "POST", "url": "={{ $env.UOP_INTAKE_URL }}",
+>   "sendBody": true, "specifyBody": "json",
+>   "jsonBody": "={{ JSON.stringify($json._uopPayload) }}", "options": {} }
+> ```
+> `credentials: []`,而且**冇 `sendHeaders`**。
+
+| # | 缺口 | 後果 | 點補 |
+|---|---|---|---|
+| **1** | 🔴 **完全冇送 `X-Intake-Key` header** | 平台 guard fail-closed → **每一 call 都 401**,一張都入唔到 | HTTP node 開 **Send Headers**,加 `X-Intake-Key` = 平台交嘅 `INTAKE_API_KEY`(用 n8n credential / env,**唔好硬寫落 node**) |
+| **2** | `UOP_INTAKE_URL` 指邊條 route 未定 | 指去 `/requests/intake`(canonical)會因為送緊名而唔係 GUID → 400 | 設成 **`{平台 base}/requests/intake/n8n`**(adapter route)。**好消息:URL 係 `$env`,改 env 就得,唔使郁 node** |
+| **3** | 1005 個 Call node `disabled = true` | 排程路徑(未到入職日,即 onboarding 正常情況)**永遠唔會 push** | enable(同 §2.3) |
+
+✅ **確認冇問題嘅兩樣**:
+- `onError = continueRegularOutput` 兩邊都設咗 → **fire-and-forget**,平台掛咗都唔會阻住 onboarding(合 CONTRACT A3)。
+- body 兩邊都送啱嘢:1001 送 `$json._uopPayload`(prepare node 包咗一層),1005 送 `$json`(prepare node 直接 return payload)。**兩者最終 body shape 一致。**
+
+---
+
+## 2.6 ⚠️ `licenseCode` 可能係 `null`(payload 層,唔係 wiring)
+
+兩個 prepare node 都係噉砌:
+
+```js
+licenseCode: (it.variables && it.variables.License) || null
+```
+
+即係 SN catalog 個 `License` variable 攞唔到 → 送 `null`。平台 DTO 要求 string 非空 ⇒ **成張單 400**(唔係「跳過嗰個 line」)。
+
+**呢個係刻意 fail-closed** —— 唔知客戶叫緊咩 licence 就唔應該建單。但要知:**一個 line item 唔掂 = 成張單拒收**。錯誤訊息會係 `licenseItems.0.licenseCode must be a string` 咁款,講到邊個 index,講唔到邊個 RITM。
+
+⇒ **OQ-4 嘅發現機制**:第一張真單入嚟就會自報 SN `License` variable 實際係咩值(命中就 201,唔命中就 400 兼回顯個值)。
+
+---
+
 ## 3. 驗收(平台側點知你改好咗)
 
 改完之後,同一張 onboarding 送入平台,平台側應該見到:
@@ -106,7 +145,8 @@ jobFunction: data.jobFunction,
 | `request.department` | 係 **18 條 Job Function 之一**(如 `RHK IT`),唔係自由文本(如 `RHK/Information Technology`) |
 | `targetUser.validated` | `true` |
 | `targetUser.email` | 同真正建咗嘅 AD 帳號 UPN **一致**(呢個直接決定 sync gate 過唔過到) |
-| 兩條路徑 | 1001(即時)同 1005(排程)送出嘅 payload **shape 一樣** |
+| 兩條路徑 | 1001(即時)同 1005(排程)送出嘅 payload **shape 一樣** —— ✅ **2026-07-27 已實讀兩個 prepare node 逐欄對過,確認一致**(差別只喺**取值來源**:1001 由 `aiBrain`,1005 由 `execution_context`) |
+| HTTP 回應 | **201**(而唔係 401)—— 401 = §2.5 #1 個 header 未補 |
 
 ⚠️ 平台 adapter 係 **fail-closed**:`department` 對唔上 18 條 key 就回 4xx 唔建單(唔會好似 n8n `resolveOU()` 咁 fallback 落 `RAPO/IT`)。所以改之前送入嚟嘅單會被拒 —— 呢個係刻意,唔係 bug。
 

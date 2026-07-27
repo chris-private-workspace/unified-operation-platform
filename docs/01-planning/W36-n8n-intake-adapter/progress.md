@@ -284,6 +284,89 @@ failed, reason: self-signed certificate in certificate chain
 
 ---
 
+## Day 2(續 2)— 2026-07-27:F4 live 端到端 + doc-sync
+
+### 環境:三重隔離,零污染
+
+跑之前發現一件要緊事:**port 3100 跑緊嘅唔係呢個 worktree** —— 實查 `pid=77408` 個 command line 係
+`C:\Users\CLai03\unified-operation-platform\apps\api\dist\main`(**另一個 checkout**)。所以個 adapter route 回 404 唔係 stale build,係根本冇我哋啲 code。**冇殺佢**,改為並行起一套:
+
+| 項 | 做法 | 點解 |
+|---|---|---|
+| Port | **3200** | 唔搶另一棵樹嘅 3100 / 5173 |
+| DB | **scratch `w36live`** = dev DB `pg_dump` + 跑 seed | 有真 catalog(103 SKU / 8 個 alias)同真 OpCo,但 **dev DB 全程零改動**;順帶令 RDC2 row 存在 |
+| SN | **demo-harness mock**(`demo:mock-sn`) | 唔使真憑證 |
+| `INTAKE_API_KEY` | 一個**測試值** | 自己起嘅 instance,根本唔需要真 secret(H4 更乾淨) |
+| `.env` | **冇建** | 呢個 worktree 冇 `.env`;全部經 `Start-Process` shell env 傳(§4.4) |
+
+收工:12 條進程按**父子樹**精準清(3200/8980 free、**3100 + 5173 完好**)、`DROP DATABASE w36live`。
+
+### R3 計劃外改動 —— `scripts/demo-harness/mock-servicenow.js`
+
+個 mock 個 GET 分支一律返 **object**,但真 Table API 嘅 query form(`?sysparm_query=number=…`)返 **array**,而 `getRecordByNumber()` 讀 `result[0]` ⇒ **任何 number 反查都會睇落似「搵唔到」**。呢個係 mock 對唔上真 API,唔係將就我。已修成:by-sys_id 返 object、query form 返 array,並定明 `^(REQ|RITM)\d+$` 命中、其餘唔命中,令「搵到」同「搵唔到」兩個結果都測得到而唔使改檔。
+
+### Live 結果(全部真 output,見下)
+
+| Case | 期望 | 實際 |
+|---|---|---|
+| 1 無 key | 401 | ✅ `401 Invalid or missing intake key` |
+| 2 真 payload | 201 | ✅ `201` · `sys-REQ0043858` · opco **RHK** · skuId **`06ebc4ee-…`**(E5) |
+| 3 重推 | 冪等 | ✅ **同一個 `id`**;POST 咗 4 次,DB 仍然 1 request / 1 line item |
+| 4a 未知 Job Function | 4xx 講得出邊個值 | ✅ `400 Unknown department 'RHK/Information Technology'…` |
+| 4b 未知 licence code | 同上 | ✅ `400 Licence code 'Copilot Studio Premium' does not match exactly one active SKU` |
+| 4c REQ 不存在 | 同上 | ✅ `400 ServiceNow request 'NOTAREQNUMBER' was not found` |
+| 5 `RAPO IT (RDC2)` | 201 落新 OpCo | ✅ 201 · opco **`RAPO/IT (RDC2)`** ⇒ F1b 個 seed row 真係 work |
+| 6 `event` 錯值 | 400 | ✅ `event must be one of the following values: license_request_received` |
+
+**DB 實查**:兩張建成嘅單 REQ number → sysId、Job Function → `Opco.code`、licence 名 → **skuId GUID** 全部對;`accountCreatedAt` / `azureSyncedAt` **確認 null**(sync gate 冇被靜靜開);`handledById` null(入 Regional queue);今日 **零** ledger row 被改。
+
+**負面實證(最有價值嗰個)**:6 個被拒 case 喺 DB **零行**,而且**冚唔到 mock-SN log** —— 即係話壞 payload 根本冇打過網絡,**cheapest-first ordering 係真嘅**,唔係我口噏。
+
+### R5 payload 對版 —— 實讀 n8n node,唔靠記憶
+
+實讀 `1001` 同 `1005` 兩個 `WF1 - Prepare UOP Intake` 個 `jsCode`:
+
+- **shape 完全一致** ✅ —— 同樣 key、同樣 nesting、同樣 `licenseItems` map。差別只喺**取值來源**(1001 由 `aiBrain`,1005 由 `execution_context`)。body 表達式亦各自啱(`$json._uopPayload` vs `$json`)。
+- 逐欄對 DTO **無落差**;再用**逐字照抄**嘅 shape(含 `openedDate: ""` / `remarks: ""` / nested `variables`)live 打 → **201**。
+
+### 🔴 F4 揪出兩個新嘢(payload 本身冇問題,問題喺接線)
+
+**① `X-Intake-Key` 根本冇送 —— blocking。** 兩個 `WF1 - Call UOP Intake` 個 `parameters` 實際只有
+`{method, url, sendBody, specifyBody, jsonBody, options:{}}`,**冇 `sendHeaders`**,`credentials: []`。
+即係 n8n 一 enable，**每一 call 都會 401**,一張都入唔到。之前冇人發現,因為由頭到尾冇人真試過。已寫入 `N8N-WF1-CHANGES.md §2.5`。
+順帶好消息:URL 係 `$env.UOP_INTAKE_URL` ⇒ **轉去 adapter route 淨係改 env,唔使郁 node**;`onError=continueRegularOutput` 兩邊都設咗 ⇒ fire-and-forget 已合 CONTRACT A3。
+
+**② `licenseCode` 可以係 `null`**(`(it.variables && it.variables.License) || null`)⇒ 平台 400,而且係**成張單**拒收,唔係跳過嗰個 line。實測確認訊息係 `licenseItems.0.licenseCode must be a string`。刻意 fail-closed,但要知代價;呢個亦正正係 **OQ-4 嘅發現機制**。
+
+### ⚠️ 誠實邊界(H7)—— 邊樣**未**驗證
+
+**真 ServiceNow 端到端仍然未驗證。** SN 反查行嘅係 demo-harness mock。證到嘅係:adapter → `IntakeService` → DB 成條路真係通、反查用啱 table(`sc_request`,唔係 default `sc_req_item`)、用啱 REQ number。**未證**:真 SN 回應欄名、真 REQ 查唔查得到、真 `License` variable 係咩值。plan **R2** 仍然開住 → carry-over。
+
+### Doc-sync(三處全做)
+
+- `N8N-INTAKE-HANDOFF.md`:§0 落差 #1 由「blocking」改成「已解」+ **明寫 LOCKED 合約一個字都冇改**;§2 加 RDC2 註記;§7 表 #1/#5 改寫、#3/#4 補充、**新增 #6**(各環境要補 RDC2);**新 §8** 整節 adapter route(對照表 / payload / 三個 resolve / 兩個刻意唔推導 / 點揀);索引 →§9。
+- `N8N-INTEGRATION-SETUP.md`:§0 總覽、**新 §1.5**(兩條 route 對照 + 點解開第二條而唔係放鬆第一條)、§1.4 + §5 deploy 前提(補 RDC2 / enable 1005 / header)、§6 索引。
+- `N8N-WF1-CHANGES.md`:新 §2.5(三個 blocking wiring 缺口)+ §2.6(`licenseCode: null`)+ §3 驗收表補兩行。
+
+### 迴歸
+
+`npm test -w @uop/api` → **42 suites / 407 tests 全綠,exit 0**;`npm run lint` → exit 0。
+(順帶查證:`intake-adapter.service.spec.ts` 喺全跑時顯示 125s 睇落好慢,單獨跑 verbose 後確認 **17 個 test 加埋只係 0.26s**,其餘係 ts-jest 編譯 overhead —— 唔係缺陷,冇改嘢。)
+
+### Blockers
+
+無平台側 blocker。**等 Chris**:n8n UI 三項(header / URL / enable 1005)。
+
+### Actual vs Planned Effort
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F4 | 4.0 | 3.5 | −0.5(mock SN 修正 + 隔離環境搭建屬計劃外,但換返「拒收 case 冇打網絡」呢個負面實證) |
+
+### Commits
+- _(待 commit)_
+
+---
+
 ## Retro(填於 phase 結束)
 
 ### What worked

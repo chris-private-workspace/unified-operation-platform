@@ -46,8 +46,19 @@ const server = http.createServer((r, res) => {
     } else if (r.method === 'PATCH') {
       // write-back (addWorkNote / updateRecord) — echo the record.
       result = { sys_id: sysIdInPath ?? 'unknown', ...parsed };
+    } else if (r.method === 'GET' && sysIdInPath) {
+      // by-sys_id form: /api/now/table/{t}/{sys_id} → single record.
+      result = { sys_id: sysIdInPath };
     } else if (r.method === 'GET') {
-      result = { sys_id: sysIdInPath ?? 'unknown' };
+      // Query form: /api/now/table/{t}?sysparm_query=number=REQ0043858
+      // The real Table API returns an ARRAY here (getRecordByNumber reads
+      // result[0]) — returning an object made every number lookup look "not
+      // found". Convention so both outcomes are testable without editing this
+      // file: a well-formed REQ/RITM number resolves, anything else does not.
+      const num = decodeURIComponent((r.url.match(/number=([^&]+)/) ?? [])[1] ?? '');
+      result = /^(REQ|RITM)\d+$/.test(num)
+        ? [{ sys_id: `sys-${num}`, number: num }]
+        : [];
     } else {
       result = { sys_id: `generic-${req}` };
     }

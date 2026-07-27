@@ -34,7 +34,7 @@ last_updated: 2026-07-27
 - [x] `N8N-WF1-CHANGES.md`:1005 改動(`Check Activate Date` + `Prepare Schedule Record` 各加 `jobFunction`;WF1 改讀 `ctx.jobFunction`)
 - [x] 標明**唔好郁**:`_uopNeeded` gate · `licenseItems[]` 來源 · `idempotencyKey`
 - [x] 寫平台側驗收表 + 「未改之前平台點反應」(令兩邊可並行)
-- [ ] 🔴 **Chris 喺 n8n UI 執行改動**(含 **enable 1005 `WF1 - Call UOP Intake`**)
+- [ ] 🔴 **Chris 喺 n8n UI 執行改動**(含 **enable 1005 `WF1 - Call UOP Intake`** + 🆕 **加 `X-Intake-Key` header** + `UOP_INTAKE_URL` 指去 `/requests/intake/n8n`,見 `N8N-WF1-CHANGES.md §2.5`)
 - [ ] 改完之後對一次真 payload(F4 R5)
 - [x] **OQ-1 mapping 表放邊 拍板** → **code 常數表**(Chris,2026-07-27)
 - [x] **OQ-2 `RAPO IT (RDC2)` 拍板** → **平台新增一個 OpCo**(Chris,2026-07-27)→ F1b
@@ -73,17 +73,21 @@ last_updated: 2026-07-27
 
 ## F4 — Live 驗證 + doc-sync
 
-- [ ] 由 n8n `1001` `WF1 - Prepare UOP Intake` 抄**當日真實** return shape,對一次(R5 —— 唔一致即停)
-- [ ] 對比 1001(即時)vs 1005(排程)兩個 payload shape 係咪真係一樣(R3)
-- [ ] live case 1:無 key → 401(貼真 output)
-- [ ] live case 2:真 payload → 201 建成(貼真 output)
-- [ ] live case 3:同 payload 重推 → 冪等返既有(貼真 output)
-- [ ] live case 4:resolve 失敗 → 4xx 且訊息講得出邊個值對唔到(貼真 output)
-- [ ] DB 實查建成嘅 `Request` + `RequestLineItem`(REQ sysId / skuId GUID / opcoId)—— **scratch DB,唔碰 dev DB**
-- [ ] ⚠️ SN 不可達則明寫「未驗證」+ 記 carry-over,**唔准當 pass**(R2 / H7)
-- [ ] doc-sync:`N8N-INTAKE-HANDOFF.md` §0 + §7 落差 #1(blocking → adapter 解決)
-- [ ] doc-sync:`N8N-INTAKE-HANDOFF.md` §7 落差 #5(已收緊)
-- [ ] doc-sync:`N8N-INTEGRATION-SETUP.md` 加 adapter route
+- [x] 由 n8n `1001` `WF1 - Prepare UOP Intake` 抄**當日真實** return shape,對一次(R5)—— 實讀 node `jsCode`,逐欄對 DTO **無落差**;再用**逐字照抄**嘅 shape(含 `|| ''` 空字串 + nested `variables`)live 打一次 → **201**
+- [x] 對比 1001(即時)vs 1005(排程)兩個 payload shape 係咪真係一樣(R3)—— **實讀兩個 node 確認 shape 完全一致**,差別只喺取值來源(`aiBrain` vs `execution_context`);body 表達式亦各自正確(`$json._uopPayload` vs `$json`)
+- [x] live case 1:無 key → **401** `{"message":"Invalid or missing intake key"...}`
+- [x] live case 2:真 payload → **201**,`serviceNowSysId: sys-REQ0043858` · `opco RHK` · `skuId 06ebc4ee-…`(E5)
+- [x] live case 3:同 payload 重推 → **同一個 `id`**(`cms2urtmj00018ypc985xtq9d`),DB 仍然 1 request / 1 line item
+- [x] live case 4:三種 resolve 失敗全部 **400 且回顯對唔到嘅值** —— 未知 Job Function / 未知 licence code / REQ 不存在;另加 `event` 錯值、`department` 空、`licenseCode: null` 三個 envelope 拒收
+- [x] **額外**:`RAPO IT (RDC2)` Job Function live 打通 → 201 落 `RAPO/IT (RDC2)`(F1b 個 seed row 真係 work)
+- [x] DB 實查建成嘅 `Request` + `RequestLineItem`(REQ sysId / skuId GUID / opcoId)—— **scratch DB `w36live`(dev dump + seed),已 drop;dev DB 全程零改動**
+- [x] **負面實證**:6 個被拒 case 喺 DB **零行**,而且 mock-SN log **完全冇佢哋** ⇒ cheapest-first ordering 真係擋喺網絡之前
+- [x] ⚠️ **SN 反查:用 demo-harness mock,唔係真 ServiceNow** —— 證到嘅係 adapter→`IntakeService`→DB 成條路真係通 + 反查用啱 table(`sc_request`)/ 用啱 REQ number;**未證** SN 真實回應欄名。真 SN 端到端 **仍然未驗證**(R2 憑證 placeholder),記 carry-over,**唔當 pass**
+- [x] 🔴 **F4 新發現(blocking)**:兩個 `WF1 - Call UOP Intake` **完全冇送 `X-Intake-Key`**(無 `sendHeaders`、`credentials: []`)→ 一 enable 就全部 401。已寫入 `N8N-WF1-CHANGES.md §2.5`
+- [x] 修正 `scripts/demo-harness/mock-servicenow.js`:GET query form 本來返 object,真 Table API 返 **array** → 令所有 number 反查睇落都似「搵唔到」(R3 計劃外改動,已記 progress)
+- [x] doc-sync:`N8N-INTAKE-HANDOFF.md` §0 + §7 落差 #1(blocking → adapter 解決;明寫 **LOCKED 合約零改動**)+ 新 **§8** adapter route 全節 + §2 加 RDC2 註記 + §9 索引
+- [x] doc-sync:`N8N-INTAKE-HANDOFF.md` §7 落差 #5(adapter 已收緊;明寫 **canonical route 行為不變**)+ 新增落差 #6(各環境要補 RDC2)
+- [x] doc-sync:`N8N-INTEGRATION-SETUP.md` 加 adapter route(§0 總覽 + 新 **§1.5** 兩條 route 對照 + §1.4/§5 deploy 前提 + §6 索引)
 - [x] `npm run lint` 0 warning(G8)
 
 ---
