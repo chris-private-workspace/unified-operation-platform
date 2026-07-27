@@ -151,7 +151,7 @@ Day 1 版本用 `overrideReason ?` 判斷要唔要標 override。但 **ADMIN 可
 
 **未做**:F3 前端 override 入口(OQ1 = A 已批)· F5 部署 runbook + SQL · live 拒絕路徑驗。
 
-**Commit**:`<hash>` — F2 audit(白名單擴充 + transaction 內寫入)
+**Commit**:`8534452` — `feat(audit): W36 F2 — budget override 入 AuditLog(擴 ADR-0009 白名單,owner approved)`
 
 ---
 
