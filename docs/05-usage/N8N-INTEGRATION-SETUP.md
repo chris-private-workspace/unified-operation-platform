@@ -15,15 +15,25 @@
 | 用途 | onboarding 完成 → n8n 推單入平台建 `Request` | IT 喺平台開單 → 平台叫 n8n 去 ServiceNow 開飛 |
 | Auth header | `X-Intake-Key`(**平台**發 key,n8n 帶入) | `X-N8n-Key`(**n8n**發 key,平台帶出) |
 | 觸發時機 | AD 建好後 fire-and-forget push | IT `POST /requests` 時 provider 選路 = `n8n` |
-| 成熟度 | ✅ **真 endpoint,已 build + test,合約 LOCKED** | ⚠️ **provider 已 build,合約代表性,欄名待 live 對齊** |
+| 成熟度 | ✅ **平台側兩條 route 都 build + test 齊,canonical 合約 LOCKED**<br>⚠️ **但未真接過 n8n** —— n8n 側仲有 3 個接線缺口(見下) | ⚠️ **provider 已 build,合約代表性,欄名待 live 對齊** |
 
-> 兩線可以獨立啟用:線 ① 而家就用得;線 ② 要 owner 開 webhook + 對齊欄名先 live。
+> **線 ① 平台側 ready,n8n 側未 ready。** W36 實讀 n8n workflow 揪出三個 blocking 缺口:
+> ① 兩個 `WF1 - Call UOP Intake` **完全冇送 `X-Intake-Key`** → 一 enable 就全部 **401**;
+> ② `UOP_INTAKE_URL` 要指去 `/requests/intake/n8n`(§1.5);③ 1005 個 Call node 仲係 disabled。
+> 補完先算通 —— 詳見 `docs/01-planning/W36-n8n-intake-adapter/N8N-WF1-CHANGES.md §2.5`。
+>
+> 線 ② 要 owner 開 webhook + 對齊欄名先 live。
 
 ---
 
 ## 線 ① — Inbound:平台提供畀 n8n(n8n call 入嚟建單)
 
-**狀態:production-ready,唔使再開發。** 實作:`intake.controller.ts:23` + `intake-key.guard.ts` + `intake.service.ts` + `dto/n8n-intake.dto.ts`。
+**狀態:平台側唔使再開發**(兩條 route 都 build + test 齊)**;但整條線未真接過 n8n**,見 §0 三個缺口。
+實作:`intake.controller.ts` + `intake-key.guard.ts` + `intake.service.ts` + `dto/n8n-intake.dto.ts`(adapter route 另見 §1.5)。
+
+> **驗到邊?**(W36 F4,誠實邊界)平台側 8 個 case live 打過:401 / 201 / 冪等 / 三種 resolve 失敗 / 新 OpCo / 壞信封,DB 逐行查過。
+> **但 ServiceNow 反查行嘅係本地 mock**(憑證仍係 placeholder),而且 payload 係照 n8n node 嘅 `jsCode` 重砌,**唔係 n8n 真打入嚟**。
+> ⇒ **真 SN + 真 n8n 端到端 = 未驗證。**
 
 ### 1.1 平台交付畀 n8n team
 

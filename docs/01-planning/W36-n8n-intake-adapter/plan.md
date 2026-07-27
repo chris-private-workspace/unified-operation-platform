@@ -4,7 +4,7 @@ name: "戊:n8n inbound intake adapter(場景一打通)"
 sprint_week: W36
 start_date: 2026-07-26
 end_date: 2026-07-30          # planned, may slip with changelog log
-status: active                # draft | active | closed —— OQ-1/OQ-2 已拍板 2026-07-27,plan locked
+status: closed                # draft | active | closed —— 2026-07-27 收官,見 §7 changelog v1.3
 spec_refs:
   - ADR-0017 D4(inbound intake adapter · fail-closed · 唯一命中規則)· D0(只換執行器唔換決策者)
   - ADR-0008 D2/D4/D6(inbound 方向① · 本地 mirror · REQ/RITM 兩層)
@@ -165,10 +165,10 @@ ADR-0017 rollout 第一階段。**場景一(n8n onboarding → 平台)係唯一 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
 | R1 | ~~🔴 `RAPO IT (RDC2)` 平台冇對應~~ | — | — | ✅ **已解(OQ-2,2026-07-27)**:Chris 拍板**平台新增** `RAPO/IT (RDC2)` → **F1b**。殘留風險轉為「已部署環境要各自補 row」(見 F1b acceptance) |
-| R2 | REQ number 反查依賴 **SN 可達**;本地 / UAT 現時 SN 憑證係 placeholder(W33 D3) | High | Med | F4 明寫「未驗證」唔當 pass;可考慮 mock SN 驗 adapter 邏輯,真 SN 留 `DEPLOY-harden` |
-| R3 | 🔴 **1005 排程路徑 `WF1 - Call UOP Intake` 仍 DISABLED** ⇒ 只驗即時路徑 = 半條路 | **已確認** | High | 驗收要涵蓋兩條;n8n 側開 node 由 Chris 做,平台側 adapter 對兩條路徑係同一個 endpoint(payload 由 `execution_context` 重建,shape 相同)—— 需喺 F4 對比兩個 payload shape 確認真係一樣 |
+| R2 | REQ number 反查依賴 **SN 可達**;本地 / UAT 現時 SN 憑證係 placeholder(W33 D3) | High | Med | F4 明寫「未驗證」唔當 pass;可考慮 mock SN 驗 adapter 邏輯,真 SN 留 `DEPLOY-harden`<br>→ **實際落地(2026-07-27)**:行咗 mock SN 路線。**證到** adapter→`IntakeService`→DB 通、反查用啱 `sc_request` + 用啱 REQ number;**未證** 真 SN 回應。🔴 **R2 仍然 active**,轉 carry-over |
+| R3 | 🔴 **1005 排程路徑 `WF1 - Call UOP Intake` 仍 DISABLED** ⇒ 只驗即時路徑 = 半條路 | **已確認** | High | 驗收要涵蓋兩條;n8n 側開 node 由 Chris 做,平台側 adapter 對兩條路徑係同一個 endpoint(payload 由 `execution_context` 重建,shape 相同)—— 需喺 F4 對比兩個 payload shape 確認真係一樣<br>→ **F4 實讀兩個 node 確認 shape 完全一致** ✅(差別只喺取值來源)。node 仍 disabled,**轉 carry-over(Chris)** |
 | R4 | licenseCode 對照除咗「E5」歧義,其他 code 亦可能歧義或缺 alias | Med | High | 唯一命中規則覆蓋所有 code,唔止 E5;F1 順帶列出 catalog 現有 alias 覆蓋率 |
-| R5 | n8n 實際 payload 同我讀嘅 `WF1 - Prepare UOP Intake` return shape 有出入(workflow 可能已改) | Med | High | F4 用**當日** n8n 真 payload 對一次;唔一致即停,唔照自己讀嗰份寫死 |
+| R5 | n8n 實際 payload 同我讀嘅 `WF1 - Prepare UOP Intake` return shape 有出入(workflow 可能已改) | Med | High | F4 用**當日** n8n 真 payload 對一次;唔一致即停,唔照自己讀嗰份寫死<br>→ ✅ **無出入**(2026-07-27 實讀兩個 node 逐欄對 DTO)。但**反而喺接線層揪出兩個新問題**:冇送 `X-Intake-Key`(blocking)· `licenseCode` 可為 `null` → 見 `N8N-WF1-CHANGES.md §2.5/§2.6` |
 | R6 | adapter 令 intake 多咗一條路,將來兩條路行為漂移 | Low | Med | adapter **只做 resolve + 攤平**,零業務邏輯;所有建單行為留 `IntakeService` 一份 |
 
 ## 5. Day-by-Day Breakdown(rough)
@@ -194,6 +194,7 @@ Carry-over from `W35-data-initialisation/progress.md` retro:
 |---|---|---|---|
 | 2026-07-26 | Initial plan(draft) | ADR-0017 Accepted → 戊階段 kickoff | 待 Chris |
 | 2026-07-27 | **v1.1 · draft → active** | OQ-1 拍板 **code 常數表** · OQ-2 拍板 **平台新增 OpCo** → 新增 **F1b**(seed row + 各環境補);R1 由「未解風險」轉「已解 + ops carry-over」;D-day 表加 F1b | **Chris Lai** |
+| 2026-07-27 | **v1.3 · active → closed** | Phase 收官:G1-G9 全部達標(G6 以 mock SN 達成,誠實邊界已標)。OQ-3 收貨;R2 / R3 轉 carry-over;R5 已驗且反揪出兩個接線問題。計劃外改動一項:`mock-servicenow.js` GET query form 修正(R3 已 log) | **Chris Lai** |
 | 2026-07-27 | **v1.2 · 新增 F1c**(n8n 側改動指示) | F1 grounding 揪出**三個發現**(A RDC2 `description` 已係 `RAPO/IT` · B WF1 送 AI 抽自由文本非 form `jobFunction` · C payload 用未驗證資料 `validated:false`),Chris 五項全拍板 → 發現 B/C 需 **n8n 側改動**,故新增 F1c 交付精確改動指示;F2 `licenseCode` resolve 收窄成 `resolveSkuByLicenseCode()` 一個函數(OQ-4 未有答案亦唔返工);`department` resolve 明訂**零 fallback** | **Chris Lai** |
 
 ## 8. Open Questions(**blocking F2**)
@@ -202,7 +203,7 @@ Carry-over from `W35-data-initialisation/progress.md` retro:
 |---|---|---|---|
 | **OQ-1** | `department → opcoCode` mapping 表**放邊**? | (a) code 常數表 · (b) 新 DB model / `Opco` 加欄 · (c) `ConnectorConfig` JSON 欄 | ✅ **拍板 (a) code 常數表**(Chris,2026-07-27)—— **零 schema、零新 ADR**,改動進 git diff 睇得到、test 鎖得住;同 n8n 側 `deptMapping` 本身 hardcode 一致。否決 (b)[為 18 條幾乎唔改嘅對照觸發 H1 schema,唔值]· (c)[`ConnectorConfig` 設計係 per-connector 非機密**標量**欄,塞 map 屬扭曲用途,resolver + audit 白名單都要特例] |
 | **OQ-2** | `RAPO IT (RDC2)` 對邊個 `Opco.code`? | 對 `RAPO/IT` · 平台新增 · n8n 側改 · fail-closed | ✅ **拍板:平台新增一個 OpCo**(Chris,2026-07-27)→ **F1b**;code 跟 `RAPO/IT (RBS)` 格式 = `RAPO/IT (RDC2)`(最終字串待 F1b 確認)。**零 schema**(純 data row) |
-| OQ-3 | adapter 用同一個 `INTAKE_API_KEY`,定另開一條? | ★ 建議同一個(同一個 caller、同一個信任邊界,多開一條 key 只多一個要輪換嘅 secret) | 待確認(低風險,**用建議值繼續**,唔 block F2) |
+| OQ-3 | adapter 用同一個 `INTAKE_API_KEY`,定另開一條? | ★ 建議同一個(同一個 caller、同一個信任邊界,多開一條 key 只多一個要輪換嘅 secret) | ✅ **收貨:同一個 key**(2026-07-27 F4)—— 兩條 route 共用同一個 `IntakeKeyGuard`,live 驗過(無 key → 401、有 key → 201)。要另開一條的話係新決定,`.env` 多一個 var + guard 分流,唔影響已交付嘅嘢 |
 | **OQ-4** | WF1 `licenseCode` 來源 = SN catalog `License` variable,實際值未知 | (i) code 常數表 · (ii) `SkuCatalog` 加 nullable 欄(H1) · (iii) 用 `businessAlias`(❌ 撞 ADR-0004) | 🟡 **值暫時拎唔到 → 按 `MAPPING.md §2.3` 規劃先行,唔 block F2**(Chris,2026-07-27)。resolve 收喺一個函數;4xx 回顯實際值 = 第一張真單自動交答案;屆時先揀 (i)/(ii) |
 
 > **F1 階段全部 OQ 已處理**:OQ-1 ✅ · OQ-2 ✅ · OQ-3 用建議值 · OQ-4 🟡 已規劃。**F2 解封**(仍受 G1 以外零阻塞)。

@@ -2,7 +2,7 @@
 phase: W36-n8n-intake-adapter
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | closed
+status: closed         # in-progress | closed —— 2026-07-27 收官,見 Retro
 ---
 
 # Phase W36 — Progress
@@ -367,26 +367,66 @@ failed, reason: self-signed certificate in certificate chain
 
 ---
 
-## Retro(填於 phase 結束)
+## Retro — 2026-07-27
 
 ### What worked
 
+- **ADR 事前寫,code 後落。** ADR-0017 喺任何 code 之前 Accepted,所以成個 phase 一次都唔使停低問「呢個算唔算架構改動」。三個接縫嘅劃分(邊個可切換、邊個必然唔可以)喺 F2 落 code 時直接變成檔案邊界。
+- **「加一條 route」而唔係「放鬆合約」。** G2 全程零 diff:`IntakeService` / canonical DTO / `CONTRACT.md` 一個字都冇改。代價只係一個 adapter service,換返嚟係既有 caller 一個保證都冇失去。
+- **fails-before 唔係儀式。** 把 `matches.length > 1` 改成 `> 99` 之後,個 test 唔止變紅,仲印出「靜靜建咗一張完整 Request」嘅 resolved value —— 即係話呢個 test 真係守緊嗰個失敗模式,唔係守緊一個 mock 有冇被叫。**關鍵設計:wire 真 `IntakeService`**,唔 mock。
+- **cheapest-first 順序有可觀察嘅證據。** 6 個被拒 case 冚唔到 mock-SN log ⇒ 壞 payload 真係冇打過網絡。呢個係「順序寫啱咗」嘅**行為證據**,唔係讀 code 讀返嚟嘅。
+- **實讀 n8n JSON,唔靠記憶。** F1 揪出三個發現、F4 再揪出兩個 —— 五個全部嚟自實讀 node 個 `jsCode` / `parameters`,冇一個係靠「我記得個 workflow 大概係咁」。
+
 ### What didn't work / unexpected friction
+
+- **R1(Prisma engine)食咗成日。** 而且一開始診斷錯 —— 當咗係單一個 TLS 問題,實情係**兩層**(TLS + DLP 按檔名擋 `.dll`)。教訓:「同一個 command 失敗」唔代表「同一個原因」,要逐層剝。已寫入 memory,下次唔使再查。
+- **101 個 TS error 全部係假嘅。** stub Prisma client 令 build 爆到似天塌,差啲去改自己啲 code 遷就。**識別法**:`node_modules/.prisma/client/index.d.ts` ~3989 bytes = stub(真嘅 ~1MB)。而 **lint 唔受影響,所以嗰陣仍然係有效 gate** —— 呢點救咗成個 F2。
+- **AP-2 差啲寫落文檔。** doc-sync 初稿令 `N8N-INTEGRATION-SETUP` §0「成熟度 ✅」同 §1「production-ready」順理成章咁覆蓋埋 adapter route,但 adapter route 未經真 SN / 真 n8n。收 phase 跑 `anti-patterns` 先揪返出嚟。**skill 有用就係喺呢種地方** —— 自己寫嗰陣完全睇唔到。
 
 ### Surprises / discoveries
 
-### Carry-overs to W37
+1. 🔴 **兩個 `WF1 - Call UOP Intake` 完全冇送 `X-Intake-Key`。** 無 `sendHeaders`、`credentials: []`。一 enable 就全部 401,一張都入唔到。呢個 node 存在咗好耐,冇人發現係因為由頭到尾冇人真試過。**最大單一發現。**
+2. **port 3100 跑緊嘅係另一個 checkout**(`C:\Users\CLai03\unified-operation-platform`),唔係呢個 worktree。新 route 回 404 唔係 stale build —— 重啟幾多次都唔會有我啲 code。已加成 **AP-11**。
+3. **`licenseCode` 可以係 `null`** → 成張單 400,唔係跳過嗰個 line。刻意 fail-closed,但代價要知。
+4. **`UOP_INTAKE_URL` 係 `$env`** ⇒ 轉去 adapter route 淨係改 env,唔使郁 node。意外地平。
+5. demo-harness 個 mock SN 嘅 GET query form **本來就同真 Table API 唔同**(返 object vs array),即係話呢條反查路徑以前根本冇人用 mock 驗過。
+
+### Carry-overs
+
+| # | 項 | 誰 | 去邊 |
+|---|---|---|---|
+| C1 | 🔴 **真 SN 端到端未驗證**(R2,憑證 placeholder) | 平台 | `DEPLOY-harden` |
+| C2 | 🔴 **n8n UI 三項**:加 `X-Intake-Key` header · `UOP_INTAKE_URL` → `/requests/intake/n8n` · enable 1005 Call node | **Chris** | F1c(`N8N-WF1-CHANGES.md §2.5`) |
+| C3 | **各環境補 OpCo `RAPO/IT (RDC2)`**(本機 dev DB / UAT / prod 各一次,走 `POST /admin/opcos`) | 平台 ops | deploy checklist |
+| C4 | `RAPO/IT (RDC2)` allocated = 0 → **ADR-0016 預算 gate 上線前要設 allocation**,否則該 OpCo 一單都落唔到 | 平台 | ADR-0016 實作 phase |
+| C5 | **OQ-4**:SN `License` variable 實際值仍未知 —— 第一張真單嘅 4xx 會自報 | — | 屆時揀 (i) 常數表 /(ii) schema 加欄 |
+| C6 | 🔴 **`docs/06-reference/03-n8n-workflow/` 仍 untracked 且未 gitignore** —— `1002` 含明文 WinRM 服務帳號密碼。三個 commit 均刻意排除。**commit 前必須 scrub;帳號建議照 rotate。絕不可 `git add .`** | **Chris** | 未排期 |
 
 ### ADR triggers
 
+**無新 ADR。** ADR-0017 喺 phase 開始前已 Accepted,整個 phase 冇踩出佢範圍:零 schema 改動(seed data ≠ schema)、零新 runtime dependency、零 scope 外功能。
+
 ### Phase Gate result
-- G1 … G9
+
+| # | Criterion | 結果 |
+|---|---|---|
+| G1 | mapping 18/18 Chris 確認 | ✅ |
+| G2 | `IntakeService`/canonical DTO/`CONTRACT.md` 零改動 | ✅ 零 diff |
+| G3 | 兩個「E5」歧義 fail-closed | ✅ **含 fails-before 實證** |
+| G4 | 每項 resolve fail-closed 且可診斷 | ✅ 4/4,live 逐個 400 訊息貼咗真 output |
+| G5 | api test 全綠且不降 | ✅ **390 → 407**(42 suites) |
+| G6 | 端到端 4 case 有真 output | ✅ **做咗 8 個**。⚠️ **SN 係 mock**,誠實邊界已標(見 C1) |
+| G7 | H4 零 PII 零 secret | ✅ test + live 訊息只回顯 licenseCode / JobFunction / REQ number |
+| G8 | lint 0 | ✅ |
+| G9 | doc-sync 3 處 | ✅ 3 處 + `N8N-WF1-CHANGES` §2.5/§2.6 |
+
+**9/9 達標**(G6 附 mock 邊界說明)。
 
 ### Phase status
-- Closeout commit:`<hash>`
-- Frontmatter status flipped to `closed`
+- Commits:`6bc32c8`(ADR + F1)· `9b5b2b3`(F1b/F2/F3)· `3a04a53`(F4)· closeout(本次)
+- `plan.md` / `checklist.md` / `progress.md` frontmatter 已 flip `closed`
 - BACKLOG synced(R7)
-- Phase W37 kickoff trigger:己 —— `LicenseOperationsProvider` + `GraphLicenseProvider`(純重構)
+- Phase W37 kickoff trigger:**己 —— `LicenseOperationsProvider` + `GraphLicenseProvider`(純重構,零行為改變)**
 
 ---
 

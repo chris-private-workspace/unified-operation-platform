@@ -1,7 +1,7 @@
 ---
 phase: W36-n8n-intake-adapter
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete       # in-progress | complete —— 2026-07-27 收官
 last_updated: 2026-07-27
 ---
 
@@ -10,8 +10,8 @@ last_updated: 2026-07-27
 > Atomic checkbox(每 item ≤ 1–2 hour effort)。
 > AI tick 完成嘅 item;唔可以 tick 嘅 item 喺 progress Day-N entry 寫原因。
 >
-> ✅ **全部 gate 已解**(2026-07-27):OQ-1 = **code 常數表** · OQ-2 = **平台新增 OpCo** · **G1 = 18/18 已確認**。plan `active`,F2/F3 完成。
-> 剩返:**F1b**(seed row)+ **F4**(live + doc-sync)+ n8n 側改動(Chris)。
+> ✅ **Phase 收官(2026-07-27)**:F1 / F1b / F2 / F3 / F4 / Cross-Cutting 全部完成,**Gate 9/9**。
+> 仍然 `[ ]` 嘅只有 **兩項 🚧**(F1c —— Chris 喺 n8n UI 操作 + 改完對真 payload),平台側代做唔到,已轉 retro **C1/C2** carry-over。
 
 ## F1 — 對接落差 grounding + mapping 表(doc,pre-code gate)
 
@@ -34,8 +34,8 @@ last_updated: 2026-07-27
 - [x] `N8N-WF1-CHANGES.md`:1005 改動(`Check Activate Date` + `Prepare Schedule Record` 各加 `jobFunction`;WF1 改讀 `ctx.jobFunction`)
 - [x] 標明**唔好郁**:`_uopNeeded` gate · `licenseItems[]` 來源 · `idempotencyKey`
 - [x] 寫平台側驗收表 + 「未改之前平台點反應」(令兩邊可並行)
-- [ ] 🔴 **Chris 喺 n8n UI 執行改動**(含 **enable 1005 `WF1 - Call UOP Intake`** + 🆕 **加 `X-Intake-Key` header** + `UOP_INTAKE_URL` 指去 `/requests/intake/n8n`,見 `N8N-WF1-CHANGES.md §2.5`)
-- [ ] 改完之後對一次真 payload(F4 R5)
+- [ ] 🚧 **Chris 喺 n8n UI 執行改動**(含 **enable 1005 `WF1 - Call UOP Intake`** + 🆕 **加 `X-Intake-Key` header** + `UOP_INTAKE_URL` 指去 `/requests/intake/n8n`,見 `N8N-WF1-CHANGES.md §2.5`)—— **延後:平台側無法代做,等 owner 喺 n8n UI 操作**;target = 真對接當日(retro **C2**)
+- [ ] 🚧 改完之後對一次真 payload(F4 R5)—— **延後:依賴上一項 + 真 SN 可達(R2)**;target = `DEPLOY-harden`(retro **C1/C2**)
 - [x] **OQ-1 mapping 表放邊 拍板** → **code 常數表**(Chris,2026-07-27)
 - [x] **OQ-2 `RAPO IT (RDC2)` 拍板** → **平台新增一個 OpCo**(Chris,2026-07-27)→ F1b
 - [x] **交 Chris 確認 18/18** → **全部確認,G1 達標**(2026-07-27);mapping 表已落 `opco-department-map.ts` + 4 條 drift-guard test
@@ -94,14 +94,14 @@ last_updated: 2026-07-27
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker(R4)—— OQ-1/OQ-2/OQ-3
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **ADR-0017 已 Accepted;若 OQ-1 選 (b) DB 則需補新 ADR**
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro(→ 己:`LicenseOperationsProvider` 純重構)
-- [ ] 跑 `anti-patterns` skill 自檢
+- [x] All deliverables committed to git —— `6bc32c8`(ADR+F1)· `9b5b2b3`(F1b/F2/F3)· `3a04a53`(F4)· closeout commit。**`docs/06-reference/03-n8n-workflow/` 四次全部刻意排除**(明文憑證,見 SEC-001)
+- [x] All open-question status changes reflected in decision tracker(R4)—— `plan.md §8`:OQ-1 ✅ · OQ-2 ✅ · **OQ-3 由「待確認」改「✅ 收貨:同一個 key」**(live 驗過)· OQ-4 🟡 仍開(轉 retro C5)
+- [x] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— **無新 ADR**:ADR-0017 事前 Accepted 且全程冇踩出範圍(零 schema[seed data ≠ schema]· 零新 runtime dep · 零 scope 外功能);OQ-1 選咗 (a) code 常數表故唔觸發補 ADR
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)—— 戊 row → ✅ 完成 + carry-over;`n8n-intake-handoff` row 落差 #1/#5 劃走;己庚辛 row → 「己解封 = W37 候選」;**新登 A 區 `SEC-001`**;最後更新段落
+- [x] `progress.md` retro section written —— What worked / didn't / 5 個 surprises / **C1-C6 carry-over 表** / ADR triggers / Gate 9 條 / Phase status
+- [x] `progress.md` frontmatter status flipped to `closed`(連 `plan.md` → `closed` + changelog v1.3 · 本檔 → `complete`)
+- [x] Phase N+1 kickoff trigger noted in retro(→ 己:`LicenseOperationsProvider` + `GraphLicenseProvider` 純重構,零行為改變)
+- [x] 跑 `anti-patterns` skill 自檢 —— **AP-2 ❌ 揪到並修好**(`N8N-INTEGRATION-SETUP` §0「成熟度 ✅」/ §1「production-ready」會被讀成連 adapter route 都驗過,實情 SN 係 mock、n8n 側三個缺口未補 → 兩處改成誠實表述 + 明列驗到邊);其餘 ✅ / N/A。**新增 AP-11**(驗錯咗第二個 checkout)+ **AP-12**(冇驗「唔應該發生嘅嘢真係冇發生」)入 skill
 
 ---
 
