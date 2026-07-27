@@ -20,7 +20,8 @@
 > **線 ① 平台側 ready,n8n 側未 ready。** W36 實讀 n8n workflow 揪出三個 blocking 缺口:
 > ① 兩個 `WF1 - Call UOP Intake` **完全冇送 `X-Intake-Key`** → 一 enable 就全部 **401**;
 > ② `UOP_INTAKE_URL` 要指去 `/requests/intake/n8n`(§1.5);③ 1005 個 Call node 仲係 disabled。
-> 補完先算通 —— 詳見 `docs/01-planning/W36-n8n-intake-adapter/N8N-WF1-CHANGES.md §2.5`。
+> 補完先算通 —— 逐 node 改動見 `docs/01-planning/W36-n8n-intake-adapter/N8N-WF1-CHANGES.md §2.5`;
+> **上線次序 + 平台側前置 + 分階段驗收表(401→400→503→201)見 `docs/13-deployment/08-n8n-integration-go-live.md`**。
 >
 > 線 ② 要 owner 開 webhook + 對齊欄名先 live。
 

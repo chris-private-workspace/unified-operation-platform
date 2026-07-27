@@ -34,6 +34,7 @@ Logs ────────────▶ Log Analytics workspace
 | 走 RCI 授權流程(PAR)+ 填表輸入 | [`05-rci-par-process.md`](./05-rci-par-process.md) |
 | 上線前安全自檢 | [`06-prod-hardening-checklist.md`](./06-prod-hardening-checklist.md) |
 | **實際跑緊嘅 UAT 環境**(資源名 / URL / deferred) | [`07-uat-as-built.md`](./07-uat-as-built.md) |
+| **要 n8n 真係推到單入平台**(平台側前置 + n8n 三項接線 + SEC-001 rotate) | [`08-n8n-integration-go-live.md`](./08-n8n-integration-go-live.md) |
 
 ## 文件
 

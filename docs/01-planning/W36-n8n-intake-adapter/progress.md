@@ -423,6 +423,8 @@ failed, reason: self-signed certificate in certificate chain
 
 ### Carry-overs
 
+> 📗 **C1–C4 + C6 已收埋做一份可執行 runbook:`docs/13-deployment/08-n8n-integration-go-live.md`**(平台側前置 / n8n 三項接線 / SEC-001 rotate 三步 / 分階段驗收表 401→400→503→201)。下面留返索引。
+
 | # | 項 | 誰 | 去邊 |
 |---|---|---|---|
 | C1 | 🔴 **真 SN 端到端未驗證**(R2,憑證 placeholder) | 平台 | `DEPLOY-harden` |
