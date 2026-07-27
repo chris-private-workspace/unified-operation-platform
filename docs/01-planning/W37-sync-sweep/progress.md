@@ -173,7 +173,7 @@ env 只經 shell 傳,**`.env` 全程未改**(§4.4)。
 
 `docs/architecture.md §3`(`@Cron` 由 planned → sync sweep ✅)· `SYSTEM-SPEC-AND-SOW.md` **四處**(§A1 落差 / stack 表 / Layer 3 查證 / P8 / 查證方法註)· `BACKLOG`(W37 行 + `SYNC-sweep` 收官 + 路線)· **`RISK_REGISTER` R3 ⚠️ Open → 🟡 Mitigating**(連三項殘留寫明:仍係輪詢 / 30 日後放棄仍要人手 / 多實例重複跑)。
 
-**Commit**:`<hash>` — live 驗證 + F6 + closeout
+**Commit**:`fb06887` — `docs(planning): W37 closeout — live 真 Graph 命中驗證 · D1-D7 核對 · RISK R3 轉 Mitigating`
 
 ---
 
