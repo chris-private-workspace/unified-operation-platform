@@ -1,7 +1,7 @@
 ---
 change_id: CH-008
 title: "By-OpCo ledger 空白行(0/0)預設隱藏 + 修正誤導狀態"
-status: approved           # draft | proposed | approved | active | done | cancelled
+status: done               # draft | proposed | approved | active | done | cancelled
 created: 2026-07-25
 target_completion: 2026-07-28
 affects_components: [apps/api/src/license (ledger read-model), apps/web (assets By-OpCo view), apps/web/src/lib/ledger.ts]
@@ -109,6 +109,8 @@ Chris 2026-07-25 提出:「某個 OpCo 某種 license 冇數量了,記錄改成 
 |---|---|---|---|
 | 2026-07-25 | Initial draft(**proposed**) | Chris 提出 0/0 row 唔會消失;查證確認 + 揪到 `assetStatus` 顯示 bug;Chris 揀選項 A(顯示層解決) | — |
 | 2026-07-26 | **proposed → approved**(spec 內容零改動) | Chris approve,含明確接受 §4 R1 嘅 trade-off(隱藏後靠 toggle 搵返,DD-3 仍未解)。⚠️ 開工前必讀 **CH-009 spec §2.4** —— 兩個 change 對同一個 `GET /license/ledger` 有交互 | **Chris Lai** |
+| 2026-07-27 | **grounding 更正(非決策改動)**:§1 同 §2.2 D1 講嘅「**21 行** `assigned=0, allocated>0`」係 raw table 數;**畫面 / API 實際係 14 行**。差額全部係 W14 開始就有嘅 `sku.active` / `opco.active` 過濾(OD2),**同本 change 無關**。SQL 對數:`budget_no_assign_all=21` · `budget_no_assign_active=14` · `active_rows=104` = `?includeEmpty=true` 嘅 API 行數。**D1 定義同 A4 守嘅嘢一個字都冇變** | 實作期 A4 驗證撞出(Day 2)—— 21 呢個數由頭到尾都唔係「畫面見到嘅行數」 | AI(事實更正,無需 approve) |
+| 2026-07-27 | **approved → done** | 11 條 acceptance 全 pass;零 schema / 零 dep / 零 ADR;api 433 · web 188 | — |
 
 ---
 
