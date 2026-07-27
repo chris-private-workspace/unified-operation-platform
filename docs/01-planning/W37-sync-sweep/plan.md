@@ -4,7 +4,7 @@ name: "排程 sync sweep —— `azureSyncedAt` 由「宣稱」升級為「平�
 sprint_week: W37
 start_date: 2026-07-27
 end_date: 2026-07-29          # planned, may slip with changelog log
-status: active                # draft | active | closed —— approved 2026-07-27(OQ1=A · OQ2=B · OQ3=A)
+status: closed                # draft | active | closed —— approved + closed 2026-07-27(OQ1=A · OQ2=B · OQ3=A)
 spec_refs:
   - ADR-0015(**Accepted 2026-07-26** — 本 phase 就係佢嘅落地;Decision D1-D7 = 實作規格)
   - ADR-0009(AuditLog 契約 · **白名單 = 唯一 enforcement point**)
@@ -114,12 +114,12 @@ prior_phase: W36-opco-budget-gate
 
 ## 4. Acceptance(phase 級)
 
-- [ ] F1-F6 各自 acceptance 全過
-- [ ] api test ≥ 410 + 新 suite;lint 零 output
-- [ ] 🔴 **`assign.service.ts` 嘅 `findUser` gate 區塊 diff 為空**(只有 `markSynced` 嘅 message 一行可以動)—— 對應 W36 嘅 `reconcile` 硬邊界做法
-- [ ] **零 schema 改動**(`prisma/schema.prisma` diff 為 0)· **零新 dependency**(三個 `package.json` diff 為 0)
-- [ ] **live 驗證**:① dev 現況跑一輪 → **Graph 零 call + DB 零寫入**(證 D7)② 命中路徑(見 OQ2 決定點)
-- [ ] ADR-0015 D1-D7 逐條核對,有偏離 → plan changelog + 問 owner
+- [x] F1-F6 各自 acceptance 全過
+- [x] api test **429 / 42 suites**(≥ 410 ✅);lint 零 output
+- [x] 🔴 **`assign.service.ts` diff = 1 import + 1 段註釋 + 1 行 message**;`assignLineItem` 嘅 `findUser` gate 一個字冇動
+- [x] **零 schema 改動**(diff 0)· **零新 dependency**(三個 `package.json` diff 0)
+- [x] **live 驗證**:① D7 改由 unit test + live 對照組共同證明(**原本寫法 live 觀察唔到** —— sweep 閒置刻意靜默,見 progress Day 2)② **命中路徑真 Graph 驗到**,連對照組 ③ kill switch A/B
+- [x] ADR-0015 D1-D7 逐條核對 —— **五條相符,D4 / D5 兩條偏離**,兩條都係起草/開工前發現、owner 批、入 changelog
 
 ## 5. Open Questions(🔴 **兩條都要 owner 答先開工**)
 

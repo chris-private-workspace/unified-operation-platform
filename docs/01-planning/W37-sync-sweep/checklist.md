@@ -1,7 +1,7 @@
 ---
 phase: W37-sync-sweep
 plan_ref: ./plan.md
-status: active           # draft | active | closed
+status: closed           # draft | active | closed
 last_updated: 2026-07-27
 ---
 
@@ -64,29 +64,30 @@ last_updated: 2026-07-27
 
 ## F6 — 文檔同步
 
-- [ ] `RISK_REGISTER` **R3** ⚠️ Open → 🟡 Mitigating —— ⚠️ **實作 + live 驗完先改**,唔可以寫完 code 就改
-- [ ] `SYSTEM-SPEC-AND-SOW.md §A1`(「排程 / 背景佇列零實作」已 stale)
-- [ ] `docs/architecture.md §3`(`@Cron` 由預留 → 實作)
-- [ ] `BACKLOG.md` 同步(R7)
-- [ ] `.env.example` + 部署文檔提及新 env
+- [x] `RISK_REGISTER` **R3** ⚠️ Open → 🟡 **Mitigating**(live 驗完先改),連**三項殘留**寫明:仍係輪詢(最壞等 10 分鐘)· 30 日後放棄仍要人手 · 多實例重複跑
+- [x] `SYSTEM-SPEC-AND-SOW.md` **四處**:§17 A1 落差(零實作 → 🟡 排程通/佇列未通)· stack 表 · Layer 3 查證段 · P8 · 查證方法註(標明「結果為零」係當時實況)
+- [x] `docs/architecture.md §3`(`@Cron` 由 planned → **sync sweep ✅ 已實作**,daily reconcile 仍 planned)
+- [x] `BACKLOG.md` 同步(R7)—— W37 行 + `SYNC-sweep` 收官 + 路線更新
+- [x] `.env.example` 三個新 key + default + 點解 cutoff 要存在
 
 ## Verification(phase 級)
 
-- [ ] **live ①(負面,零風險)**:dev 現況跑一輪 → **Graph 零 call + DB 零寫入**(§2 grounding 已證 `would_be_swept = 0`)
-- [ ] **live ②**:`SYNC_SWEEP_ENABLED=false` → 完全短路
-- [ ] **live ③ 命中路徑(OQ2 = B)** —— 用**指定嘅**真 tenant 帳號造一張 request,跑一輪見真命中,**造完即刪 + 貼還原證據**;⚠️ H4:全程唔 log UPN、唔入任何 commit。🚧 **開工前要問 owner 攞用邊個帳號**
+- [x] **live ①(負面)** —— ⚠️ **原本寫法 live 觀察唔到**:sweep 閒置時**刻意靜默**,所以「tick 咗但乜都冇做」同「tick 冇發生」喺外面睇落一樣。改為由 ① unit test(真 assert `findUser` 零 call)+ ② live ③ 嘅**對照組**(同一輪其餘兩張唔合資格嘅單完全冇被掂)共同證明。**唔加 idle-round log** —— 每 10 分鐘一條「乜都冇做」會蓋過真正有嘢講嗰啲
+- [x] **live ②** `SYNC_SWEEP_ENABLED=false` → **A/B 對照**:同一個 seed,預設 06:30 tick **15 秒內被掃**;`false` 時 06:40 tick 過咗 **仍然 null + audit 0**。⚠️ 中途補做 `/docs/api` + `/me` 200 確認 **API 真係活住**先落結論(第一次 boot 輪詢冇印到 "api up",直接落結論就會係假驗證)
+- [x] **live ③ 命中路徑(OQ2 = B,Chris 授權)** —— seed → 下一個 tick 命中:`azureSyncedAt` SET · `accountCreatedAt` SET · `RequestEvent` = verified 文案 · **一條** `sync.sweep` audit(`after {"opened":1,"scanned":1}` **喺真 DB 過到白名單**)· 🔴 **對照組**:同輪其餘兩張唔合資格嘅單仍然 null
+- [x] **還原證據(H4)**:兩次 seed 全清 —— `w37_requests_left`/`w37_lines_left`/`w37_events_left`/`sweep_audit_left`/**`upn_rows_left`** 五個 count **全 0**,回到 baseline(7 張 / `would_be_swept` 0);UPN 冇入任何 commit / 文檔 / log;env 只經 shell 傳,**`.env` 全程未改**
 - [x] 🔴 `assign.service.ts` diff = **1 個 import + 1 段註釋 + 1 行 message**;`assignLineItem` 嘅 `findUser` gate **一個字都冇動**(逐行 diff 為證)
 - [x] `prisma/schema.prisma` diff **0** · 三個 `package.json` diff **0** · `reconcile.service.ts` diff **0**
-- [ ] ADR-0015 D1-D7 逐條核對;有偏離 → plan changelog + 問 owner
+- [x] **ADR-0015 D1-D7 逐條核對完成**(見 progress Day 2 表)—— **五條逐字相符,兩條偏離**(D4 audit 形狀 · D5 放棄 `SYNC_SWEEP_CRON`),兩條都係**起草 / 開工前**發現、owner 批咗、入咗 changelog。冇一條係靜靜偏離
 
 ## Cross-Cutting
 
-- [ ] Daily commit 對應 `progress.md` Day-N(R2)
-- [ ] Conventional Commits + scope(`feat(fulfilment)` / `feat(audit)` / `docs(planning)`)
-- [ ] **零 schema 改動** —— 發現要改 → **STOP**(H1 重新觸發)
-- [ ] **零新 dependency**(H2)—— OQ1 揀 C 就係觸發,要 ADR
-- [ ] **唔順手做 daily reconcile**(H3;ADR 講「鋪路」唔係「做埋」)
-- [ ] `progress.md` closeout + status → `closed`
+- [x] Daily commit 對應 `progress.md` Day-N(R2)—— Day 0/1/2 各有 hash
+- [x] Conventional Commits + scope(`docs(planning)` / `feat(fulfilment)` / `docs(architecture)`)
+- [x] **零 schema 改動** —— `prisma/schema.prisma` diff **0**
+- [x] **零新 dependency**(H2)—— 三個 `package.json` diff **0**(OQ1 揀 A 就係為咗避開呢個)
+- [x] **唔順手做 daily reconcile**(H3)—— `reconcile.service.ts` diff **0**;已列入 carry-over 等開新 phase
+- [x] `progress.md` closeout + status → `closed`
 
 ---
 

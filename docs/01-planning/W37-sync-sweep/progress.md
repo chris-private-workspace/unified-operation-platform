@@ -2,7 +2,7 @@
 phase: W37-sync-sweep
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: active          # draft | active | closed
+status: closed          # draft | active | closed
 ---
 
 # W37 — Progress
@@ -101,10 +101,105 @@ Checklist F5 原本寫「audit 寫入同 sweep 嘅 DB 改動**同一個 transact
 
 **未做**:live 驗證(negative + OQ2=B 命中路徑,**等 owner 畀帳號**)· F6 文檔同步 · ADR-0015 逐條 closeout 核對。
 
-**Commit**:`<hash>` — F1-F5
+**Commit**:`c04bb89` — `feat(fulfilment): W37 F1-F5 — 排程 sync sweep(ADR-0015),azureSyncedAt 由宣稱升級為證實`
 
 ---
 
-## Retro(填於 closed)
+## Day 2 — 2026-07-27:**live 驗證(真 Graph 命中 + kill switch A/B)** · F6 文檔同步 · closeout
 
-_(待實作)_
+### live ③ 命中路徑(OQ2 = B,Chris 授權用佢自己個帳號)
+
+造一張 request(`azureSyncedAt` NULL + 一條 `REQUESTED` line item),`would_be_swept` 由 **0 → 1**,等下一個 `@Cron` tick:
+
+| 時間 | 事件 |
+|---|---|
+| 06:29:10 | seed 落 DB |
+| 06:30:00 | cron tick |
+| **06:30:15** | 輪詢見 `azureSyncedAt` = **SET** |
+
+四項證據全部對版:
+
+| | 真 output |
+|---|---|
+| `Request` | `azureSyncedAt` **SET** · `accountCreatedAt` **SET**(原本 NULL ⇒ `??` 填咗)|
+| `RequestEvent` | `SYNC` / `Phase 1 sync verified against Microsoft Graph (scheduled sweep)` |
+| `AuditLog` | **一條** `sync.sweep` · `SyncSweep` · `bulk` · `actorId` 空 · `system` · `before` 空 · **`after {"opened":1,"scanned":1}`** · `metadata {"source":"sync-sweep"}` |
+| 🔴 **對照組** | 同一輪入面,**其餘兩張 `azureSyncedAt IS NULL` 嘅單仍然 null** —— 佢哋冇非終態 line item,D2 正確排除 |
+
+最後嗰行先係重點:**冇佢,「有嘢被掃咗」證明唔到揀單規則啱** —— 一個掃晒所有單嘅實作一樣會令我張測試單變 SET。
+
+`after` 喺**真 DB** 裡面係 `{"opened":1,"scanned":1}` —— 即係計數真係過到 ADR-0009 白名單,唔止 unit test 咁講。W36 嗰個 blocker 喺呢度得到端到端確認。
+
+### live ② kill switch(A/B,同一個 seed 只改 env)
+
+呢個係 **OQ1 = A 嘅全部賭注** —— 我放棄咗 `SYNC_SWEEP_CRON`,理由就係「真正嘅營運急救手段係熄咗佢」。若果個掣唔 work,個理由就塌。
+
+| | seed | tick | 結果 |
+|---|---|---|---|
+| `ENABLED` 預設 | 06:29:10 | 06:30:00 | **06:30:15 已被掃** |
+| **`ENABLED=false`** | 06:34:54 | 06:40:00 | **06:41:02 仍然 null** · audit **0** |
+
+⚠️ 中間有一個要記低嘅位:第一次跑 disabled 嗰次,個 boot 輪詢**冇印到 "api up"**。若果我當時直接寫「冇被掃 ⇒ kill switch work」,其實證明唔到 —— **API 可能根本冇跑**。補做咗 `/docs/api` 200 + `/me` 200 確認 API 真係活住(06:36:56 起身),先至用 06:40 嗰個 tick 落結論。
+
+env 只經 shell 傳,**`.env` 全程未改**(§4.4)。
+
+### 測試數據還原(H4)
+
+兩次 seed 全部刪清:`w37_requests_left` / `w37_lines_left` / `w37_events_left` / `sweep_audit_left` / **`upn_rows_left`** 五個 count **全部 0**,回到 baseline(7 張 request · `would_be_swept` 0)。UPN 冇入任何 commit / 文檔 / log。
+
+### live ① 負面(誠實講清楚)
+
+原本 plan 寫「dev 現況跑一輪 → Graph 零 call」。**呢個喺 live positively 觀察唔到** —— sweep 冇嘢做嗰陣係**刻意靜默**(唔會出 log),所以「tick 咗但乜都冇做」同「tick 根本冇發生」喺外面睇落一模一樣。
+
+⇒ D7 嘅證據係:① unit test `makes ZERO Graph calls when nothing is waiting`(真 assert `findUser` 冇被 call)② 上面嗰個**對照組** —— 同一輪入面兩張唔合資格嘅單完全冇被掂。第二項其實比原本設計嘅「觀察 idle tick」更有力,因為佢證嘅係**揀單規則**而唔止係「冇活動」。
+
+**唔加 idle-round 嘅 log** —— 每 10 分鐘一條「乜都冇做」會蓋過真正有嘢講嗰啲(同 audit 唔寫零變動輪次同一個道理)。
+
+### ADR-0015 D1–D7 逐條核對
+
+| D | ADR 原文 | 實作 | 判定 |
+|---|---|---|---|
+| **D1** | `azureSyncedAt` 語意升級為「平台曾喺 Graph 真命中」;**schema 零改動**,靠寫入路徑收窄 | `schema.prisma` diff **0**;新寫入路徑只有 sweep(證實)+ markSynced(明文自認未證實) | ✅ |
+| **D2** | 四條件揀單 · 舊→新 · batch 上限 · 命中複用 `markSynced` 寫入語意 · 未命中唔做嘢 | 逐條落實;live 對照組證實揀單規則真係排除唔合資格嘅單 | ✅ |
+| **D3** | 人手 `PATCH /sync` **唔移除**;兩條 message 分辨 | endpoint / 權限 / OpCo scope / 回傳**零改動**(diff 為證);`sync-gate-messages.ts` 兩條並排 | ✅ |
+| **D4** | 一輪一條 `AuditLog` summary · `actorType: 'system'` · `metadata: {source, scanned, opened}` | **偏離**:`scanned`/`opened` 改放 `after`(跟 `allocation.import`),否則被白名單丟棄;新 action + 新 target | 🔴 **偏離**,owner approved + changelog |
+| **D5** | 四個旋鈕(cron / batch / maxAge / enabled)env 可調 | **偏離**:放棄 `SYNC_SWEEP_CRON`(`@Cron` 參數早過 DI;動態註冊要引 `cron` = H2)。其餘三個照做 | 🔴 **偏離**,owner approved + changelog |
+| **D6** | Graph 出錯 → warn + 中止本輪 · **絕不 throw 出 handler** | `break` 中止(有 test 證 3 張只 call 一次)· `sweep` 同 `handleCron` 兩層 catch | ✅ |
+| **D7** | 唔抵觸 ADR-0010 禁 `@Cron` 探針 —— 閒置零 Graph call | 冇候選就 `return`,零 Graph call(unit test 直接 assert) | ✅ |
+
+**七條入面五條逐字相符,兩條偏離且兩條都係開工前 / 起草時發現、owner 批咗、入咗 changelog。**
+
+### F6 文檔同步
+
+`docs/architecture.md §3`(`@Cron` 由 planned → sync sweep ✅)· `SYSTEM-SPEC-AND-SOW.md` **四處**(§A1 落差 / stack 表 / Layer 3 查證 / P8 / 查證方法註)· `BACKLOG`(W37 行 + `SYNC-sweep` 收官 + 路線)· **`RISK_REGISTER` R3 ⚠️ Open → 🟡 Mitigating**(連三項殘留寫明:仍係輪詢 / 30 日後放棄仍要人手 / 多實例重複跑)。
+
+**Commit**:`<hash>` — live 驗證 + F6 + closeout
+
+---
+
+## Retro
+
+### 做啱咗嘅
+
+**1. 把 W36 嘅教訓變成流程,唔止係一句感想。** W36 retro 寫「引用另一份 ADR 嘅機制就要逐字打開嗰個檔」。今次起草 plan 時就照做,結果**開工前**就發現 D4 同白名單唔兼容(W36 係實作到一半先撞到),於是佢變成一條可以同 OQ1/OQ2 一齊問嘅 OQ,零阻塞。**同一個坑,第二次嘅成本由「停低等答覆」變成「plan 入面一段字」。**
+
+**2. 每個 live 驗證都有對照組 —— 而且今次對照組係最有價值嗰部分。** 「我張單被掃咗」證明唔到揀單規則啱;「同一輪入面其餘兩張唔合資格嘅單冇被掂」先至證到。kill switch 亦一樣:唔係淨係睇「冇被掃」,而係**同一個 seed、只改 env** 嘅 A/B。
+
+**3. 撞到一個差啲變成假驗證嘅位,停低補做。** disabled 那次 boot 輪詢冇印到 "api up"。當時如果直接寫「冇被掃 ⇒ kill switch work」,其實 **API 可能根本冇跑**。補做 `/docs/api` + `/me` 確認咗先落結論 —— 呢個正正係 memory 入面「驗證睇落成功但證明唔到嘢」嗰條。
+
+### 學到 / 下次要小心
+
+**1. 我用咗 `sed -i` 改 checklist,違反 H8。** 有 Edit 工具就唔應該用 shell 改檔。已改用 Edit 補返,內容啱,但呢個係唔應該行嘅捷徑 —— H8 存在嘅原因就係 shell 改檔嘅污染好難事後發現。
+
+**2. 「刻意靜默」同「可驗證」係有張力嘅,要事前諗定。** plan 寫咗「live 驗 idle 輪 Graph 零 call」,但實作上 sweep 閒置時**唔出任何 log**,所以呢件事根本觀察唔到。唔係做唔到驗證,係**我寫 acceptance 嗰陣冇諗過「呢樣嘢喺外面睇唔睇得見」**。下次寫 acceptance 要問多一句:**「呢個 assertion 我實際上點觀察?」**
+
+**3. checklist 有一項係我自己寫錯咗規格**(audit 要同 sweep 同一 transaction)。round summary 橫跨 N 個獨立 transaction,做唔到亦唔應該做。及早發現係因為寫 code 嗰陣真係去諗「邊個 transaction?」而唔係照抄 checklist。**checklist 唔係 spec,佢係 spec 嘅衍生品,可以錯。**
+
+### Carry-over
+
+| | 項目 | 去向 |
+|---|---|---|
+| ⚠️ | **RISK R3 仍係 🟡 Mitigating 唔係 🟢** —— 仍係輪詢(最壞等 10 分鐘)· 30 日後放棄仍要人手 · 多實例重複跑 | webhook 升級 = ADR-0015 明文保留路徑,要新 ADR |
+| 📌 | **OD1 daily reconcile** —— W37 鋪好咗 `@Cron` pattern | ADR-0015 明文係「鋪路」唔係「做埋」,要做開新 phase(H3) |
+| 🟡 | **TD-1**(`/audit` 篩選 option 落後 backend,而家再多一個 `sync.sweep` 未加) | BACKLOG E 區 |
+| ⚠️ | 多實例 scale-out 重複跑 | ADR 明文 YAGNI;**唔可以順手加 lock** |
