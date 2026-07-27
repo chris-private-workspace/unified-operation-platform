@@ -17,6 +17,7 @@ import {
   pickAuditFields,
   pickAuditMetadata,
 } from '../audit/audit-fields';
+import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
 
 // Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
 // `role` matters from W36 on: the budget override is ADMIN-only (ADR-0016 D3).
@@ -672,9 +673,34 @@ describe('AssignService', () => {
         data: {
           requestId: 'r1',
           type: 'SYNC',
-          message: expect.any(String),
+          message: SYNC_GATE_MESSAGE.MANUAL,
         },
       });
+    });
+
+    /**
+     * W37 / ADR-0015 D3. The break-glass path must not read as equivalent to
+     * the sweep's evidence-backed one — an operator looking at a stalled
+     * onboarding needs to know whether the gate was opened by a Graph hit or by
+     * someone asserting it. `expect.any(String)` above would have passed
+     * whatever wording; this pins the claim itself.
+     */
+    it('says outright that a manual confirm is NOT Graph-verified', async () => {
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        opcoId: 'o1',
+        accountCreatedAt: null,
+      });
+      prisma.request.update.mockImplementation(({ data }: any) => ({
+        id: 'r1',
+        ...data,
+      }));
+
+      await service.markSynced('r1', ADMIN);
+
+      const { message } = prisma.requestEvent.create.mock.calls[0][0].data;
+      expect(message).toContain('not verified against Graph');
+      expect(message).not.toBe(SYNC_GATE_MESSAGE.VERIFIED);
     });
 
     it('throws NotFound when the request is missing', async () => {

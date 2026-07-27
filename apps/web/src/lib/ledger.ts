@@ -28,13 +28,24 @@ export interface AssetStatus {
 
 /**
  * Row health for the status column (mirrors the prototype's tone map): over-
- * allocated (assigned > allocated) → danger; fully allocated (budget set, no
- * headroom left) → warn; otherwise headroom available → ok.
+ * allocated (assigned > allocated) → danger; empty (nothing budgeted, nobody
+ * assigned) → neutral; fully allocated (budget set, no headroom left) → warn;
+ * otherwise headroom available → ok.
+ *
+ * CH-008: the Empty branch MUST stay below overAllocated — allocated=0 with
+ * assigned>0 is a real over-allocation, not an empty cell. Before CH-008 a 0/0
+ * row fell through to the green "Headroom", reading as "capacity available"
+ * when in fact there is nothing there.
  */
 export function assetStatus(
-  row: Pick<LedgerRow, 'allocatedQuantity' | 'headroom' | 'overAllocated'>,
+  row: Pick<
+    LedgerRow,
+    'allocatedQuantity' | 'assignedQuantity' | 'headroom' | 'overAllocated'
+  >,
 ): AssetStatus {
   if (row.overAllocated) return { label: 'Over-allocated', tone: 'danger' };
+  if (row.allocatedQuantity === 0 && row.assignedQuantity === 0)
+    return { label: 'Empty', tone: 'neutral' };
   if (row.allocatedQuantity > 0 && row.headroom === 0)
     return { label: 'Fully allocated', tone: 'warn' };
   return { label: 'Headroom', tone: 'ok' };

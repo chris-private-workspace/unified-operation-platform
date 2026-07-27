@@ -1,5 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
@@ -102,19 +115,29 @@ export class LicenseController {
   /**
    * Per-OpCo ledger read-model (BE-ledger-read / W14). Read GET → also allows
    * OPCO_IT; scopeWhere restricts OPCO_IT to its own OpCo (AUTH-3a).
+   * CH-008: 0/0 rows are excluded by default; ?includeEmpty=true brings them
+   * back (mirrors the /admin/opcos ?includeInactive convention).
    */
   @Get('ledger')
   @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
+  @ApiQuery({ name: 'includeEmpty', required: false, enum: ['true', 'false'] })
   @ApiOkResponse({ type: [LedgerRowDto] })
-  listLedger(@CurrentUser() actor: AuthUser): Promise<LedgerRowDto[]> {
-    return this.ledgerRead.listLedger(actor);
+  listLedger(
+    @CurrentUser() actor: AuthUser,
+    @Query('includeEmpty') includeEmpty?: string,
+  ): Promise<LedgerRowDto[]> {
+    return this.ledgerRead.listLedger(actor, includeEmpty === 'true');
   }
 
   @Get('ledger/stats')
   @Roles(Role.ADMIN, Role.REGIONAL, Role.OPCO_IT)
+  @ApiQuery({ name: 'includeEmpty', required: false, enum: ['true', 'false'] })
   @ApiOkResponse({ type: LedgerStatsDto })
-  ledgerStats(@CurrentUser() actor: AuthUser): Promise<LedgerStatsDto> {
-    return this.ledgerRead.ledgerStats(actor);
+  ledgerStats(
+    @CurrentUser() actor: AuthUser,
+    @Query('includeEmpty') includeEmpty?: string,
+  ): Promise<LedgerStatsDto> {
+    return this.ledgerRead.ledgerStats(actor, includeEmpty === 'true');
   }
 
   /**
