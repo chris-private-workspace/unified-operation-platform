@@ -19,6 +19,13 @@ node_modules/
 
 # === 真實 license 參考數據（H4 敏感 · 唔入 repo）===
 docs/06-reference/02-doc-sample/*.xlsx
+
+# n8n workflow 匯出（SEC-001）。原始匯出曾含明文 WinRM 服務帳號密碼;該處已 scrub,
+# 但呢啲檔仍然帶住內部 email、AI system prompt、基建 hostname 同 n8n credential id,
+# 所以預設唔入 repo。要收返入 repo = 有意識嘅決定(owner 拍板 → 刪呢兩行),
+# 唔應該靠 `git add .` 順手發生 —— 一 commit 就永遠喺 history。
+# 真相 SSOT 係 n8n instance 本身;呢度只係 read-only 參考副本。
+docs/06-reference/03-n8n-workflow/
 dist/
 build/
 coverage/

@@ -367,6 +367,36 @@ failed, reason: self-signed certificate in certificate chain
 
 ---
 
+## Day 2(續 3)— 2026-07-27:SEC-001(phase 收官後嘅安全跟進)
+
+### 事實查證先行 —— 兩個問題定咗成件事嘅性質
+
+1. **`git log --all -- docs/06-reference/03-n8n-workflow` = 零 commit** ⇒ 從來冇入過 history,**唔使改寫歷史**。(對比:`docs/06-reference` 其他子目錄有 4 個 commit,所以**唔可以由「父目錄入過」推論**。)
+2. **全目錄掃 10 個 JSON,52 處命中,只有一處係真 secret。** 掃描器刻意只報**位置 + 類型 + 長度,絕不回顯值**。其餘 51 處係:n8n credential **reference**(得 id + name)· 內部 email 地址 · 刻意嘅 `CHANGE_ME` placeholder · `nodeCredentialType`(誤報,值係 type 名 `serviceNowBasicApi`)。
+
+真 secret 精確位置:`1002` → node `Execute Command (Setup ABW Share Folder) (PRD)2`(**disabled**)→ `parameters.command` 第 12 行 —— Python `winrm.Session(..., auth=('<25 字元帳號>', '<12 字元密碼>'), ...)`。
+
+> **一個值得記低嘅教訓**:我原本個掃描器嘅 pattern(`ConvertTo-SecureString` / `-AsPlainText`)**冇**命中佢 —— 因為密碼係 Python tuple,唔係 PowerShell。最後係靠 `corp-account-upn` 間接指到嗰個 node,再用**遮罩輸出**(所有 >3 字元字串 literal 打格)睇結構先定位到。⇒ **單靠「secret 應該長成點」嘅 pattern 一定會漏**,要有第二條路(睇結構,唔係只睇值)。
+
+### 做咗兩樣 + 明確唔做一樣
+
+| | 動作 | 驗證 |
+|---|---|---|
+| ✅ **scrub** | `auth=(...)` 兩個值 → `<<SCRUBBED_WINRM_USER>>` / `<<SCRUBBED_WINRM_PASSWORD>>` | script **命中恰好 1 處先肯寫**(≠1 即 exit 2 拒寫 —— 靜靜部分 scrub 比唔 scrub 更差);寫完 re-read:**53 個 node 原封 · JSON 仍 parse**;獨立 Grep 全目錄 `winrm.Session` / `auth=(` **只此一處且已是 placeholder** |
+| ✅ **gitignore** | `.gitignore` 加 `docs/06-reference/03-n8n-workflow/` | 🔴 **最強證據:`git add -A --dry-run` 而家只會 stage `.gitignore`** —— 連 `git add .` 都再拉唔到嗰個目錄 |
+| ❌ **rotate** | **冇做,亦做唔到** | AD 服務帳號密碼要喺 AD / n8n credential store 改,平台側零途徑。**留返 Chris / IT**。⚠️ scrub 只清咗檔案,**清唔到「已洩漏」呢件事** |
+
+### 點解係「scrub + gitignore」而唔係「scrub + commit 消毒版」
+
+呢個決定**唔對稱**,所以行 fail-closed 嗰邊:
+
+- gitignore 之後想收返入 repo → **刪一行**就得,可逆。
+- 一旦 commit 咗 → 10 個 workflow 入面嘅內部 email、26KB AI system prompt、基建 hostname、n8n credential id **永遠喺 history**,要清就要改寫歷史。
+
+而且該目錄嘅**真相 SSOT 係 n8n instance 本身**,repo 入面只係 read-only 參考副本 —— 唔入 repo 冇失去 source of truth。理由已寫入 `.gitignore` 註解,唔靠人記住。
+
+---
+
 ## Retro — 2026-07-27
 
 ### What worked
@@ -400,7 +430,7 @@ failed, reason: self-signed certificate in certificate chain
 | C3 | **各環境補 OpCo `RAPO/IT (RDC2)`**(本機 dev DB / UAT / prod 各一次,走 `POST /admin/opcos`) | 平台 ops | deploy checklist |
 | C4 | `RAPO/IT (RDC2)` allocated = 0 → **ADR-0016 預算 gate 上線前要設 allocation**,否則該 OpCo 一單都落唔到 | 平台 | ADR-0016 實作 phase |
 | C5 | **OQ-4**:SN `License` variable 實際值仍未知 —— 第一張真單嘅 4xx 會自報 | — | 屆時揀 (i) 常數表 /(ii) schema 加欄 |
-| C6 | 🔴 **`docs/06-reference/03-n8n-workflow/` 仍 untracked 且未 gitignore** —— `1002` 含明文 WinRM 服務帳號密碼。三個 commit 均刻意排除。**commit 前必須 scrub;帳號建議照 rotate。絕不可 `git add .`** | **Chris** | 未排期 |
+| C6 | ~~🔴 `docs/06-reference/03-n8n-workflow/` 仍 untracked 且未 gitignore~~ → 🟡 **技術面已封(2026-07-27,見下 SEC-001 段)**;**淨低 rotate 個 WinRM 帳號密碼** —— 平台側代做唔到 | **Chris / IT** | `BACKLOG` **SEC-001** |
 
 ### ADR triggers
 
@@ -422,8 +452,12 @@ failed, reason: self-signed certificate in certificate chain
 
 **9/9 達標**(G6 附 mock 邊界說明)。
 
+### SEC-001
+
+收官後嘅安全跟進,獨立記喺上面 **Day 2(續 3)**。一句總結:**技術面已封**(從來冇入過 history + 已 scrub + 已 gitignore),**淨低 rotate 要 Chris / IT 做**。
+
 ### Phase status
-- Commits:`6bc32c8`(ADR + F1)· `9b5b2b3`(F1b/F2/F3)· `3a04a53`(F4)· closeout(本次)
+- Commits:`6bc32c8`(ADR + F1)· `9b5b2b3`(F1b/F2/F3)· `3a04a53`(F4)· `68fc5dc`(收官)· SEC-001(本次)
 - `plan.md` / `checklist.md` / `progress.md` frontmatter 已 flip `closed`
 - BACKLOG synced(R7)
 - Phase W37 kickoff trigger:**己 —— `LicenseOperationsProvider` + `GraphLicenseProvider`(純重構,零行為改變)**
