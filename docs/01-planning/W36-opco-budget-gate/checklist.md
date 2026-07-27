@@ -23,7 +23,8 @@ last_updated: 2026-07-27
 - [x] `AssignLineItemDto` 加 `budgetOverrideReason?: string` + `@MinLength(10)`;service 再 trim 擋純空白(DTO 擋唔到 10 個空格)
 - [x] 非 ADMIN 帶該欄 → **403**(唔靜靜忽略)
 - [x] `OPCO_IT` / `REGIONAL` 撞預算 → **一律 400,零 override 路徑**(D3)
-- [ ] 🚧 **BLOCKED — `AuditLog` 寫入**:ADR-0016 **D6 同 ADR-0009 白名單機制唔兼容**(`AUDIT_ACTIONS` 冇 `ASSIGN` · `AuditTargetType` 冇 line item / ledger · `AUDIT_METADATA_KEYS` 只有 4 個 ⇒ `budgetOverride`/`allocated`/`assignedBefore` 會被 `pickAuditMetadata` **靜靜丟棄**)。**等 owner 揀 A/B/C**,見 progress Day 1
+- [x] ~~🚧 BLOCKED~~ **`AuditLog` 寫入 — 已解**(owner 揀 **選項 A**,2026-07-27):`audit-fields.ts` 加 action **`assign.budget_override`** + target **`RequestLineItem`**(白名單 `[]`)+ metadata key `budgetOverride`/`allocated`/`assignedBefore`;寫入喺 assign **同一個 transaction**(ADR-0009 D8.1)。偏離 ADR-0016 D6 已入 plan changelog(R3)
+- [x] 「帶咗理由」≠「發生咗 override」:只有 `overBudget && reason` 先寫 audit / 標 timeline(否則 R4 嘅 override 次數會被非事件灌水)
 - [x] Override 成功 → `RequestEvent(ASSIGN)` message 標明(帶 `assignedBefore/allocated` + reason 原文),令 request timeline 睇得出 —— **唔受 audit blocker 影響**,因為 `RequestEvent` 唔行白名單
 - [x] 被擋 → 零 `AuditLog`(**目前自然成立**,因為 audit 寫入未落);**H4:錯誤訊息同 log 都唔含 UPN**
 
@@ -42,9 +43,9 @@ last_updated: 2026-07-27
 - [x] **撞預算時 `getSubscribedSkus` 零 call**(證 D5 位置,唔止證 400)
 - [x] Override:ADMIN 成功 / **OPCO_IT 帶 reason 403** / **REGIONAL 帶 reason 403** / 純空白 reason 400 / timeline message 帶 reason
 - [x] ➕ **override 唔繞過其他 gate**(spec 冇明列但係真風險):唔繞過 **tenant seat gate** · 唔繞過 **Phase 1 sync gate**
-- [ ] 🚧 audit assertion —— 隨上面 audit blocker
+- [x] audit assertion:action/target/actor · **captured metadata 過真 `pickAuditMetadata` 唔被丟棄**(呢條就係 blocker 本身嘅回歸網)· `before`/`after` 為空(零 PII 擴大)· **收 `tx` 唔收 `prisma`**(D8.1)· 被擋零 audit · 平常 assign 零 audit · 未超預算帶 reason 零 audit
 - [x] Graph + ServiceNow **全 mock**,零真 tenant(§3.4)
-- [x] api test **403 passed / 41 suites**(基線 390,+13)+ lint(api)**零 output**
+- [x] api test **410 passed / 41 suites**(基線 390,**+20**)+ lint(api)**零 output**
 
 ## F5 — 部署前置
 

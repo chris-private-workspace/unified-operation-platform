@@ -104,7 +104,54 @@ Chris 答 **OQ1 = 選項 A**(前端 override 入口做)⇒ plan `draft → activ
 
 **未做**:F2 audit(blocked)· F3 前端 · F5 runbook。
 
-**Commit**:`<hash>` — F1 + F2(非 audit)+ F4 gate test
+**Commit**:`845863c` — `feat(fulfilment): W36 F1+F2 — OpCo 預算 assign gate + ADMIN 具名 override(ADR-0016)`
+
+---
+
+## Day 2 — 2026-07-27:**audit blocker 解除(owner 揀 A)** · F2 收齊
+
+Chris 揀 **選項 A** ⇒ 擴 ADR-0009 白名單。呢個係 **ADR-0009 Decision 5 範圍內嘅 privacy decision**,所以要 owner 批,已批。
+
+### 白名單改咗咩(`audit-fields.ts`,三處)
+
+| 位置 | 加入 | 為咗 |
+|---|---|---|
+| `AUDIT_ACTIONS` | `ASSIGN_BUDGET_OVERRIDE: 'assign.budget_override'` | **獨立 action** 係 `/admin/audit` filter「所有 override」嘅唯一手段 = ADR-0016 **R4** 唯一監控面。boolean 埋喺一個繁忙 action 嘅 metadata 裡面唔算監控面 |
+| `AuditTargetType` + 白名單 | `RequestLineItem: []` | **event-only,跟 `OutboundFailure` 先例**。line item 掛住嘅 request 帶 target UPN,複製入 audit 等於把 PII 搬去一個**唔同讀權限**嘅表(audit 係 ADMIN-only) |
+| `AUDIT_METADATA_KEYS` | `budgetOverride` · `allocated` · `assignedBefore` | 令 audit row 自己答得出「超幾多」,唔使 join 返一個讀嘅時候已經變咗嘅 ledger。三個**全部非 PII**(一 boolean + 兩個 seat 數) |
+
+**偏離 ADR-0016 D6 已入 plan changelog(R3)** —— ADR Accepted 唔改內容(§6),所以修正記喺 plan + 本 log + code 註釋三處。
+
+### 寫入位置 = assign **同一個 transaction**
+
+`this.audit.log(tx, …)`,唔係 `prisma`。ADR-0009 **D8.1**:audit row 同佢描述嘅操作要一齊成功一齊失敗,「做咗但冇紀錄」正正係整個 audit trail 存在嘅理由。有一條 test 專門 assert 收到嘅 handle **`toBe(tx)`** 而 **`not.toBe(prisma)`** —— 呢個唔係形式主義,傳錯 handle 係一個完全睇唔出嚟嘅 bug。
+
+### 順手揪出一個我 Day 1 寫錯嘅語意
+
+Day 1 版本用 `overrideReason ?` 判斷要唔要標 override。但 **ADMIN 可以喺完全未超預算嘅 assign 帶理由** —— 咁樣 timeline 會報一個從未發生過嘅 override,而 **R4 靠嘅「override 用得幾密」會被非事件灌水**。改成 `budgetOverridden = overBudget && !!overrideReason`,timeline + audit 兩邊共用。加咗 test。
+
+另外補咗 D6 明文要求嘅 **被擋 `logger.warn`**(H4:只有 ids + counts,**零 UPN**)。
+
+### 最重要嘅一條 test
+
+`every field survives the ADR-0009 whitelist` —— 把 service **實際傳出去**嘅 metadata 餵落**真嘅** `pickAuditMetadata`,assert 四個 key 全部生還。
+
+理由:呢個 blocker 嘅本質係「payload 完全正確,但被白名單靜靜丟棄」。若只 assert `audit.log` 收到咩 args,test **會全綠而 DB 裡面只有 `reason`** —— 即係我 Day 1 差啲 commit 出去嘅嗰個狀態。呢條 test 就係嗰個坑嘅回歸網。
+
+### Gate(真 output)
+
+| | 結果 |
+|---|---|
+| api test | **410 passed / 41 suites**(Day 1 = 403,基線 390 ⇒ **+20**) |
+| `assign.service.spec.ts` | **41 test**(Day 1 = 34) |
+| api lint | **零 output**(先紅過一次,純 prettier 換行,已修) |
+| 🔴 `reconcile.service.ts` | **diff 仍然為空**(R5 守住) |
+
+⚠️ 一個 false alarm 記落嚟:`npx jest` 喺 **repo root** 跑會撞 root babel config ⇒ `import type` 直接 SyntaxError。**唔係 code 壞**,係 cwd 錯。要喺 `apps/api` 跑。
+
+**未做**:F3 前端 override 入口(OQ1 = A 已批)· F5 部署 runbook + SQL · live 拒絕路徑驗。
+
+**Commit**:`<hash>` — F2 audit(白名單擴充 + transaction 內寫入)
 
 ---
 

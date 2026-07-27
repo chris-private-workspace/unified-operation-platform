@@ -147,7 +147,7 @@
 
 | ID | 類別 | 解封條件 |
 |---|---|---|
-| _(空)_ | | |
+| **TD-1** | 🟡 **`/audit` 篩選 option 落後 backend**(`apps/web/src/lib/audit.ts` 手抄 mirror,OD2-A 無 generated client):缺 `outbound.retry` / `outbound.abandon` / `connector.config_update` 三個 action + `OutboundFailure` / `ConnectorConfig` 兩個 target type —— **W31 + W34 加 audit 事件時冇補前端 option**,所以 ADMIN 喺 UI **篩唔到**呢五樣(row 仍然睇得見,只係要自己 scroll)。發現於 **W36**(2026-07-27,加 `assign.budget_override` 時);W36 **只補自己嗰兩個**,冇順手改(§1.3 surgical)。⚠️ 原有嘅 `toHaveLength` 守門**捉唔到呢類漏**(對死數字唔對 backend),已改名 + 註明「唔代表完整」 | 下次動 `/audit` 頁 或 Chris 要求時一次補齊;真正解法係令兩邊唔使手抄(= 重開 OD2-A generated-client 決定,**唔喺技術債裡面偷偷做**) |
 
 ---
 

@@ -14,6 +14,8 @@ import {
 import { graphUnavailable } from '../integration/graph/graph-unavailable';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { assertOpcoScope } from '../auth/opco-scope';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { aggregateRequestStatus } from './stage.service';
 import { OutboundFailureService } from './outbound-failure.service';
 import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
@@ -32,6 +34,7 @@ export class AssignService {
     private readonly graph: GraphService,
     private readonly snow: ServiceNowService,
     private readonly failures: OutboundFailureService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -160,11 +163,21 @@ export class AssignService {
     // (see the increment in the transaction below). D1 keeps that unchanged.
     const overBudget = assignedBefore + 1 > allocated;
     if (overBudget && !overrideReason) {
+      // D6: a block changes no state, so it writes no AuditLog — but it should
+      // not be invisible either. H4: ids and counts only, never the target UPN.
+      this.logger.warn(
+        `OpCo budget gate blocked line item ${lineItemId} (${item.sku.skuPartNumber}, opco ${request.opcoId}): ${assignedBefore}/${allocated}`,
+      );
       throw new BadRequestException(
         `OpCo budget exceeded for ${item.sku.skuPartNumber}: ${assignedBefore} assigned of ${allocated} allocated. ` +
           'Raise the allocation or ask an admin to override.',
       );
     }
+    // An admin may send a reason on an assign that is comfortably within
+    // budget; nothing was overridden then, so neither the timeline nor the
+    // audit trail may claim one was. "Override used" must mean the gate
+    // actually stopped this assign (R4 counts on that number being honest).
+    const budgetOverridden = overBudget && !!overrideReason;
 
     let skus;
     try {
@@ -227,11 +240,33 @@ export class AssignService {
           // ADR-0016 D6: an override has to be visible on the request's own
           // timeline, not only in the admin-only audit log — the people reading
           // this request are the ones who need to know the budget was busted.
-          message: overrideReason
+          message: budgetOverridden
             ? `Assigned ${item.sku.skuPartNumber} — OpCo budget overridden (${assignedBefore}/${allocated}): ${overrideReason}`
             : `Assigned ${item.sku.skuPartNumber}`,
         },
       });
+      // ADR-0016 D6 — the override also lands in the platform audit trail, in
+      // the SAME transaction as the assign it describes (ADR-0009 D8.1: "done
+      // but unrecorded" is the outcome that trail exists to prevent).
+      //
+      // Deviation from D6 as written, owner-approved 2026-07-27: D6 assumed an
+      // existing `ASSIGN` action and a free-form metadata bag, neither of which
+      // the ADR-0009 whitelist has. It is its own action + three whitelisted
+      // non-PII keys instead — see the plan changelog.
+      if (budgetOverridden) {
+        await this.audit.log(tx, {
+          action: AUDIT_ACTIONS.ASSIGN_BUDGET_OVERRIDE,
+          targetType: 'RequestLineItem',
+          targetId: item.id,
+          actorId: actor.id,
+          metadata: {
+            budgetOverride: true,
+            reason: overrideReason,
+            allocated,
+            assignedBefore,
+          },
+        });
+      }
       const siblings = await tx.requestLineItem.findMany({
         where: { requestId: request.id },
         select: { stage: true },

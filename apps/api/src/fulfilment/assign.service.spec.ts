@@ -11,6 +11,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { OutboundFailureService } from './outbound-failure.service';
+import { AuditService } from '../audit/audit.service';
+import {
+  AUDIT_ACTIONS,
+  pickAuditFields,
+  pickAuditMetadata,
+} from '../audit/audit-fields';
 
 // Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
 // `role` matters from W36 on: the budget override is ADMIN-only (ADR-0016 D3).
@@ -42,6 +48,7 @@ describe('AssignService', () => {
   let graph: any;
   let snow: any;
   let failures: any;
+  let audit: any;
 
   // A READY line item wired for a successful assign; individual tests tweak it.
   const readyItem = (over: Record<string, any> = {}) => ({
@@ -119,6 +126,10 @@ describe('AssignService', () => {
     // omitted so the tests below can assert it is (and is NOT) called.
     failures = { record: jest.fn().mockResolvedValue(undefined) };
 
+    // ADR-0016 D6 — the override audit row. Mocked, but the tests below run the
+    // captured payload through the REAL whitelist (see the audit describe).
+    audit = { log: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AssignService,
@@ -126,6 +137,7 @@ describe('AssignService', () => {
         { provide: GraphService, useValue: graph },
         { provide: ServiceNowService, useValue: snow },
         { provide: OutboundFailureService, useValue: failures },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(AssignService);
@@ -499,6 +511,98 @@ describe('AssignService', () => {
         service.assignLineItem('li1', undefined, ADMIN, REASON),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    // An admin may send a reason on an assign that never hit the gate. Nothing
+    // was overridden, so nothing may claim one was — otherwise the "how often
+    // is override used?" number R4 depends on is inflated by non-events.
+    it('a reason on an in-budget assign is not an override', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 3));
+
+      await service.assignLineItem('li1', undefined, ADMIN, REASON);
+
+      expect(audit.log).not.toHaveBeenCalled();
+      expect(
+        tx.requestEvent.create.mock.calls[0][0].data.message,
+      ).not.toContain('overridden');
+    });
+  });
+
+  // ── W36 / ADR-0016 D6 + ADR-0009 — the override in the audit trail ──
+  describe('assignLineItem — budget override audit (D6)', () => {
+    const REASON = 'RHK urgent hire, allocation tops up next week';
+
+    const overrideAndCapture = async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(12, 12));
+      await service.assignLineItem('li1', undefined, ADMIN, REASON);
+      return audit.log.mock.calls[0];
+    };
+
+    it('writes an assign.budget_override row against the line item', async () => {
+      const [, entry] = await overrideAndCapture();
+
+      expect(entry.action).toBe(AUDIT_ACTIONS.ASSIGN_BUDGET_OVERRIDE);
+      expect(entry.targetType).toBe('RequestLineItem');
+      expect(entry.targetId).toBe('li1');
+      expect(entry.actorId).toBe('admin');
+    });
+
+    /**
+     * The blocker this phase hit: a payload can be perfectly formed and still
+     * be dropped on the floor by the ADR-0009 whitelist. Asserting the call
+     * args alone would have gone green while the stored row held only `reason`.
+     * So run the captured metadata through the REAL pickAuditMetadata.
+     */
+    it('every field survives the ADR-0009 whitelist (not silently dropped)', async () => {
+      const [, entry] = await overrideAndCapture();
+
+      expect(pickAuditMetadata(entry.metadata)).toEqual({
+        budgetOverride: true,
+        reason: REASON,
+        allocated: 12,
+        assignedBefore: 12,
+      });
+    });
+
+    // Event-only target, like OutboundFailure: the request behind this line item
+    // carries the target UPN, and the audit table is read by a different (wider
+    // on this axis) audience than the request itself. H4.
+    it('copies no line-item fields into before/after (no PII widening)', async () => {
+      const [, entry] = await overrideAndCapture();
+
+      expect(entry.before).toBeUndefined();
+      expect(entry.after).toBeUndefined();
+      expect(pickAuditFields('RequestLineItem', readyItem())).toBeUndefined();
+    });
+
+    // ADR-0009 D8.1 — the audit row and the assign it describes commit together.
+    // Passing `prisma` instead of `tx` would leave "assigned but unrecorded"
+    // possible, which is the exact outcome the trail exists to prevent.
+    it('writes inside the assign transaction, not outside it', async () => {
+      const [handle] = await overrideAndCapture();
+
+      expect(handle).toBe(tx);
+      expect(handle).not.toBe(prisma);
+    });
+
+    it('writes nothing when the gate blocked the assign (no state changed)', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing on an ordinary in-budget assign', async () => {
+      arrangeHappy();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(audit.log).not.toHaveBeenCalled();
     });
   });
 

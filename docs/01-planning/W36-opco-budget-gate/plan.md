@@ -71,7 +71,7 @@ Overage 分佈(active 組合):最大 8(`RTMAP/POWERAUTOMATE_ATTENDED_RPA` 36→4
   - `AssignLineItemDto` 加 `budgetOverrideReason?: string`(既有 DTO,加一欄;`@MinLength` 守空白)。
   - **ADMIN 專有**:非 ADMIN 帶呢個欄 → **403**(唔可以靜靜忽略 —— 靜靜忽略會令 OPCO_IT 以為 override 成功)。
   - `OPCO_IT` / `REGIONAL` 撞預算 → **一律 400,冇 override 路徑**(D3)。
-  - Override 成功 → `AuditLog`(`action = ASSIGN`,`actorType: 'user'`,`metadata: { budgetOverride: true, reason, allocated, assignedBefore }`)+ `RequestEvent(ASSIGN)` message 標明 override,令 request timeline 睇得出。
+  - Override 成功 → `AuditLog`(**`action = assign.budget_override`** —— 見 changelog 2026-07-27 deviation,ADR-0016 D6 寫嘅 `ASSIGN` 根本唔存在;`actorType: 'user'`,`targetType: 'RequestLineItem'`[白名單 `[]` = event-only],`metadata: { budgetOverride: true, reason, allocated, assignedBefore }`)+ `RequestEvent(ASSIGN)` message 標明 override,令 request timeline 睇得出。
   - 被擋 → **唔寫 AuditLog**(冇狀態改變),只 `logger.warn`(**H4:唔 log UPN**)。
 - **Acceptance criteria**:
   - ADMIN 帶合法理由 + 超預算 → assign 成功,`AuditLog` 一條含 `budgetOverride: true` + reason 原文 + `allocated`/`assignedBefore`
@@ -154,6 +154,9 @@ Overage 分佈(active 組合):最大 8(`RTMAP/POWERAUTOMATE_ATTENDED_RPA` 36→4
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-27 | Initial draft(**draft**) | ADR-0016 Accepted 後開 phase;grounding 重量確認 22 行並**精確化為 16 個 active**;揪出 OQ2 流程斷點 | — |
+| 2026-07-27 | `draft → active`;**OQ1 = 選項 A**(F3 前端 override 入口做) | Chris 拍板。override 係 ADR 明文設計嘅一半,冇 UI 等於半個 feature | **Chris Lai** |
+| 2026-07-27 | 🔴 **偏離 ADR-0016 D6 嘅 audit 形狀**(**owner approved**):`action` 由 D6 寫嘅 `ASSIGN` 改成**新 action `assign.budget_override`**;`targetType` = **新 `RequestLineItem`**(白名單 **`[]`**,event-only);`AUDIT_METADATA_KEYS` **加** `budgetOverride` / `allocated` / `assignedBefore` | D6 三個前提逐字核對後全部唔成立 —— `AUDIT_ACTIONS` **冇** `ASSIGN`、`AuditTargetType` 冇 line item、metadata 白名單只有 4 個 key ⇒ 照 D6 字面寫會令三個數字被 `pickAuditMetadata` **靜靜丟棄**,audit 只剩 `reason`。獨立 action 亦係 **R4 監控**(`/admin/audit` filter 「所有 override」)嘅唯一手段。掂 **ADR-0009 Decision 5**(白名單 = privacy decision)⇒ 已 STOP 並取得 owner 批准;新增三個 key **全部非 PII**(一個 boolean + 兩個 seat 數),`RequestLineItem` 白名單留空 = 唔複製 UPN(跟 `OutboundFailure` 先例) | **Chris Lai** |
+| 2026-07-27 | F2 實作補一個 plan 冇明列嘅語意:**「帶咗理由」≠「發生咗 override」** —— 只有 `overBudget && reason` 先算 | ADMIN 可以喺完全未超預算嘅 assign 帶理由;若照「有 reason 就當 override」寫,timeline 同 audit 都會報一個從未發生嘅 override,**R4 靠嘅 override 次數會被非事件灌水** | — (spec-aligned) |
 
 ---
 
