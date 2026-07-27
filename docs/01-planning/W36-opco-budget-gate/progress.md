@@ -155,6 +155,52 @@ Day 1 版本用 `overrideReason ?` 判斷要唔要標 override。但 **ADMIN 可
 
 ---
 
+## Day 3 — 2026-07-27:**F3 前端 override 入口完成 + live 拒絕路徑驗**
+
+### 設計上三個唔顯然嘅決定
+
+| | 決定 | 點解 |
+|---|---|---|
+| **入口只喺冇 headroom 時出現** | `mayOverride && canAssign && budget.exhausted` | 一個成日喺度嘅 override 掣,就係「派 license 嘅第二個正常方法」—— 正正係 **R4** 講嗰件事 |
+| **刻意唔 disable「Assign now」** | 正路照舊可撳 | `exhausted` 來自 **cached** ledger。用 client 數字擋正路 = 一個 stale 數字可以封死一個合法 assign;而 `capacity.ts` 檔頭本身寫住「backend 係唯一權威」。判斷錯最多多一粒掣,唔會錯 assign |
+| **新 predicate `canOverrideBudget`** | 唔複用 `canSeeAdminNav`(今日同值) | 跟 `canRepairOutbound` 已立嘅先例:「可唔可以開 admin console」同「可唔可以超支」係兩個問題,夾埋一個就會一改郁兩樣 |
+
+Dialog 另外寫咗 **OQ2 出路**(買 licence 唔會自動加 allocated → 去 License assets 改)。唔寫嘅話,啱啱行完 procurement 嘅人只會學識「撳 override」,永遠唔知要改嘅係 allocation。
+
+### Live 驗證 —— 意外收穫:唔使造格
+
+原本 plan 寫「dev PATCH 造一個剛好用盡嘅格再還原」。查 dev DB 之後發現**唔使**:已經有兩條 READY line item **完全冇 ledger row**(allocated 0 ⇒ D1 必擋)。⇒ **零 DB 改動、零還原風險**。
+
+| 驗證 | 真 output |
+|---|---|
+| ADMIN + `"urgent"` | **400** `budgetOverrideReason must be longer than or equal to 10 characters`(DTO) |
+| ADMIN + 12 個空格 | **400** `cannot be blank — the reason is what makes the override auditable`(**證 DTO 擋唔到、service `trim` 先擋到**) |
+| **REGIONAL + 合法理由** | **403** `Only an admin may override the OpCo budget` |
+| **REGIONAL 同一 endpoint 唔帶該欄** | **400**(findUser)⇒ **403 真係嚟自 override 規則,唔係 endpoint 權限**。冇呢個對照組,上面條 403 咩都證明唔到 |
+| Browser A/B(同一條 line item) | ADMIN → `Assign now` + `Override budget`;**REGIONAL → 只有 `Assign now`**,全頁零 Override 掣 |
+| 三路判別 | 有 headroom(36/43)→ 冇 Override · 冇 allocation 但唔係 READY → 冇 Override · 冇 allocation + READY → **有** Override |
+| Dialog | 空 → Confirm disabled · `urgent` → 仍 disabled +「At least 10 characters」· 合法 → enabled;`0/0` → `1/0` mono;**light + dark 都睇過** |
+| 端到端 | Confirm → PATCH **400** → toast 逐字顯示 backend 訊息 → **dialog 冇閂、理由保留** |
+| 事後 DB | line item 仍 `READY` · `assignedAt` 空 · `assign.budget_override` audit **0 行** · 無新 ledger row ⇒ **零副作用** |
+
+`/me` 兩次都真驗過(run-as 生效 = `REGIONAL`,還原後 = `ADMIN`)—— memory 記低過 inactive user 會**靜靜 fallback 去 ADMIN**,唔驗 `/me` 就會攞住一個假對照組落結論。run-as 只傳 shell env,**冇改 `.env`**(§4.4)。
+
+### 🚧 一個驗唔到嘅嘢,唔當佢驗到
+
+**budget gate 本身嘅 400 喺 dev live 驗唔到。** D5 把 gate 放喺 `graph.findUser` **之後**,而 seed 嘅 UPN 唔存在於真 tenant ⇒ 永遠停喺「Target user not found」,行唔到落去。
+
+用真人 UPN 硬闖係做得到嘅,但**唔做**:嗰個做法一旦 gate 有 bug,就會**真派一個 licence 畀一個真人** —— 即係 R6 本體。⇒ 呢半截依賴 F4 嘅 mock test,並**移入 F5 runbook 做部署後第一項檢查**(UAT 有真 synced user)。
+
+### Gate(真 output)
+
+web **180 passed / 21 files**(F2 後 167 → **+13**)· web lint 零 output · `tsc --noEmit && vite build` 過 · `reconcile.service.ts` diff 仍為空。
+
+**未做**:F5 runbook + SQL · ADR-0016 Decision 逐條 closeout 核對。
+
+**Commit**:`<hash>` — F3 前端 override 入口
+
+---
+
 ## Retro(填於 closed)
 
 _(待實作)_

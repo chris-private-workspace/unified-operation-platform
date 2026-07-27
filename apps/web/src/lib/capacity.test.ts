@@ -3,6 +3,7 @@ import {
   buildLedgerIndex,
   buildTenantIndex,
   opcoCapacity,
+  overrideReasonError,
   tenantCapacity,
 } from './capacity';
 import type { LedgerRow, TenantSkuRow } from './api-types';
@@ -155,5 +156,42 @@ describe('tenantCapacity', () => {
     const cap = tenantCapacity(index, 'e5');
     expect(cap.available).toBe(0);
     expect(cap.exhausted).toBe(true);
+  });
+});
+
+// W36 / ADR-0016 D3 — must agree with the backend's two rules, or the dialog
+// enables Confirm on something the service then rejects with a 400.
+describe('overrideReasonError', () => {
+  it('accepts a real reason', () => {
+    expect(
+      overrideReasonError('RHK urgent hire, allocation tops up next week'),
+    ).toBeNull();
+  });
+
+  it('rejects an empty reason', () => {
+    expect(overrideReasonError('')).toBe('A reason is required.');
+  });
+
+  // The exact case the DTO alone cannot catch: ten spaces clear @MinLength(10),
+  // which is why assign.service.ts trims before deciding. If this mirror ever
+  // stops trimming, the dialog would offer Confirm on a blank justification.
+  it('rejects whitespace-only, however long', () => {
+    expect(overrideReasonError('            ')).toBe('A reason is required.');
+  });
+
+  it('rejects a reason shorter than the backend minimum', () => {
+    expect(overrideReasonError('urgent')).toContain('At least 10 characters');
+  });
+
+  // Boundary in both directions — an off-by-one here disagrees with
+  // @MinLength(10) on exactly the value an operator is most likely to type.
+  it('accepts exactly the minimum and rejects one below it', () => {
+    expect(overrideReasonError('a'.repeat(10))).toBeNull();
+    expect(overrideReasonError('a'.repeat(9))).not.toBeNull();
+  });
+
+  // The length that counts is the TRIMMED one, matching the service.
+  it('measures the trimmed length, not the raw one', () => {
+    expect(overrideReasonError('   urgent   ')).not.toBeNull();
   });
 });
