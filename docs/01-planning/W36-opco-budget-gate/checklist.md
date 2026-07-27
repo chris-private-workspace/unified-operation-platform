@@ -1,14 +1,14 @@
 ---
 phase: W36-opco-budget-gate
 plan_ref: ./plan.md
-status: active           # draft | active | closed
+status: closed           # draft | active | closed
 last_updated: 2026-07-27
 ---
 
 # W36 — Checklist
 
 > 由 `plan.md` §3 deliverables + §4 acceptance 衍生。每項 ≤ 1-2h。
-> ⚠️ **全部鎖住** —— plan 仍係 `draft`,等 Chris approve + 答 **OQ1** 先開工(PROCESS R1)。
+> ✅ **CLOSED**(2026-07-27)—— F1–F5 全交付。唯一未閉環項已交接落 runbook 步 4(部署後檢查),見 Verification 段。
 
 ## F1 — Backend gate
 
@@ -77,17 +77,17 @@ last_updated: 2026-07-27
 - [x] 🚧→✅ **budget gate 本身嘅 400 喺 dev live 驗唔到**,**已交接**:D5 把 gate 放喺 `graph.findUser` **之後**,而 seed 嘅 UPN 唔存在於真 tenant ⇒ 永遠停喺「Target user not found」。**唔用真人 UPN 硬闖**(一旦 gate 有 bug 就會真派 licence 畀真人 = R6 本體)。⇒ 依賴 F4 mock test,**已寫入 runbook 步 4 做部署後第一項檢查**(含事後零副作用抽查 + 唔對就回滾)
 - [x] ⚠️ **絕不打真 Graph 完成 assign**(R6)—— 全程零 `assignLicense`;只有 `findUser` 讀取(read-only,而且返 not-found)
 - [x] `reconcile.service.ts` **diff 為空**(R5)
-- [ ] ADR-0016 每個 Decision 逐條對過,冇靜靜偏離;有偏離 → plan changelog + 問 owner(**D6 已記,見 changelog**;其餘待 closeout 逐條過)
+- [x] **ADR-0016 D1–D7 逐條核對完成**(見 progress Day 5 表)—— **一處偏離 = D6**,已 owner approved + plan changelog;其餘六條逐字相符
 
 ## Cross-Cutting
 
-- [ ] Daily commit 對應 `progress.md` Day-N(R2)
-- [ ] Conventional Commits + scope(`feat(fulfilment):` / `test(fulfilment):` / `docs(deploy):`)
-- [ ] **零 schema 改動** —— 若發現要改 → **STOP** 問 owner(H1 會重新觸發)
-- [ ] **零新 dependency**(H2)
-- [ ] `BACKLOG.md` 同步(R7)
-- [ ] `RISK_REGISTER` —— 若 R1/R2 演化成真風險則登記
-- [ ] `progress.md` closeout + status → `closed`
+- [x] Daily commit 對應 `progress.md` Day-N(R2)—— Day 0/1/2/3/4/5 各有 hash
+- [x] Conventional Commits + scope(`feat(fulfilment)` / `feat(audit)` / `feat(web)` / `docs(deploy)` / `docs(planning)`)
+- [x] **零 schema 改動** —— `apps/api/prisma/schema.prisma` 全 phase diff **0**
+- [x] **零新 dependency**(H2)—— 三個 `package.json` 全 phase diff **0**
+- [x] `BACKLOG.md` 同步(R7)—— W36 行 + `Budget-gate` 收官 + CH-008 R1 升級 + 路線更新 + **TD-1** 技術債登記
+- [x] `RISK_REGISTER` —— **新增 R4**:`allocated` 由顯示數字變成會擋人嘅 gate,但**冇任何自動流程令佢跟上現實** ⇒ 最短路徑係 override 而唔係改數字,長期會令 gate 名存實亡。三項 mitigation **全屬程序性、零技術強制**,故 status ⚠️ Open。**R3 狀態不變**(仍 ⚠️ Open,mitigation = ADR-0015 未實作)
+- [x] `progress.md` closeout + status → `closed`
 
 ---
 

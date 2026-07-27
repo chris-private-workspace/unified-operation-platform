@@ -2,7 +2,7 @@
 phase: W36-opco-budget-gate
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: draft           # draft | active | closed
+status: closed          # draft | active | closed
 ---
 
 # W36 — Progress
@@ -235,10 +235,66 @@ web **180 passed / 21 files**(F2 後 167 → **+13**)· web lint 零 output · `
 
 **未做**:ADR-0016 Decision 逐條 closeout 核對 · BACKLOG 同步 · phase closeout。
 
-**Commit**:`<hash>` — F5 preflight SQL + rollout runbook
+**Commit**:`a9c4038` — `docs(deploy): W36 F5 — OpCo 預算 gate preflight SQL + rollout runbook(ADR-0016)`
 
 ---
 
-## Retro(填於 closed)
+## Day 5 — 2026-07-27:**ADR-0016 D1–D7 逐條核對 + closeout**
 
-_(待實作)_
+### 逐條核對(對住 ADR 原文,唔靠記憶)
+
+| D | ADR 原文要求 | 實作 | 判定 |
+|---|---|---|---|
+| **D1** | `assigned + 1 > allocated` → 拒;**row 唔存在 = allocated 0 ⇒ 擋**;`+1` 而唔係 `+quantity` | `assign.service.ts:164` `assignedBefore + 1 > allocated`;`ledger?.allocatedQuantity ?? 0`;`increment: 1` 不變 | ✅ |
+| **D2** | 唔 grandfather、唔加豁免欄;條件天然涵蓋既有超支 | 零 schema、零豁免路徑 | ✅ |
+| **D3** | OPCO_IT / REGIONAL **永遠冇** override;ADMIN 必須具名;非 ADMIN 帶欄 → **403** | `actor.role !== ADMIN` → `ForbiddenException`;live REGIONAL 403 + 同 actor 唔帶欄 400 對照 | ✅ |
+| **D4** | 擋用 **400**;非 ADMIN 帶欄用 **403**;message 帶實數 | 兩個 code 各就各位;message 逐字 = ADR 樣板(`assign.service.ts:172`) | ✅ |
+| **D5** | 次序 `usageLocation` → **OpCo 預算** → tenant seat(Graph) | 位置正確,並有一條 test assert **撞預算時 `getSubscribedSkus` 零 call**(唔止 assert 400) | ✅ |
+| **D6** | `action = ASSIGN`(既有)+ 自由 metadata;被擋唔寫 audit 只 `logger.warn`;`RequestEvent` 標明 | **偏離**:D6 三個前提逐字核對後全部唔成立 ⇒ 擴 ADR-0009 白名單。被擋 `logger.warn`(零 UPN)✅、`RequestEvent` ✅ | 🔴 **偏離**,owner approved + changelog |
+| **D7** | 唔改 `reconcile` / allocation import / schema;唔做自動轉 procurement | 四條硬邊界 **diff 全部 0**(含三個 `package.json`) | ✅ |
+
+**七條入面六條逐字相符,一條(D6)偏離且已 owner approved 並入 changelog。** 冇一條係「靜靜偏離」。
+
+### Phase gate 總結
+
+| | 開始 | 結束 |
+|---|---|---|
+| api test | 390 | **410**(+20) |
+| web test | 151 | **180**(+29) |
+| lint(api / web) | — | 兩邊**零 output** |
+| build | — | `tsc --noEmit && vite build` 過 |
+| schema / dependency | — | **兩者 diff 皆 0** |
+| `reconcile.service.ts` | — | **diff 0**(R5,對帳方案甲原封) |
+
+---
+
+## Retro
+
+### 做啱咗嘅
+
+**1. 「SQL 真跑要對得返 plan §2」呢條 acceptance 係本 phase 最抵嘅一條。** 佢冇證實 plan,佢**證偽咗 plan** —— inactive 12 唔係 6、active 影響面 10 唔係 16,而且順藤摸到根因係 `skuPartNumber` 唔唯一(§13)。若果當初寫成「跑一次 SQL 睇下輸出」,呢個錯會原封不動印上 runbook,操作員拎住個錯名單去通知。**acceptance 要寫成「同一個獨立來源對數」,唔係「跑完睇下」。**
+
+**2. 每個 live 驗證都配一個對照組。** 單獨一條「REGIONAL → 403」其實咩都證明唔到(可能 endpoint 本身就唔畀 REGIONAL)。加咗「同一 actor、同一 endpoint、唔帶該欄 → 400」先真係鎖死「403 嚟自 override 規則」。同樣道理:browser 驗 override 掣唔係淨睇 ADMIN 見到,而係**三路判別**(有 headroom / 冇 allocation 但唔 READY / 冇 allocation + READY)。
+
+**3. 驗唔到就寫「驗唔到」,並交接落去。** gate 嘅 400 喺 dev 行唔到(D5 排喺 `findUser` 之後)。用真人 UPN 硬闖係做得到嘅,但嗰個測試設計係 **fail-dangerous** —— 一旦 gate 有 bug 就會真派 licence 畀真人。寧可寫入 runbook 步 4 做部署後第一項檢查。
+
+### 學到 / 下次要小心
+
+**1. 起草 ADR 時引用另一份 ADR 嘅機制,一定要逐字打開嗰個檔。** D6 三個前提(`ASSIGN` action 存在 / target 可以係 line item / metadata 自由)**全部係憑印象寫嘅**,三個都錯。照字面實作嘅結果會係:test 全綠、code review 睇落合理、但 DB 入面只有 `reason`,其餘三個數字**無聲消失**。呢類錯誤唯一捉得到嘅方法係**把真嘅 whitelist 函數拉入 test**,而唔係 assert mock 收到咩 args —— 已加 `every field survives the ADR-0009 whitelist` 呢條 test 做回歸網。
+
+**2. Day 1 寫咗一個「有 reason 就當 override」嘅語意錯,Day 2 先捉到。** ADMIN 可以喺完全未超預算嘅 assign 帶理由 ⇒ timeline 同 audit 都會報一個從未發生過嘅 override,而 **R4 靠嘅 override 次數會被非事件灌水**。教訓:**flag 嘅命名要迫自己諗清楚語意** —— `overrideReason` 係「有冇填」,`budgetOverridden` 先係「有冇發生」,兩者唔同。
+
+**3. 「順手修」嘅界線今次守住咗,但要記低點解。** 發現 `/audit` 篩選 option 由 W31/W34 起就落後 backend 五樣,而原本嗰條 `toHaveLength(14)` 守門**結構上捉唔到**(對死數字唔對 backend)。只補咗自己嗰兩個 + 改咗 test 名唔再宣稱完整 + 登記 **TD-1**。理由:補齊其餘五個係另一個 change 嘅 scope(§1.3),但**留低一條講緊大話嘅 test 唔可以接受**。
+
+**4. plan 嘅 grounding 只掃「已存在嘅 row」係一個盲點。** 完全冇 ledger row 嗰批喺 22 行名單裡面**完全隱形**,但 D1 之下佢哋先係最嚴重(每次 assign 都擋,唔止下一次)。下次寫 grounding 要問:**「有冇一類係因為冇記錄所以查唔到?」**
+
+### Carry-over
+
+| | 項目 | 去向 |
+|---|---|---|
+| 🚧 | gate 400 嘅 live 驗證(要真 synced user) | runbook 步 4,部署後第一項 |
+| 🟡 | **TD-1** `/audit` 篩選 option 落後 backend 5 樣 | BACKLOG E 區 |
+| 🟡 | **CH-008** toggle 由「方便」升級為「必需」(gate 已上線) | BACKLOG CH-008 行已註 |
+| 🚧 | CH-009 carry-over:CH-008 落地後重跑 §2.4 交互驗 | CH-009 spec |
+| ⚠️ | **RISK R3** 仍 ⚠️ Open —— mitigation = ADR-0015,**Accepted 但未實作** | 下一個候選 phase |
+| 📌 | ADR-0016 Consequences 自己列嘅「22 行 over-budget 應查成因」 | 獨立 data review,唔混入實作 |

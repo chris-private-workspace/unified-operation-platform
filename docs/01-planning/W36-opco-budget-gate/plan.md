@@ -4,7 +4,7 @@ name: "OpCo 預算 assign 硬 gate + ADMIN 具名 override(ADR-0016 落地)"
 sprint_week: W36
 start_date: 2026-07-27
 end_date: 2026-07-29          # planned, may slip with changelog log
-status: active                # draft | active | closed —— approved 2026-07-27(OQ1 = 選項 A)
+status: closed                # draft | active | closed —— approved 2026-07-27(OQ1 = 選項 A);closed 2026-07-27
 spec_refs:
   - ADR-0016(**Accepted 2026-07-26** — 本 phase 就係佢嘅落地;Decision D1-D7 = 實作規格)
   - DESIGN.md §5(ledger 兩層數字;line 100 已同步「純顯示 ❌ 已不成立」)
@@ -120,12 +120,13 @@ Overage 分佈(active 組合):最大 8(`RTMAP/POWERAUTOMATE_ATTENDED_RPA` 36→4
 
 ## 4. Acceptance(phase 級)
 
-- [ ] F1-F5 各自 acceptance 全過(F3 視 OQ1)
-- [ ] api test ≥ 390 + 新分支;lint 零 output
-- [ ] **live 對照**:ADMIN override 成功 / OPCO_IT 400 / REGIONAL 403(帶 reason)—— **用 scratch DB 或 dev DB 造一個「剛好用盡」嘅格並還原**,唔可以打真 Graph 完成 assign ⇒ assign 成功那半只可以靠 mock test,live 只驗 **gate 拒絕**路徑(拒絕發生喺 Graph call 之前,所以零 vendor 流量)
-- [ ] `reconcile` 零改動(diff 為證)
-- [ ] 部署 SQL 真跑過
-- [ ] ADR-0016 冇任何 Decision 被靜靜偏離;有偏離 → plan changelog + 問 owner
+- [x] F1-F5 各自 acceptance 全過(OQ1 = A ⇒ F3 做咗)
+- [x] api test **410**(≥ 390 ✅)· web **180**;兩邊 lint 零 output;`tsc && vite build` 過
+- [x] **live 對照**:REGIONAL 帶 reason **403** / 同 actor 唔帶欄 **400**(對照組)/ DTO 太短 400 / 空白 400 / browser ADMIN vs REGIONAL override 掣有無。**唔使造格** —— dev 天然有冇 ledger row 嘅 READY line item ⇒ **零 DB 改動**。全程零 `assignLicense`
+- [x] 🚧 **例外一項**:`OpCo budget exceeded` 嗰個 400 本身 dev 驗唔到(D5 排喺 `graph.findUser` 之後,seed UPN 唔喺真 tenant)⇒ 依賴 F4 mock test + **runbook 步 4 部署後檢查**。**冇用真人 UPN 硬闖**(fail-dangerous)
+- [x] `reconcile` 零改動(全 phase diff **0**)
+- [x] 部署 SQL 真跑過(dev,兩次)—— **並且捉到 §2 grounding 自己錯**
+- [x] ADR-0016 Decision 逐條核對:**D1-D5 / D7 逐字相符,D6 偏離**且 owner approved + changelog(見 progress Day 5 表)
 
 ## 5. Open Questions
 
