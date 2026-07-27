@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { roleScopeLabel, canSeePlatform, canSeeAdminNav } from './roles';
+import {
+  roleScopeLabel,
+  canSeePlatform,
+  canSeeAdminNav,
+  canOverrideBudget,
+} from './roles';
 import type { OpcoRef } from './api-types';
 
 const RHK: OpcoRef = { code: 'RHK', displayName: 'Ricoh Hong Kong' };
@@ -43,5 +48,23 @@ describe('canSeeAdminNav (AUTH-3b)', () => {
   });
   it('undefined (loading) → false (fail-safe)', () => {
     expect(canSeeAdminNav(undefined)).toBe(false);
+  });
+});
+
+describe('canOverrideBudget (W36 / ADR-0016 D3)', () => {
+  it('ADMIN only', () => {
+    expect(canOverrideBudget('ADMIN')).toBe(true);
+    expect(canOverrideBudget('OPCO_IT')).toBe(false);
+  });
+
+  // D3 excludes REGIONAL on purpose, even though it can see every OpCo. This
+  // asserts the decision so widening it is a visible, deliberate edit (and a
+  // new ADR) rather than a one-word slip.
+  it('excludes REGIONAL deliberately, not by oversight', () => {
+    expect(canOverrideBudget('REGIONAL')).toBe(false);
+  });
+
+  it('undefined (loading) → false (fail-safe)', () => {
+    expect(canOverrideBudget(undefined)).toBe(false);
   });
 });

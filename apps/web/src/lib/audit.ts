@@ -21,6 +21,10 @@ export const AUDIT_ACTION_OPTIONS = [
   'catalog.update',
   'allocation.import',
   'drift.resolve',
+  // W36 / ADR-0016 R4 — being able to filter "every budget override" IS the
+  // monitoring surface the override was granted on. Without this option an
+  // admin can only find them by scrolling.
+  'assign.budget_override',
 ] as const;
 
 /** Target types the backend whitelists, for the filter select. */
@@ -30,6 +34,7 @@ export const AUDIT_TARGET_TYPE_OPTIONS = [
   'SkuCatalog',
   'DriftAlert',
   'AllocationImport',
+  'RequestLineItem',
 ] as const;
 
 /**
@@ -44,6 +49,10 @@ export function auditActionTone(action: string): BadgeTone {
       return 'warn';
     case 'auth.locked':
       return 'danger';
+    // Breaking an OpCo's budget on purpose is not routine — it should read as
+    // something to look at, same tint as a privilege change (ADR-0016 R4).
+    case 'assign.budget_override':
+      return 'warn';
     case 'drift.resolve':
       return 'ok';
     case 'auth.login_success':

@@ -15,18 +15,31 @@ import { LedgerRowDto, LedgerStatsDto } from './dto/ledger-read.dto';
 export class LedgerReadService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Scope + active-only filter shared by both reads. */
-  private where(actor: AppUser) {
+  /**
+   * Scope + active-only filter shared by both reads. CH-008: a 0/0 row carries
+   * no information — the row itself is kept (never hard-deleted; LedgerAdjustment
+   * cascades) but is excluded by default. The exclusion lives INSIDE this shared
+   * where() on purpose: an extra query would be a second place scopeWhere could
+   * be forgotten (CH-008 R4). `allocated > 0, assigned = 0` is NOT empty — that
+   * means "budget set, nobody assigned yet", which is real information (D1).
+   */
+  private where(actor: AppUser, includeEmpty: boolean) {
     return {
       ...scopeWhere(actor),
       sku: { active: true },
       opco: { active: true },
+      ...(includeEmpty
+        ? {}
+        : { NOT: { allocatedQuantity: 0, assignedQuantity: 0 } }),
     };
   }
 
-  async listLedger(actor: AppUser): Promise<LedgerRowDto[]> {
+  async listLedger(
+    actor: AppUser,
+    includeEmpty = false,
+  ): Promise<LedgerRowDto[]> {
     const rows = await this.prisma.opcoSkuLedger.findMany({
-      where: this.where(actor),
+      where: this.where(actor, includeEmpty),
       include: {
         opco: { select: { code: true, displayName: true } },
         sku: {
@@ -54,9 +67,12 @@ export class LedgerReadService {
     }));
   }
 
-  async ledgerStats(actor: AppUser): Promise<LedgerStatsDto> {
+  async ledgerStats(
+    actor: AppUser,
+    includeEmpty = false,
+  ): Promise<LedgerStatsDto> {
     const rows = await this.prisma.opcoSkuLedger.findMany({
-      where: this.where(actor),
+      where: this.where(actor, includeEmpty),
       select: {
         opcoId: true,
         skuCatalogId: true,

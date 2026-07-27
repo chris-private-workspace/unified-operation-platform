@@ -76,7 +76,7 @@ Unified Operation Platform 係一個**自建嘅 IT operation / support 管理與
 | 已通過階段 | W01–W27 + CH-001~004 + BUG-001~003(**W28 交付完成待 closeout**) | phase folder + git log |
 | Accepted ADR | **9 份** | `docs/adr/` |
 
-**未完成嘅主要事項**:生產部署未做;真 SSO 端到端未驗(卡外部);ServiceNow / n8n 對外合約仍屬代表性(representative)而非實際對齊;audit trail(ADR-0009)已拍板未落地;排程與背景佇列雖列入 locked stack 但**一行都未實作**。
+**未完成嘅主要事項**:生產部署未做;真 SSO 端到端未驗(卡外部);ServiceNow / n8n 對外合約仍屬代表性(representative)而非實際對齊;audit trail(ADR-0009)已拍板未落地;背景佇列(BullMQ)雖列入 locked stack 但**一行都未實作**(⚠️ 本句原本連「排程」一齊講,**2026-07-27 起排程已唔再成立** —— W37 落咗第一個 `@Cron`,見 §17 A1)。
 
 ---
 
@@ -189,7 +189,7 @@ Email · Teams · Excel · Azure M365 portal · ManageEngine · ServiceNow
 | 2 | **Integration Layer** | 對外唯一邊界:Graph + ServiceNow + n8n provider | ✅ 已建 |
 | 1 | **State Layer** | PostgreSQL via Prisma —— entitlement / allocation ledger · request mirror | ✅ 已建 |
 
-> 🔴 **Layer 3 現況查證(重要落差)**:`ScheduleModule.forRoot()` 已喺 `app.module.ts` 註冊,`@nestjs/schedule` 亦係 dependency,**但全 repo grep `@Cron` / `@Interval` / `@Timeout` / `BullModule` / `@Processor` / `bullmq` 結果為零**。BullMQ **完全唔喺 `package.json` 入面**。
+> 🟡 **Layer 3 現況查證(2026-07-27 更新)**:`ScheduleModule.forRoot()` 已喺 `app.module.ts` 註冊。**`@Cron` 由零變一** —— `SyncSweepService`(W37 / ADR-0015)每 10 分鐘向 Graph 證實 `azureSyncedAt`。`@Interval` / `@Timeout` / `BullModule` / `@Processor` / `bullmq` 仍然**為零**;BullMQ **完全唔喺 `package.json` 入面**。
 > 即係話:**catalog 同步同對帳現時淨係靠人手 POST 觸發**(`POST /license/catalog/sync` · `POST /license/reconcile`)。`license.controller.ts` 內有明文註解把 daily `@Cron` 延後至 orchestration phase。
 > **影響**:Layer 3 現時實質上係「一組可被人手或外部系統呼叫嘅 action endpoint」,而唔係一個自動化編排層。呢個係**已知且刻意嘅延後**,唔係缺陷,但規劃部署時必須計入。
 
@@ -233,7 +233,7 @@ unified-operation-platform/
 |---|---|---|
 | 後端 | **NestJS**(modular monolith)· TypeScript · Node 20+ | ✅ 運行中(本機 Node v22) |
 | DB | **PostgreSQL 16** + **Prisma** | ✅ 運行中 |
-| 背景工作 | **Redis + BullMQ** · 排程 `@nestjs/schedule` | ⚠️ Redis container 已起;**BullMQ 未入 package.json**;`@Cron` 零實作 |
+| 背景工作 | **Redis + BullMQ** · 排程 `@nestjs/schedule` | ⚠️ Redis container 已起;**BullMQ 未入 package.json**;`@Cron` **1 個**(W37 `SyncSweepService`,ADR-0015)—— 由「零實作」變「排程已通,佇列未通」 |
 | 對外 API | **REST + OpenAPI**(NestJS Swagger) | ✅ `/docs/api` |
 | Auth | **Entra ID SSO + app roles** | ✅ 後端驗證已建;真 SSO e2e 未驗(卡外部) |
 | 本地 auth | argon2id + 本地簽發 JWT + rotating refresh token(ADR-0005 / 0006) | ✅ 已建 |
@@ -753,7 +753,7 @@ Dev proxy:`/api` → `http://localhost:3100`(可用 `API_PROXY_TARGET` 覆寫,re
 | P5 | **Integration 狀態 + Test connection UI** | 候選 | 需輕度 ADR |
 | P6 | **n8n 回程 webhook**(外部推 stage) | 🔴 blocked | 需同 n8n owner 對真合約;另觸發 H1 |
 | P7 | **Outbound 交付保證 / retry** | 候選 | 需 ADR;啟用 BullMQ = H1 架構決定 |
-| P8 | **排程 / 背景佇列** | 未實作 | 見 §17 |
+| P8 | **排程 / 背景佇列** | 🟡 排程已通(W37 第一個 `@Cron`);**佇列仍未實作** | 見 §17 A1 |
 | P9 | Email self-service reset | 🔴 deferred | 需 IT 授 Graph `Mail.Send` 或改 SMTP(新 dep) |
 | P10 | npm dev-chain 漏洞清理 | deferred | 需 breaking major 升級 |
 
@@ -865,7 +865,7 @@ Graph / ServiceNow **一律 mock**,唔打真 tenant。
 
 | # | 落差 | 詳情 | 影響 |
 |---|---|---|---|
-| A1 | **排程 / 背景佇列零實作** | `ScheduleModule` 已註冊但零個 `@Cron`;BullMQ 唔喺 `package.json` | 對帳 / catalog 同步淨係人手觸發;outbound 失敗無自動 retry |
+| A1 | ~~**排程 / 背景佇列零實作**~~ → 🟡 **部分解決**(2026-07-27,**W37 / ADR-0015**) | **排程**:`SyncSweepService` = 全 repo 第一個 `@Cron`(每 10 分鐘,向 Graph 證實 `azureSyncedAt`)。**背景佇列**:BullMQ 仍然唔喺 `package.json`,狀態不變。**對帳 / catalog 同步仍然淨係人手觸發** —— ADR-0015 明文只講「為 daily reconcile 鋪路」,唔係做埋 | 殘留:daily reconcile 仍要人手;outbound 失敗無自動 retry(有人手補救佇列,ADR-0011) |
 | A2 | **`AuditLog` 未落地** | ADR-0009 Accepted(2026-07-20)但 schema 無此 model | 用戶 CRUD / 角色變更 / 密碼重設 / 登入成敗 / OpCo CRUD / catalog 編輯 / import / drift resolve **全部零留痕** |
 | A3 | ~~**權限矩陣無可查證形式**~~ | ✅ **已解決(W28 F1–F3,2026-07-20)** —— `GET /admin/permissions` live derive + snapshot drift test + Settings › Permissions 唯讀矩陣頁。`@Roles` 仍係唯一真相,矩陣係 derived view | 無殘留 |
 | A4 | **無 health / readiness endpoint** | 全 API 無 | 阻礙容器編排與監控 |
@@ -1200,7 +1200,7 @@ jest 內 AppModule 起唔到 → F3 必須用 glob。
 | Model / enum 數目與欄位 | `schema.prisma` 直接讀取 + regex 掃 `^(model\|enum)` |
 | 後端測試數 | **實際執行** `npx jest`,取 summary 輸出(`30 passed / 223 passed / 1 snapshot`,89.7 秒) |
 | 前端測試數 | 逐個 `*.test.ts(x)` 檔案盤點 |
-| 排程 / queue | 全 repo grep `@Cron` · `@Interval` · `@Timeout` · `BullModule` · `@Processor` · `bullmq` —— **結果為零** |
+| 排程 / queue | 全 repo grep `@Cron` · `@Interval` · `@Timeout` · `BullModule` · `@Processor` · `bullmq`。**原文「結果為零」係當時(W28 前後)嘅實況;2026-07-27 起 `@Cron` = 1**(`SyncSweepService`,W37 / ADR-0015),其餘仍為零 |
 | Route / 畫面 | `router.tsx` + 各 page 檔案讀取 |
 | Dependencies | `package.json` 直接讀取 |
 | 部署設定 | `docker-compose.yml` + `.env.example` 直接讀取 |

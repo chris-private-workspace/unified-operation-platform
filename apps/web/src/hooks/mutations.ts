@@ -49,15 +49,34 @@ export function useAdvanceStage(requestId: string) {
   });
 }
 
-/** PATCH …/:lineItemId/assign — assign the license (sync/seat gated backend). */
+/**
+ * PATCH …/:lineItemId/assign — assign the license (sync/seat/budget gated
+ * backend). `budgetOverrideReason` is ADMIN-only (W36 / ADR-0016 D3): a
+ * non-admin sending it gets a 403 rather than a silently ignored field, so the
+ * UI must only ever put it on the wire for an admin.
+ */
 export function useAssignLineItem(requestId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { lineItemId: string; usageLocation?: string }) =>
-      apiPatch<RequestLineItem>(
+    mutationFn: (vars: {
+      lineItemId: string;
+      usageLocation?: string;
+      budgetOverrideReason?: string;
+    }) => {
+      // Build the body from what is actually set, and keep sending `undefined`
+      // when nothing is — an empty `{}` would put an override field nowhere
+      // near the wire but still change the request shape for every plain assign.
+      const body = {
+        ...(vars.usageLocation && { usageLocation: vars.usageLocation }),
+        ...(vars.budgetOverrideReason && {
+          budgetOverrideReason: vars.budgetOverrideReason,
+        }),
+      };
+      return apiPatch<RequestLineItem>(
         `${base}/${requestId}/line-items/${vars.lineItemId}/assign`,
-        vars.usageLocation ? { usageLocation: vars.usageLocation } : undefined,
-      ),
+        Object.keys(body).length > 0 ? body : undefined,
+      );
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });

@@ -47,3 +47,17 @@ export function canSeeAdminNav(role: Role | undefined): boolean {
 export function canRepairOutbound(role: Role | undefined): boolean {
   return role === 'ADMIN' || role === 'REGIONAL';
 }
+
+/**
+ * Breaking an OpCo's licence budget on purpose is ADMIN-only (W36 / ADR-0016
+ * D3) — REGIONAL is deliberately excluded even though it can see every OpCo.
+ *
+ * Same predicate as canSeeAdminNav today, kept separate for the same reason
+ * canRepairOutbound is: "may I open the admin console?" and "may I overspend a
+ * budget?" are different questions, and one changing must not silently move the
+ * other. The backend 403 is the real authority; this only hides the entry, so
+ * nobody is offered a control that would refuse them.
+ */
+export function canOverrideBudget(role: Role | undefined): boolean {
+  return role === 'ADMIN';
+}
