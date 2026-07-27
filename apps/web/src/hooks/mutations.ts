@@ -63,6 +63,13 @@ export function useAssignLineItem(requestId: string) {
       qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
       // assignment moves the ledger, so drift may change too
       qc.invalidateQueries({ queryKey: ['license', 'drift'] });
+      // …and assignedQuantity itself moved (+1). The prefix also covers
+      // ['license','ledger','stats']. Required by CH-009: request detail now
+      // renders that number next to the Assign button, so leaving it cached
+      // would show the operator a stale budget straight after assigning.
+      // NOT tenant-skus: that reads TenantSkuSnapshot, which an assign does
+      // not touch (it is deliberately an as-of-last-sync figure).
+      qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
     },
   });
 }

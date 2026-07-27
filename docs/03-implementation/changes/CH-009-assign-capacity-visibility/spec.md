@@ -141,6 +141,9 @@ CH-008 令 `GET /license/ledger` **預設排除 0/0 row**。而本 change 靠同
 |---|---|---|---|
 | 2026-07-26 | Initial draft(**proposed**) | Chris 提出「冇檢查可用量」;查證修正前提(tenant seat gate 已存在)後,確認真缺口 = 事前可見度;Chris approve 開 change | — |
 | 2026-07-26 | **proposed → approved**(spec 內容零改動) | Chris approve。**ADR-0016 同日 Accepted** ⇒ §6 建議嘅「本 change 先行」次序成立:先令操作員睇到數字,gate 才上線 | **Chris Lai** |
+| 2026-07-26 | 🔴 **A6 前提修正 + 多改一個檔** | 實作時發現 **A6 建立喺錯誤假設上**:spec 寫「`mutations.ts:256` 已 invalidate ledger」,但逐行核對後 `useAssignLineItem` 嘅 `onSuccess` **只** invalidate `['fulfilment','requests',*]` + `['license','drift']`,**冇** `['license','ledger']`(spec 引用嘅 `:256` 係另一個 mutation)。⇒ 照原樣,assign 之後本 change 新加嘅容量數字唔會更新,操作員會睇到 stale 預算。**修正**:`useAssignLineItem` 加 `invalidateQueries(['license','ledger'])`(prefix 兼收 `…,'stats'`)。**唔** invalidate `tenant-skus`(佢讀 `TenantSkuSnapshot`,assign 唔碰,刻意係 as-of-last-sync)。⇒ affects_components 實際多咗 `hooks/mutations.ts`。理由:呢個 staleness **係本 change 自己製造**(request detail 首次依賴 ledger data),唔算順手改 adjacent code(§1.3) | AI(實作發現);待 Chris 確認 |
+| 2026-07-26 | ⚠️ **A6 live 驗方式待 owner 決定** | A6 要真 assign 才驗得到,但 assign **會打真 tenant Graph**(§3.4「Graph / ServiceNow 一律 mock,唔打真 tenant」),而 demo-harness README 明講 `GraphService` **唔 env-mockable** ⇒ 冇現成 mock 路徑。**唔會擅自打真 tenant。** 見 progress Day 1 三個選項 | 待 Chris |
+| 2026-07-26 | ➕ **多加一個顯示語意(spec 冇涵蓋)** | 查證 `tenant-owned.service.ts` 發現 `owned`/`tenantConsumed` 來自 **`TenantSkuSnapshot` 最新一筆**,service 註解明文「never calls Graph」⇒ 係 **snapshot 唔係 live**,而 assign gate 用 live Graph,兩者可能唔同。⇒ tenant 層 UI **標明「last sync」**,`owned = null` 顯示 **`unknown — no tenant snapshot`** 而唔係 0(0 會被讀成「冇位」,係另一個而且危險嘅 claim)。呢個係 D1「tenant seat」嘅誠實實作,唔係新 feature | AI(實作發現) |
 
 ---
 
