@@ -19,6 +19,7 @@ import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { aggregateRequestStatus } from './stage.service';
 import { OutboundFailureService } from './outbound-failure.service';
 import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
+import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
 
 /**
  * Module D-2 — fulfilment actions (the hardest critical path).
@@ -38,8 +39,14 @@ export class AssignService {
   ) {}
 
   /**
-   * Simulate the Phase 1 (n8n) sync write-back that opens the assign gate.
-   * Real n8n would set this after the on-prem account syncs to Azure AD.
+   * Human break-glass for the Phase 1 sync gate.
+   *
+   * W37 / ADR-0015 D3 — deliberately KEPT after the scheduled sweep landed:
+   * when Graph is unreachable or Entra Connect is broken, someone still needs a
+   * way through. But it stays what it always was — an assertion, not evidence —
+   * so its timeline message now says so outright (SYNC_GATE_MESSAGE.MANUAL).
+   * Everything else about this endpoint (roles, OpCo scope, return shape) is
+   * unchanged.
    */
   async markSynced(requestId: string, actor: AppUser) {
     const request = await this.prisma.request.findUnique({
@@ -61,7 +68,7 @@ export class AssignService {
       data: {
         requestId,
         type: EventType.SYNC,
-        message: 'Phase 1 sync confirmed (azureSyncedAt set)',
+        message: SYNC_GATE_MESSAGE.MANUAL,
       },
     });
     return updated;

@@ -4,7 +4,7 @@ name: "排程 sync sweep —— `azureSyncedAt` 由「宣稱」升級為「平�
 sprint_week: W37
 start_date: 2026-07-27
 end_date: 2026-07-29          # planned, may slip with changelog log
-status: draft                 # draft | active | closed —— ⚠️ 等 Chris approve + 答 OQ1/OQ2
+status: active                # draft | active | closed —— approved 2026-07-27(OQ1=A · OQ2=B · OQ3=A)
 spec_refs:
   - ADR-0015(**Accepted 2026-07-26** — 本 phase 就係佢嘅落地;Decision D1-D7 = 實作規格)
   - ADR-0009(AuditLog 契約 · **白名單 = 唯一 enforcement point**)
@@ -16,8 +16,9 @@ prior_phase: W36-opco-budget-gate
 
 # Phase W37 — 排程 sync sweep
 
-> **Plan version**:1.0(**draft** — 等 approve)
+> **Plan version**:1.1(**active** — approved;**OQ1 = A · OQ2 = B · OQ3 = A**)
 > **Owner**:AI(執行)· 決策 = Chris Lai
+> **Approved by**:**Chris Lai**(2026-07-27)
 > **Branch**:`docs/w37-sync-sweep`,**off `docs/w36-budget-gate`**(見 §7)
 
 ## 1. Scope
@@ -194,6 +195,10 @@ D5 列咗 `SYNC_SWEEP_CRON`(標準 cron 表達式,default 10 分鐘)。但 **`@C
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-27 | Initial draft(**draft**) | ADR-0015 Accepted 後開 phase;grounding 實跑 D2 揀單 SQL 得 **0 張**,順帶令 D7「閒置零流量」變成可驗證嘅 acceptance;起草時逐字核對 `audit-fields.ts`,**開工前**就發現 D4 同白名單唔兼容(W36 係實作到一半先發現) | — |
+| 2026-07-27 | `draft → active`;**OQ1 = A · OQ2 = B · OQ3 = A** | Chris 拍板 | **Chris Lai** |
+| 2026-07-27 | 🔴 **偏離 ADR-0015 D5**(owner approved,OQ1=A):**放棄 `SYNC_SWEEP_CRON`**,排程間隔 `@Cron(CronExpression.EVERY_10_MINUTES)` **寫死**;保留 `SYNC_SWEEP_ENABLED` / `_BATCH` / `_MAX_AGE_DAYS` | `@Cron(...)` 參數喺 class 定義時求值,早過 DI ⇒ 讀唔到 `ConfigService`。動態註冊要 `import { CronJob } from 'cron'`,而 `cron` 只係 transitive dep 未 declare ⇒ 明文 declare 就係 **H2 觸發**。四個旋鈕入面只有 `ENABLED` 有真實營運 driver(Graph 出事要熄),為間隔可調而引入 H2 唔值 | **Chris Lai** |
+| 2026-07-27 | 🔴 **偏離 ADR-0015 D4**(owner approved,OQ3=A):擴 ADR-0009 白名單 —— `AUDIT_ACTIONS` 加 `SYNC_SWEEP: 'sync.sweep'` · `AuditTargetType` 加 `'SyncSweep'`(欄位白名單 `['scanned','opened']`)· 計數放 **`after`** 而唔係 `metadata` | D4 三個假設逐字核對後全部唔成立(冇 sync action / 冇合適 target / `scanned`·`opened` 唔喺 metadata 白名單)⇒ 照字面寫,兩個計數會被 `pickAuditMetadata` **靜靜丟棄**。計數放 `after` 係跟足 `allocation.import` 已立嘅 summary 先例(`targetId: 'bulk'`),唔係新發明。掂 **ADR-0009 Decision 5** ⇒ 已 STOP 取得批准;兩個新欄位**都係整數,零 PII** | **Chris Lai** |
+| 2026-07-27 | **OQ2 = B**:命中路徑用真 UPN 喺 dev 造數據驗,驗完即刪 | dev `would_be_swept = 0`,冇天然素材。風險同 W36 R6 **唔同級**:`findUser` 係 read-only 且 sweep **只寫本地 DB**,bug 嘅後果係「本地多咗個 timestamp」而唔係「真派 licence 畀真人」。⚠️ **H4 連帶義務**:造完即刪 + 貼還原證據 + 全程唔 log UPN + 唔入任何 commit | **Chris Lai** |
 
 ---
 

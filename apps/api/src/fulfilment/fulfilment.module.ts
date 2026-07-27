@@ -20,6 +20,7 @@ import { OutboundRetryService } from './outbound-retry.service';
 import { OutboundFailureController } from './outbound-failure.controller';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from './activity.service';
+import { SyncSweepService } from './sync-sweep.service';
 
 /**
  * ADR-0008 D3 / Phase 丙 (W26, Fork 3 = config 單選): pick the outbound
@@ -87,6 +88,9 @@ export async function requestSubmissionProviderFactory(
     OutboundFailureService, // ADR-0011 — outbound failure queue
     OutboundRetryService,
     ActivityService, // CH-006 — cross-request activity feed (read-only)
+    // W37 / ADR-0015 — the platform's first @Cron. No controller: it is driven
+    // by the scheduler, not by a request.
+    SyncSweepService,
     // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by env — see
     // requestSubmissionProviderFactory above.
     {

@@ -1,62 +1,66 @@
 ---
 phase: W37-sync-sweep
 plan_ref: ./plan.md
-status: draft            # draft | active | closed
+status: active           # draft | active | closed
 last_updated: 2026-07-27
 ---
 
 # W37 — Checklist
 
 > 由 `plan.md` §3 deliverables + §4 acceptance 衍生。每項 ≤ 1-2h。
-> ⚠️ **全部鎖住** —— plan 仍係 `draft`,等 Chris approve + 答 **OQ1 / OQ2 / OQ3** 先開工(PROCESS R1)。
+> ✅ **已解鎖**(2026-07-27,Chris approve)—— **OQ1 = A**(寫死 10 分鐘 + `ENABLED` 開關)· **OQ2 = B**(真 UPN 造數據驗完即刪)· **OQ3 = A**(擴白名單)。
 
 ## F1 — `SyncSweepService`
 
-- [ ] 新 `apps/api/src/fulfilment/sync-sweep.service.ts` + `FulfilmentModule` 註冊 provider
-- [ ] 揀單四條件齊全(D2):`azureSyncedAt IS NULL` · `status ∈ {OPEN, IN_PROGRESS}` · **至少一個非終態 line item** · `createdAt > now - maxAge`
-- [ ] 排序 `createdAt` 舊→新;`take = batch`
-- [ ] 命中 → `azureSyncedAt = now` + **`accountCreatedAt ??= now`**(唔可以覆寫已有值)+ `RequestEvent(SYNC)`,**同一個 `$transaction`**
-- [ ] 未命中(`findUser` 返 null)→ **DB 零寫入**
-- [ ] `findUser` throw → `logger.warn` + **中止本輪** + **絕不 rethrow**(D6;R1 = process 死)
-- [ ] **H4**:全程零 `targetUpn` 落 log(只 id + 計數)
+- [x] 新 `apps/api/src/fulfilment/sync-sweep.service.ts` + `FulfilmentModule` 註冊 provider
+- [x] 揀單四條件齊全(D2):`azureSyncedAt IS NULL` · `status ∈ {OPEN, IN_PROGRESS}` · **至少一個非終態 line item** · `createdAt > now - maxAge`
+- [x] 排序 `createdAt` 舊→新;`take = batch`
+- [x] 命中 → `azureSyncedAt = now` + **`accountCreatedAt ??= now`**(唔可以覆寫已有值)+ `RequestEvent(SYNC)`,**同一個 `$transaction`**
+- [x] 未命中(`findUser` 返 null)→ **DB 零寫入**
+- [x] `findUser` throw → `logger.warn` + **中止本輪** + **絕不 rethrow**(D6;R1 = process 死)
+- [x] ➕ `handleCron` **再包多一層 catch** —— 佢係同 scheduler 之間嘅邊界,任何逃出去嘅 exception 就係 unhandled rejection(BUG-002 已實證會殺 process)
+- [x] **H4**:全程零 `targetUpn` 落 log(只 id + 計數)
 
 ## F2 — 排程掛接 + 開關
 
-- [ ] 🚧 **等 OQ1** —— `SYNC_SWEEP_CRON` 做唔到零成本(`@Cron` 參數喺 DI 之前求值);A 寫死 / B 自我節流 / C 引入 `cron`(**H2**)
-- [ ] `SYNC_SWEEP_ENABLED` 總開關 —— `false` 時 **`findUser` 零 call + DB 零讀**
-- [ ] `SYNC_SWEEP_BATCH`(default 50)· `SYNC_SWEEP_MAX_AGE_DAYS`(default 30)
-- [ ] 三者一律 `ConfigService.get` + default(**唔用 `getOrThrow`** —— 跟 `jwt-auth.guard.ts:50` optional-env 先例)
-- [ ] `.env.example` 補齊新 key + default 註明
+- [x] **OQ1 = A** —— `@Cron(CronExpression.EVERY_10_MINUTES)` **寫死**,**放棄 `SYNC_SWEEP_CRON`**(偏離 D5,已入 changelog)
+- [x] `SYNC_SWEEP_ENABLED` 總開關 —— `false` 時 **`findUser` 零 call + DB 零讀**
+- [x] ➕ 用 **`!== 'false'`** 而唔係 `=== 'true'`:唔設 / 打錯字 → **繼續跑**。呢個 flag 係「出事時熄佢」,default-off 會令一次 typo 靜靜停咗成個機制
+- [x] `SYNC_SWEEP_BATCH`(default 50)· `SYNC_SWEEP_MAX_AGE_DAYS`(default 30);junk 值 fallback 唔會變 `NaN`
+- [x] 三者一律 `ConfigService.get` + default(**唔用 `getOrThrow`** —— 跟 `jwt-auth.guard.ts:50` optional-env 先例)
+- [x] `.env.example` 補齊新 key + default 註明
 
 ## F3 — 人手 confirm 明文降級(D3)
 
-- [ ] `markSynced` message → `Phase 1 sync manually confirmed (not verified against Graph)`
-- [ ] sweep message → `Phase 1 sync verified against Microsoft Graph (scheduled sweep)`
-- [ ] `markSynced` **其餘行為零改動**(權限 / OpCo scope / 回傳 / endpoint)
-- [ ] Code 註釋寫明**點解**要分辨(唔分辨 = D1 語意升級喺 UI 上等於冇發生)
+- [x] 新 `sync-gate-messages.ts` 把兩條放埋一齊(改任何一條都會見到另一條)
+- [x] `markSynced` message → `Phase 1 sync manually confirmed (not verified against Graph)`
+- [x] sweep message → `Phase 1 sync verified against Microsoft Graph (scheduled sweep)`
+- [x] `markSynced` **其餘行為零改動**(權限 / OpCo scope / 回傳 / endpoint)—— diff 為證
+- [x] Code 註釋寫明**點解**要分辨(唔分辨 = D1 語意升級喺 UI 上等於冇發生)
 
 ## F4 — Test(H5)
 
-- [ ] `sync-sweep.service.spec.ts` 新 suite
-- [ ] 揀單:四條件逐條各有一個「唔應入選」case(已 sync / 狀態終態 / 冇非終態 line item / 過 cutoff)
-- [ ] 命中 / 未命中 / throw 三條主路徑
-- [ ] **`accountCreatedAt` 已有值時唔被覆寫**(`??=` 而唔係 `=`)
-- [ ] 🔴 **證負面 ①**:冇候選 → `findUser` **零 call**(證 D7,唔止證「冇 crash」)
-- [ ] 🔴 **證負面 ②**:第一張 throw → 第二張 **零 call**(證真係中止,唔係吞咗繼續)
-- [ ] `SYNC_SWEEP_ENABLED=false` → 零 call 零讀
-- [ ] `assign.service.spec.ts` 補 `markSynced` message 斷言(F3)
-- [ ] Graph + ServiceNow 全 mock,零真 tenant(§3.4)
-- [ ] api test ≥ **410** + lint 零 output
+- [x] `sync-sweep.service.spec.ts` 新 suite
+- [x] 揀單:四條件 + 排序 + batch/maxAge env + junk 值 fallback
+- [x] 命中 / 未命中 / throw 三條主路徑;miss 唔會中斷 batch
+- [x] **`accountCreatedAt` 已有值時唔被覆寫**(`??=` 而唔係 `=`)
+- [x] 🔴 **證負面 ①**:冇候選 → `findUser` **零 call**(證 D7,唔止證「冇 crash」)
+- [x] 🔴 **證負面 ②**:第一張 throw → 第二張 **零 call**(證真係中止,唔係吞咗繼續)
+- [x] `SYNC_SWEEP_ENABLED=false` → 零 call 零讀;非 `'false'` 嘅值一律照跑
+- [x] `handleCron` 吞得住連 `sweep` 都擋唔住嘅錯(DB 死)
+- [x] `assign.service.spec.ts` 補 `markSynced` message 斷言(F3)
+- [x] Graph + ServiceNow 全 mock,零真 tenant(§3.4)
+- [x] api test **429 passed / 42 suites**(基線 410,**+19**)+ lint 零 output
 
 ## F5 — Audit(D4)
 
-- [ ] 🚧 **等 OQ3** —— D4 同 ADR-0009 白名單唔兼容(`AUDIT_ACTIONS` 冇 sync action · `AuditTargetType` 冇合適 target · `scanned`/`opened` 唔喺 metadata 白名單)
-- [ ] (A)`AUDIT_ACTIONS` + `SYNC_SWEEP: 'sync.sweep'`
-- [ ] (A)`AuditTargetType` + `'SyncSweep'`,白名單 `['scanned','opened']`,`targetId: 'bulk'`(跟 `allocation.import`)
-- [ ] 有變動 → **一條** audit;零變動 → **零** audit
-- [ ] 🔴 **captured payload 過真嘅 `pickAuditFields` 唔被丟棄**(W36 立嘅回歸網)
-- [ ] 同 sweep 寫入**同一個 transaction**(ADR-0009 D8.1)
-- [ ] `actorType: 'system'` + `metadata.source = 'sync-sweep'`
+- [x] **OQ3 = A** —— 擴白名單(偏離 D4,已入 changelog);計數放 **`after`** 唔放 metadata
+- [x] `AUDIT_ACTIONS` + `SYNC_SWEEP: 'sync.sweep'`
+- [x] `AuditTargetType` + `'SyncSweep'`,白名單 `['scanned','opened']`,`targetId: 'bulk'`(跟 `allocation.import`)
+- [x] 有變動 → **一條** audit;零變動 → **零** audit
+- [x] 🔴 **captured payload 過真嘅 `pickAuditFields` 唔被丟棄**(W36 立嘅回歸網)
+- [x] ~~同 sweep 寫入同一個 transaction~~ → **實作時修正為「刻意寫喺 transaction 外」**(R3,見 progress Day 1):round summary 橫跨 N 個獨立 transaction,冇一個係佢應該屬於嘅。跟 `outbound-retry.service.ts` 先例;D8.1 要防嘅「做咗但冇紀錄」喺呢度唔可能發生 —— 每個開咗嘅 gate 都有自己嗰條 `RequestEvent(SYNC)` 同 update 原子寫入
+- [x] `actorType: 'system'` + `actorId: null` + `metadata.source = 'sync-sweep'`
 
 ## F6 — 文檔同步
 
@@ -70,9 +74,9 @@ last_updated: 2026-07-27
 
 - [ ] **live ①(負面,零風險)**:dev 現況跑一輪 → **Graph 零 call + DB 零寫入**(§2 grounding 已證 `would_be_swept = 0`)
 - [ ] **live ②**:`SYNC_SWEEP_ENABLED=false` → 完全短路
-- [ ] 🚧 **live ③ 命中路徑** —— 等 **OQ2**(A = 只靠 mock,交接落 UAT / B = 用指定真帳號造數據,造完即刪貼證據)
-- [ ] 🔴 `assign.service.ts` 嘅 **`findUser` gate 區塊 diff 為空**(只有 `markSynced` message 一行可動)
-- [ ] `prisma/schema.prisma` diff **0** · 三個 `package.json` diff **0**(⚠️ 除非 OQ1 揀 C)
+- [ ] **live ③ 命中路徑(OQ2 = B)** —— 用**指定嘅**真 tenant 帳號造一張 request,跑一輪見真命中,**造完即刪 + 貼還原證據**;⚠️ H4:全程唔 log UPN、唔入任何 commit。🚧 **開工前要問 owner 攞用邊個帳號**
+- [x] 🔴 `assign.service.ts` diff = **1 個 import + 1 段註釋 + 1 行 message**;`assignLineItem` 嘅 `findUser` gate **一個字都冇動**(逐行 diff 為證)
+- [x] `prisma/schema.prisma` diff **0** · 三個 `package.json` diff **0** · `reconcile.service.ts` diff **0**
 - [ ] ADR-0015 D1-D7 逐條核對;有偏離 → plan changelog + 問 owner
 
 ## Cross-Cutting
