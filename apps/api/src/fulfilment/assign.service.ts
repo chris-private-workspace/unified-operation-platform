@@ -203,17 +203,27 @@ export class AssignService {
       item.sku.skuId,
       { usageLocation },
     );
-    if (outcome.status !== 'assigned') {
-      // GraphLicenseProvider only ever produces 'assigned' today, so this is
-      // unreachable on the default wiring. It is deliberately a loud failure
-      // rather than a handled case: deciding here what a replay
-      // ('already_assigned') or a provider-reported failure should do to the
-      // stage machine and the ledger is 庚's call, and it needs a caller to
-      // reason about. Guessing now would bury a real decision in a branch no
-      // test can reach.
-      // H4: the status word only — outcome.details may quote the vendor.
+    // W39 OQ-1 (Chris, 2026-07-28): 'already_assigned' is treated EXACTLY like
+    // 'assigned' — ledger increment included.
+    //
+    // Only the n8n provider can report it; Graph's POST is idempotent and says
+    // nothing, so on that path a replay has always counted as a fresh assign.
+    // Acting on n8n's extra knowledge here would mean switching provider also
+    // switches ledger semantics, which is precisely what D0 forbids. The
+    // double-count risk is real but PRE-EXISTING: fixing it is a separate
+    // change that has to fix both paths at once, not a side effect of 庚.
+    if (
+      outcome.status !== 'assigned' &&
+      outcome.status !== 'already_assigned'
+    ) {
+      // Still loud for everything else. 'not_synced' cannot reach here (the
+      // findUser gate above already returned 400) and 'no_seats' is produced by
+      // neither provider — the seat check is the platform's own, and workflow
+      // 2003 deliberately does not do one. So this stays a genuine "should not
+      // happen", not a swallowed case.
+      // H4: the status word only — outcome.details must never be echoed.
       throw new ServiceUnavailableException(
-        `License provider returned an outcome this path does not handle yet: ${outcome.status}`,
+        `License provider returned an outcome this path does not handle: ${outcome.status}`,
       );
     }
 

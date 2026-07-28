@@ -207,13 +207,74 @@ D2 寫「把 Graph 例外(現時經 `graphUnavailable()` wrap)map 入呢個詞�
 
 ⇒ **transport 失敗 throw 503(各實作自己 wrap);`error` variant 收窄成「provider 答咗,但答案係失敗語意」**(例:2003 返 `{result:'failed'}`)。
 
-### 🔴 留畀庚嘅一個真不對稱(唔准靜靜補)
+### 庚 — W39(2026-07-28,Chris Lai 拍板五項 + 一項 H1)
+
+#### 🔴 D2 個表同真 workflow 有四處對唔上(實讀 JSON 先發現)
+
+寫本 ADR 嗰陣係按 workflow **描述**落筆;W39 落手前逐個 node 讀返 `phase 2 (with UOP)/*.json`,發現:
+
+| # | 本 ADR D2 講 | workflow 真係 | 處理 |
+|---|---|---|---|
+| 1 | outcome `assigned` | 2003 `Build Response` 出 **`success`** | 純 mapping,provider 內部轉 |
+| 2 | outcome 有 `no_seats` | 2003 **完全唔檢查座位** | **好事,同 D0 一致** —— 座位係平台決策。但即係 **`no_seats` 兩個 provider 都產生唔到**,已寫入 test 註釋免得下手以為漏咗 |
+| 3 | 一種 response 形狀 | **兩種** —— `already_assigned`/`not_synced` 由 `Route Status` **直接 respond**(`Evaluate User` 形狀),只有真 assign 完先行 `Build Response` | provider 兩種都 handle |
+| 4 | `error.details` 唔含 PII | 兩個 code node 都係 `JSON.stringify(b.error \|\| b).substring(0,500)` —— **原封塞 Graph error body** | 🔴 見 OQ-2 |
+
+⇒ **凡涉及平台送出 / 解析嘅嘢,workflow JSON 係 SSOT,唔可以照抄本 ADR 嘅轉述。**
+
+#### 五個 OQ 拍板
+
+| OQ | 拍板 | 理由 |
+|---|---|---|
+| **1** | `already_assigned` **一視同仁照 +1** | 見下段 |
+| **2** | provider **唔傳遞** n8n 個 `details` | 落差 #4 係 **H4 問題唔係 mapping 問題**。只留 status + 平台自己寫嘅安全描述;vendor 細節留喺 n8n execution log(嗰邊本來就係 n8n owner 範圍)。代價 = 排查要開 n8n,**細過**把 UPN 寫入平台 log/audit(BUG-004 已證呢類洩漏好耐冇人察覺) |
+| **3** | `ritmId` **唔入**介面 | 2003 收佢做 matching,但平台自己有 ADR-0009 audit(2003 sticky 自己都寫「Logging = UOP's audit log」)。加咗就係畀介面帶一個 **Graph 實作永遠用唔着**嘅參數 |
+| **4** | 未配置 → **`inactive`** 唔係 `error` | 同 ADR-0010 三態語意一致:`state` 講**部署形狀**唔講健康。配置咗但打唔通先叫 error |
+| **5** | **唔加** `listUsersBySku`(2002 mode 2) | 沿用己 OQ-3:workflow 有 mode 2 ≠ 平台需要佢。零 caller |
+
+#### 🔴 H1 — 加 connector 要改 schema(本 ADR D5 冇預見)
+
+D5 講「沿用 ADR-0013 配置機制」,但 **`ConnectorConfig` 係具名 column model** ⇒ 加 `n8n-license` 必然要 `ALTER TABLE`。Chris approve additive migration(兩個 nullable 欄)。詳見 **ADR-0013 實作補註**。
+
+**掣嘅預設方向**:任何非 `'n8n'` 字串(unset / typo / 半完成配置)一律 resolve 落 **Graph**。唔完整嘅配置絕不可以靜靜把真 licence 派發路由去第三方。
+
+#### probe:只探 2002 mode 1
+
+`PROBEABLE['n8n-license'] = null`(可探),但 **只准 2002 mode 1**。2003 **會真派 licence**;2005 雖然唯讀但要真 UPN,喺健康檢查塞同事個 UPN 正正係 H4 要防嘅習慣。三條負面斷言 + fails-before 鎖住。
+
+⚠️ **probe 注入嘅係具體 `N8nLicenseProvider`,唔係抽象** —— 注入抽象會令「測試 n8n connector」實際探緊當前選中嗰個(預設 = Graph),即係喺 n8n 標籤下面報 Graph 嘅健康。`license-ops.boundary.spec.ts` 已為此**收緊**(明文禁抽象 import,舊版嘅字串檢查從來冇真正 assert 過呢點)。
+
+#### 🚧 誠實邊界:庚完成 ≠ 可以真切換
+
+n8n 側三個前置**全部未通**,而且唔喺本 repo 手上:`x-uop-secret` 仍 `CHANGE_ME_SHARED_SECRET`(見本檔附錄 #2)· n8n UAT ↔ 平台環境未接通 · 平台未部署上 UAT。
+
+⇒ 庚交付嘅係「**code + test 齊,預設值零改變**」。**真切換未經任何 live 驗證**,唔可以當佢通過。
+
+#### 🚧 rollout 表嗰個庚驗收標準,**未達成**
+
+上面 rollout 表寫住「庚 = **兩個 provider 同一組 case 同一 outcome**」。W39 **冇做**呢個雙向 contract test(Chris 2026-07-28 決定縮減範圍,優先做 probe 修正 + doc-sync)。
+
+現有覆蓋係**各自單邊**:`graph-license.provider.spec`(W38,9 test)+ `n8n-license.provider.spec`(W39,16 test),兩邊都逐個 outcome 測過,但**冇一條 test 拎同一個 case 餵兩邊再對照**。
+
+⇒ 呢個係**已知缺口,唔係已完成**。真切換之前應該補返 —— 尤其因為兩邊**已知有一處刻意分岔**(replay,見下),所以 contract test 唔可以寫成「兩邊必然相等」,要寫成「除咗 replay 之外相等」。
+
+### 🔴 replay 不對稱 —— W38 提出,**W39 OQ-1 已拍板**(唔准靜靜改)
 
 `GraphLicenseProvider` **只產生得到 `assigned`**:`not_synced`/`no_seats` 由 caller 喺入 provider **之前**攔截(移入嚟 = provider 變決策者,違反 D0);`already_assigned` **Graph 根本分唔到**(POST 冪等且唔報告)。
 
-⇒ **同一個 replay,Graph 講 `assigned`,n8n 講 `already_assigned`。** 呢個係真嘅 cross-provider 行為差異,**唔係漏咗嘅 mapping**。庚必須正面拍板:caller 一視同仁(今日就係咁 —— replay 唔當錯),定係 `GraphLicenseProvider` 每次 assign 之前先探一次 user licenses(**每單多一個 round-trip**)。
+⇒ **同一個 replay,Graph 講 `assigned`,n8n 講 `already_assigned`。** 呢個係真嘅 cross-provider 行為差異,**唔係漏咗嘅 mapping**。
 
-**唔可以喺 Graph 側靜靜加個 probe 當修好咗。** W38 已喺 `assign.service` 對非 `assigned` outcome 寫咗 fail-loud,令庚唔可能靜靜落地。
+**W39 OQ-1 拍板 = 一視同仁**:`assign.service` 收到 `already_assigned` **完全當 `assigned` 處理,ledger 照 +1**。
+
+三個理由:
+
+1. **保持兩條路徑行為一致係 D0 核心。** 一揀 n8n 就連 ledger 語意都跟住變,就唔再係「只換執行器」。
+2. **重複計數風險今日已經存在。** Graph 分唔到 replay,一直當新 assign。喺庚**偷偷修一邊**,等於令「切 provider」順帶夾帶一個 ledger 語意改動。
+3. 真要修就**另開 change,兩條路一齊修**。
+
+⚠️ **代價要講明**:`already_assigned` 意思正正係「tenant 側本來已經有呢個 seat」,所以嗰一 +1 **確實會**令平台數字比 tenant 真實多一個(製造 drift)。**n8n 路徑明知有更準嘅資訊,而平台刻意唔用。** 呢個係有意識嘅取捨,Chris 2026-07-28 明確接受。
+
+**唔可以喺 Graph 側靜靜加個 probe「補返」呢個差異**(每單多一個 round-trip),亦**唔可以喺 n8n 路徑靜靜唔 +1**。兩樣都係喺切 provider 時夾帶行為改動。
 
 ---
 

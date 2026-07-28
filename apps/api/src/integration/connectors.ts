@@ -20,6 +20,7 @@ export const CONNECTORS = {
   servicenow: { key: 'servicenow', label: 'ServiceNow' },
   'n8n-outbound': { key: 'n8n-outbound', label: 'n8n (outbound)' },
   'n8n-inbound': { key: 'n8n-inbound', label: 'n8n (inbound intake)' },
+  'n8n-license': { key: 'n8n-license', label: 'n8n (license operations)' },
 } as const;
 
 export type ConnectorKey = keyof typeof CONNECTORS;
@@ -43,6 +44,18 @@ export const PROBEABLE: Record<ConnectorKey, string | null> = {
     'The outbound webhook creates a real ticket, so it is never called as a test',
   /** Inbound is pushed to us; there is nothing to call. */
   'n8n-inbound': 'Inbound is pushed by n8n — the platform has nothing to call',
+  /**
+   * Probeable, but ONLY workflow 2002 in mode 1 (GET subscribedSkus — read-only).
+   * This is the first n8n connector with anything safe to call (ADR-0010 D5).
+   *
+   * 🔴 Do NOT extend the probe to 2003 or 2005:
+   *   2003 ASSIGNS A REAL LICENCE to a real person. "Just testing" is not a
+   *        reason to consume a seat.
+   *   2005 is read-only but needs a real UPN to say anything, and sending a
+   *        colleague's UPN on a health check is exactly the PII habit H4 exists
+   *        to prevent — it tells us nothing 2002 has not already told us.
+   */
+  'n8n-license': null,
 };
 
 // ── W34 / ADR-0013 — connector CONFIG spec (Model C) ───────────
@@ -138,4 +151,44 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
     editable: [],
     secrets: [{ envKey: 'INTAKE_API_KEY', label: 'Intake API key' }],
   },
+  // W39 / ADR-0017 seam ② — the switch itself lives here (D1: one switch per
+  // seam). Default stays 'graph', so deploying this changes nothing until an
+  // admin flips it.
+  'n8n-license': {
+    editable: [
+      {
+        column: 'licenseOpsProvider',
+        label: 'Provider',
+        envKey: 'LICENSE_OPS_PROVIDER',
+        kind: 'enum',
+        enumValues: ['graph', 'n8n'],
+      },
+      {
+        column: 'n8nLicenseBaseUrl',
+        label: 'Webhook base URL',
+        envKey: 'N8N_LICENSE_BASE_URL',
+        kind: 'url',
+      },
+    ],
+    // The one credential that lets a caller assign licences through n8n.
+    secrets: [{ envKey: 'N8N_LICENSE_WEBHOOK_KEY', label: 'Webhook key' }],
+  },
 };
+
+/**
+ * Webhook paths on the n8n side (W39). Read from the workflow JSON rather than
+ * from ADR prose — the ADR paraphrase and the workflows disagreed in four
+ * places (W39 plan §2), so the JSON is the source of truth for anything the
+ * platform sends or parses.
+ *
+ * Kept beside the connector spec, not inside the provider, so the base URL and
+ * the paths that complete it stay visible in one place.
+ */
+export const N8N_LICENSE_PATHS = {
+  /** 2002 — mode 1: tenant SKU seats. mode 2 (users by SKU) is not used. */
+  licenseCheck: 'wf2-license-check',
+  /** 2003 — assign one licence to one user. */
+  assign: 'wf3-assign-license',
+  /** 2005 — does this user exist in Entra yet. */
+  syncCheck: 'wf5-sync-check',
+} as const;

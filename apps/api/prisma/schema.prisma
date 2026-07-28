@@ -404,7 +404,7 @@ model OutboundFailure {
 // D4). "Who changed what" is answered by AuditLog (ADR-0009) — no updatedById here.
 model ConnectorConfig {
   id        String @id @default(cuid())
-  connector String @unique // 'graph' | 'servicenow' | 'n8n-outbound'
+  connector String @unique // 'graph' | 'servicenow' | 'n8n-outbound' | 'n8n-license'
 
   // Graph — non-secret only (GRAPH_CLIENT_SECRET stays in env)
   graphTenantId String? // GRAPH_TENANT_ID override
@@ -417,6 +417,13 @@ model ConnectorConfig {
   // n8n outbound — non-secret only (N8N_OUTBOUND_WEBHOOK_KEY stays in env)
   requestSubmissionProvider String? // REQUEST_SUBMISSION_PROVIDER override ('direct' | 'n8n')
   n8nOutboundWebhookUrl     String? // N8N_OUTBOUND_WEBHOOK_URL override
+
+  // n8n license ops (W39 / ADR-0017 seam ②) — non-secret only.
+  // The x-uop-secret shared key stays in env as N8N_LICENSE_WEBHOOK_KEY: it is
+  // the one credential that lets anyone assign licences through n8n, so it must
+  // never reach a DB column, an API response or an audit row (ADR-0013 D2).
+  licenseOpsProvider String? // LICENSE_OPS_PROVIDER override ('graph' | 'n8n')
+  n8nLicenseBaseUrl  String? // N8N_LICENSE_BASE_URL override (webhook base, no trailing path)
 
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())

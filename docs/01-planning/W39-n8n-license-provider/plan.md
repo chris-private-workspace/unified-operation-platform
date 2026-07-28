@@ -103,7 +103,7 @@ W38 起好咗 seam 同**唯一**實作(`GraphLicenseProvider`)。本 phase 加**
 |---|---|---|---|
 | G1 | 既有 test 全綠且**零改動** | 467 → ≥467,`git diff` 既有 spec 零刪除 | Yes |
 | G2 | 雙 provider 同 case 同 outcome | F2 contract test | Yes |
-| G3 | **零 schema**(connector 用既有 `ConnectorConfig`)/ **零新 runtime dep**(用 global `fetch`) | diff | Yes |
+| G3 | ~~零 schema~~ → **additive schema 只此兩欄**(`licenseOpsProvider` / `n8nLicenseBaseUrl`,兩個都 nullable;見 §7 D1)/ **零新 runtime dep**(用 global `fetch`) | `schema.prisma` diff 只有嗰兩行 + 一個 additive migration;3 個 `package.json` diff = 0 | Yes |
 | G4 | secret 零洩漏 | 餵假 secret assert 回應 + audit 乾淨 | Yes |
 | G5 | 探針**從未**掂 2003/2005 | 負面斷言 + fails-before | Yes |
 | G6 | **預設仍係 graph** | 唔設配置起 app → 行為同 W38 一樣 | Yes |
@@ -131,7 +131,9 @@ W38 retro carry-over:
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
-| 2026-07-28 | Initial plan | — | _(待 Chris)_ |
+| 2026-07-28 | Initial plan | — | Chris Lai |
+| 2026-07-28 | 🔴 **D1 — G3 由「零 schema」改為「additive schema 只此兩欄」**(`ConnectorConfig.licenseOpsProvider` + `.n8nLicenseBaseUrl`,兩個 nullable)。**H1 觸發,已 STOP 並取得 approve** | kickoff 時嘅假設**錯咗**:`ConnectorConfig` 係**具名 column** model,唔係 key-value bag ⇒ 任何新 connector 嘅非機密欄位**必然**要加 column。三個選項擺出(加兩欄 / 全走 env `editable: []`[有 `n8n-inbound` 先例] / 只加選路一欄)。**揀加兩欄**,因為 ADR-0017 **D1 明文要「逐接縫 3 個掣」**,而走 env 就冇 UI 掣、UAT 改 env 仲要經 Azure。migration 純 additive、兩個 nullable 欄,零遷移風險 | **Chris Lai** |
+| 2026-07-28 | **唔開新 ADR**,改為喺 **ADR-0013 加實作補註** | Model C 決定冇變 · secret 邊界冇變 · 只係多一個 connector **沿用同一模式**。同 W29 對 ADR-0009 Decision 5、W38 對 ADR-0017 嘅做法同構(收緊 / 補充,唔推翻)。**若你想要獨立 ADR,講聲我補** | AI(已 surface) |
 
 ---
 
