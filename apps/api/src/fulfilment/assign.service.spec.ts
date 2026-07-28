@@ -9,6 +9,8 @@ import type { AppUser } from '@prisma/client';
 import { AssignService } from './assign.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import { LicenseOperationsProvider } from '../integration/license-ops/license-ops.provider';
+import { GraphLicenseProvider } from '../integration/license-ops/graph-license.provider';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { OutboundFailureService } from './outbound-failure.service';
 import { AuditService } from '../audit/audit.service';
@@ -135,7 +137,21 @@ describe('AssignService', () => {
       providers: [
         AssignService,
         { provide: PrismaService, useValue: prisma },
+        // W38 / ADR-0017 seam ②. AssignService now injects the provider, but
+        // this suite deliberately wires the REAL GraphLicenseProvider around
+        // the same GraphService mock rather than stubbing the provider out.
+        //
+        // That keeps every assertion below untouched, and — more importantly —
+        // keeps the BUG-002 regressions honest: they mock a RAW vendor error
+        // and assert a clean 503. Stubbing the provider would have moved the
+        // raw→503 wrap outside the tested chain, so those two tests would have
+        // been quietly downgraded into "a 503 propagates", which proves nothing.
         { provide: GraphService, useValue: graph },
+        {
+          provide: LicenseOperationsProvider,
+          useFactory: (g: GraphService) => new GraphLicenseProvider(g),
+          inject: [GraphService],
+        },
         { provide: ServiceNowService, useValue: snow },
         { provide: OutboundFailureService, useValue: failures },
         { provide: AuditService, useValue: audit },

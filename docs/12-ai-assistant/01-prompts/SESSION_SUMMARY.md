@@ -5,7 +5,10 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-07-15)**:git 連 GitHub **private**(`chris-private-workspace`,`main`;**origin/main = `d489797`**)。Backend `apps/api`(NestJS)跑得起(port **3100**)、`/docs/api` 200、DB seeded(23 OpCos + admin + **12 catalog SKU**)。`apps/web` = 8+ 實畫面(Overview / Catalog / Requests + detail + **new[開單]** / Drift / Assets / Settings / Login)。**api 201 test · web 85 test**。
+**當前座標(2026-07-27)**:git 連 GitHub **private**(`chris-private-workspace`,`main`;**origin/main = `2058854`**;W38 收官待開 PR)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos[含 `RAPO/IT (RDC2)`]+ admin + 12 catalog SKU)。`apps/web` = 8+ 實畫面(Overview / Catalog / Requests + detail + new[開單] / Drift / Assets / Settings / Login)。**api 467 test · web 188 test**。
+
+> ⚠️ **本 worktree 冇 `apps/api/.env`**(得 `.env.example`)—— 要 live 驗證就要自己傳 placeholder env 起(W38 用 port **3200**)。
+> 🔴 **port 3100 跑緊嘅唔一定係本 worktree** —— 實測係 `C:\Users\CLai03\unified-operation-platform` 嗰個 checkout 嘅 `dist` build。驗證前**必查 process ancestry**(AP-11,W36 同 W38 各中過一次)。
 
 **開發路線全鏈完成(詳細歷史 → `BACKLOG.md` + memory `MEMORY.md`,此處唔重複)**:
 - **後端業務層**:W02 C(catalog+對帳)/ W03 D-1(intake)/ W04 D-2(assign+ledger)✅ · **前端全鏈**:W05 scaffold / W06 FE-1(Overview+Catalog)/ W07 FE-2(Requests+detail 讀寫)/ W08 FE-3(Drift + BE-graph-harden)✅ · **BUG-002 ✅**(Graph error wrap→503)。

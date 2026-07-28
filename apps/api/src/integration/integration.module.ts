@@ -6,6 +6,8 @@ import { IntegrationController } from './integration.controller';
 import { IntegrationStatusService } from './integration-status.service';
 import { IntegrationProbeService } from './integration-probe.service';
 import { ConnectorConfigService } from './connector-config.service';
+import { LicenseOperationsProvider } from './license-ops/license-ops.provider';
+import { GraphLicenseProvider } from './license-ops/graph-license.provider';
 
 /**
  * Integration layer — the platform's outbound edge.
@@ -26,7 +28,16 @@ import { ConnectorConfigService } from './connector-config.service';
     IntegrationStatusService,
     IntegrationProbeService,
     ConnectorConfigService,
+    // ADR-0017 seam ② (W38). Default = Graph, which is the behaviour that has
+    // always been there; 庚 adds N8nLicenseProvider and this one line becomes
+    // the switch. Consumers inject the abstract class, never the concrete one.
+    { provide: LicenseOperationsProvider, useClass: GraphLicenseProvider },
   ],
-  exports: [GraphService, ServiceNowService, ConnectorConfigService],
+  exports: [
+    GraphService,
+    ServiceNowService,
+    ConnectorConfigService,
+    LicenseOperationsProvider,
+  ],
 })
 export class IntegrationModule {}

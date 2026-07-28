@@ -174,6 +174,49 @@ type AssignOutcome =
 | **庚** | `N8nLicenseProvider`(2002/2003/2005)+ `n8n-license` connector + probe | 兩個 provider 同一組 case 同一 outcome |
 | **辛** | D3 `TicketUpdateProvider` 雙實作 + close/WIP 擴充 + 1007 分工邊界文件化 | RITM 狀態正確,無雙重 close |
 
+## 實作補註(implementation notes)
+
+> **性質**:落地時查證 code 揪出、而寫本 ADR 嗰陣冇嘅資訊。上面已 Accepted 嘅決定**一個字都冇改** —— 呢度只係**收緊**同**補時序空白**(做法沿用 ADR-0009 Decision 5)。要推翻上面任何一條,寫新 ADR。
+
+### 己 — W38(2026-07-27,Chris Lai 拍板四項)
+
+**① D2 個表列 5 個方法,實際只收 3 個。**
+
+| D2 方法 | W38 | 理由 |
+|---|---|---|
+| `listTenantSkus` / `findUser` / `assignLicense` | ✅ 收 | assign 路徑真有 caller |
+| `checkSync(upns[])` · `listUsersBySku(skuId)` | ❌ 唔收 | 全 repo **零 caller**。介面加方法係 additive,有真 caller 嗰陣先加唔會令庚返工 |
+
+⚠️ 連帶:上面 **Consequences → Positive** 嗰句「`listUsersBySku` 補上平台一直缺嘅 per-SKU 用戶清單」**W38 未兌現**,順延至真有 caller 嗰陣。
+
+**② D2 只覆蓋 assign 路徑。** 查證發現 `getSubscribedSkus()` 有 **4 個** consumer,唔止 assign。另外三個**明文留喺 vendor 直連**,並由 `license-ops.boundary.spec.ts` 靜態鎖死(理由逐條寫入 test 名):
+
+- `reconcile.service` —— drift 係平台自己對現實嘅斷言。經可切換 seam 會令**對帳基準取決於當時 config 咗邊個 provider**;D0 講明決策者留平台。
+- `integration-probe` —— 佢報告嘅係 **Graph connector** 健唔健康(ADR-0010)。經 seam 就變成探 n8n 而標籤寫住 Graph。
+- `catalog.service` —— SKU 字典 sync,本 ADR 從來冇 scope 過。
+
+**③ 🔴 `sync-sweep.findUser` 永不經 seam —— 補一個時序空白。**
+
+本 ADR **2026-07-26** Accepted,而 `sync-sweep.service.ts` **2026-07-27**(W37 / ADR-0015)先存在 ⇒ D2 個表寫嗰陣佢**根本未有**。
+
+ADR-0015 嘅整個重點係 `azureSyncedAt` 由「**n8n 聲稱**」升級為「**平台證實**」。經 2005 去證實 = n8n 再一次話畀平台聽「sync 咗」= **直接推翻 ADR-0015**。⇒ 永遠直接 `GraphService`,同樣由 boundary spec 鎖死。
+
+**④ Error 契約:transport 失敗 throw,唔入 `AssignOutcome`。**
+
+D2 寫「把 Graph 例外(現時經 `graphUnavailable()` wrap)map 入呢個詞彙」。但 `graphUnavailable()` wrap 嘅係網絡 / auth / throttle —— 「vendor 掛咗」**唔係呢次 assign 嘅結果,係冇結果**,caller 應該重試而唔係詮釋。照字面做會逼 `assign.service` 人手複製一個逐字相同嘅 503 message,一個字唔同就係行為改變。
+
+⇒ **transport 失敗 throw 503(各實作自己 wrap);`error` variant 收窄成「provider 答咗,但答案係失敗語意」**(例:2003 返 `{result:'failed'}`)。
+
+### 🔴 留畀庚嘅一個真不對稱(唔准靜靜補)
+
+`GraphLicenseProvider` **只產生得到 `assigned`**:`not_synced`/`no_seats` 由 caller 喺入 provider **之前**攔截(移入嚟 = provider 變決策者,違反 D0);`already_assigned` **Graph 根本分唔到**(POST 冪等且唔報告)。
+
+⇒ **同一個 replay,Graph 講 `assigned`,n8n 講 `already_assigned`。** 呢個係真嘅 cross-provider 行為差異,**唔係漏咗嘅 mapping**。庚必須正面拍板:caller 一視同仁(今日就係咁 —— replay 唔當錯),定係 `GraphLicenseProvider` 每次 assign 之前先探一次 user licenses(**每單多一個 round-trip**)。
+
+**唔可以喺 Graph 側靜靜加個 probe 當修好咗。** W38 已喺 `assign.service` 對非 `assigned` outcome 寫咗 fail-loud,令庚唔可能靜靜落地。
+
+---
+
 ## Alternatives Considered
 
 - **一個總掣切晒(全平台 / 全 n8n)** — rejected:冇彈性。實際情境已經出現需要混搭嘅理由(SN 憑證 row-level ACL 掛喺 n8n 嗰個 `n8napiservice1` 帳號,而 Graph app permission 兩邊都有),硬綁一個掣會直接卡死。
