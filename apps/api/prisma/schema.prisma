@@ -425,6 +425,12 @@ model ConnectorConfig {
   licenseOpsProvider String? // LICENSE_OPS_PROVIDER override ('graph' | 'n8n')
   n8nLicenseBaseUrl  String? // N8N_LICENSE_BASE_URL override (webhook base, no trailing path)
 
+  // n8n ticket updates (W40 / ADR-0017 seam ④) — non-secret only.
+  // N8N_TICKET_WEBHOOK_KEY stays in env for the same reason as the license key:
+  // it is what lets a caller change the state of a customer's ticket.
+  ticketUpdateProvider String? // TICKET_UPDATE_PROVIDER override ('direct' | 'n8n')
+  n8nTicketWebhookUrl  String? // N8N_TICKET_WEBHOOK_URL override (webhook base, no trailing path)
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }

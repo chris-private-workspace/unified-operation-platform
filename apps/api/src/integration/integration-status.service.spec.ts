@@ -69,6 +69,33 @@ describe('IntegrationStatusService', () => {
     rows.find((r) => r.key === key)!;
 
   /**
+   * Every non-secret and secret env key of every registered connector, with a
+   * value shaped like the real thing. Coverage is asserted against the
+   * inventory further down, so this cannot fall behind a new connector.
+   */
+  const LEAK_ENV: Record<string, string> = {
+    GRAPH_TENANT_ID: '11111111-2222-3333-4444-555555555555',
+    GRAPH_CLIENT_ID: '66666666-7777-8888-9999-aaaaaaaaaaaa',
+    GRAPH_CLIENT_SECRET: 'SECRET-GRAPH-DO-NOT-LEAK',
+    SERVICENOW_INSTANCE_URL: 'https://acme.service-now.com',
+    SERVICENOW_DEFAULT_TABLE: 'sc_req_item_fixture',
+    SERVICENOW_USER: 'SECRET-SNOW-USER-DO-NOT-LEAK',
+    SERVICENOW_PASSWORD: 'SECRET-SNOW-DO-NOT-LEAK',
+    REQUEST_SUBMISSION_PROVIDER: 'n8n',
+    N8N_OUTBOUND_WEBHOOK_URL: 'https://n8n.internal/hook/abc',
+    N8N_OUTBOUND_WEBHOOK_KEY: 'SECRET-N8N-DO-NOT-LEAK',
+    INTAKE_API_KEY: 'SECRET-INTAKE-DO-NOT-LEAK',
+    // W39 — the credential that lets a caller assign licences through n8n.
+    LICENSE_OPS_PROVIDER: 'n8n',
+    N8N_LICENSE_BASE_URL: 'https://n8n.internal/webhook',
+    N8N_LICENSE_WEBHOOK_KEY: 'SECRET-N8N-LICENSE-DO-NOT-LEAK',
+    // W40 — the credential that lets a caller close a customer's ticket.
+    TICKET_UPDATE_PROVIDER: 'n8n',
+    N8N_TICKET_WEBHOOK_URL: 'https://n8n.internal/webhook-ticket',
+    N8N_TICKET_WEBHOOK_KEY: 'SECRET-N8N-TICKET-DO-NOT-LEAK',
+  };
+
+  /**
    * 🔴 G1 — the load-bearing test. ADR-0010 D2: the response must never carry a
    * config value, masked or otherwise.
    *
@@ -81,20 +108,7 @@ describe('IntegrationStatusService', () => {
    * separately below.
    */
   it('never leaks a config value into the response', async () => {
-    build({
-      GRAPH_CLIENT_SECRET: 'SECRET-GRAPH-DO-NOT-LEAK',
-      SERVICENOW_PASSWORD: 'SECRET-SNOW-DO-NOT-LEAK',
-      SERVICENOW_INSTANCE_URL: 'https://acme.service-now.com',
-      N8N_OUTBOUND_WEBHOOK_URL: 'https://n8n.internal/hook/abc',
-      N8N_OUTBOUND_WEBHOOK_KEY: 'SECRET-N8N-DO-NOT-LEAK',
-      INTAKE_API_KEY: 'SECRET-INTAKE-DO-NOT-LEAK',
-      REQUEST_SUBMISSION_PROVIDER: 'n8n',
-      // W39 — the one credential that lets a caller assign licences through
-      // n8n, plus the endpoint it would be sent to.
-      N8N_LICENSE_WEBHOOK_KEY: 'SECRET-N8N-LICENSE-DO-NOT-LEAK',
-      N8N_LICENSE_BASE_URL: 'https://n8n.internal/webhook',
-      LICENSE_OPS_PROVIDER: 'n8n',
-    });
+    build(LEAK_ENV);
 
     const serialised = JSON.stringify(await service.list());
 
@@ -105,6 +119,27 @@ describe('IntegrationStatusService', () => {
     // Not even a fragment: a masked tail would still leak length + last chars.
     expect(serialised).not.toContain('DO-NOT-LEAK');
     expect(serialised).not.toContain('service-now.com');
+  });
+
+  /**
+   * W40 — the fixture above is hand-maintained, and a hand-maintained fixture
+   * is a list that goes stale. Registering a connector and forgetting to feed
+   * its keys in here would leave the leak test passing while saying nothing
+   * about the new connector's secret.
+   *
+   * That is not hypothetical: writing this check found FOUR keys that had never
+   * been covered — GRAPH_TENANT_ID, GRAPH_CLIENT_ID, SERVICENOW_DEFAULT_TABLE
+   * and SERVICENOW_USER — alongside the three W40 added. So the fixture is
+   * still written by hand (the concrete shapes matter: a real instance URL is
+   * what makes `not.toContain('service-now.com')` mean anything), but its
+   * COVERAGE is derived from the inventory and can no longer drift.
+   */
+  it('feeds every registered connector key into the leak test', () => {
+    const declared = CONNECTOR_KEYS.flatMap((k) => [
+      ...CONNECTOR_CONFIG[k].editable.map((f) => f.envKey),
+      ...CONNECTOR_CONFIG[k].secrets.map((s) => s.envKey),
+    ]);
+    expect(Object.keys(LEAK_ENV).sort()).toEqual([...new Set(declared)].sort());
   });
 
   /**
@@ -158,6 +193,15 @@ describe('IntegrationStatusService', () => {
       expect(byKey(await service.list(), 'n8n-license').state).toBe('active');
     });
 
+    it('reports n8n-ticket active when only the DB says so', async () => {
+      build(
+        { TICKET_UPDATE_PROVIDER: 'direct' },
+        { ticketUpdateProvider: 'n8n' },
+      );
+
+      expect(byKey(await service.list(), 'n8n-ticket').state).toBe('active');
+    });
+
     it('a DB override back to the default also wins over env', async () => {
       // The override has to work in both directions, or "switch it back" would
       // silently do nothing.
@@ -207,6 +251,23 @@ describe('IntegrationStatusService', () => {
 
     build({ LICENSE_OPS_PROVIDER: 'n8n' });
     expect(byKey(await service.list(), 'n8n-license').state).toBe('active');
+  });
+
+  /** W40 seam ④ — same rule as the license row above. */
+  it('marks n8n ticket inactive until it is the selected provider', async () => {
+    expect(byKey(await service.list(), 'n8n-ticket').state).toBe('inactive');
+
+    build({ TICKET_UPDATE_PROVIDER: 'n8n' });
+    expect(byKey(await service.list(), 'n8n-ticket').state).toBe('active');
+  });
+
+  it('never guesses a last-success time for n8n ticket', async () => {
+    const row = byKey(await service.list(), 'n8n-ticket');
+    // Nothing records that a RITM state change went through n8n rather than the
+    // Table API, so a timestamp would mean "some ticket moved" — true on both
+    // paths, and therefore silent about this connector.
+    expect(row.lastSuccessAt).toBeNull();
+    expect(row.lastSuccessNote).toMatch(/do not store which provider/i);
   });
 
   it('never guesses a last-success time for n8n license', async () => {

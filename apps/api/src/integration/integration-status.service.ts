@@ -53,14 +53,21 @@ export class IntegrationStatusService {
   ) {}
 
   async list(): Promise<ConnectorStatus[]> {
-    const [graph, servicenow, n8nOutbound, outboundSelected, licenseSelected] =
-      await Promise.all([
-        this.graphLastSuccess(),
-        this.serviceNowLastSuccess(),
-        this.n8nOutboundLastSuccess(),
-        this.n8nSelected(),
-        this.n8nLicenseSelected(),
-      ]);
+    const [
+      graph,
+      servicenow,
+      n8nOutbound,
+      outboundSelected,
+      licenseSelected,
+      ticketSelected,
+    ] = await Promise.all([
+      this.graphLastSuccess(),
+      this.serviceNowLastSuccess(),
+      this.n8nOutboundLastSuccess(),
+      this.n8nSelected(),
+      this.n8nLicenseSelected(),
+      this.n8nTicketSelected(),
+    ]);
 
     return [
       {
@@ -116,6 +123,23 @@ export class IntegrationStatusService {
         lastSuccessNote:
           'Not recorded — assignments do not store which provider performed them',
       },
+      {
+        ...CONNECTORS['n8n-ticket'],
+        // W40 seam ④. Same rule as the license row: unconfigured is `inactive`,
+        // never `error` — during rollout "nobody selected this yet" must not
+        // read as "it is broken" (ADR-0010 D3).
+        state: ticketSelected ? 'active' : 'inactive',
+        lastSuccessAt: null,
+        /**
+         * Blank for the same reason as the license row, and one more: nothing
+         * the platform stores records that a RITM state change went through
+         * n8n rather than the Table API. A timestamp here would mean "some
+         * ticket moved", which is true on both paths and therefore says
+         * nothing about this connector.
+         */
+        lastSuccessNote:
+          'Not recorded — ticket updates do not store which provider performed them',
+      },
     ];
   }
 
@@ -147,6 +171,15 @@ export class IntegrationStatusService {
     const provider = await this.connectorConfig.resolve(
       'n8n-license',
       'licenseOpsProvider',
+    );
+    return provider === 'n8n';
+  }
+
+  /** W40 seam ④. Same resolver, same reason as above (BUG-005). */
+  async n8nTicketSelected(): Promise<boolean> {
+    const provider = await this.connectorConfig.resolve(
+      'n8n-ticket',
+      'ticketUpdateProvider',
     );
     return provider === 'n8n';
   }

@@ -124,6 +124,46 @@ W38 個契約係「transport 失敗 throw 503,各實作自己 wrap」。呢度**
 
 ⇒ 唔喺本 phase 修,記低做 follow-up 候選。**唔當佢唔存在,亦唔順手改**。
 
+## Day 1(續)— F2 ✅
+
+`N8nTicketProvider` + connector 註冊 + migration。**555 / 555**(538→555)· lint 0 · tsc 0。
+
+### 🔴 R3 — 我 plan 嘅任務切分同型別現實矛盾
+
+原 plan:F2 寫 provider,F3 註冊 connector。落手先發現**做唔到** —— `ConnectorConfigService.resolve()` 第一個參數係 typed `ConnectorKey`,所以 `'n8n-ticket'` 未入 `CONNECTORS` 之前,provider 一行都編譯唔過。
+
+⇒ 註冊 + schema + `list()` row 提前落 F2,F3 淨低選路 factory + wire。已入 plan §7 changelog。
+
+> 呢個唔係「順手做多咗」,係**原本嗰條線畫喺一個唔存在嘅接縫上**。
+
+### 順帶修一個既有 AP-13 缺口 —— 而佢揭穿咗四個真窿
+
+G1 leak test(assert 冇任何 config 值洩漏落 `/admin/integrations` 回應)個 env fixture 係**手抄清單**。加新 connector 唔會自動被覆蓋。
+
+呢個正正係我今朝先寫落 skill 嘅 **AP-13 子型 ①**。所以冇再手抄多三行,而係加咗一條守門:**fixture 嘅覆蓋面必須等於 `CONNECTOR_CONFIG` 宣告嘅全部 key**。
+
+寫完即刻紅 —— 揭穿 **4 個從來未被驗過**嘅 key:
+
+```
+GRAPH_TENANT_ID · GRAPH_CLIENT_ID · SERVICENOW_DEFAULT_TABLE · SERVICENOW_USER
+```
+
+`SERVICENOW_USER` 係 **secret**(basic-auth 帳號),而佢由條 test 存在到今日一直冇被驗過。
+
+⚠️ **呢個係 scope 以外嘅嘢,我冇靜靜做**:補齊七個 key(4 個既有 + 3 個 W40)寫入 checklist、本段同 commit message。做嘅理由係唔補就等於「知道有窿而唔補」,而補法只係 fixture 加值,零行為風險。
+
+**fixture 本身仍然手寫** —— 具體形狀有價值(一個真嘅 instance URL 先令 `not.toContain('service-now.com')` 有意義)。derive 嘅係**覆蓋面**,唔係內容。
+
+### fails-before 證到一件比預期更重要嘅事
+
+刪走 `list()` 個 n8n-ticket row + 抽走 leak fixture 一個 key → **5 failed / 15 passed**。
+
+🔴 而且 **TypeScript 一句都冇投訴**少咗一個 row。
+
+即係話 W39 個病(新 connector 註冊咗但 `list()` 冇出，而條手抄 test 照綠)**確實可以完全靜靜發生** —— 冇任何編譯期防線,只有嗰條 derive test。
+
+> 第一次插探針時我用 `.map()` 包住個 row,結果 TS 型別推導壞咗、compile 直接爆。咁係「證咗另一件事」,唔係證到守門。改成**純刪除**先係真正重現嗰個 bug 嘅形狀。
+
 ### 下一步
 
-F2 —— `N8nTicketProvider`(2004)。
+F3 —— 選路 factory + module wire。

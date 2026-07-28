@@ -156,6 +156,7 @@ ADR D3 表把 ticket 側 direct 實作叫 `DirectServiceNowProvider`。但 `apps
 | 2026-07-28 | Initial draft | kickoff | — |
 | 2026-07-28 | D0 gate 解除:五個 OQ + H1 全部拍板,`draft → active` | 見 §8 | **Chris Lai** |
 | 2026-07-28 | §8 加事實更正:**ADR-0016 預算 gate 已於 W36 實作**(OQ-E 選項描述當時寫錯「未實作」)+ 記低 WIP/close 重複寫入問題留 F4 定案 | 錯誤事實會令 F4 走錯方向 | — |
+| 2026-07-28 | 🔴 **R3 deviation — F2/F3 界線重劃**。原 plan 把 connector 註冊放 F3、provider 放 F2,當佢哋可以分開做。**做唔到**:`ConnectorConfigService.resolve()` 第一個參數係 typed `ConnectorKey`,所以 `'n8n-ticket'` 未入 `CONNECTORS` 之前 provider **編譯唔過**。⇒ connector 註冊 + schema + `list()` row + 相關 test **提前落 F2**;F3 淨低選路 factory + module wire | 任務切分同型別現實矛盾,實作先發現 | — |
 
 ## 8. Open Questions —— ✅ **全部已拍板(Chris Lai,2026-07-28)**
 
