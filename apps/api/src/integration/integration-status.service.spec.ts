@@ -1,6 +1,12 @@
-import { ConfigService } from '@nestjs/config';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
-import { CONNECTOR_KEYS } from './connectors';
+import { ConnectorConfigService } from './connector-config.service';
+import {
+  CONNECTOR_CONFIG,
+  CONNECTOR_KEYS,
+  type ConnectorKey,
+} from './connectors';
 import { IntegrationStatusService } from './integration-status.service';
 
 const SYNCED = new Date('2026-07-20T03:00:00.000Z');
@@ -16,7 +22,20 @@ describe('IntegrationStatusService', () => {
   };
   let env: Record<string, string>;
 
-  const build = (overrides: Record<string, string> = {}) => {
+  /**
+   * BUG-005: the service now reads selection through ConnectorConfigService, so
+   * the double is a real DB-then-env resolver rather than an env bag — column
+   * override wins, otherwise fall back to that field's env key, using the SAME
+   * CONNECTOR_CONFIG mapping production uses. A hand-written mapping here would
+   * be one more copy that can drift, which is the defect this bug is about.
+   *
+   * @param overrides env values, keyed by env var (existing tests unchanged)
+   * @param db        DB overrides, keyed by ConnectorConfig column
+   */
+  const build = (
+    overrides: Record<string, string> = {},
+    db: Record<string, string> = {},
+  ) => {
     env = { ...overrides };
     prisma = {
       skuCatalog: {
@@ -29,9 +48,18 @@ describe('IntegrationStatusService', () => {
       },
       request: { findFirst: jest.fn().mockResolvedValue(null) },
     };
+    const connectorConfig = {
+      resolve: jest.fn(async (connector: ConnectorKey, column: string) => {
+        if (column in db) return db[column];
+        const field = CONNECTOR_CONFIG[connector].editable.find(
+          (f) => f.column === column,
+        );
+        return field ? env[field.envKey] : undefined;
+      }),
+    };
     service = new IntegrationStatusService(
       prisma as unknown as PrismaService,
-      { get: (k: string) => env[k] } as unknown as ConfigService,
+      connectorConfig as unknown as ConnectorConfigService,
     );
   };
 
@@ -42,8 +70,15 @@ describe('IntegrationStatusService', () => {
 
   /**
    * 🔴 G1 — the load-bearing test. ADR-0010 D2: the response must never carry a
-   * config value, masked or otherwise. Feed the config real-looking secrets and
-   * assert none of them survive serialisation.
+   * config value, masked or otherwise.
+   *
+   * ⚠️ BUG-005 changed what this proves. The service no longer takes
+   * ConfigService at all, so it cannot read a secret even if someone asked it
+   * to — the guarantee moved from "we checked the output" to "there is no wire
+   * to the secrets". The test is kept because the non-secret values it now
+   * feeds (webhook URLs, instance URLs) DO reach the service through the
+   * resolver and still must not be echoed. The structural half is pinned
+   * separately below.
    */
   it('never leaks a config value into the response', async () => {
     build({
@@ -94,6 +129,70 @@ describe('IntegrationStatusService', () => {
     expect(byKey(rows, 'graph').state).toBe('required');
     expect(byKey(rows, 'servicenow').state).toBe('required');
     expect(byKey(rows, 'n8n-inbound').state).toBe('required');
+  });
+
+  /**
+   * 🔴 BUG-005 regression — the whole point of the bug.
+   *
+   * An admin flips the provider through the UI (ADR-0013 Model C), which writes
+   * the ConnectorConfig column and leaves env alone. That is the normal route
+   * in UAT, where changing env means going through Azure. The runtime has
+   * honoured DB-then-env since W34; this panel did not, so it kept reporting
+   * `inactive` for a path the platform was actually taking.
+   */
+  describe('reflects a DB override, not just env (BUG-005)', () => {
+    it('reports n8n-outbound active when only the DB says so', async () => {
+      build(
+        { REQUEST_SUBMISSION_PROVIDER: 'direct' },
+        {
+          requestSubmissionProvider: 'n8n',
+        },
+      );
+
+      expect(byKey(await service.list(), 'n8n-outbound').state).toBe('active');
+    });
+
+    it('reports n8n-license active when only the DB says so', async () => {
+      build({ LICENSE_OPS_PROVIDER: 'graph' }, { licenseOpsProvider: 'n8n' });
+
+      expect(byKey(await service.list(), 'n8n-license').state).toBe('active');
+    });
+
+    it('a DB override back to the default also wins over env', async () => {
+      // The override has to work in both directions, or "switch it back" would
+      // silently do nothing.
+      build(
+        { REQUEST_SUBMISSION_PROVIDER: 'n8n' },
+        {
+          requestSubmissionProvider: 'direct',
+        },
+      );
+
+      expect(byKey(await service.list(), 'n8n-outbound').state).toBe(
+        'inactive',
+      );
+    });
+
+    it('still falls back to env when the DB has no override', async () => {
+      build({ REQUEST_SUBMISSION_PROVIDER: 'n8n' });
+
+      expect(byKey(await service.list(), 'n8n-outbound').state).toBe('active');
+    });
+  });
+
+  /**
+   * The structural half of G1, and of BUG-005: this service has no route to env
+   * at all. Kept as a source check because a future edit would re-introduce the
+   * drift by simply injecting ConfigService again "just for one value" — which
+   * is exactly how the panel and the runtime came apart.
+   */
+  it('has no ConfigService wire — every setting comes through the resolver', () => {
+    const src = readFileSync(
+      join(__dirname, 'integration-status.service.ts'),
+      'utf8',
+    );
+    expect(src).not.toContain('@nestjs/config');
+    expect(src).toContain('ConnectorConfigService');
   });
 
   /**

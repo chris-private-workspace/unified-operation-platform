@@ -93,8 +93,13 @@ export async function requestSubmissionProviderFactory(
     // W37 / ADR-0015 — the platform's first @Cron. No controller: it is driven
     // by the scheduler, not by a request.
     SyncSweepService,
-    // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by env — see
+    // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by the connector
+    // config resolver (DB-then-env since W34 / ADR-0013) — see
     // requestSubmissionProviderFactory above.
+    //
+    // BUG-005: this comment used to say "picked by env". It went stale the day
+    // the resolver landed, and the same stale assumption was living in
+    // IntegrationStatusService, where it actually mattered.
     {
       provide: RequestSubmissionProvider,
       useFactory: requestSubmissionProviderFactory,
