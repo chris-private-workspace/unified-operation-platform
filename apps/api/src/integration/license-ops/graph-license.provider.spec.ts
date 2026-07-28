@@ -131,13 +131,16 @@ describe('GraphLicenseProvider', () => {
    * it proves the 503 *message* (what the API returns to the caller) is clean.
    * It does NOT prove the log line is.
    *
-   * Running these tests shows graphUnavailable() writing the raw vendor error
-   * into logger.error, and a Graph 404 body carries the UPN in the request path
-   * — so the UPN does reach the log today. That is a pre-existing defect in
-   * graph-unavailable.ts (whose own comment claims "never log the target UPN"),
-   * on every direct Graph caller, not something W38 introduced. Fixing it would
-   * change logging behaviour, which is exactly what a pure refactor must not do
-   * — logged as BUG candidate in W38 progress Day 2 instead.
+   * The log line WAS leaking when this block was written (W38): graphUnavailable
+   * interpolated the raw vendor error, and a Graph 404 body carries the UPN in
+   * the request path. W38 deliberately left it — fixing it would have changed
+   * logging behaviour, which a pure refactor must not do — and logged it as a
+   * BUG candidate instead.
+   *
+   * That is now **BUG-004, fixed**: the helper scrubs email-shaped tokens, and
+   * graph-unavailable.spec.ts asserts on the logger directly. This block keeps
+   * its narrower claim rather than being widened, because the two are different
+   * guarantees and the caller-facing message is the one this file is about.
    */
   describe('H4 — the 503 MESSAGE never carries the target UPN', () => {
     const upn = 'sensitive.person@example.com';
