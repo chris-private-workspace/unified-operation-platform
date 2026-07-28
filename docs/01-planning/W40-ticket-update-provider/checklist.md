@@ -49,12 +49,14 @@ last_updated: 2026-07-28
 - [x] **fails-before 實證**:刪走 `list()` 個 row + 抽走 leak fixture 一個 key → **5 failed / 15 passed**;🔴 而且 **TS 一句都冇投訴**少一個 row,證實 W39 個病確實可以靜靜發生 → 還原,`grep` = 0
 - [x] 全套 **555 / 555**(538→555)· lint 0 · tsc 0
 
-## F3 — 選路 factory + module wire
+## F3 — 選路 factory + module wire ✅ **完成**(2026-07-28)
 
-- [ ] 選路 factory 同 `requestSubmissionProviderFactory` 同一形狀;**非 `'n8n'` 一律落 `direct`**
-- [ ] wire 落 `FulfilmentModule`(或 `IntegrationModule`)+ DI token 綁 `TicketUpdateProvider`
-- [ ] factory 單元 test:unset / `'direct'` / typo → `DirectTicketProvider`;只有 `'n8n'` → `N8nTicketProvider`
-- [ ] n8n 選咗但 URL 未配置 → boot 失敗(同 outbound factory 一致)
+- [x] `ticketUpdateProviderFactory` **exported**(唔跟 seam ② 個 inline 寫法)—— 因為 fail-safe 方向係本 seam 唯一值得單獨 test 嘅性質:寫反咗**乜都唔會爆**,只會靜靜開始經第三方 close 真單
+- [x] wire 落 `IntegrationModule`(seam ② 隔籬),DI token 綁抽象 + `exports` 加 `TicketUpdateProvider`
+- [x] factory spec 9 條:unset / `'direct'` / `'n8n'` + **6 個 near-miss**(`N8N` · ` n8n` · `n8n ` · `nn8n` · `true` · `''`)—— 個值嚟自 admin 打入 DB 嘅欄,大小寫同空格唔係天方夜譚
+- [x] ⚠️ **更正本 checklist 一項寫錯**:原寫「n8n 選咗但 URL 未配置 → **boot 失敗**(同 outbound factory 一致)」。**唔應該咁做** —— `N8nTicketProvider` 同 `N8nLicenseProvider` 一樣係 **per-call resolve** URL,boot 再 resolve 一次就係兩處各自維護同一件事(AP-13)。URL 缺失喺 per-call 報,已由 F2 一條 test 蓋住
+- [x] **fails-before 實證**:把 `choice === 'n8n'` 改成 `choice ?`(truthy —— fail-safe 搞反嘅**真實形狀**)→ **6 failed / 3 passed**,`'direct'` 同全部 near-miss 一齊紅 → 還原,`grep` = 0
+- [x] 全套 **564 / 564**(555→564)· lint 0 · tsc 0
 
 ## F4 — `assign.service` 接 trigger(🔴 OQ-E:close + WIP 兩個都做)
 

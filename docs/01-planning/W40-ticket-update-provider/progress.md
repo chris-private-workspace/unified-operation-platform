@@ -164,6 +164,36 @@ GRAPH_TENANT_ID · GRAPH_CLIENT_ID · SERVICENOW_DEFAULT_TABLE · SERVICENOW_USE
 
 > 第一次插探針時我用 `.map()` 包住個 row,結果 TS 型別推導壞咗、compile 直接爆。咁係「證咗另一件事」,唔係證到守門。改成**純刪除**先係真正重現嗰個 bug 嘅形狀。
 
+## Day 1(續)— F3 ✅
+
+選路 factory + wire 落 `IntegrationModule`。**564 / 564**(555→564)· lint 0 · tsc 0。
+
+三個 seam 而家全部有掣,**預設全部係現行行為**。
+
+### 一個同 seam ② 唔同嘅寫法,有理由
+
+seam ② 個 factory 係 **inline** 喺 module 度,所以冇 test。呢個 factory 寫成 **exported function**(跟 `requestSubmissionProviderFactory` 嘅先例),因為 fail-safe 方向係本 seam **唯一**值得單獨 test 嘅性質:
+
+> 寫反咗**乜都唔會爆** —— app 照 boot、test 照綠 —— 只係 ticket closure 靜靜開始經第三方出去。
+
+所以 near-miss 逐個獨立 assert(`N8N` · ` n8n` · `n8n ` · `nn8n` · `true` · `''`),唔併埋一條。呢個值係 admin 打入 DB 欄嘅,大小寫同前後空格唔係天方夜譚。
+
+⚠️ **冇順手改 seam ② 個 inline factory**(§1.3,冇 break 就唔郁),但佢確實冇同等 test —— 記低。
+
+### 又更正咗自己一項
+
+checklist 原本寫「n8n 選咗但 URL 未配置 → **boot 失敗**(同 outbound factory 一致)」。
+
+**唔應該咁做。** `N8nTicketProvider` 同 `N8nLicenseProvider` 一樣係 **per-call resolve** URL(唔喺 constructor 攞),所以 boot 再 resolve 一次就係**兩處各自維護同一件事** —— AP-13 子型 ②。
+
+跟 outbound 個 pattern 表面上「一致」,實際上係抄咗一個唔適用嘅形狀。URL 缺失喺 per-call 報,F2 已經有 test 蓋住。
+
+### fails-before 揀咗真實形狀
+
+把 `choice === 'n8n'` 改成 `choice ?` —— 呢個係 fail-safe 搞反嘅**實際寫法**(有人想「有值就用 n8n」),唔係一個為咗令 test 紅而砌嘅改動。
+
+**6 failed / 3 passed**:`'direct'` 同全部 near-miss 一齊紅,而 unset 仍然綠(truthy 對 `undefined` 啱好答啱)。呢個分佈本身就講清楚咗:**淨係測 unset 係測唔到呢個 bug 嘅**。
+
 ### 下一步
 
-F3 —— 選路 factory + module wire。
+F4 —— 接 close/WIP trigger。呢個係本 phase **唯一產生新對外行為**嘅一步,亦係要定案「重複寫入點擋」嗰個。

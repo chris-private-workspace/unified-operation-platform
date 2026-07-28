@@ -9,6 +9,40 @@ import { ConnectorConfigService } from './connector-config.service';
 import { LicenseOperationsProvider } from './license-ops/license-ops.provider';
 import { GraphLicenseProvider } from './license-ops/graph-license.provider';
 import { N8nLicenseProvider } from './license-ops/n8n-license.provider';
+import { TicketUpdateProvider } from './ticket-update/ticket-update.provider';
+import { DirectTicketProvider } from './ticket-update/direct-ticket.provider';
+import { N8nTicketProvider } from './ticket-update/n8n-ticket.provider';
+
+/**
+ * W40 — the switch for seam ④ (ADR-0017 D1: one per seam; ADR-0013 C2: read
+ * once at boot, a change takes effect on restart).
+ *
+ * Anything other than the exact string 'n8n' resolves to Direct. Unset, a typo
+ * and a half-finished config must all land on the behaviour that has always
+ * been there — never on the one that lets a third party close a customer's
+ * ticket.
+ *
+ * Exported (unlike seam ②'s inline factory) so that fail-safe direction can be
+ * asserted directly. It is the one property here worth a test: getting it
+ * backwards would not break anything visibly, it would just quietly start
+ * routing real ticket closures through n8n.
+ *
+ * No webhook-URL check at boot, deliberately: N8nTicketProvider resolves the
+ * URL per call and reports a missing one as a configuration problem rather than
+ * an outage. Checking it here as well would be a second place maintaining the
+ * same fact.
+ */
+export async function ticketUpdateProviderFactory(
+  direct: DirectTicketProvider,
+  n8n: N8nTicketProvider,
+  connectorConfig: ConnectorConfigService,
+): Promise<TicketUpdateProvider> {
+  const choice = await connectorConfig.resolve(
+    'n8n-ticket',
+    'ticketUpdateProvider',
+  );
+  return choice === 'n8n' ? n8n : direct;
+}
 
 /**
  * Integration layer — the platform's outbound edge.
@@ -62,12 +96,22 @@ import { N8nLicenseProvider } from './license-ops/n8n-license.provider';
         ConnectorConfigService,
       ],
     },
+    // ADR-0017 seam ④ — same arrangement as seam ② above. Consumers inject the
+    // abstract class only, so nothing downstream can tell which one it got.
+    DirectTicketProvider,
+    N8nTicketProvider,
+    {
+      provide: TicketUpdateProvider,
+      useFactory: ticketUpdateProviderFactory,
+      inject: [DirectTicketProvider, N8nTicketProvider, ConnectorConfigService],
+    },
   ],
   exports: [
     GraphService,
     ServiceNowService,
     ConnectorConfigService,
     LicenseOperationsProvider,
+    TicketUpdateProvider,
   ],
 })
 export class IntegrationModule {}
