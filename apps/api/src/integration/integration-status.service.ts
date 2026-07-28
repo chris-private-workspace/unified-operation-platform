@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConnectorConfigService } from './connector-config.service';
 import {
   CONNECTORS,
   type ConnectorKey,
@@ -40,15 +40,27 @@ export interface ConnectorStatus {
 export class IntegrationStatusService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    /**
+     * BUG-005: the panel must ask the same resolver the runtime factories ask,
+     * or it reports a route the platform is not taking.
+     *
+     * ConfigService was removed rather than kept alongside — with both injected
+     * it stays one convenient line away to read env directly again, which is
+     * how the two drifted apart in the first place. Nothing here can bypass the
+     * resolver now.
+     */
+    private readonly connectorConfig: ConnectorConfigService,
   ) {}
 
   async list(): Promise<ConnectorStatus[]> {
-    const [graph, servicenow, n8nOutbound] = await Promise.all([
-      this.graphLastSuccess(),
-      this.serviceNowLastSuccess(),
-      this.n8nOutboundLastSuccess(),
-    ]);
+    const [graph, servicenow, n8nOutbound, outboundSelected, licenseSelected] =
+      await Promise.all([
+        this.graphLastSuccess(),
+        this.serviceNowLastSuccess(),
+        this.n8nOutboundLastSuccess(),
+        this.n8nSelected(),
+        this.n8nLicenseSelected(),
+      ]);
 
     return [
       {
@@ -67,7 +79,7 @@ export class IntegrationStatusService {
         ...CONNECTORS['n8n-outbound'],
         // Only constructed when selected (fulfilment.module factory), so this is
         // the one connector where "not set up" is a real, reportable state.
-        state: this.n8nSelected() ? 'active' : 'inactive',
+        state: outboundSelected ? 'active' : 'inactive',
         lastSuccessAt: n8nOutbound,
         lastSuccessNote: null,
       },
@@ -91,7 +103,7 @@ export class IntegrationStatusService {
         // W39 / OQ-4: unconfigured reports `inactive`, not `error`. `state`
         // describes deployment shape, never health (ADR-0010 D3) — and during
         // rollout "nobody selected this yet" must not look like "it is broken".
-        state: this.n8nLicenseSelected() ? 'active' : 'inactive',
+        state: licenseSelected ? 'active' : 'inactive',
         lastSuccessAt: null,
         /**
          * Deliberately blank rather than derived. Nothing the platform stores
@@ -107,26 +119,36 @@ export class IntegrationStatusService {
     ];
   }
 
-  /** n8n is the outbound provider only when explicitly selected (ADR-0008 D3). */
-  n8nSelected(): boolean {
-    return this.config.get<string>('REQUEST_SUBMISSION_PROVIDER') === 'n8n';
+  /**
+   * BUG-005 — both selection reads go through the SAME resolver the runtime
+   * factories use (DB-then-env, ADR-0013 D3).
+   *
+   * They used to read env directly. The runtime has resolved DB-then-env since
+   * W34, so an admin who flipped a provider through the UI — the entire point
+   * of ADR-0013 Model C, and the only practical route in UAT where changing env
+   * means going through Azure — saw this panel keep reporting `inactive` while
+   * the platform was in fact routing through n8n. A monitoring surface that
+   * contradicts the runtime is worse than no surface: nobody goes looking at
+   * n8n for a fault when the panel says n8n is not in the path.
+   *
+   * The rule this encodes: whatever decides the route at runtime is what this
+   * panel must ask. Not a copy of the same logic — the same call.
+   */
+  async n8nSelected(): Promise<boolean> {
+    const provider = await this.connectorConfig.resolve(
+      'n8n-outbound',
+      'requestSubmissionProvider',
+    );
+    return provider === 'n8n';
   }
 
-  /**
-   * W39 seam ②. Reads ENV ONLY, exactly like n8nSelected above.
-   *
-   * ⚠️ Known and pre-existing: a DB override set through the connector config
-   * UI (ADR-0013) will NOT be reflected in this panel — both selection rows
-   * read env while the runtime factory resolves DB-then-env. So the panel can
-   * say `inactive` while the platform is in fact routing through n8n.
-   *
-   * Not fixed here: this service takes ConfigService only, and giving it the
-   * resolver is a change to n8n-outbound's reported state too — outside what
-   * W39 was asked to do. Logged in W39 progress as a follow-up; the same fix
-   * closes both rows at once, which is the right way round.
-   */
-  n8nLicenseSelected(): boolean {
-    return this.config.get<string>('LICENSE_OPS_PROVIDER') === 'n8n';
+  /** W39 seam ②. Same resolver, same reason as above (BUG-005). */
+  async n8nLicenseSelected(): Promise<boolean> {
+    const provider = await this.connectorConfig.resolve(
+      'n8n-license',
+      'licenseOpsProvider',
+    );
+    return provider === 'n8n';
   }
 
   /** Graph: the catalog sync and the tenant snapshot sweep both prove it worked. */
@@ -155,7 +177,7 @@ export class IntegrationStatusService {
    * time — but unlike the inbound case the origin value is unambiguous.
    */
   private async n8nOutboundLastSuccess(): Promise<Date | null> {
-    if (!this.n8nSelected()) return null; // not the active path — nothing to claim
+    if (!(await this.n8nSelected())) return null; // not the active path — nothing to claim
     const row = await this.prisma.request.findFirst({
       where: { origin: 'platform-created', serviceNowSysId: { not: null } },
       orderBy: { createdAt: 'desc' },

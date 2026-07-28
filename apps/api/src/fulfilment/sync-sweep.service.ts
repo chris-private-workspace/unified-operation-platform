@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { EventType, LineItemStage, RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import { scrubPii } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
@@ -73,8 +74,10 @@ export class SyncSweepService {
     try {
       await this.sweep();
     } catch (err) {
+      // BUG-004: scrubbed — whatever escaped may well be a Graph error, and
+      // this sweep exists precisely to look users up by UPN.
       this.logger.error(
-        `Sync sweep failed unexpectedly: ${(err as Error)?.message}`,
+        `Sync sweep failed unexpectedly: ${scrubPii((err as Error)?.message)}`,
       );
     }
   }
@@ -103,10 +106,12 @@ export class SyncSweepService {
         // D6: abort the ROUND, do not carry on to the next request. If Graph is
         // throttling or refusing us, the remaining lookups would fail too and
         // hammering it makes the throttle worse. Next round tries again.
+        // BUG-004: the failing call IS a findUser, so this message is the most
+        // likely place in the whole codebase for a UPN to arrive from Graph.
         this.logger.warn(
-          `Sync sweep aborted after ${scanned} of ${candidates.length} lookup(s): ${
-            (err as Error)?.message
-          }`,
+          `Sync sweep aborted after ${scanned} of ${
+            candidates.length
+          } lookup(s): ${scrubPii((err as Error)?.message)}`,
         );
         break;
       }

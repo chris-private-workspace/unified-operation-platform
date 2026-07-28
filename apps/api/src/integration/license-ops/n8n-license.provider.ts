@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ConnectorConfigService } from '../connector-config.service';
 import { N8N_LICENSE_PATHS } from '../connectors';
+import { scrubPii } from '../scrub-pii';
 import {
   AssignOptions,
   AssignOutcome,
@@ -105,8 +106,11 @@ export class N8nLicenseProvider extends LicenseOperationsProvider {
         body: JSON.stringify(body),
       });
     } catch (err) {
+      // BUG-004: n8n relays Graph's text, so the same UPN can arrive this way.
       this.logger.error(
-        `n8n unreachable while trying to ${action}: ${(err as Error)?.message}`,
+        `n8n unreachable while trying to ${action}: ${scrubPii(
+          (err as Error)?.message,
+        )}`,
       );
       throw new ServiceUnavailableException(
         `n8n is unavailable — could not ${action}. Please retry.`,
