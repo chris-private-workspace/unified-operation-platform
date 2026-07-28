@@ -318,6 +318,78 @@ n8n     2004 用 neverError:true,webhook 照答 200   → caller 收到 error ou
 - 一條 test 叫 `both target sc_req_item`,但 n8n 嗰半根本 assert 唔到表名(表名喺 2004 個 patchUrl 入面,平台冇送)⇒ **名闊過 assert**(BUG-004 教訓),改成 `direct names sc_req_item; n8n names the RITM and the mode`
 - 刪走一句冗餘 assertion(`toBe('error')` 之後再 `not.toBe('updated')`)
 
-### 下一步
+## Day 1(續)— F6 doc-sync ✅ · **W40 收官**
 
-F6 —— doc-sync(ADR-0017 補註 · BACKLOG · runbook 08 · ADR-0016 D6 那句)。
+四處同步:**ADR-0017** 實作補註「辛 — W40」· **BACKLOG**(row + 最後更新)· **runbook 08 新增 §6** · `assign.service` code comment。
+
+### ADR-0016 D6 嗰句點處理
+
+D6 寫「a block **changes no state**, so it writes no AuditLog」。W40 之後,一個被擋嘅 assign 會寫 `ticketHeldAt` 並 PATCH 一次 SN。
+
+**ADR-0016 已 Accepted,內容一個字唔改**(要推翻要寫新 ADR)。喺 ADR-0017 補註講清楚實情:**冇 AuditLog 呢部分不變**,而「changes no state」要理解成佢**原本要保護嘅嘢** —— 冇 licence 郁、冇 ledger 數字郁。
+
+### runbook 08 加 §6,但冇搞亂佢個焦點
+
+runbook 08 主線係 **inbound intake**(場景一,不可切換)。W40 屬另外兩個**可切換**嘅 seam。
+
+加咗一節而唔係開新檔,理由係 runbook 08 個目的就係「**避免『以為做完』**」—— 而「seam 做完」最易被讀成「呢條路通咗」。節開頭明寫「唔屬本文件主線」。
+
+§6.3 特別寫低一件**要 Chris 喺 n8n UI 做**嘅嘢:D3 要求兩邊都寫低 RITM 分工,平台側已經寫入 code(連實讀證據),**n8n 側 sticky 仲欠**。
+
+### ⚠️ 一樣改唔到
+
+`SESSION_SUMMARY.md` **唔喺本 worktree**(`**/*SESSION*` 零命中 —— SessionStart hook 由另一個 checkout 讀)。冇跨 worktree 改檔,記做 carry-over。
+
+---
+
+## Closeout — W40 ✅
+
+**F1-F6 全交付,同一日。** api **528 → 588**(+60)· lint 0 · tsc 0 · 兩個 additive migration,DB 實查。
+
+⇒ **ADR-0017 rollout 戊(W36)· 己(W38)· 庚(W39)· 辛(W40)—— 4/4 全數交付。**
+
+### 三個 phase 級決定
+
+| | |
+|---|---|
+| **OQ-A** | `addWorkNote` **唔入**介面 —— 2004 冇 note-only mode,硬塞落 mode 1 會令切掣時 assign 成功嘅單被標成 WIP |
+| **OQ-E** | close + hold 兩個 trigger 都接;close 唔 fallback 去 parent REQ |
+| **OQ-D 收窄** | retry 分兩種:work note 直連、ticket state 走 seam |
+
+### 四次被自己嘅守門捉到,其中兩次係我判斷錯
+
+1. **boundary test 個正面半邊** —— TS `abstract` 方法**冇 runtime 存在**,`getOwnPropertyNames` 只返 `["constructor"]` ⇒ 我條 negative assertion **永遠綠**
+2. **`resolve()` 個 typed `ConnectorKey`** —— 揭穿 F2/F3 條線畫喺一個**唔存在嘅接縫**上(R3)
+3. **leak test fixture 係手抄清單** —— 加守門令覆蓋面由 `CONNECTOR_CONFIG` derive,即刻揭穿 **4 個從來未驗過**嘅 key(含 `SERVICENOW_USER`)
+4. **fails-before 證實 TS 完全唔投訴 `list()` 少一個 row** —— W39 個病確實可以完全靜靜發生
+
+### 兩次「唔照抄」
+
+- **冇跟 checklist「spec 唔 mock provider」** —— W38 嗰個手法係為咗保住 raw→503 wrap 喺測試鏈,seam ④ 冇同等嘢。**抄一個手法之前要問佢原本解緊咩問題。**
+- **冇照抄 work note 個 REQ fallback** —— REQ 係 `sc_request` 而 seam ④ 只寫 `sc_req_item`
+
+### 🚧 明確未做 / carry-over
+
+| | |
+|---|---|
+| 🔴 **真切換零 live 驗證** | 2004 secret 仍 `CHANGE_ME_SHARED_SECRET` · patchUrl **hardcode DEV host** · credential **row-level ACL**(失敗形態 = **HTTP 200 + `status:'error'`**)· UAT 未接通 · 平台未部署 |
+| 🔴 **n8n 側 sticky 未寫 RITM 分工** | D3 要求兩邊都寫;平台側已寫。**要 Chris 喺 n8n UI 做**(runbook §6.3) |
+| ⚠️ **既有 work note fallback 有問題** | `item.serviceNowSysId ?? request.serviceNowSysId` 攞 REQ sysId 配 `'sc_req_item'` table。**既有行為,冇修**(超出 W40) |
+| ⚠️ **`ServiceNowService.request()` 原封 log response text** | 同 BUG-004 同類。BUG-004 劃線係「直接處理 user identity」,而修佢會掂到所有 SN 呼叫 ⇒ **冇順手改**,follow-up 候選 |
+| ⚠️ **seam ② 個 inline factory 冇 test** | seam ④ 寫成 exported function 就係為咗補呢點。**冇順手改**佢 |
+| ⚠️ **`SESSION_SUMMARY.md` 唔喺本 worktree** | 改唔到 |
+
+### anti-patterns 自檢
+
+| | |
+|---|---|
+| **AP-1 假驗收** | ✅ 五次 fails-before,每條硬紅線都證過會紅 |
+| **AP-2 mock 當 real** | ⚠️ **本 phase 最大風險,已明標** —— 全程冇真 n8n / 真 SN。緩解 = 所有 mapping 對住**實讀 workflow JSON**;真切換**明文未驗**,寫入 ADR + BACKLOG + runbook 三處 |
+| **AP-3 stale 數字** | ✅ 順手修 ADR-0016 D6 個描述;揪到 D3 三處同 workflow 對唔上 |
+| **AP-4 silent scope drift** | ✅ R3 changelog(F2/F3 重劃)· leak test 補 4 個 key **明標** · 三樣「冇順手改」逐項列 |
+| **AP-5 over-engineering** | ✅ close 唔加多餘守門(查證 stage gate 已守)· 一個 failure kind 唔係兩個 |
+| **AP-6 fallback 假象** | ✅ 掣嘅預設方向明文 + 6 個 near-miss test |
+| **AP-7 stale process** | N/A(無 live 驗證) |
+| **AP-11 驗錯 checkout** | N/A |
+| **AP-12 只驗 happy path** | ✅ 負面斷言:direct 唔打 webhook · n8n 唔掂 Table API · 被擋時第二次**冇** PATCH · 冇 RITM 時**冇** close |
+| **AP-13 兩處各自維護** | ✅ 三個位用正解:一個 kind 唔係兩個 · `KINDS_WITH_LINE_ITEMS` 由正面清單 derive · leak test 覆蓋面由 `CONNECTOR_CONFIG` derive |

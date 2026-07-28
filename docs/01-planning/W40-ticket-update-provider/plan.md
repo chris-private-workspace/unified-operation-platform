@@ -3,8 +3,8 @@ phase: W40-ticket-update-provider
 name: "N8N-SEAMS 辛 — TicketUpdateProvider + close/WIP + 1007 分工邊界"
 sprint_week: W40
 start_date: 2026-07-28
-end_date: 2026-07-31          # planned, may slip with changelog log
-status: active                # draft | active | closed —— 2026-07-28 D0 gate 解除(§8 五個 OQ 全部拍板 + H1 approve)
+end_date: 2026-07-28          # actual — F1-F6 全部喺同一日交付
+status: closed                # draft | active | closed —— 2026-07-28 收官(F1-F6 全交付;🚧 真切換未 live 驗證,見 §1 誠實邊界)
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md §D0 · §D3 · §D5 · §D6 · rollout「辛」
   - docs/adr/0013-connector-config-ui-management.md(Model C · DB-then-env · secret 留 env · **實作補註:加 connector 必然改 schema**)

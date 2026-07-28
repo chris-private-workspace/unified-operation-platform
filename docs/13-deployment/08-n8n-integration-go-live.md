@@ -304,3 +304,46 @@ W36 嘅 live 驗證行嘅係 **demo-harness mock ServiceNow**,payload 亦係照 
 | sync sweep(`@Cron` 10 分鐘 · `SYNC_SWEEP_ENABLED`) | `apps/api/src/fulfilment/sync-sweep.service.ts` · `apps/api/.env.example` · ADR-0015 |
 | 本地 smoke(唔使 n8n) | `apps/api/scripts/demo-harness/README.md` Scenario 3 · `npm run demo:mock-sn` |
 | 追蹤狀態 | `BACKLOG.md` A 區 **SEC-001** · `N8N-SEAMS-戊` row · W36 `progress.md` retro C1-C6 |
+
+---
+
+## 6. 其他兩個 seam 嘅 n8n 側前置(W39 庚 / W40 辛)
+
+> ⚠️ **呢節唔屬本文件主線。** §0-§5 講嘅係**場景一 inbound intake**(必然發生、不可切換)。呢節係另外兩個**可切換**嘅 seam,寫喺呢度只為咗一個理由:兩者都已經 code + test 齊,而「seam 做完」好易被讀成「呢條路通咗」。**兩個都未經任何 live 驗證。**
+>
+> 預設值全部係現行行為(`graph` / `direct`),所以**部署呢啲 code 唔會改變任何嘢** —— 要有人喺 Settings › Integrations 主動揀,或者設對應 env,先會切。
+
+### 6.1 seam ② `n8n-license`(W39 庚 —— 2002 / 2003 / 2005)
+
+| 前置 | 狀態 |
+|---|---|
+| 2002/2003/2005 個 `x-uop-secret` | 🔴 仍係 `CHANGE_ME_SHARED_SECRET` hardcoded(ADR-0017 附錄 #2)—— 各 workflow sticky 自己已標 TODO |
+| 平台側 `N8N_LICENSE_WEBHOOK_KEY` + `N8N_LICENSE_BASE_URL` | 未設(未切就唔需要) |
+| n8n UAT ↔ 平台環境 | 同 **[N]**,未通 |
+
+### 6.2 seam ④ `n8n-ticket`(W40 辛 —— 2004)
+
+| 前置 | 狀態 |
+|---|---|
+| 2004 個 `x-uop-secret` | 🔴 同上,`CHANGE_ME_SHARED_SECRET`(**同 2003 同一個 secret**) |
+| 2004 `patchUrl` | 🔴 **hardcode `ricohapdev.service-now.com`(DEV host)** —— deploy 前要換(ADR-0017 附錄 #3) |
+| 2004 credential `n8napiservice1` | 🔴 **row-level ACL** —— 只 PATCH 得到佢見得到嘅 RITM。sticky 明寫 fixture `REQ0043858` 嗰批 row 要加 `[PROJ-001]` SN DEV credential(問 Andy),或者 deploy 時換 credential<br>⚠️ 呢個失敗**唔會**令 webhook 報錯:2004 用 `neverError: true`,所以 webhook 照返 200 而 body `status:'error'`。平台已經識分,但**運維要知呢個係最可能嘅失敗形態** |
+| 平台側 `N8N_TICKET_WEBHOOK_KEY` + `N8N_TICKET_WEBHOOK_URL` | 未設(未切就唔需要) |
+
+### 6.3 🔴 切 seam ④ 之前必做:n8n 側 sticky note 寫死 RITM 分工
+
+ADR-0017 D3 要求**兩邊**都寫低呢條界線。平台側已經寫入 `ticket-update.provider.ts`(連實讀證據)。**n8n 側仲欠** —— 要 Chris 喺 n8n UI 加:
+
+> **1007 只 close AD 類 RITM(`phase1_items` 造出嚟嘅 action items)。**
+> **License 類 RITM(`other_items` / `pending_license`)由 UOP 平台 close,1007 永不觸碰。**
+
+點解一定要寫:1007 **已經自己** PATCH `state=3`。W40 實讀 1001 確認咗兩套 RITM 來自互斥分支(`actionItems` ← `phase1Items` / `licenseItems` ← `other_items`),但**冇任何自動守門** —— 一個 RITM sys_id 兩邊長得一模一樣,平台分唔出。呢條界線一旦喺 n8n 側被改,**兩邊會 close 對方張飛,而兩邊都唔會報錯**。
+
+### 6.4 切咗之後點驗
+
+| 睇邊度 | 應該見到 |
+|---|---|
+| Settings › Integrations | 對應 connector 由 `inactive` 變 `active`(state 講**部署形狀**唔講健康 —— ADR-0010 D3) |
+| `n8n-license` Test connection | ✅ 可探(2002 mode 1 唯讀) |
+| `n8n-ticket` Test connection | ❌ **冇得探,設計如此** —— 2004 只識改真單,健康檢查唔可以 close 人哋張飛 |
+| 失敗去咗邊 | Settings › Outbound failures,kind = `servicenow.ticket_update`,payload 帶 `transition`。**retry 走返當時選中嗰個 provider** |

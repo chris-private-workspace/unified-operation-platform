@@ -88,10 +88,11 @@ last_updated: 2026-07-28
 - [x] ⚠️ **記低一個分層事實**:`assign.service` 嗰條「queues an error outcome」**冇**紅,因為 F4 mock 咗抽象 ⇒ assign 側守唔到 provider 側嘅 mapping bug。呢個係正常分工,但唔可以當佢有雙重保險
 - [x] 全套 **588 / 588**(575→588)· lint 0 · tsc 0
 
-## F6 — doc-sync
+## F6 — doc-sync ✅ **完成**(2026-07-28)
 
-- [ ] ADR-0017 **實作補註** 加「辛 — W40」節(落差 #1 / 命名 / 兩個 caller / OQ-E trigger 定義 / OQ-D 收窄)
-- [ ] ⚠️ **ADR-0016 D6 一句唔再字面成立** —— 佢寫「a block changes no state」,而 W40 個 hold 會寫 `ticketHeldAt` + PATCH 一次 SN。ADR 已 Accepted **唔改內容**,喺 ADR-0017 補註講清楚(code comment 已標)
-- [ ] BACKLOG `N8N-SEAMS-己庚辛` row 更新 + 最後更新段
-- [ ] runbook `docs/13-deployment/08-n8n-integration-go-live.md` 加 n8n 側前置(2004 secret · DEV host · credential row-ACL)
-- [ ] 🚧 **誠實邊界照寫**:真切換零 live 驗證(同庚)
+- [x] ADR-0017 **實作補註**加「辛 — W40」節:D3 三處落差(含 blocking 嗰個)· OQ-A 收窄理由 · 命名衝突 · OQ-E trigger 定義 + **一對一發現** · 兩個 H1 · **OQ-D 收窄**(連「同 W39 方向相反」都寫明)· 一個 kind 唔係兩個 · 1007 分工邊界**實證** · 誠實邊界
+- [x] ⚠️ **ADR-0016 D6 一句唔再字面成立** —— 佢寫「a block **changes no state**」,而 W40 個 hold 會寫 `ticketHeldAt` + PATCH 一次 SN。**ADR 已 Accepted,內容一個字唔改**;喺 ADR-0017 補註寫清楚:冇 AuditLog 嗰部分不變,而「changes no state」要理解成佢**原本要保護嘅嘢**(冇 licence 郁、冇 ledger 數字郁)。`assign.service` code comment 已同步
+- [x] BACKLOG `N8N-SEAMS-己庚辛` row 加辛 + 最後更新段(**rollout 4/4**)
+- [x] runbook 08 新增 **§6**:兩個 seam 嘅 n8n 側前置(2004 secret · **DEV host** · **credential row-ACL** + 佢個失敗形態係 **HTTP 200 + `status:'error'`**)· **§6.3 切之前必做:n8n sticky 寫死 RITM 分工** · §6.4 切咗之後點驗。開頭明寫「唔屬本文件主線」,唔搞亂佢個 inbound 焦點
+- [x] 🚧 **誠實邊界照寫**(ADR 補註 + runbook §6 + BACKLOG 三處):真切換零 live 驗證
+- [x] ⚠️ **`SESSION_SUMMARY.md` 唔喺本 worktree**(`**/*SESSION*` 零命中 —— SessionStart hook 由另一個 checkout 讀)⇒ **冇跨 worktree 改檔**,記做 carry-over
