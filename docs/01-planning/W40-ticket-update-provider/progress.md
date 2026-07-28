@@ -79,6 +79,51 @@ Chris 五個 OQ + H1 **全部跟建議**(plan §8 有表)。
 
 ⇒ 兩個都唔可以照 `if (blocked) markInProgress()` 落去,要**只喺狀態轉變時寫**。已入 plan §8 + F4 checklist,**留 F4 定案唔喺 kickoff 猜**。
 
+## Day 1 — 2026-07-28 · F1 ✅
+
+三個新檔落 `integration/ticket-update/`(對齊 W38 `license-ops/`):抽象 + `DirectTicketProvider` + boundary spec,另加 6 條行為 spec。
+
+**538 / 538**(528→538)· lint 0 · tsc 0。
+
+### 條 test 嘅正面半邊捉到我一個真錯
+
+boundary spec 原本用 `Object.getOwnPropertyNames(TicketUpdateProvider.prototype)` 去讀介面有邊幾個方法。
+
+**TS `abstract` 方法冇 runtime 存在** —— 個 array 淨係 `["constructor"]`。
+
+即係話 `expect(methods).not.toContain('addWorkNote')` **無論介面寫成點都會綠**。一條永遠綠嘅 test,而佢個名講住佢守住 OQ-A。
+
+捉到佢嘅係**正面半邊**(`toContain('markInProgress')` 紅咗)。呢個正正係 W38 開始配對正負半邊嘅理由 —— 今次即刻兌現。
+
+> 同 **AP-13** 講嘅「兩種都會令 test 保持綠」係同一件事:一條 assert 唔到嘢嘅 test,同一份 stale 手抄清單一樣,都係**用綠色掩蓋事實**。
+
+改成 match 宣告形式 `abstract X(` —— 唔用裸名,因為呢個檔嘅 comment 大篇幅討論 `addWorkNote`(解釋點解佢唔喺度),裸名檢查會把解釋本身當成違規。W39 喺 integration-probe 踩過同一個坑。
+
+### 兩個同 W38 有意識唔同嘅決定
+
+**① transport 失敗 throw,但唔 wrap 成 503。**
+
+W38 個契約係「transport 失敗 throw 503,各實作自己 wrap」。呢度**跟原則唔跟實作**:seam ④ 嘅 caller 按 ADR-0011 OD4 **一定**會 swallow 咗個 error 再入佇列(唔可以令一個已成功嘅 assign 變失敗),所以 503 呢個 HTTP 語意**永遠冒唔出去**。wrap 佢等於砌一個冇人收得到嘅形狀。
+
+**② table 寫死 `sc_req_item`,唔跟 `SERVICENOW_DEFAULT_TABLE`。**
+
+2004 個 patchUrl 焗死咗 `/api/now/table/sc_req_item/`。direct 側若然跟 config,兩條「理應等價」嘅路徑就會喺有人改設定嗰日靜靜分叉 —— 一個設定值默默決定緊其中一邊寫邊張表。已經加咗 test 守住。
+
+### fails-before
+
+介面加 `abstract addWorkNote` + `outbound-retry` 加 seam import → **兩條真紅**;額外收穫係 **TS 都爆**(`DirectTicketProvider` 冇實作嗰個方法),即係呢條邊界有兩層守。還原後 `grep` = 0。
+
+### ⚠️ 順帶見到,**冇順手修**
+
+`servicenow.service.ts:71-72` 個 `request()` 失敗時 `logger.error(...)` **原封 log 咗 response text**。
+
+同 **BUG-004** 係同一類(外部字串當安全內容 log)。但:
+
+- BUG-004 收窄範圍嘅理由係「**直接處理 user identity** 嘅 vendor 呼叫」,而 ticket 路徑處理嘅係 sysId + 平台自己寫嘅 note
+- 修佢會掂到**所有** SN 呼叫(intake / outbound / retry),明顯超出 W40 範圍(H3)
+
+⇒ 唔喺本 phase 修,記低做 follow-up 候選。**唔當佢唔存在,亦唔順手改**。
+
 ### 下一步
 
-F1 —— `TicketUpdateProvider` 抽象 + `DirectTicketProvider` + boundary spec。
+F2 —— `N8nTicketProvider`(2004)。

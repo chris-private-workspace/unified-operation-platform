@@ -19,14 +19,18 @@ last_updated: 2026-07-28
 - [x] ⚠️ 拍板後自查揪到**事實錯誤**:ADR-0016 預算 gate **W36 已實作**,唔係「未實作」⇒ 已入 plan §8 + changelog(錯事實會令 F4 走錯方向)
 - [x] plan `status: draft → active`
 
-## F1 — `TicketUpdateProvider` 抽象 + `DirectTicketProvider`
+## F1 — `TicketUpdateProvider` 抽象 + `DirectTicketProvider` ✅ **完成**(2026-07-28)
 
-- [ ] `integration/ticket-update/ticket-update.provider.ts` —— abstract class 做 DI token(同 W38 `license-ops` 同一形狀)
-- [ ] 介面**只收兩個方法**:`markInProgress(sysId, note)` · `closeComplete(sysId, note)` —— 🔴 **OQ-A:`addWorkNote` 唔入**
-- [ ] 正規化 outcome:2004 返 `{status, httpStatus, newState, ...}` 而 `snow.updateRecord` 係 throw/void ⇒ 同 W38 一樣要 map 入同一詞彙
-- [ ] transport 失敗 **throw**(沿用 ADR-0017 實作補註 ④ 嘅 error 契約,唔入 outcome)
-- [ ] `DirectTicketProvider` 包 `snow.updateRecord({state:'3', close_notes})` / `({state:'2', work_notes})`
-- [ ] boundary spec:鎖死 `addWorkNote` **唔經** seam(理由寫入 test 名),同 W38 `license-ops.boundary.spec.ts` 同一手法
+- [x] `integration/ticket-update/ticket-update.provider.ts` —— abstract class 做 DI token(同 W38 `license-ops` 同一形狀)
+- [x] 介面**只收兩個方法**:`markInProgress` · `closeComplete` —— 🔴 **OQ-A:`addWorkNote` 唔入**,理由逐條寫入檔頭
+- [x] 正規化 outcome `{status:'updated', newState}` | `{status:'error', details}`;`newState` **必須有**,因為 OQ-C 講明 contract 係「兩邊去到同一個 state」,冇佢就冇嘢 assert
+- [x] transport 失敗 **throw**,但 🔴 **刻意唔 wrap 成 503**(同 W38 有意識分別):本 seam 嘅 caller 按 ADR-0011 OD4 **一定** swallow + 入佇列,wrap 成 HTTP 語意只會製造一個永遠冒唔出去嘅 status。跟嘅係同一條原則,唔係同一個實作
+- [x] `RITM_STATE` / `RITM_TABLE` 由 **2004 JSON 實讀**寫成常數;table **寫死 `sc_req_item`** 唔跟 `SERVICENOW_DEFAULT_TABLE` —— 2004 個 patchUrl 焗死咗表名,跟 config 會令兩條路徑喺有人改設定嗰日靜靜分叉
+- [x] `DirectTicketProvider` + 6 條行為 spec(field map 逐字 assert · 兩個 transition 唔可以互溝 · transport throw · `newState` fallback)
+- [x] boundary spec:OQ-A 介面形狀 + OQ-D `outbound-retry` 唔走 seam + table 唔跟 config
+- [x] 🔴 **正面半邊捉到我一個真錯**:原本用 `getOwnPropertyNames(prototype)` 讀方法 —— TS `abstract` 方法**冇 runtime 存在**,只返 `["constructor"]` ⇒ negative assertion **永遠綠**。改成 match 宣告形式 `abstract X(`(避開 comment,W39 踩過)
+- [x] **fails-before 實證**:介面加 `abstract addWorkNote` + `outbound-retry` 加 import → **兩條真紅**,而且 TS **額外**爆一層(`DirectTicketProvider` 冇實作)→ 還原,`grep` = **0**
+- [x] 全套 **538 / 538**(528→538)· lint 0 · tsc 0
 
 ## F2 — `N8nTicketProvider`(2004)
 
