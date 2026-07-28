@@ -4,7 +4,7 @@ name: "N8N-SEAMS 辛 — TicketUpdateProvider + close/WIP + 1007 分工邊界"
 sprint_week: W40
 start_date: 2026-07-28
 end_date: 2026-07-31          # planned, may slip with changelog log
-status: draft                 # draft | active | closed —— 🔴 §8 五個 OQ 未拍板前唔准開工
+status: active                # draft | active | closed —— 2026-07-28 D0 gate 解除(§8 五個 OQ 全部拍板 + H1 approve)
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md §D0 · §D3 · §D5 · §D6 · rollout「辛」
   - docs/adr/0013-connector-config-ui-management.md(Model C · DB-then-env · secret 留 env · **實作補註:加 connector 必然改 schema**)
@@ -16,9 +16,9 @@ prior_phase: W39-n8n-license-provider
 
 # Phase W40 — `TicketUpdateProvider`(ADR-0017 辛,rollout 最後一階段)
 
-> **Plan version**:1.0(initial,**draft**)
+> **Plan version**:1.1(D0 gate 解除)
 > **Owner**:AI(Claude)
-> **Approved by**:⏳ **未 approve** —— §8 五個 OQ 全部未拍板
+> **Approved by**:**Chris Lai(2026-07-28)** —— §8 五個 OQ **全部跟建議**:OQ-A = A(`addWorkNote` 唔入介面)· OQ-B = 改名 · OQ-C = 唔 assert 文字 · OQ-D = retry 唔走 seam · OQ-E = **1 + 2 一齊做**。**H1 approve**:additive migration 兩個 nullable 欄。
 
 ## 1. Scope
 
@@ -154,8 +154,31 @@ ADR D3 表把 ticket 側 direct 實作叫 `DirectServiceNowProvider`。但 `apps
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-28 | Initial draft | kickoff | — |
+| 2026-07-28 | D0 gate 解除:五個 OQ + H1 全部拍板,`draft → active` | 見 §8 | **Chris Lai** |
+| 2026-07-28 | §8 加事實更正:**ADR-0016 預算 gate 已於 W36 實作**(OQ-E 選項描述當時寫錯「未實作」)+ 記低 WIP/close 重複寫入問題留 F4 定案 | 錯誤事實會令 F4 走錯方向 | — |
 
-## 8. 🔴 Open Questions —— 全部要 Chris 拍板,未拍板唔開工
+## 8. Open Questions —— ✅ **全部已拍板(Chris Lai,2026-07-28)**
+
+| OQ | 拍板 |
+|---|---|
+| **A** | **選項 A** —— `addWorkNote` 唔入介面,維持直連 `snow` |
+| **B** | 改名 `TicketUpdateProvider` / `DirectTicketProvider` / `N8nTicketProvider`,落 `integration/ticket-update/` |
+| **C** | contract test **唔 assert** notes 文字相同,只 assert RITM 去到同一個 state |
+| **D** | `outbound-retry.repairWorkNote` **唔走** seam |
+| **E** | **1 + 2 一齊做** —— 全 line 完成 → `closeComplete`;預算 gate 擋 → `markInProgress` |
+| **H1** | **approve** additive migration(兩個 nullable 欄) |
+
+### ⚠️ 拍板後揪到一個事實更正 + 一個衍生設計問題
+
+**① ADR-0016 預算 gate 唔係「未實作」—— W36 已經完成。** OQ-E 選項描述當時寫錯咗。呢個唔影響拍板(揀嘅係選項 1),但**影響 F4**:`markInProgress` 真係有嘢接得落去(`assign.service` 個 budget gate 已經喺度,`budgetOverride` audit metadata 就係佢)。
+
+**② 🔴 衍生問題 —— WIP trigger 會唔會 spam SN?**
+
+預算 gate 擋 = throw 400。而操作員可以**不斷重試**同一個 line item ⇒ 每擋一次就 PATCH 一次真單。
+
+呢個喺 F4 展開時必須解,唔可以照 `if (blocked) markInProgress()` 落去。方向(F4 定案,唔喺 kickoff 猜):只喺**狀態轉變**時寫(該 RITM 未曾標過 WIP),而唔係每次被擋都寫。
+
+同樣道理套喺 `closeComplete`:**同一張 RITM 只可以 close 一次**,重複 close 要喺平台側擋住,唔可以靠 SN 容忍。
 
 ### OQ-A —— `addWorkNote` 點算?(**最重要**)
 

@@ -49,8 +49,36 @@ W39 就係喺呢度撞到 H1 —— kickoff 假設「零 schema」破產。當�
 
 今次係**事前**知,唔使再撞一次。
 
+### ⚠️ 辛同前三階段本質唔同
+
+戊己庚都係平台讀 / 建自己嘅嘢。辛係**第一次**把「改客戶張真飛嘅狀態」變成可切換行為,而 **close 冇 undo**。
+
+## Day 0(續)— D0 gate 解除
+
+Chris 五個 OQ + H1 **全部跟建議**(plan §8 有表)。
+
+**OQ-A = A**:`addWorkNote` 唔入介面。呢個令接縫 ④ 嘅覆蓋面**細過** ADR D3 個表 —— 同 W38 收窄 D2(5 個方法收 3 個)係同一個判斷:**vendor 冇對應能力,就唔好喺介面度假裝有**。硬塞落 mode 1 會令切掣變成改行為。
+
+**OQ-E = 1 + 2 一齊做**:close 同 WIP 兩個 trigger 都接。理由係 rollout 表寫死咗辛嘅驗收就係「RITM 狀態正確,無雙重 close」—— 只交付 provider 唔接 trigger,等於留返一個未收嘅尾。
+
+### 拍板之後自查,揪到我自己一個事實錯誤
+
+我喺 OQ-E 個選項描述寫住「WIP 要接 ADR-0016 預算 gate(**未實作**)」。
+
+**錯 —— 預算 gate W36 已經完成。** `assign.service` 入面嗰個 `budgetOverride` audit metadata 就係佢。
+
+唔影響拍板(Chris 揀嘅係選項 1,唔係因為呢句),但**影響 F4**:`markInProgress` 唔係「等一個未來 feature」,而係即刻有嘢接。錯事實留喺 plan 度會令 F4 走錯方向,所以入咗 §8 + changelog。
+
+> 根因同 **AP-13** 同源:我腦入面嗰份「邊個 ADR 實作咗未」係一份**手抄清單**,而佢已經 stale。真相喺 BACKLOG row 同 code 度。
+
+### 連帶揪到一個 OQ-E 冇覆蓋嘅設計問題
+
+拍板係「預算 gate 擋 → `markInProgress`」。但操作員可以**不斷重試**同一個被擋嘅 line item ⇒ 每擋一次 PATCH 一次真單。
+
+`closeComplete` 同理:同一張 RITM 唔可以 close 兩次。
+
+⇒ 兩個都唔可以照 `if (blocked) markInProgress()` 落去,要**只喺狀態轉變時寫**。已入 plan §8 + F4 checklist,**留 F4 定案唔喺 kickoff 猜**。
+
 ### 下一步
 
-D0 gate 未解除。五個 OQ + 一個 H1 approve 全部要 Chris 拍板,尤其 **OQ-A**(`addWorkNote` 點算)同 **OQ-E**(邊個 code path 有權真 close 一張客戶單)。
-
-⚠️ 辛同前三階段本質唔同:戊己庚都係平台讀 / 建自己嘅嘢,辛係**第一次**把「改客戶張真飛嘅狀態」變成可切換行為,而 **close 冇 undo**。
+F1 —— `TicketUpdateProvider` 抽象 + `DirectTicketProvider` + boundary spec。
