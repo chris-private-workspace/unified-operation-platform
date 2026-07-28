@@ -27,7 +27,30 @@ export const OUTBOUND_FAILURE_KINDS = {
   REQUEST_MIRROR: 'request.mirror',
   /** Assign succeeded, the SN write-back note did not. Swallowed by design (OD4). */
   SERVICENOW_WORKNOTE: 'servicenow.worknote',
+  /**
+   * W40 / ADR-0017 seam ④ — a RITM state change failed (close after the last
+   * assign, or hold when the budget gate blocked one). Swallowed like the work
+   * note: a ticket that did not move must never turn a completed assign into a
+   * failure (OD4).
+   *
+   * ONE kind carrying `transition`, not two kinds. The repair differs only in
+   * which method it calls, and two kinds would mean two whitelist entries
+   * saying the same thing — the drift shape AP-13 is about.
+   *
+   * Unlike `request.mirror`, replaying this is safe: setting a RITM to the state
+   * it is already in is idempotent on ServiceNow's side, and it opens nothing.
+   */
+  SERVICENOW_TICKET_UPDATE: 'servicenow.ticket_update',
 } as const;
+
+/** Which transition a `servicenow.ticket_update` failure was attempting. */
+export const TICKET_TRANSITIONS = {
+  CLOSE: 'close',
+  HOLD: 'hold',
+} as const;
+
+export type TicketTransition =
+  (typeof TICKET_TRANSITIONS)[keyof typeof TICKET_TRANSITIONS];
 
 export type OutboundFailureKind =
   (typeof OUTBOUND_FAILURE_KINDS)[keyof typeof OUTBOUND_FAILURE_KINDS];
@@ -68,10 +91,27 @@ const PAYLOAD_WHITELIST: Record<OutboundFailureKind, readonly string[]> = {
   ],
   // No requester / UPN: a work note is addressed to a ticket, not a person.
   'servicenow.worknote': ['snTarget', 'note', 'table'],
+  // Same reasoning — a RITM sys_id, the note we wrote, and which transition it
+  // was. No table: seam ④ only ever writes sc_req_item (workflow 2004 has it
+  // baked into its patch URL, so the direct side pins it too).
+  'servicenow.ticket_update': ['snTarget', 'note', 'transition'],
 };
 
 /** Line items travel inside payload for the two request kinds. */
 const PAYLOAD_LINE_FIELDS = ['skuId', 'skuPartNumber', 'quantity'] as const;
+
+/**
+ * Which kinds carry line items — stated positively.
+ *
+ * This used to be written as `kind !== 'servicenow.worknote'`, which reads as
+ * "everything except that one" and therefore silently opted every FUTURE kind
+ * in. W40 added one that must not carry them, so the condition is inverted to
+ * an explicit list: a new kind now has to ask to be included.
+ */
+const KINDS_WITH_LINE_ITEMS: readonly OutboundFailureKind[] = [
+  OUTBOUND_FAILURE_KINDS.REQUEST_SUBMIT,
+  OUTBOUND_FAILURE_KINDS.REQUEST_MIRROR,
+];
 
 /**
  * Per-kind allow-list for `externalRef` — side-effects that ALREADY happened.
@@ -82,6 +122,7 @@ const EXTERNAL_REF_WHITELIST: Record<OutboundFailureKind, readonly string[]> = {
   'request.submit': [],
   'request.mirror': ['serviceNowSysId', 'serviceNowNumber'],
   'servicenow.worknote': [],
+  'servicenow.ticket_update': [],
 };
 
 const EXTERNAL_LINE_FIELDS = ['serviceNowSysId', 'serviceNowNumber'] as const;
@@ -113,7 +154,7 @@ export function pickFailurePayload(
   const out = pickKeys(source, PAYLOAD_WHITELIST[kind] ?? []);
 
   const bag = (source ?? {}) as Bag;
-  if (kind !== 'servicenow.worknote' && Array.isArray(bag.lineItems)) {
+  if (KINDS_WITH_LINE_ITEMS.includes(kind) && Array.isArray(bag.lineItems)) {
     out.lineItems = bag.lineItems.map((li) =>
       pickKeys(li, PAYLOAD_LINE_FIELDS),
     );

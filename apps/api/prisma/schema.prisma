@@ -256,6 +256,13 @@ model RequestLineItem {
   quoteRef            String? // vendor quotation reference
   poRef               String? // purchase order reference
 
+  // W40 / ADR-0017 D3 — when the platform last told ServiceNow this line's RITM
+  // is on hold (budget gate blocked it, "procurement in progress"). Set only on
+  // the transition, never on every blocked attempt: an operator can retry a
+  // blocked assign as often as they like, and each retry must not PATCH a real
+  // customer ticket again.
+  ticketHeldAt        DateTime?
+
   // stage timestamps (procurement path)
   quotedAt            DateTime?
   opcoApprovedAt      DateTime?
@@ -424,6 +431,12 @@ model ConnectorConfig {
   // never reach a DB column, an API response or an audit row (ADR-0013 D2).
   licenseOpsProvider String? // LICENSE_OPS_PROVIDER override ('graph' | 'n8n')
   n8nLicenseBaseUrl  String? // N8N_LICENSE_BASE_URL override (webhook base, no trailing path)
+
+  // n8n ticket updates (W40 / ADR-0017 seam ④) — non-secret only.
+  // N8N_TICKET_WEBHOOK_KEY stays in env for the same reason as the license key:
+  // it is what lets a caller change the state of a customer's ticket.
+  ticketUpdateProvider String? // TICKET_UPDATE_PROVIDER override ('direct' | 'n8n')
+  n8nTicketWebhookUrl  String? // N8N_TICKET_WEBHOOK_URL override (webhook base, no trailing path)
 
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())

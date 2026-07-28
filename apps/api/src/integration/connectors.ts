@@ -21,6 +21,7 @@ export const CONNECTORS = {
   'n8n-outbound': { key: 'n8n-outbound', label: 'n8n (outbound)' },
   'n8n-inbound': { key: 'n8n-inbound', label: 'n8n (inbound intake)' },
   'n8n-license': { key: 'n8n-license', label: 'n8n (license operations)' },
+  'n8n-ticket': { key: 'n8n-ticket', label: 'n8n (ticket updates)' },
 } as const;
 
 export type ConnectorKey = keyof typeof CONNECTORS;
@@ -56,6 +57,15 @@ export const PROBEABLE: Record<ConnectorKey, string | null> = {
    *        to prevent — it tells us nothing 2002 has not already told us.
    */
   'n8n-license': null,
+  /**
+   * NOT probeable. Workflow 2004 does exactly one thing: PATCH a real RITM's
+   * state. There is no read-only mode to borrow — its own sticky note says
+   * "RITM ONLY. 3 fields: state, work_notes, close_notes" and calls that
+   * deliberate. A health check that closes somebody's ticket is not a health
+   * check. Do not add a probe here.
+   */
+  'n8n-ticket':
+    'Workflow 2004 only changes a real ticket’s state, so it is never called as a test',
 };
 
 // ── W34 / ADR-0013 — connector CONFIG spec (Model C) ───────────
@@ -173,6 +183,28 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
     // The one credential that lets a caller assign licences through n8n.
     secrets: [{ envKey: 'N8N_LICENSE_WEBHOOK_KEY', label: 'Webhook key' }],
   },
+  // W40 / ADR-0017 seam ④ — the third and last switch (D1: one per seam).
+  // Default stays 'direct', so deploying this changes nothing until an admin
+  // flips it.
+  'n8n-ticket': {
+    editable: [
+      {
+        column: 'ticketUpdateProvider',
+        label: 'Provider',
+        envKey: 'TICKET_UPDATE_PROVIDER',
+        kind: 'enum',
+        enumValues: ['direct', 'n8n'],
+      },
+      {
+        column: 'n8nTicketWebhookUrl',
+        label: 'Webhook URL',
+        envKey: 'N8N_TICKET_WEBHOOK_URL',
+        kind: 'url',
+      },
+    ],
+    // The credential that lets a caller close a customer's ticket.
+    secrets: [{ envKey: 'N8N_TICKET_WEBHOOK_KEY', label: 'Webhook key' }],
+  },
 };
 
 /**
@@ -184,6 +216,14 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
  * Kept beside the connector spec, not inside the provider, so the base URL and
  * the paths that complete it stay visible in one place.
  */
+/**
+ * 2004 (W40) — the only ticket workflow. One path, two modes:
+ *   mode 1 → state '2' (Work in Progress) + work_notes
+ *   mode 0 → state '3' (Closed Complete)  + close_notes
+ * Read from the workflow's own `Validate & Build Patch` node.
+ */
+export const N8N_TICKET_PATH = 'wf4-sn-update';
+
 export const N8N_LICENSE_PATHS = {
   /** 2002 — mode 1: tenant SKU seats. mode 2 (users by SKU) is not used. */
   licenseCheck: 'wf2-license-check',

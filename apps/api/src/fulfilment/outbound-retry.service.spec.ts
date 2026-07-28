@@ -6,6 +6,7 @@ import { OutboundFailureService } from './outbound-failure.service';
 import { RequestSubmissionProvider } from './request-submission.provider';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
 import { AuditService } from '../audit/audit.service';
 
 const ADMIN = { id: 'admin' } as unknown as AppUser;
@@ -47,12 +48,33 @@ const WORKNOTE_FAILURE = {
   externalRef: null,
 };
 
+/** W40 — a RITM state repair. `transition` is what makes it repairable. */
+const TICKET_CLOSE_FAILURE = {
+  id: 'f-close',
+  kind: 'servicenow.ticket_update',
+  status: 'open',
+  attemptCount: 1,
+  payload: {
+    snTarget: 'ritm-sys-1',
+    note: 'License E3 assigned via platform.',
+    transition: 'close',
+  },
+  externalRef: null,
+};
+
+const TICKET_HOLD_FAILURE = {
+  ...TICKET_CLOSE_FAILURE,
+  id: 'f-hold',
+  payload: { ...TICKET_CLOSE_FAILURE.payload, transition: 'hold' },
+};
+
 describe('OutboundRetryService', () => {
   let service: OutboundRetryService;
   let prisma: any;
   let failures: any;
   let provider: { submit: jest.Mock };
   let snow: any;
+  let tickets: { closeComplete: jest.Mock; markInProgress: jest.Mock };
   let audit: { log: jest.Mock };
 
   beforeEach(async () => {
@@ -86,6 +108,14 @@ describe('OutboundRetryService', () => {
       updateRecord: jest.fn(),
     };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
+    tickets = {
+      closeComplete: jest
+        .fn()
+        .mockResolvedValue({ status: 'updated', newState: '3' }),
+      markInProgress: jest
+        .fn()
+        .mockResolvedValue({ status: 'updated', newState: '2' }),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -94,6 +124,7 @@ describe('OutboundRetryService', () => {
         { provide: OutboundFailureService, useValue: failures },
         { provide: RequestSubmissionProvider, useValue: provider },
         { provide: ServiceNowService, useValue: snow },
+        { provide: TicketUpdateProvider, useValue: tickets },
         { provide: AuditService, useValue: audit },
       ],
     }).compile();
@@ -273,6 +304,94 @@ describe('OutboundRetryService', () => {
       await expect(service.reopen('f-mirror', ADMIN)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  /**
+   * W40 — which repair reaches which system.
+   *
+   * This replaces a source check that used to live in
+   * ticket-update.boundary.spec.ts ("outbound-retry must not import the seam").
+   * That was true until this phase and is not any more: a ticket STATE failure
+   * was produced by whichever provider is configured, so repairing it directly
+   * would fix an n8n close by calling the Table API. A work note is the
+   * opposite — its payload records a direct call, so replaying it directly IS
+   * replaying the same thing (OQ-D).
+   *
+   * Once the file imports both, only behaviour can tell the two apart.
+   */
+  describe('W40 — ticket repairs go through the seam, work notes do not', () => {
+    it('repairs a close through the provider and never through the Table API', async () => {
+      failures.findById.mockResolvedValue(TICKET_CLOSE_FAILURE);
+
+      await service.retry('f-close', ADMIN);
+
+      expect(tickets.closeComplete).toHaveBeenCalledWith(
+        'ritm-sys-1',
+        'License E3 assigned via platform.',
+      );
+      expect(tickets.markInProgress).not.toHaveBeenCalled();
+      expect(snow.updateRecord).not.toHaveBeenCalled();
+      expect(snow.addWorkNote).not.toHaveBeenCalled();
+    });
+
+    it('repairs a hold with markInProgress, not close', async () => {
+      failures.findById.mockResolvedValue(TICKET_HOLD_FAILURE);
+
+      await service.retry('f-hold', ADMIN);
+
+      expect(tickets.markInProgress).toHaveBeenCalledWith(
+        'ritm-sys-1',
+        expect.any(String),
+      );
+      expect(tickets.closeComplete).not.toHaveBeenCalled();
+    });
+
+    it('a work-note repair still goes direct and never touches the seam', async () => {
+      failures.findById.mockResolvedValue(WORKNOTE_FAILURE);
+
+      await service.retry('f-note', ADMIN);
+
+      expect(snow.addWorkNote).toHaveBeenCalled();
+      expect(tickets.closeComplete).not.toHaveBeenCalled();
+      expect(tickets.markInProgress).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Closing a ticket that was only meant to go on hold is not recoverable, so
+     * an unrecognised transition must fail rather than default to either one.
+     */
+    it('refuses an unrecognised transition instead of guessing', async () => {
+      failures.findById.mockResolvedValue({
+        ...TICKET_CLOSE_FAILURE,
+        payload: { ...TICKET_CLOSE_FAILURE.payload, transition: 'reopen' },
+      });
+
+      await expect(service.retry('f-close', ADMIN)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(tickets.closeComplete).not.toHaveBeenCalled();
+      expect(tickets.markInProgress).not.toHaveBeenCalled();
+      expect(failures.markResolved).not.toHaveBeenCalled();
+    });
+
+    /**
+     * I2 — the provider answered, but the ticket did not move (ServiceNow
+     * refused the PATCH). A repair that changed nothing must not be recorded as
+     * resolved.
+     */
+    it('treats a provider "error" outcome as a failed repair, not a resolved one', async () => {
+      failures.findById.mockResolvedValue(TICKET_CLOSE_FAILURE);
+      tickets.closeComplete.mockResolvedValue({
+        status: 'error',
+        details: 'ServiceNow returned HTTP 403',
+      });
+
+      await expect(service.retry('f-close', ADMIN)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(failures.markAttemptFailed).toHaveBeenCalled();
+      expect(failures.markResolved).not.toHaveBeenCalled();
     });
   });
 });
