@@ -1,7 +1,7 @@
 ---
 phase: W39-n8n-license-provider
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete       # in-progress | complete
 last_updated: 2026-07-28
 ---
 
@@ -30,8 +30,12 @@ last_updated: 2026-07-28
 
 - [x] `success`→`assigned` · `not_synced`→`not_synced` · 未知→`error` · `already_assigned`→ 按 **OQ-1** 原樣傳上去
 - [x] **OQ-2 守門 test**:餵一個 `details` 含 UPN 嘅 2003 回應,assert 出到嚟嘅 outcome **唔含該 UPN**(`n8n-license.provider.spec` 16 test)
-- 🚧 **同一組 case 餵兩個 provider,assert 同一 outcome** —— **未做**(Chris 2026-07-28 決定縮減範圍,優先 F4 修正 + F6)。⚠️ **呢個係 ADR-0017 rollout 表列明嘅庚驗收標準**,已喺 ADR 實作補註明標「未達成、唔係已完成」。現有覆蓋 = **各自單邊**(W38 Graph 9 test + W39 n8n 16 test,兩邊都逐個 outcome 測過,但冇一條拎同一 case 對照)。補嗰陣要寫成「**除咗 replay 之外**相等」,唔可以寫成「必然相等」—— 兩邊已知有一處**刻意**分岔
-- 🚧 test 註釋寫明 **`no_seats` 兩個 provider 都產生唔到** —— 隨 contract test 一齊補(單邊 spec 寫呢句冇對照意義)
+- [x] **同一組 case 餵兩個 provider,assert 同一 outcome** —— `license-ops.contract.spec.ts`,**10 test**(= ADR-0017 rollout 表列明嘅庚驗收標準,已達成)。**7 個 case 各寫兩次**(一次 Graph 語言、一次 n8n 語言)—— 令兩個 arrangement 意思相同**就係呢條 test 嘅真功夫**,亦係 mistranslation 唯一會匿埋嘅地方
+- [x] 兩樣**刻意唔 assert**:①**唔要求 error message 相同** —— vendor 掛咗嗰陣運維要知係**邊個**掛,所以「Microsoft Graph is unavailable」同「n8n is unavailable」兩句都啱而且必須唔同;contract 係**失敗類別**(兩邊都 503)唔係字眼 ②**唔要求 replay 相同**(見下)
+- [x] 🔴 **replay 分岔明文釘死**:Graph `assigned` / n8n `already_assigned` 各自 assert。有人日後「統一」佢哋(Graph 側加 probe,或者抹走 n8n 嘅分辨)就會紅,逼佢返去睇 OQ-1 而唔係靜靜推翻
+- [x] `no_seats` 兩個 provider 都產生唔到 —— **獨立一條 test** 釘住(union 有個成員冇實作返過,唔解釋就似漏咗)
+- [x] **fails-before 實證**:令 n8n 個 `not_synced` 返 non-null(= 最痛嗰個分岔,會令 sync gate 個 400 唔再觸發、未 sync 嘅 user 被當成已 sync)→ **只有嗰條紅,其餘 9 條綠** → 還原(`grep` = 0)
+- [x] ➕ **刪走自己寫嘅一條廢話 test**(`expect([...]).toHaveLength(2)` 永遠綠)—— 佔住 test count 但**冇可能失敗**,係噪音唔係覆蓋
 
 ## F3 — `n8n-license` connector
 
@@ -39,8 +43,13 @@ last_updated: 2026-07-28
 - [x] 🔴 **H1 觸發並已 STOP + Chris approve** —— kickoff 假設「零 schema」破產:`ConnectorConfig` 係**具名 column** model 唔係 key-value bag ⇒ 加 connector **必然**要 `ALTER TABLE`。已入 plan §7 changelog D1 + **ADR-0013 實作補註**(記喺嗰度而唔止 progress,因為**下一個加 connector 嘅人會踩同一個坑**)
 - [x] migration `20260728021452_w39_n8n_license_connector` 純 additive、兩個 nullable TEXT、applied、欄位實查存在
 - [x] 三條 webhook path 落 `N8N_LICENSE_PATHS`(由 **workflow JSON 實讀**,唔係 ADR 轉述)
-- [x] `GET /admin/integrations` 三態(OQ-4)—— `CONNECTOR_KEYS` 自動 derive,`integration-status.service.spec` 全綠零改動
-- 🚧 **硬紅線 test:餵假 secret assert 回應 + audit row 零洩漏** —— **未做**(同 F2 一齊縮減)。⚠️ 機制層面已守(schema **冇** secret 欄 · `CONNECTOR_CONFIG.secrets` 只列 envKey · resolver 只掂非機密欄),但**冇一條 test 為 `n8n-license` 專門 assert 呢件事** —— W30 對其餘 connector 有做,呢個係**覆蓋缺口唔係設計缺口**
+- [x] 🔴 **我之前寫「`CONNECTOR_KEYS` 自動 derive、全綠零改動」係錯判斷** —— `integration-status.service.list()` 其實係**手寫陣列**。條 test 叫 `reports all four connectors` 而佢**仍然綠**,正正因為 `n8n-license` **根本冇出現喺 `/admin/integrations`**。「test 全綠」唔等於「嘢做咗」
+- [x] `list()` 補 `n8n-license` row + `n8nLicenseSelected()`(OQ-4:未配置 = **`inactive`** 唔係 `error`)
+- [x] `lastSuccessAt` **刻意留 null** —— 平台冇任何嘢記錄邊個 provider 執行過 assign,而預設係 Graph ⇒ 任何時間戳都係講「有 assign 成功過」唔係「n8n work」。同 `n8n-inbound` 同一條規矩:**寧可講明個 gap,都唔畀一個似層層嘅數字令人判斷 connector 死咗未**
+- [x] ➕ 把 `reports all four connectors` 改成**由 `CONNECTOR_KEYS` derive** —— **第四次**撞同一種毛病(probe G2 手抄 / TD-1 audit options 手抄 / 呢度 ×2)
+- [x] **硬紅線 test**:`N8N_LICENSE_WEBHOOK_KEY` + base URL 餵入 G1 leak test,assert 序列化後零洩漏(連片段都唔准)
+- [x] **fails-before 實證**:把 `lastSuccessNote` 改成真係塞個 secret 落去 → **leak test 真係紅**(連帶 note 條 test 都紅),其餘 9 條綠 → 還原(`grep` = 0)
+- [x] ⚠️ **順帶揪到一個既有缺口,冇順手修**:`n8nLicenseSelected()` 同既有 `n8nSelected()` 一樣**只讀 env**,而 runtime factory 係 **DB-then-env** ⇒ 經 UI 改咗 DB override,呢個面板仍然會顯示 `inactive`。修佢要畀 `IntegrationStatusService` 攞 resolver,**同時**改埋 `n8n-outbound` 個 state ⇒ 超出 W39 範圍(H3),已寫入 progress 做 follow-up。**一次過修兩行先係啱嘅做法**
 
 ## F4 — Probe(2002 mode 1)
 
@@ -66,23 +75,25 @@ last_updated: 2026-07-28
 - [x] **ADR-0013 實作補註** —— 加 connector = 改 schema 呢個連帶後果 + 第四個 connector 表 + 點解唔開新 ADR
 - [x] **ADR-0017 實作補註「庚」段** —— 四處合約落差 + 五個 OQ 拍板 + H1 + probe 邊界 + **兩個 🚧 誠實邊界**(真切換未驗 · rollout 表個庚驗收標準未達成)
 - [x] ADR-0017 replay 段由「留畀庚拍板」改為「**W39 OQ-1 已拍板**」+ 明寫代價
-- [ ] `BACKLOG` 己庚辛 row · 最後更新
+- [x] `BACKLOG` 己庚辛 row · 最後更新
+- [x] ADR-0017 兩個「未達成」標記**精準回填**:contract test 嗰個改為已達成;**真切換未 live 驗證嗰個保留**(唔可以一次過抹走)
 - 🚧 `SESSION_SUMMARY` · runbook 08(切換前置)—— **未做**;runbook 待真切換前置齊備先寫先有意義
 
 ## Verify
 
-- [x] `npm test -w @uop/api` **487 / 487**(46 suites,基線 467 + n8n provider 16 + probe 4)· **lint 0** · **tsc 0**
+- [x] `npm test -w @uop/api` **499 / 499**(47 suites)· **lint 0** · **tsc 0**
 - [x] **G3(修訂後)**:`schema.prisma` diff **只有嗰兩個 nullable 欄** + 一個 additive migration;**3 個 `package.json` diff = 0**(用 global `fetch`,零新 runtime dep)
 - [x] 🚧 **G8 live 切換 = 明文唔做**(plan §1 誠實邊界)—— n8n 側 secret 仍 `CHANGE_ME_SHARED_SECRET` · UAT 未接通 · 平台未部署。**唔准當 pass**
-- [ ] `anti-patterns` 自檢(尤其 **AP-2 mock 當 real** —— 本 phase 全程冇真 n8n)
+- [x] `anti-patterns` 自檢(12 條全跑,見 progress retro)—— **AP-2 判 ⚠️ 而唔係 ✅**:本 phase 全程冇真 n8n,緩解得幾好都好,真切換依然係未驗
 
 ---
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] OQ 拍板反映入 ADR-0017 實作補註(R4)
-- [ ] 架構-adjacent 決定 → ADR(預期**無新 ADR**:ADR-0017 已 Accepted)
-- [ ] Pending 同步 `BACKLOG.md`(R7)
-- [ ] `progress.md` retro + status flip
-- [ ] Phase N+1 trigger noted(= **辛** `TicketUpdateProvider`,號碼 W40)
+- [x] All deliverables committed to git
+- [x] OQ 拍板反映入 ADR-0017 實作補註(R4)—— 五個 OQ + 一個 H1
+- [x] 架構-adjacent 決定 → ADR(**無新 ADR**:ADR-0013 / ADR-0017 各加實作補註,兩份都係**收緊/補充唔推翻**)
+- [x] Pending 同步 `BACKLOG.md`(R7)
+- [x] `progress.md` retro + status flip
+- [x] Phase N+1 trigger noted(= **辛** `TicketUpdateProvider`,號碼 **W40**)
+

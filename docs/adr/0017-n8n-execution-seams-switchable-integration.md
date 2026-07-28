@@ -250,13 +250,18 @@ n8n 側三個前置**全部未通**,而且唔喺本 repo 手上:`x-uop-secret` �
 
 ⇒ 庚交付嘅係「**code + test 齊,預設值零改變**」。**真切換未經任何 live 驗證**,唔可以當佢通過。
 
-#### 🚧 rollout 表嗰個庚驗收標準,**未達成**
+#### ✅ rollout 表嗰個庚驗收標準:已達成
 
-上面 rollout 表寫住「庚 = **兩個 provider 同一組 case 同一 outcome**」。W39 **冇做**呢個雙向 contract test(Chris 2026-07-28 決定縮減範圍,優先做 probe 修正 + doc-sync)。
+`license-ops.contract.spec.ts` —— **7 個 case 各寫兩次**(一次 Graph 語言、一次 n8n 語言)再 assert 兩邊結果相等。**令兩個 arrangement 意思相同就係呢條 test 嘅真功夫**,亦係 mistranslation 唯一會匿埋嘅地方。
 
-現有覆蓋係**各自單邊**:`graph-license.provider.spec`(W38,9 test)+ `n8n-license.provider.spec`(W39,16 test),兩邊都逐個 outcome 測過,但**冇一條 test 拎同一個 case 餵兩邊再對照**。
+兩樣**刻意唔 assert**,因為要求佢哋相同反而係錯:
 
-⇒ 呢個係**已知缺口,唔係已完成**。真切換之前應該補返 —— 尤其因為兩邊**已知有一處刻意分岔**(replay,見下),所以 contract test 唔可以寫成「兩邊必然相等」,要寫成「除咗 replay 之外相等」。
+1. **error message 唔要求相同。** vendor 掛咗嗰陣運維要知係**邊個**掛 ⇒「Microsoft Graph is unavailable」同「n8n is unavailable」兩句都啱而且**必須**唔同。contract 係**失敗類別**(兩邊都 503),唔係字眼。
+2. **replay 唔要求相同**(見下段)—— 所以呢條 test 寫成「**除咗 replay 之外**相等」,而 replay 本身**獨立釘死**:有人日後「統一」佢哋(Graph 側加 probe / 抹走 n8n 嘅分辨)就會紅,逼佢返去睇 OQ-1 而唔係靜靜推翻。
+
+`no_seats` 亦有獨立一條 test 釘住「兩個 provider 都產生唔到」 —— union 有個成員冇實作返過,唔解釋就似漏咗。
+
+**fails-before 實證**:令 n8n 個 `not_synced` 返 non-null(= 最痛嗰個分岔,會令 sync gate 個 400 唔再觸發、未 sync 嘅 user 被當成已 sync)→ 只有嗰條紅,其餘全綠。
 
 ### 🔴 replay 不對稱 —— W38 提出,**W39 OQ-1 已拍板**(唔准靜靜改)
 

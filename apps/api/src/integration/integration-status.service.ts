@@ -86,12 +86,47 @@ export class IntegrationStatusService {
         lastSuccessNote:
           'Cannot be distinguished from other requests in existing data',
       },
+      {
+        ...CONNECTORS['n8n-license'],
+        // W39 / OQ-4: unconfigured reports `inactive`, not `error`. `state`
+        // describes deployment shape, never health (ADR-0010 D3) — and during
+        // rollout "nobody selected this yet" must not look like "it is broken".
+        state: this.n8nLicenseSelected() ? 'active' : 'inactive',
+        lastSuccessAt: null,
+        /**
+         * Deliberately blank rather than derived. Nothing the platform stores
+         * records WHICH provider performed an assignment, so any timestamp here
+         * would really mean "an assign succeeded", not "n8n worked" — and the
+         * default provider is Graph. Same reasoning as n8n-inbound above: a
+         * wrong "last seen" is worse than none, because someone will use it to
+         * decide whether the connector is dead.
+         */
+        lastSuccessNote:
+          'Not recorded — assignments do not store which provider performed them',
+      },
     ];
   }
 
   /** n8n is the outbound provider only when explicitly selected (ADR-0008 D3). */
   n8nSelected(): boolean {
     return this.config.get<string>('REQUEST_SUBMISSION_PROVIDER') === 'n8n';
+  }
+
+  /**
+   * W39 seam ②. Reads ENV ONLY, exactly like n8nSelected above.
+   *
+   * ⚠️ Known and pre-existing: a DB override set through the connector config
+   * UI (ADR-0013) will NOT be reflected in this panel — both selection rows
+   * read env while the runtime factory resolves DB-then-env. So the panel can
+   * say `inactive` while the platform is in fact routing through n8n.
+   *
+   * Not fixed here: this service takes ConfigService only, and giving it the
+   * resolver is a change to n8n-outbound's reported state too — outside what
+   * W39 was asked to do. Logged in W39 progress as a follow-up; the same fix
+   * closes both rows at once, which is the right way round.
+   */
+  n8nLicenseSelected(): boolean {
+    return this.config.get<string>('LICENSE_OPS_PROVIDER') === 'n8n';
   }
 
   /** Graph: the catalog sync and the tenant snapshot sweep both prove it worked. */

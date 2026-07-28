@@ -4,7 +4,7 @@ name: "N8N-SEAMS 庚 — N8nLicenseProvider + n8n-license connector + probe"
 sprint_week: W39
 start_date: 2026-07-28
 end_date: 2026-07-30          # planned, may slip with changelog log
-status: active                # draft | active | closed —— 2026-07-28 Chris approve + §8 五個 OQ 全跟建議拍板
+status: closed                # draft | active | closed —— 2026-07-28 收官(F1-F6 全交付;🚧 真切換未 live 驗證,見 §1 誠實邊界)
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md §D0 · §D2 · §D5 · 實作補註 · rollout「庚」
   - docs/adr/0013-connector-config-ui-management.md(Model C · DB-then-env · secret 留 env)

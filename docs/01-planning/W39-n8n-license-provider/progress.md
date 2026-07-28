@@ -2,7 +2,7 @@
 phase: W39-n8n-license-provider
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: active         # active | closed
+status: closed         # active | closed
 last_updated: 2026-07-28
 ---
 
@@ -131,5 +131,98 @@ G2「never calls anything that writes」原本**手抄** 4 個 connector key,而
 ### 🚧 phase 狀態:**唔 close**
 
 主線(provider + 選路 + probe + doc)齊,但上面兩個 deliverable 未做 ⇒ `plan.status` 維持 `active`。要收就係一個**有已知缺口嘅收官**,由 Chris 決定。
+
+---
+
+## Day 3 — 2026-07-28:補 F2 + F3,收官(Chris 揀 A)
+
+### F2 —— contract test 嘅真功夫唔喺 assert,喺 arrange
+
+7 個 case **各寫兩次**:一次用 Graph 嘅語言(mock `GraphService`),一次用 n8n 嘅語言(mock `fetch` + workflow 回應形狀)。**令兩個 arrangement 真係代表同一件事,就係呢條 test 全部價值所在** —— mistranslation 只會匿喺嗰度。
+
+兩樣**刻意唔 assert**,因為要求相同反而係錯:
+
+1. **error message 唔要求相同。** vendor 掛咗嗰陣運維要知係**邊個**掛,所以「Microsoft Graph is unavailable」同「n8n is unavailable」兩句都啱而且**必須**唔同。contract 係**失敗類別**(兩邊都 503),唔係字眼。為此寫咗個 `observe()` 把結果歸約成「返咗咩」或者「拋咩類」,把 vendor-specific 嘅嘢**主動掉走**。
+2. **replay 唔要求相同** —— 獨立一個 block 釘死 Graph `assigned` / n8n `already_assigned`。有人日後「統一」佢哋就會紅,逼佢返去睇 OQ-1 而唔係靜靜推翻。
+
+**fails-before**:令 n8n 個 `not_synced` 返 non-null → 只有嗰條紅,其餘 9 條綠。揀呢個分岔嚟證,係因為佢**最痛** —— sync gate 個 400 唔再觸發,即係未 sync 嘅 user 會被當成已 sync。
+
+➕ **刪走自己頭先寫嘅一條廢話 test**(`expect([...]).toHaveLength(2)`)。佢永遠綠、冇可能失敗,只係喺 test count 加一個數。**噪音唔係覆蓋。**
+
+### F3 —— 揪到我自己 Day 2 判斷錯咗
+
+Day 2 我喺 checklist 寫「`CONNECTOR_KEYS` 自動 derive,`integration-status.service.spec` 全綠零改動」。
+
+**錯。** `list()` 其實係**手寫陣列**。條 test 叫 `reports all four connectors`,而佢**仍然綠** —— 正正因為 `n8n-license` **根本冇出現喺 `/admin/integrations`**。
+
+> **「test 全綠」唔等於「嘢做咗」。** 我當時見到綠就推斷咗一個機制(derive),冇去讀 `list()`。
+
+修:`list()` 補 row + `n8nLicenseSelected()`;條 test 改成由 `CONNECTOR_KEYS` derive。
+
+**呢個係第四次撞同一種毛病**(probe G2 手抄 4 個 key / TD-1 audit options 手抄 / `list()` 手寫 / 條 test 手抄)。共通點:**靠人手同步嘅清單,就係一個等緊 stale 嘅清單**。
+
+secret 硬紅線:`N8N_LICENSE_WEBHOOK_KEY` + base URL 餵入 G1 leak test。**fails-before** 把 `lastSuccessNote` 改成真係塞個 secret → leak test 真紅(連帶 note 條 test 都紅)→ 還原。
+
+### ⚠️ 順帶揪到一個既有缺口,**冇順手修**
+
+`n8nLicenseSelected()` 同既有 `n8nSelected()` 一樣**只讀 env**,而 runtime factory 係 **DB-then-env** ⇒ **經 UI 改咗 DB override,呢個面板仍然顯示 `inactive`** —— 面板話「未啟用」而平台其實已經行緊 n8n。
+
+冇修,因為修佢要畀 `IntegrationStatusService` 攞 resolver,**同時**會改埋 `n8n-outbound` 個 state ⇒ 超出 W39 範圍(H3)。**一次過修兩行先係啱嘅做法**,而唔係喺庚順手改一行。→ **follow-up 候選**。
+
+### Verify
+
+| 項 | 結果 |
+|---|---|
+| api test | **499 / 499**(47 suites)—— Day 2 收 487,+ contract 10 + status 2 |
+| lint / tsc | **0 / 0** |
+| fails-before | **兩次**(contract 分岔 · secret 洩漏),兩次都精準紅 → 還原 `grep` = 0 |
+
+---
+
+## Retro
+
+### 呢個 phase 最值得記嘅一件事
+
+**六次被自己嘅守門攔住**,冇一次係「跑個 test 見綠就算」:
+
+| | |
+|---|---|
+| ① | `secret()` 喺 `try` 內求值 ⇒ 配置錯誤扮成 vendor outage |
+| ② | `PROBEABLE` 加咗但冇分支 ⇒ 撳 n8n 測試會探 ServiceNow |
+| ③ | W38 boundary test 捉到 probe import ⇒ 收緊而唔係放寬 |
+| ④ | 字串 test 撞到 comment ⇒ 改 match import path |
+| ⑤ | `reports all four connectors` 仍然綠 ⇒ 揭穿新 connector 根本冇顯示 |
+| ⑥ | 自己寫咗條永遠綠嘅廢話 test ⇒ 刪 |
+
+②⑤ 兩次都係**同一個結構**:一個**手抄清單**假裝自己係完整清單。加咗新嘢,清單唔會自己知。兩次都改成由 inventory derive。
+
+### 學到
+
+**「查證」唔止係查 code,仲要查自己嘅推論。** Day 2 我見 `integration-status.service.spec` 全綠,就寫低「自動 derive」。個推論合理,但係**假**。真正該做嘅係讀 `list()` —— 兩分鐘嘅事。**綠色係一個關於 test 嘅事實,唔係一個關於 code 嘅事實。**
+
+### anti-patterns 自檢
+
+| AP | 判定 |
+|---|---|
+| **AP-1 假驗收** | ✅ 兩次 fails-before,每條硬紅線都證過會紅 |
+| **AP-2 mock 當 real** | ⚠️ **本 phase 最大風險,已明標** —— 全程冇真 n8n。緩解 = 所有 mapping 對住**實讀 workflow JSON**;真切換**明文未驗**,寫入 ADR + BACKLOG + plan §1 |
+| **AP-3 stale 數字** | ✅ 順手修咗兩個手抄清單;揪到 ADR D2 四處同 workflow 對唔上 |
+| **AP-4 silent scope drift** | ✅ H1 STOP + approve + changelog;env-only 缺口**明標唔修**(H3) |
+| **AP-5 over-engineering** | ✅ `listUsersBySku`/`checkSync`/`ritmId` 全部零 caller 唔加 |
+| **AP-6 fallback 假象** | ✅ 掣嘅預設方向明文:非 `'n8n'` 一律落 Graph |
+| **AP-7 stale process** | N/A(本 phase 無 live) |
+| **AP-8 SKU 靠名** | ✅ 全程 `skuId` GUID |
+| **AP-9 跳 sync gate** | ✅ `not_synced`→null 兩邊一致,contract test 專門守 |
+| **AP-10 對帳撈錯數字** | ✅ `reconcile` 零改動,boundary test 仍鎖 |
+| **AP-11 驗錯 checkout** | N/A |
+| **AP-12 冇驗「唔應該發生」** | ✅ probe 三條負面斷言 · `no_seats` 兩邊都產生唔到 · secret 零洩漏 |
+
+### 🚧 Carry-over
+
+1. **真切換零 live 驗證** —— n8n secret 仍 `CHANGE_ME_SHARED_SECRET` · UAT 未接通 · 平台未部署。**唔可以當通過。**
+2. **`integration-status` 只讀 env 唔讀 DB override** —— 影響 `n8n-outbound` + `n8n-license` 兩行,要一次過修。
+3. `SESSION_SUMMARY` / runbook 08 切換前置 —— 待環境通咗先寫先有意義。
+
+**Status**:✅ **closed**。**下一個 = 辛**(`TicketUpdateProvider`),號碼 **W40**。
 
 ---

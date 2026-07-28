@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { CONNECTOR_KEYS } from './connectors';
 import { IntegrationStatusService } from './integration-status.service';
 
 const SYNCED = new Date('2026-07-20T03:00:00.000Z');
@@ -53,6 +54,11 @@ describe('IntegrationStatusService', () => {
       N8N_OUTBOUND_WEBHOOK_KEY: 'SECRET-N8N-DO-NOT-LEAK',
       INTAKE_API_KEY: 'SECRET-INTAKE-DO-NOT-LEAK',
       REQUEST_SUBMISSION_PROVIDER: 'n8n',
+      // W39 — the one credential that lets a caller assign licences through
+      // n8n, plus the endpoint it would be sent to.
+      N8N_LICENSE_WEBHOOK_KEY: 'SECRET-N8N-LICENSE-DO-NOT-LEAK',
+      N8N_LICENSE_BASE_URL: 'https://n8n.internal/webhook',
+      LICENSE_OPS_PROVIDER: 'n8n',
     });
 
     const serialised = JSON.stringify(await service.list());
@@ -66,14 +72,16 @@ describe('IntegrationStatusService', () => {
     expect(serialised).not.toContain('service-now.com');
   });
 
-  it('reports all four connectors', async () => {
+  /**
+   * W39: was a hand-written list of four. `list()` builds its rows by hand, so
+   * registering a fifth connector in CONNECTORS did NOT make it appear here —
+   * and a test that hard-codes the same four stayed green while the new
+   * connector was invisible in the admin panel. Derived from the inventory now,
+   * so the next connector cannot be registered and then quietly go unreported.
+   */
+  it('reports every connector in the inventory — not a hand-written list', async () => {
     const rows = await service.list();
-    expect(rows.map((r) => r.key)).toEqual([
-      'graph',
-      'servicenow',
-      'n8n-outbound',
-      'n8n-inbound',
-    ]);
+    expect(rows.map((r) => r.key).sort()).toEqual([...CONNECTOR_KEYS].sort());
   });
 
   /**
@@ -86,6 +94,30 @@ describe('IntegrationStatusService', () => {
     expect(byKey(rows, 'graph').state).toBe('required');
     expect(byKey(rows, 'servicenow').state).toBe('required');
     expect(byKey(rows, 'n8n-inbound').state).toBe('required');
+  });
+
+  /**
+   * W39 / OQ-4. During rollout the n8n side is not reachable at all, so the
+   * common case is "nobody selected this yet". That must read `inactive`
+   * (deployment shape) and never `error` (health) — otherwise the panel shows
+   * red for a connector that was simply never switched on, and the first real
+   * failure has nothing left to distinguish itself with.
+   */
+  it('marks n8n license inactive until it is the selected provider', async () => {
+    expect(byKey(await service.list(), 'n8n-license').state).toBe('inactive');
+
+    build({ LICENSE_OPS_PROVIDER: 'n8n' });
+    expect(byKey(await service.list(), 'n8n-license').state).toBe('active');
+  });
+
+  it('never guesses a last-success time for n8n license', async () => {
+    const row = byKey(await service.list(), 'n8n-license');
+    // Nothing stored records WHICH provider performed an assignment, and the
+    // default is Graph — so any timestamp here would be about assignments, not
+    // about n8n. Same rule as n8n-inbound: state the gap, never a plausible
+    // number someone would use to decide the connector is dead.
+    expect(row.lastSuccessAt).toBeNull();
+    expect(row.lastSuccessNote).toMatch(/do not store which provider/i);
   });
 
   it('marks n8n outbound active only when it is the selected provider', async () => {
