@@ -1,5 +1,7 @@
 import { GraphService } from './graph/graph.service';
 import { ServiceNowService } from './servicenow/servicenow.service';
+import { N8nLicenseProvider } from './license-ops/n8n-license.provider';
+import { CONNECTOR_KEYS } from './connectors';
 import {
   IntegrationProbeService,
   PROBE_THROTTLE_MS,
@@ -14,6 +16,11 @@ describe('IntegrationProbeService', () => {
     updateRecord: jest.Mock;
     addWorkNote: jest.Mock;
   };
+  let n8nLicense: {
+    listTenantSkus: jest.Mock;
+    findUser: jest.Mock;
+    assignLicense: jest.Mock;
+  };
 
   beforeEach(() => {
     graph = { getSubscribedSkus: jest.fn().mockResolvedValue([{}, {}, {}]) };
@@ -23,9 +30,16 @@ describe('IntegrationProbeService', () => {
       updateRecord: jest.fn(),
       addWorkNote: jest.fn(),
     };
+    // W39: only listTenantSkus (2002 mode 1) may ever be reached from here.
+    n8nLicense = {
+      listTenantSkus: jest.fn().mockResolvedValue([{}, {}]),
+      findUser: jest.fn(),
+      assignLicense: jest.fn(),
+    };
     service = new IntegrationProbeService(
       graph as unknown as GraphService,
       snow as unknown as ServiceNowService,
+      n8nLicense as unknown as N8nLicenseProvider,
     );
   });
 
@@ -34,16 +48,63 @@ describe('IntegrationProbeService', () => {
    * effects. Run every probe there is, then assert nothing that writes was
    * touched. If someone later "improves" the ServiceNow probe into a create,
    * or wires the n8n webhook up to "test it properly", this fails.
+   *
+   * W39: iterates CONNECTOR_KEYS instead of a hand-written list. The list
+   * version claimed to "run every probe there is" while actually running the
+   * four that existed when it was written — so adding 'n8n-license' left the
+   * new probe silently uncovered, which is how it shipped briefly reaching
+   * ServiceNow. A guard that has to be updated by hand is a guard with a hole
+   * in it (same failure mode as TD-1).
    */
-  it('never calls anything that writes', async () => {
-    await service.run('graph', 1_000);
-    await service.run('servicenow', 1_000);
-    await service.run('n8n-outbound', 1_000);
-    await service.run('n8n-inbound', 1_000);
+  it('never calls anything that writes — every connector, not a hand-written list', async () => {
+    for (const key of CONNECTOR_KEYS) {
+      await service.run(key, 1_000);
+    }
 
     expect(snow.createRecord).not.toHaveBeenCalled();
     expect(snow.updateRecord).not.toHaveBeenCalled();
     expect(snow.addWorkNote).not.toHaveBeenCalled();
+    // W39: assigning IS a write, and the worst kind — it consumes a real seat
+    // for a real person. 2005 is read-only but needs a real UPN (H4).
+    expect(n8nLicense.assignLicense).not.toHaveBeenCalled();
+    expect(n8nLicense.findUser).not.toHaveBeenCalled();
+  });
+
+  describe('n8n-license probe (W39)', () => {
+    it('probes workflow 2002 mode 1 and nothing else', async () => {
+      const res = await service.run('n8n-license', 1_000);
+
+      expect(n8nLicense.listTenantSkus).toHaveBeenCalledTimes(1);
+      expect(res.ok).toBe(true);
+      expect(res.message).toContain('2');
+      expect(res.message).toMatch(/n8n/i);
+    });
+
+    /**
+     * 🔴 The regression this whole block exists for. `execute()` falls through
+     * to the ServiceNow branch for any probeable key it does not name, so
+     * adding 'n8n-license' to PROBEABLE without adding the branch made
+     * "test the n8n connector" quietly probe ServiceNow and report the result
+     * under an n8n label — a green tick for a connector nobody had contacted.
+     */
+    it('does NOT fall through to ServiceNow or Graph', async () => {
+      await service.run('n8n-license', 1_000);
+
+      expect(snow.query).not.toHaveBeenCalled();
+      expect(graph.getSubscribedSkus).not.toHaveBeenCalled();
+    });
+
+    it('reports a failure without leaking the vendor message', async () => {
+      n8nLicense.listTenantSkus.mockRejectedValue(
+        new Error('x-uop-secret rejected by https://n8n.internal/webhook'),
+      );
+
+      const res = await service.run('n8n-license', 1_000);
+
+      expect(res.ok).toBe(false);
+      expect(res.message).not.toContain('n8n.internal');
+      expect(res.message).not.toContain('x-uop-secret');
+    });
   });
 
   it('probes Graph with the existing read-only subscribed-SKUs call', async () => {

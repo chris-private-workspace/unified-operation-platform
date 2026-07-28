@@ -91,6 +91,38 @@ ADR-0010 item 4 刻意只做**唯讀觀測**,冇做「UI 設定」,主因係 D2 
 
 寫入前做結構 validation(URL 格式、`REQUEST_SUBMISSION_PROVIDER` enum、GUID 格式)。**唔**喺寫入時自動打 vendor 測連線 —— 測連線係另一個明確、用戶觸發嘅動作(ADR-0010 D5 Test connection),兩者唔混。
 
+## 實作補註(implementation notes)
+
+> **性質**:落地時查證先浮出嚟嘅資訊。上面已 Accepted 嘅決定**一個字都冇改** —— 呢度只係**補一個連帶後果**同**加一個 connector**。要推翻上面任何一條,寫新 ADR。
+
+### W39(2026-07-28)— 第四個 connector:`n8n-license`
+
+D2 個表補兩行(secret 邊界照舊):
+
+| Connector | 欄位 | 類別 | 去向 |
+|---|---|---|---|
+| n8n license | `LICENSE_OPS_PROVIDER` | 路由 graph/n8n | ✅ UI 可改(DB `licenseOpsProvider`) |
+| n8n license | `N8N_LICENSE_BASE_URL` | 端點 | ✅ UI 可改(DB `n8nLicenseBaseUrl`) |
+| n8n license | `N8N_LICENSE_WEBHOOK_KEY` | 🔴 secret | env-only,唯讀顯示狀態 |
+
+呢個掣就係 **ADR-0017 D1 要求嘅「逐接縫一個掣」**嘅第二個(第一個 = `REQUEST_SUBMISSION_PROVIDER`)。**預設 `graph`,而且任何非 `'n8n'` 字串(unset / typo / 半完成配置)一律 resolve 落 Graph** —— 唔完整嘅配置絕不可以靜靜把真 licence 派發路由去第三方。
+
+### 🔴 連帶後果:加 connector = 改 schema,呢點原文冇講
+
+**`ConnectorConfig` 係具名 column model,唔係 key-value bag**(見 OQ-4「一 row 一 connector」)。所以**任何新 connector 嘅非機密欄位,都必然要 `ALTER TABLE` 加 column** —— 即係**每次加 connector 都觸發 H1**,要 owner approve。
+
+W39 kickoff 時把「零 schema」寫入 plan 做 gate,寫實作先發現呢個假設破產。**下一個加 connector 嘅人會踩同一個坑**,所以記喺呢度而唔係只記喺 W39 progress。
+
+W39 嘅 migration(`20260728021452_w39_n8n_license_connector`)純 additive、兩個 nullable TEXT、零遷移風險,Chris 2026-07-28 approve。
+
+> **點解揀加 column 而唔係全走 env**:`n8n-inbound` 已經有 `editable: []` 嘅先例(只有 secret),所以「connector 冇可編輯欄位」係已存在形態,技術上行得通。但走 env 就冇 UI 掣,而 UAT 改 env 要經 Azure —— 直接違背 ADR-0017 D1「逐接縫可切換」嘅目的。
+
+### 點解唔開新 ADR
+
+Model C 決定冇變 · secret 邊界(D2/D5)冇變 · resolver 機制(D3)冇變 · 生效方式(D4 C2 restart)冇變。只係**多一個 connector 沿用同一模式**。同 W29 對 ADR-0009 Decision 5、W38 對 ADR-0017 嘅做法同構:**收緊 / 補充,唔推翻**。
+
+---
+
 ## Alternatives Considered
 
 - **Model A(全 DB app 層加密)** — rejected:secret 落 DB = 新攻擊面(DB dump + master key 洩漏即全洩),實質降低現有「secret 只喺 env」保證;且要重構 vendor client lifecycle;且推翻 ADR-0010 D2。

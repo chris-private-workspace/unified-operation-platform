@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GraphService } from './graph/graph.service';
 import { ServiceNowService } from './servicenow/servicenow.service';
+import { N8nLicenseProvider } from './license-ops/n8n-license.provider';
 import { PROBEABLE, type ConnectorKey } from './connectors';
 
 /** Minimum gap between probes of the SAME connector (W30 plan §9 Q2). */
@@ -40,6 +41,15 @@ export class IntegrationProbeService {
   constructor(
     private readonly graph: GraphService,
     private readonly snow: ServiceNowService,
+    /**
+     * W39 — the CONCRETE n8n provider, never LicenseOperationsProvider.
+     *
+     * Injecting the abstraction would mean "test the n8n connector" probes
+     * whichever provider is currently selected: with the default wiring that is
+     * Graph, so the panel would report Graph's health under an n8n label. A
+     * connector probe has to reach the connector it names.
+     */
+    private readonly n8nLicense: N8nLicenseProvider,
   ) {}
 
   /** Latest in-process probe result, if this connector was tested since boot. */
@@ -80,7 +90,21 @@ export class IntegrationProbeService {
           at: new Date(),
         };
       }
+      if (key === 'n8n-license') {
+        // Workflow 2002 in mode 1 only — a read of tenant seat counts.
+        //
+        // 🔴 Not 2003: it ASSIGNS A REAL LICENCE. Not 2005: it needs a real UPN
+        // to answer, and putting a colleague's UPN in a health check is the PII
+        // habit H4 exists to prevent. See PROBEABLE in connectors.ts.
+        const skus = await this.n8nLicense.listTenantSkus();
+        return {
+          ok: true,
+          message: `Reachable — ${skus.length} subscribed SKUs visible via n8n`,
+          at: new Date(),
+        };
+      }
       // Empty query + limit 1: the cheapest read that proves auth + reachability.
+      // Reached only by 'servicenow' — every other probeable key returns above.
       const rows = await this.snow.query('', undefined, 1);
       return {
         ok: true,
