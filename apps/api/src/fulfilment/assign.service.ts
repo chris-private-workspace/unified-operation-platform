@@ -13,12 +13,17 @@ import {
   type DirectoryUser,
 } from '../integration/license-ops/license-ops.provider';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
 import { assertOpcoScope } from '../auth/opco-scope';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { aggregateRequestStatus } from './stage.service';
 import { OutboundFailureService } from './outbound-failure.service';
-import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
+import {
+  OUTBOUND_FAILURE_KINDS,
+  TICKET_TRANSITIONS,
+  type TicketTransition,
+} from './outbound-failure-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
 
 /**
@@ -36,6 +41,9 @@ export class AssignService {
     // this service must never learn which one it got, or the two paths start
     // to diverge (D0).
     private readonly licenseOps: LicenseOperationsProvider,
+    // ADR-0017 seam ④ (W40). Same rule as seam ② above: this service must never
+    // learn which implementation it got.
+    private readonly tickets: TicketUpdateProvider,
     private readonly snow: ServiceNowService,
     private readonly failures: OutboundFailureService,
     private readonly audit: AuditService,
@@ -171,11 +179,19 @@ export class AssignService {
     // (see the increment in the transaction below). D1 keeps that unchanged.
     const overBudget = assignedBefore + 1 > allocated;
     if (overBudget && !overrideReason) {
-      // D6: a block changes no state, so it writes no AuditLog — but it should
-      // not be invisible either. H4: ids and counts only, never the target UPN.
+      // D6: a block writes no AuditLog — but it should not be invisible either.
+      // H4: ids and counts only, never the target UPN.
+      //
+      // W40 note: ADR-0016 D6 said a block "changes no state". That is no
+      // longer literally true — the hold below records ticketHeldAt — but the
+      // part that mattered still holds: nothing about the ASSIGNMENT changes,
+      // no licence moves and no ledger number moves.
       this.logger.warn(
         `OpCo budget gate blocked line item ${lineItemId} (${item.sku.skuPartNumber}, opco ${request.opcoId}): ${assignedBefore}/${allocated}`,
       );
+      // W40 / ADR-0017 D3 (OQ-E) — tell ServiceNow this item is waiting on
+      // procurement. Non-fatal and at most once; see holdTicket.
+      await this.holdTicket(item, request.id);
       throw new BadRequestException(
         `OpCo budget exceeded for ${item.sku.skuPartNumber}: ${assignedBefore} assigned of ${allocated} allocated. ` +
           'Raise the allocation or ask an admin to override.',
@@ -297,11 +313,34 @@ export class AssignService {
     });
 
     // ── ServiceNow write-back (mirror only, non-fatal — OD4) ──
-    // Two-level (ADR-0008 / CONTRACT §4): prefer THIS line's RITM (sc_req_item);
-    // fall back to the parent REQ mirror for legacy rows without a per-line RITM.
-    const snTarget = item.serviceNowSysId ?? request.serviceNowSysId;
-    if (snTarget) {
-      const note = `License ${item.sku.skuPartNumber} assigned via platform.`;
+    const note = `License ${item.sku.skuPartNumber} assigned via platform.`;
+    if (item.serviceNowSysId) {
+      /**
+       * W40 / OQ-E — this line has its own RITM (ADR-0008 D6 two-level), and
+       * assigning it is precisely what that RITM asked for, so close it. The
+       * close note carries the text the work note used to.
+       *
+       * No duplicate-close guard needed: the stage gate above rejects anything
+       * that is not READY, so a line item can only reach here once.
+       *
+       * 🔴 Deliberately NOT falling back to request.serviceNowSysId the way the
+       * work note below does. That is the parent REQ (sc_request), while seam ④
+       * only ever writes sc_req_item — workflow 2004 has the table baked into
+       * its patch URL. Closing a REQ is also not the same statement as closing
+       * one RITM: the other lines may still be open. ADR-0017 D3 is explicit
+       * that the platform closes LICENSE RITMs and nothing else.
+       */
+      await this.writeTicket(
+        TICKET_TRANSITIONS.CLOSE,
+        item.serviceNowSysId,
+        note,
+        request.id,
+      );
+    } else if (request.serviceNowSysId) {
+      // Legacy rows with no per-line RITM keep the behaviour they have always
+      // had: a work note on the parent mirror, direct (OQ-A — 2004 has no
+      // note-without-state mode, so this path cannot go through the seam).
+      const snTarget = request.serviceNowSysId;
       try {
         await this.snow.addWorkNote(snTarget, note, 'sc_req_item');
       } catch (err) {
@@ -328,5 +367,107 @@ export class AssignService {
       `Assigned line item ${lineItemId} (${item.sku.skuPartNumber}, request ${request.id})`,
     );
     return updated;
+  }
+
+  // ── seam ④ helpers (W40) ────────────────────────────────────────────────
+
+  /**
+   * Tell ServiceNow this line is waiting on procurement — AT MOST ONCE.
+   *
+   * The guard is the whole point. A blocked assign throws, and an operator can
+   * retry a blocked assign as many times as they like (raise the allocation,
+   * try again, ask an admin, try again). Without `ticketHeldAt` every one of
+   * those attempts would PATCH a real customer ticket.
+   *
+   * ⚠️ Known edge: the flag is written only when the write SUCCEEDS, so a hold
+   * that failed and was later repaired from the queue can still be attempted
+   * once more on the next blocked assign. That is idempotent on ServiceNow's
+   * side (state 2 → 2) and preferable to marking it held when we do not know
+   * that it is.
+   */
+  private async holdTicket(
+    item: {
+      id: string;
+      serviceNowSysId: string | null;
+      ticketHeldAt: Date | null;
+      sku: { skuPartNumber: string };
+    },
+    requestId: string,
+  ): Promise<void> {
+    // No per-line RITM → nothing this seam may write (see the close path).
+    if (!item.serviceNowSysId || item.ticketHeldAt) return;
+
+    const note =
+      `License unavailable for ${item.sku.skuPartNumber} — procurement in progress. ` +
+      'Item on hold.';
+    const held = await this.writeTicket(
+      TICKET_TRANSITIONS.HOLD,
+      item.serviceNowSysId,
+      note,
+      requestId,
+    );
+    if (!held) return;
+
+    await this.prisma.requestLineItem.update({
+      where: { id: item.id },
+      data: { ticketHeldAt: new Date() },
+    });
+  }
+
+  /**
+   * One RITM state change, non-fatal (ADR-0011 OD4). Returns whether the ticket
+   * actually moved.
+   *
+   * Two ways it can fail, and both are the same thing to the caller:
+   *   - the provider THREW    — transport / config (see the seam's error contract)
+   *   - it answered `error`   — n8n patched with neverError, so ServiceNow can
+   *                             refuse (row-level ACL) while the webhook says 200
+   */
+  private async writeTicket(
+    transition: TicketTransition,
+    snTarget: string,
+    note: string,
+    requestId: string,
+  ): Promise<boolean> {
+    try {
+      const outcome =
+        transition === TICKET_TRANSITIONS.CLOSE
+          ? await this.tickets.closeComplete(snTarget, note)
+          : await this.tickets.markInProgress(snTarget, note);
+      if (outcome.status === 'updated') return true;
+      // H4: `details` is the provider's own operator-facing text — both
+      // implementations are required to strip the vendor's message, so this is
+      // safe to record. Never the raw workflow/vendor body.
+      await this.queueTicketFailure(
+        transition,
+        snTarget,
+        note,
+        requestId,
+        new Error(outcome.details),
+      );
+    } catch (err) {
+      await this.queueTicketFailure(transition, snTarget, note, requestId, err);
+    }
+    return false;
+  }
+
+  private async queueTicketFailure(
+    transition: TicketTransition,
+    snTarget: string,
+    note: string,
+    requestId: string,
+    error: unknown,
+  ): Promise<void> {
+    this.logger.warn(
+      `ServiceNow ticket ${transition} failed for request ${requestId}: ${
+        (error as Error)?.message
+      }`,
+    );
+    await this.failures.record({
+      kind: OUTBOUND_FAILURE_KINDS.SERVICENOW_TICKET_UPDATE,
+      payload: { snTarget, note, transition },
+      error,
+      requestId,
+    });
   }
 }

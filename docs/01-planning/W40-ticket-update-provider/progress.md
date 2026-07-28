@@ -194,6 +194,67 @@ checklist 原本寫「n8n 選咗但 URL 未配置 → **boot 失敗**(同 outbou
 
 **6 failed / 3 passed**:`'direct'` 同全部 near-miss 一齊紅,而 unset 仍然綠(truthy 對 `undefined` 啱好答啱)。呢個分佈本身就講清楚咗:**淨係測 unset 係測唔到呢個 bug 嘅**。
 
+## Day 1(續)— F4 ✅ **新對外行為落地**
+
+**575 / 575**(564→575)· lint 0 · tsc 0。Chris 三個拍板全部跟建議。
+
+### 查證推翻咗 OQ-E 一個假設(令佢變簡單)
+
+OQ-E 寫「一張 RITM 嘅**全部** line item 都完成 → close」。查 schema:`RequestLineItem.serviceNowSysId` 個 comment 明寫 **「THIS line's RITM」**(ADR-0008 D6 兩層)⇒ **一個 line item = 一張 RITM**。
+
+所以根本冇「全部 line item」呢回事,條件簡化成「呢個 line item ASSIGNED → close 佢自己嗰張」。
+
+### 🔴 close 唔 fallback 去 parent REQ
+
+既有 work note 寫 `item.serviceNowSysId ?? request.serviceNowSysId`。close **冇**照抄呢個 fallback:
+
+1. REQ 係 `sc_request`,而 seam ④ 只寫 `sc_req_item`(2004 patchUrl 焗死表名)
+2. close 一張 REQ ≠ close 一張 RITM —— **其他 line 可能仲開住**
+3. ADR-0017 D3 明文:平台只 close license RITM
+
+> ⚠️ 順帶見到:**既有 work note 個 fallback 本身有問題** —— 佢攞 REQ sysId 去配 `'sc_req_item'` table,即係用 REQ 嘅 id 去搵一張 RITM。冇修(既有行為,超出 F4),記低。
+
+### close 唔使守門,因為已經有人守住
+
+原本諗住要防重複 close。查證之後發現**唔使**:stage gate(`item.stage !== READY` → 400)保證一個 line item 只會成功 assign 一次,所以只會 close 一次。
+
+呢個係「唔加唔需要嘅嘢」(§1.2)—— 但係**查證得出**,唔係假設。
+
+### `ticketHeldAt` —— 呢個先係真需要守嗰個
+
+hold 冇同等保護:被擋嘅 assign 會 throw,而操作員會**不斷重試**(加 allocation、再試、搵 admin、再試)。冇 flag 就每次都 PATCH 一次真單。
+
+⚠️ **只喺寫入成功之後先記 flag**。失敗就唔記,下次再試 —— 寧可多試一次(state 2→2 冪等),都好過標住「已 hold」而其實冇。
+
+### 兩個 AP-13 味嘅位,順手用正解
+
+**① 一個 kind 唔係兩個。** close 同 hold 失敗共用 `servicenow.ticket_update`,靠 payload `transition` 分。兩個 kind 就要兩份講同一件事嘅 whitelist。
+
+**② `pickFailurePayload` 個 `kind !== 'servicenow.worknote'`。** 「除咗嗰個之外」等於**將來每個新 kind 自動 opt-in** —— W40 加咗一個唔應該有 lineItems 嘅 kind,啱好撞正。改成正面清單 `KINDS_WITH_LINE_ITEMS`:新 kind 而家要**主動要求**先有。
+
+### 一個我放寬咗嘅守門 —— 理由要留低
+
+F1 我把 OQ-D 寫成「`outbound-retry` **完全唔可以** import seam」。F4 證明呢個**闊過**個決定本身:
+
+- **work note** retry:payload 記低嘅係一個 direct call 失敗咗,重發 = 做返同一件事 ⇒ 直連係啱
+- **ticket state** retry:嗰個失敗係**當時選中嗰個 provider** 產生嘅,直連重發 = 用 Table API 修一個 n8n close ⇒ **必須**走 seam
+
+⚠️ W39 有條相反嘅先例(boundary test 捉到 probe import → **收緊**)。今次係放寬,所以我冇靜靜改:靜態嗰條收窄成「work note 仍然直連」,而**真正嘅保證**(邊個 repair 去邊個系統)改由 `outbound-retry.service.spec` 嘅**行為** test 守 —— 一旦兩條路都 import 咗,靜態檢查根本分唔到佢哋。
+
+### 又一個偏離 checklist,講清楚
+
+checklist 寫「spec **唔** mock provider,wire 真 `DirectTicketProvider`」(抄 W38 G2 手法)。**冇跟。**
+
+W38 嗰個手法有具體理由:mock 走 provider 會令 raw→503 個 wrap 跌出測試鏈,兩條 BUG-002 regression 會靜靜降級。**seam ④ 冇同等嘢** —— 兩個實作已經返同一詞彙,而佢哋自己各有 spec。呢度 mock 抽象先係啱嘅層次。
+
+抄一個手法之前要問佢原本解緊咩問題。
+
+### fails-before
+
+拆走 `ticketHeldAt` 守門 + 令 close fallback 去 REQ → **4 failed / 45 passed**。兩條新守門紅之餘,**兩條既有 test 都一齊捉到**(happy path 個 work note assertion + W31 queue test)。
+
+> 第一次插 REQ-fallback 探針時 TS narrowing 直接爆(`string | null`)—— 即係 TS 本身都擋住咗一部分呢個錯誤形狀。改成 type-safe 版本先真正證到條 test。
+
 ### 下一步
 
-F4 —— 接 close/WIP trigger。呢個係本 phase **唯一產生新對外行為**嘅一步,亦係要定案「重複寫入點擋」嗰個。
+F5 —— contract test(兩個 provider 同一 state)+ 1007 分工邊界文件化。

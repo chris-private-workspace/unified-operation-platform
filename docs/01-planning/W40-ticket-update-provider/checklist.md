@@ -58,16 +58,21 @@ last_updated: 2026-07-28
 - [x] **fails-before 實證**:把 `choice === 'n8n'` 改成 `choice ?`(truthy —— fail-safe 搞反嘅**真實形狀**)→ **6 failed / 3 passed**,`'direct'` 同全部 near-miss 一齊紅 → 還原,`grep` = 0
 - [x] 全套 **564 / 564**(555→564)· lint 0 · tsc 0
 
-## F4 — `assign.service` 接 trigger(🔴 OQ-E:close + WIP 兩個都做)
+## F4 — `assign.service` 接 trigger ✅ **完成**(2026-07-28,🔴 OQ-E:close + WIP 兩個都做)
 
-- [ ] `closeComplete` trigger:一張 RITM 嘅**全部** line item 都完成 → close
-- [ ] `markInProgress` trigger:預算 gate 擋 → 標「採購中」
-- [ ] 🔴 **重複寫入必須擋**(plan §8 衍生問題):操作員可以不斷重試被擋嘅 assign ⇒ 唔可以每次都 PATCH 真單。只喺**狀態轉變**時寫
-- [ ] 🔴 **同一張 RITM 只 close 一次** —— 平台側擋,唔靠 SN 容忍
-- [ ] 失敗 = 非致命,入 `OutboundFailure` 佇列(ADR-0011,OD4:唔可以令已成功嘅 assign 變失敗)
-- [ ] **H5**:critical path 有 test —— 呢個係 assign 路徑,`assignLicense` / stage 推進兩個 critical path 都掂到
-- [ ] spec **唔 mock provider**,wire 真 `DirectTicketProvider` 包住既有 `snow` mock(W38 G2 手法:mock 走 provider 會令 wrap 跌出測試鏈)
-- [ ] fails-before 實證
+- [x] ⚠️ **更正一個 plan 假設**:OQ-E 寫「一張 RITM 嘅**全部** line item 都完成 → close」,但查 schema 揭 `RequestLineItem.serviceNowSysId` = **THIS line's RITM**(ADR-0008 D6 兩層)⇒ **一個 line item = 一張 RITM**。所以條件簡化成「呢個 line item ASSIGNED → close 佢自己嗰張」
+- [x] `closeComplete` trigger:assign 成功 + 有 per-line RITM → close(close_notes 承載原本 work note 嘅文字)
+- [x] 🔴 **唔 fallback 去 parent REQ** —— REQ 係 `sc_request` 而 seam ④ 只寫 `sc_req_item`(2004 patchUrl 焗死);而且 close 一張 REQ ≠ close 一張 RITM(其他 line 可能仲開住)。冇 per-line RITM → 維持既有 work note
+- [x] `markInProgress` trigger:預算 gate 擋 → 標「採購中」
+- [x] 🔴 **重複寫入已擋**:新欄 `RequestLineItem.ticketHeldAt`(H1 approved)+ migration `20260728135856_w40_ticket_held_at`。只喺**成功寫入之後**先記,所以失敗會下次再試
+- [x] 🔴 **close 唔使額外守門** —— stage gate(`item.stage !== READY` → 400)保證一個 line item 只會成功 assign 一次。查證得出,唔係假設
+- [x] 失敗 = 非致命入佇列:新 kind **`servicenow.ticket_update`** 帶 `transition`(**一個** kind 唔係兩個 —— 兩個會有兩份講同一件事嘅 whitelist,AP-13)。`kind` 係 string 常數 ⇒ **零 schema**
+- [x] retry 走 seam(OQ-B 拍板):`repairTicketUpdate` 按 `transition` 分派;**唔認識就 fail-loud**(close 一張只應 hold 嘅單唔可逆)
+- [x] ➕ 順帶修 `pickFailurePayload` 一個 `kind !== 'servicenow.worknote'` 手抄判斷 —— 「除咗嗰個」會令**將來每個** kind 自動 opt-in;改成正面清單 `KINDS_WITH_LINE_ITEMS`(AP-13)
+- [x] ⚠️ **偏離 checklist 一項**:原寫「spec 唔 mock provider,wire 真 `DirectTicketProvider`」。**冇跟** —— W38 嗰個手法係為咗保住 raw→503 wrap 喺測試鏈入面,而 seam ④ 冇同等嘢(兩個實作已經返同一詞彙,各自有 spec)。呢度 mock 抽象係啱嘅層次
+- [x] **H5** 8 條新 test:close vs work note 二選一 · **唔** close parent REQ · hold 一次 · **第二次唔再 PATCH** · 失敗唔記 flag · 冇擋就唔 hold · close 失敗 assign 仍成功(OD4)· `error` outcome 同 throw 一視同仁
+- [x] **fails-before 實證**:拆走 `ticketHeldAt` 守門 + 令 close fallback 去 REQ → **4 failed / 45 passed**(兩條新守門 + **兩條既有** test 一齊捉到)→ 還原,`grep` = 0
+- [x] 全套 **575 / 575**(564→575)· lint 0 · tsc 0
 
 ## F5 — Contract test + 1007 分工邊界文件化
 
@@ -79,7 +84,8 @@ last_updated: 2026-07-28
 
 ## F6 — doc-sync
 
-- [ ] ADR-0017 **實作補註** 加「辛 — W40」節(落差 #1 / 命名 / 兩個 caller / OQ-E trigger 定義)
+- [ ] ADR-0017 **實作補註** 加「辛 — W40」節(落差 #1 / 命名 / 兩個 caller / OQ-E trigger 定義 / OQ-D 收窄)
+- [ ] ⚠️ **ADR-0016 D6 一句唔再字面成立** —— 佢寫「a block changes no state」,而 W40 個 hold 會寫 `ticketHeldAt` + PATCH 一次 SN。ADR 已 Accepted **唔改內容**,喺 ADR-0017 補註講清楚(code comment 已標)
 - [ ] BACKLOG `N8N-SEAMS-己庚辛` row 更新 + 最後更新段
 - [ ] runbook `docs/13-deployment/08-n8n-integration-go-live.md` 加 n8n 側前置(2004 secret · DEV host · credential row-ACL)
 - [ ] 🚧 **誠實邊界照寫**:真切換零 live 驗證(同庚)

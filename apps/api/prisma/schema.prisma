@@ -256,6 +256,13 @@ model RequestLineItem {
   quoteRef            String? // vendor quotation reference
   poRef               String? // purchase order reference
 
+  // W40 / ADR-0017 D3 — when the platform last told ServiceNow this line's RITM
+  // is on hold (budget gate blocked it, "procurement in progress"). Set only on
+  // the transition, never on every blocked attempt: an operator can retry a
+  // blocked assign as often as they like, and each retry must not PATCH a real
+  // customer ticket again.
+  ticketHeldAt        DateTime?
+
   // stage timestamps (procurement path)
   quotedAt            DateTime?
   opcoApprovedAt      DateTime?

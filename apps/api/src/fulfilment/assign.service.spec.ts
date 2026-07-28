@@ -12,6 +12,7 @@ import { GraphService } from '../integration/graph/graph.service';
 import { LicenseOperationsProvider } from '../integration/license-ops/license-ops.provider';
 import { GraphLicenseProvider } from '../integration/license-ops/graph-license.provider';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
 import { OutboundFailureService } from './outbound-failure.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -50,6 +51,7 @@ describe('AssignService', () => {
   let tx: any;
   let graph: any;
   let snow: any;
+  let tickets: { closeComplete: jest.Mock; markInProgress: jest.Mock };
   let failures: any;
   let audit: any;
 
@@ -111,7 +113,12 @@ describe('AssignService', () => {
       request: { update: jest.fn() },
     };
     prisma = {
-      requestLineItem: { findUnique: jest.fn() },
+      // `update` here is NOT the stage transition (that runs inside $transaction
+      // via tx) — it is W40's ticketHeldAt write, which happens outside it.
+      requestLineItem: {
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
       request: { findUnique: jest.fn(), update: jest.fn() },
       requestEvent: { create: jest.fn() },
       // W36 / ADR-0016 — the OpCo budget gate reads the ledger row before Graph.
@@ -124,6 +131,18 @@ describe('AssignService', () => {
       assignLicense: jest.fn().mockResolvedValue(undefined),
     };
     snow = { addWorkNote: jest.fn().mockResolvedValue(undefined) };
+    // W40 / ADR-0017 seam ④. Stubbed at the abstraction: unlike seam ② there is
+    // no raw-vendor wrap to keep inside the tested chain here — both
+    // implementations already return the same outcome vocabulary, and their own
+    // specs cover the mapping.
+    tickets = {
+      closeComplete: jest
+        .fn()
+        .mockResolvedValue({ status: 'updated', newState: '3' }),
+      markInProgress: jest
+        .fn()
+        .mockResolvedValue({ status: 'updated', newState: '2' }),
+    };
 
     // ADR-0011: the work-note failure is queued here. Stubbed rather than
     // omitted so the tests below can assert it is (and is NOT) called.
@@ -153,6 +172,7 @@ describe('AssignService', () => {
           inject: [GraphService],
         },
         { provide: ServiceNowService, useValue: snow },
+        { provide: TicketUpdateProvider, useValue: tickets },
         { provide: OutboundFailureService, useValue: failures },
         { provide: AuditService, useValue: audit },
       ],
@@ -195,7 +215,13 @@ describe('AssignService', () => {
       );
     });
 
-    it('writes back to THIS line item RITM when present (two-level), not the parent REQ', async () => {
+    /**
+     * W40 OQ-E — behaviour change, deliberate. This line's RITM asked for the
+     * licence, and assigning it is that request fulfilled, so the ticket is
+     * CLOSED rather than annotated. Before W40 this wrote a work note and left
+     * the ticket open forever.
+     */
+    it('closes THIS line item RITM when present, instead of writing a work note', async () => {
       arrangeHappy();
       prisma.requestLineItem.findUnique.mockResolvedValue(
         readyItem({ serviceNowSysId: 'ritm-1' }),
@@ -203,9 +229,29 @@ describe('AssignService', () => {
 
       await service.assignLineItem('li1', undefined, ADMIN);
 
-      expect(snow.addWorkNote).toHaveBeenCalledWith(
+      expect(tickets.closeComplete).toHaveBeenCalledWith(
         'ritm-1',
         expect.stringContaining('SPE_E3'),
+      );
+      // Not both: a close carries the same text in close_notes, so writing the
+      // work note as well would PATCH the same ticket twice to say one thing.
+      expect(snow.addWorkNote).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 The parent REQ is sc_request, while seam ④ only ever writes
+     * sc_req_item (2004 has the table baked into its patch URL). Closing a REQ
+     * is also a different statement — the other lines may still be open.
+     */
+    it('never closes the parent REQ when this line has no RITM of its own', async () => {
+      arrangeHappy(); // readyItem has no serviceNowSysId; request.serviceNowSysId = 'sys1'
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tickets.closeComplete).not.toHaveBeenCalled();
+      expect(snow.addWorkNote).toHaveBeenCalledWith(
+        'sys1',
+        expect.any(String),
         'sc_req_item',
       );
     });
@@ -773,6 +819,139 @@ describe('AssignService', () => {
 
       await service.assignLineItem('li1', undefined, ADMIN);
       expect(failures.record).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * W40 / ADR-0017 seam ④ — the ticket state transitions (OQ-E).
+   *
+   * The load-bearing property here is that a blocked assign PATCHes a real
+   * customer ticket at most once. An operator retries a blocked assign as a
+   * matter of course — raise the allocation, try again, ask an admin, try
+   * again — and every one of those attempts runs this code path.
+   */
+  describe('ticket state transitions', () => {
+    /** Budget gate: assigned 5 of 5 allocated → +1 busts it. */
+    const arrangeBlocked = (over: Record<string, any> = {}) => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue({
+        allocatedQuantity: 5,
+        assignedQuantity: 5,
+      });
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({
+          serviceNowSysId: 'ritm-1',
+          ticketHeldAt: null,
+          ...over,
+        }),
+      );
+    };
+
+    it('marks the RITM in progress when the budget gate blocks the assign', async () => {
+      arrangeBlocked();
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(tickets.markInProgress).toHaveBeenCalledWith(
+        'ritm-1',
+        expect.stringContaining('procurement'),
+      );
+      // The hold is recorded so the next blocked attempt does not repeat it.
+      expect(prisma.requestLineItem.update).toHaveBeenCalledWith({
+        where: { id: 'li1' },
+        data: { ticketHeldAt: expect.any(Date) },
+      });
+    });
+
+    /** 🔴 The reason ticketHeldAt exists. */
+    it('does NOT touch the ticket again on a second blocked attempt', async () => {
+      arrangeBlocked({ ticketHeldAt: new Date('2026-07-27T00:00:00.000Z') });
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(tickets.markInProgress).not.toHaveBeenCalled();
+      expect(prisma.requestLineItem.update).not.toHaveBeenCalled();
+    });
+
+    it('does not record a hold that failed, so it can be attempted again', async () => {
+      arrangeBlocked();
+      tickets.markInProgress.mockRejectedValue(new Error('n8n is down'));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(failures.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'servicenow.ticket_update',
+          payload: expect.objectContaining({ transition: 'hold' }),
+        }),
+      );
+      expect(prisma.requestLineItem.update).not.toHaveBeenCalled();
+    });
+
+    it('never holds a ticket the assign was allowed to proceed on', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1', ticketHeldAt: null }),
+      );
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tickets.markInProgress).not.toHaveBeenCalled();
+    });
+
+    /**
+     * OD4 — the licence is on the user and the ledger has moved. A ticket that
+     * did not close must not turn that into a failed assign.
+     */
+    it('keeps the assign successful when the close fails, and queues it', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1' }),
+      );
+      tickets.closeComplete.mockRejectedValue(new Error('ServiceNow is down'));
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).resolves.toBeDefined();
+
+      expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled();
+      expect(failures.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'servicenow.ticket_update',
+          payload: expect.objectContaining({
+            transition: 'close',
+            snTarget: 'ritm-1',
+          }),
+        }),
+      );
+    });
+
+    /**
+     * The n8n path answers HTTP 200 with status 'error' when ServiceNow refused
+     * its PATCH (row-level ACL). Treating that as success would report a ticket
+     * as closed while it never moved.
+     */
+    it('queues a provider "error" outcome the same as a thrown failure', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1' }),
+      );
+      tickets.closeComplete.mockResolvedValue({
+        status: 'error',
+        details: 'ServiceNow returned HTTP 403',
+      });
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(failures.record).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'servicenow.ticket_update' }),
+      );
     });
   });
 });

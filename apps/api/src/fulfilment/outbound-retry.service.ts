@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { RequestSubmissionProvider } from './request-submission.provider';
@@ -19,6 +20,7 @@ import { OutboundFailureService } from './outbound-failure.service';
 import {
   OUTBOUND_FAILURE_KINDS,
   OUTBOUND_FAILURE_STATUS,
+  TICKET_TRANSITIONS,
 } from './outbound-failure-fields';
 
 type Bag = Record<string, unknown>;
@@ -46,6 +48,10 @@ export class OutboundRetryService {
     private readonly failures: OutboundFailureService,
     private readonly provider: RequestSubmissionProvider,
     private readonly snow: ServiceNowService,
+    // W40 seam ④. A ticket-state repair MUST go through the seam: the failure
+    // was produced by whichever provider is configured, and replaying it
+    // directly would repair an n8n close by calling the Table API.
+    private readonly tickets: TicketUpdateProvider,
     private readonly audit: AuditService,
   ) {}
 
@@ -62,6 +68,9 @@ export class OutboundRetryService {
           break;
         case OUTBOUND_FAILURE_KINDS.SERVICENOW_WORKNOTE:
           await this.repairWorkNote(failure);
+          break;
+        case OUTBOUND_FAILURE_KINDS.SERVICENOW_TICKET_UPDATE:
+          await this.repairTicketUpdate(failure);
           break;
         default:
           throw new BadRequestException(
@@ -172,6 +181,45 @@ export class OutboundRetryService {
       );
     }
     await this.writeMirror(failure, payload, refs);
+  }
+
+  /**
+   * W40 — replay a RITM state change THROUGH THE SEAM.
+   *
+   * Safe to replay, unlike `request.mirror`: setting a ticket to the state it is
+   * already in is idempotent on ServiceNow's side and creates nothing. What is
+   * NOT safe is replaying the wrong transition — closing a ticket that was only
+   * meant to be put on hold is not recoverable — so an unrecognised value fails
+   * loudly instead of defaulting to either one.
+   */
+  private async repairTicketUpdate(failure: OutboundFailure) {
+    const payload = (failure.payload ?? {}) as Bag;
+    const transition = payload.transition;
+    const sysId = String(payload.snTarget ?? '');
+    const note = String(payload.note ?? '');
+    if (!sysId) {
+      throw new BadRequestException(
+        'This ticket failure has no recorded RITM sys_id — nothing to repair.',
+      );
+    }
+
+    let outcome;
+    if (transition === TICKET_TRANSITIONS.CLOSE) {
+      outcome = await this.tickets.closeComplete(sysId, note);
+    } else if (transition === TICKET_TRANSITIONS.HOLD) {
+      outcome = await this.tickets.markInProgress(sysId, note);
+    } else {
+      throw new BadRequestException(
+        `Unknown ticket transition '${String(transition)}' — cannot repair`,
+      );
+    }
+
+    // The provider answered but the ticket did not move (e.g. ServiceNow
+    // refused the PATCH). That is still a failed repair — I2: it must not be
+    // marked resolved.
+    if (outcome.status !== 'updated') {
+      throw new BadRequestException(outcome.details);
+    }
   }
 
   /** Re-sending a work note is idempotent — a duplicate note is harmless. */

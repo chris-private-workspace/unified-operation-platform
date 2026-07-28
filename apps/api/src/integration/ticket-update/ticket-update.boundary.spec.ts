@@ -51,16 +51,31 @@ describe('ticket-update seam boundary (W40 OQ-A / OQ-D)', () => {
     });
   });
 
-  describe('OQ-D — the retry path keeps re-sending its own direct work note', () => {
+  /**
+   * OQ-D, restated after F4 — and this one was WIDENED, not tightened, so the
+   * reason has to be on the record.
+   *
+   * F1 read OQ-D as "outbound-retry must not import the seam at all" and locked
+   * that with a source check. F4 showed the decision was narrower than the test:
+   * OQ-D is about the WORK NOTE. Its payload records a note that failed as a
+   * direct Table API call, so replaying it directly is replaying the same thing.
+   *
+   * A ticket STATE repair is the opposite case. That failure was produced by
+   * whichever provider is configured, so repairing it directly would fix an n8n
+   * close by calling the Table API — a different system doing a different thing.
+   * It must go through the seam.
+   *
+   * So the file now imports the seam legitimately, and a source check can no
+   * longer tell the two paths apart. The real guarantee — each repair kind
+   * reaching exactly one of them — is asserted behaviourally in
+   * outbound-retry.service.spec.ts. What stays here is only what a source check
+   * still answers honestly.
+   */
+  describe('OQ-D — the work-note repair stays on the direct call', () => {
     const retry = () => src('fulfilment/outbound-retry.service.ts');
 
-    it('does NOT import the ticket-update seam — a retry re-sends a note that already failed as a direct call, with the target recorded in its payload; routing it through the seam would turn "send it again" into "do a different thing in another system"', () => {
-      expect(retry()).not.toContain('ticket-update');
-    });
-
-    it('still re-sends via ServiceNowService.addWorkNote', () => {
-      expect(retry()).toContain('addWorkNote');
-      expect(retry()).toContain('ServiceNowService');
+    it('still re-sends work notes via ServiceNowService.addWorkNote', () => {
+      expect(retry()).toContain('this.snow.addWorkNote');
     });
   });
 
