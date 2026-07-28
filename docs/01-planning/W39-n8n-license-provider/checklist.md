@@ -7,16 +7,14 @@ last_updated: 2026-07-28
 
 # Phase W39 — Checklist
 
-## 🔴 D0 Gate —— 未拍板唔准開工(R1)
+## ✅ D0 Gate —— 已解除(2026-07-28,Chris Lai,五個全跟建議)
 
-- [ ] **OQ-1**:`already_assigned` 點影響 ledger(建議 A = 一視同仁照 +1)
-- [ ] **OQ-2**:2003 個 `details` 帶 vendor error body 點守 H4(建議 A = 唔傳遞)
-- [ ] **OQ-3**:`ritmId` 入唔入介面(建議 B = 唔加)
-- [ ] **OQ-4**:n8n 未接通時 probe 顯示咩(建議 A = `inactive` 唔係 `error`)
-- [ ] **OQ-5**:做唔做 `listUsersBySku`(建議 = 維持唔加)
-- [ ] Chris approve plan → `status: draft → active`
-
-> 以上未全部 ✅ 之前,**一行 code 都唔寫**。
+- [x] **OQ-1 = A**:`already_assigned` **一視同仁照 +1**,同 `assigned` 完全一樣處理 ⇒ **`assign.service` 要開一個 `already_assigned` 分支**(W38 對非 `assigned` 一律 fail-loud;呢個就係 W38 明文留低嘅「庚必須正面處理」)。⚠️ **代價要入 ADR 補註**:n8n 路徑明知有更準嘅資訊但刻意唔用
+- [x] **OQ-2 = A**:provider **唔傳遞** n8n 個 `details`,只留 status + 平台自己寫嘅安全描述
+- [x] **OQ-3 = B**:`ritmId` **唔入**介面(Graph 實作永遠用唔着)
+- [x] **OQ-4 = A**:未配置 → **`inactive`**;配置咗但打唔通先 `error`
+- [x] **OQ-5**:維持**唔加** `listUsersBySku`(2002 有 mode 2 ≠ 平台需要佢)
+- [x] Chris approve plan → `status: draft → active`
 
 ## F1 — `N8nLicenseProvider`
 

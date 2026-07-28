@@ -4,7 +4,7 @@ name: "N8N-SEAMS 庚 — N8nLicenseProvider + n8n-license connector + probe"
 sprint_week: W39
 start_date: 2026-07-28
 end_date: 2026-07-30          # planned, may slip with changelog log
-status: draft                 # draft | active | closed —— 🔴 等 Chris approve + §8 五個 OQ 拍板
+status: active                # draft | active | closed —— 2026-07-28 Chris approve + §8 五個 OQ 全跟建議拍板
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md §D0 · §D2 · §D5 · 實作補註 · rollout「庚」
   - docs/adr/0013-connector-config-ui-management.md(Model C · DB-then-env · secret 留 env)
@@ -16,7 +16,7 @@ prior_phase: W38-license-ops-provider
 
 > **Plan version**:1.0(initial)
 > **Owner**:AI(Claude)
-> **Approved by**:_(待 Chris Lai —— 🔴 §8 五個 OQ 拍板之前唔開工,R1)_
+> **Approved by**:**Chris Lai(2026-07-28)** —— §8 五個 OQ **全部跟建議**:OQ-1 = A(一視同仁照 +1)· OQ-2 = A(`details` 唔傳遞)· OQ-3 = B(`ritmId` 唔入介面)· OQ-4 = A(`inactive` 唔係 `error`)· OQ-5 = 維持唔加
 
 ## 1. Scope
 

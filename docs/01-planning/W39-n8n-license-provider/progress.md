@@ -47,6 +47,30 @@ OQ-1 `already_assigned` 對 ledger 嘅影響(**W38 留低嗰個,而家避唔開*
 
 - 🔴 plan 未 approve + 五個 OQ 未拍板 → 依 R1,**一行 code 都唔寫**
 
-**Commit**:`chore(planning): kickoff W39 — N8nLicenseProvider(ADR-0017 庚)`
+**Commit**:`cc5cf66` — `chore(planning): kickoff W39 — N8nLicenseProvider(ADR-0017 庚)`
+
+---
+
+## Day 1 — 2026-07-28:五個 OQ 拍板,D0 Gate 解除
+
+Chris 五個全跟建議,plan 內容零改動 ⇒ `status: draft → active`。
+
+| OQ | 拍板 | 實作含意 |
+|---|---|---|
+| **1** | **A** — `already_assigned` 一視同仁照 +1 | 🔴 **要開一個 `assign.service` 分支** —— W38 對非 `assigned` 一律 fail-loud,而家正面處理佢。**呢個就係 W38 明文留低嘅嗰件事** |
+| **2** | **A** — `details` 唔傳遞 | provider 只留 status + 平台自己寫嘅安全描述;vendor 細節留喺 n8n execution log |
+| **3** | **B** — `ritmId` 唔入介面 | Graph 實作永遠用唔着;平台自己有 ADR-0009 audit |
+| **4** | **A** — 未配置 = `inactive` | 唔會出現「紅色但其實只係未接線」嘅誤導狀態 |
+| **5** | 維持唔加 `listUsersBySku` | 2002 有 mode 2 ≠ 平台需要佢 |
+
+### OQ-1 揀 A 之後,有一樣嘢要特別小心
+
+`already_assigned` 當 `assigned` 處理 ⇒ ledger 照 +1。但 `already_assigned` 嘅意思正正係「**tenant 側本來已經有呢個 seat**」,所以呢一 +1 **確實會**令平台數字比 tenant 真實多一個。
+
+Chris 明確接受:**唔喺庚偷偷修一邊**。呢個重複計數風險 Graph 路徑一直存在(Graph 分唔到 replay,一律當新 assign),要修就另開 change **兩條路一齊修**。
+
+⇒ 實作時**唔准**順手加「n8n 路徑先唔 +1」—— 咁就係喺切 provider 順帶夾帶一個 ledger 語意改動,正正係 D0 禁止嘅嘢。已寫入 F2 test 註釋鎖住。
+
+**下一步**:F1 `N8nLicenseProvider`。
 
 ---
