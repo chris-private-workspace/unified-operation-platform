@@ -79,12 +79,28 @@ export type TicketUpdateOutcome =
  * could not honour.
  *
  * 🔴 RITM division of labour (ADR-0017 D3, hard rule — both sides must hold it):
- *   n8n 1007  closes AD-type RITMs only (action items: create_user /
- *             add_user_to_group / setup_abw_folder).
- *   platform  closes LICENSE-type RITMs only (RequestLineItem.serviceNowSysId,
- *             carried in by intake from licenseItems[].ritmSysId).
+ *   n8n 1007  closes AD-type RITMs only.
+ *   platform  closes LICENSE-type RITMs only.
  * Neither side ever touches the other's RITM, or the two systems fight over
  * ticket state.
+ *
+ * W40 verified this structurally rather than taking the ADR's word for it —
+ * 1007 already PATCHes state=3 itself, so "they do not overlap" had to be a
+ * fact, not an assumption. Reading 1001's `Prepare Approval Data` node:
+ *
+ *   actionItems  ← phase1_items only. All three (create_user /
+ *                  add_user_to_group / setup_abw_folder) are built from
+ *                  phase1Items, and those carry the ritmSysIds 1007 later
+ *                  closes. other_items never enters actionItems at all.
+ *   licenseItems ← `other.filter(status === 'pending_license' || /O365/i)`,
+ *                  i.e. other_items only. That is what intake turns into
+ *                  RequestLineItem.serviceNowSysId — the sys_ids this seam
+ *                  is ever handed.
+ *
+ * So the two sets come from two disjoint branches of the same AI Brain output.
+ * If that ever changes on the n8n side, this comment is the thing that stops
+ * being true first — and the platform has no way to detect it, because a RITM
+ * sys_id looks the same either way.
  */
 export abstract class TicketUpdateProvider {
   /**

@@ -74,13 +74,19 @@ last_updated: 2026-07-28
 - [x] **fails-before 實證**:拆走 `ticketHeldAt` 守門 + 令 close fallback 去 REQ → **4 failed / 45 passed**(兩條新守門 + **兩條既有** test 一齊捉到)→ 還原,`grep` = 0
 - [x] 全套 **575 / 575**(564→575)· lint 0 · tsc 0
 
-## F5 — Contract test + 1007 分工邊界文件化
+## F5 — Contract test + 1007 分工邊界文件化 ✅ **完成**(2026-07-28)
 
-- [ ] 同一組 case 兩個 provider → **同一 state**(OQ-C:**唔** assert notes 文字)
-- [ ] 負面斷言:`addWorkNote` 從未經 seam · direct 路徑從未打 webhook · n8n 路徑從未直接 PATCH SN
-- [ ] 🔴 **1007 分工邊界寫入 code comment**:1007 只 close AD 類 RITM(`create_user`/`add_user_to_group`/`setup_abw_folder`),平台只 close license 類(`RequestLineItem.serviceNowSysId`)
-- [ ] ⚠️ **驗證「唔重疊」唔係 assume** —— 實讀 1001 分流 gate(`phase1_items` vs `other_items`)並記錄結果(plan §5 R1)
-- [ ] fails-before 實證
+- [x] 3 個 case **各寫兩次**(一次 ServiceNow 語言、一次 n8n 語言)再 assert 結果相等:close · hold · **冇 echo state 時兩邊都 fallback 到 requested**
+- [x] 🔴 **三樣刻意唔 assert**,理由逐條寫入檔頭:①**notes 文字**(2004 必然 append 簽名 + 截 3900,而呢個係好事 —— 單上睇得出邊條路寫)②**error message**(vendor 掛咗要知係邊個掛)③**refusal shape** = 真不對稱,獨立釘死
+- [x] 🔴 **真不對稱獨立釘死**:SN 拒絕 PATCH 時 direct **throw** 而 n8n 返 **`error` outcome**(2004 用 `neverError:true`)。兩個都啱,**共通點係兩者都唔可以被當成成功** —— 有人日後「統一」佢哋就會紅
+- [x] 負面斷言:direct **從未**打 webhook · n8n **從未**掂 Table API · table 各自用得着嘅方式 assert(direct 名 `sc_req_item`;n8n 名 RITM + mode —— 表名喺 2004 個 patchUrl 入面,平台根本冇送)
+- [x] ⚠️ **收窄咗一條 test 名**:原本叫 `both target sc_req_item`,但 n8n 嗰半 assert 唔到表名 ⇒ 名闊過 assert(BUG-004 教訓)。改成 `direct names sc_req_item; n8n names the RITM and the mode`
+- [x] ➕ 刪走一句冗餘 assertion(`toBe('error')` 之後再 `not.toBe('updated')`)
+- [x] 🔴 **1007 分工邊界結構上驗證,唔係 assume**(plan §5 R1)—— 實讀 1001 `Prepare Approval Data`:三個 actionItem **全部由 `phase1Items` 造**(`create_user` / `add_user_to_group` / `setup_abw_folder`),`other_items` **完全冇**入 actionItems;而平台側 `lic = other.filter(status === 'pending_license' || /O365/i)` ⇒ **兩套 sys_id 來自同一份 AI Brain output 嘅兩條互斥分支**
+- [x] 證據 + 「一旦 n8n 側改咗,呢個 comment 會係第一樣唔再成立嘅嘢,而平台偵測唔到(RITM sys_id 兩邊長得一模一樣)」寫入 `ticket-update.provider.ts` 檔頭
+- [x] **fails-before 實證**:令 n8n `read()` 當 HTTP 200 就係成功(**真實錯誤形狀**:「`call()` 已經檢查咗 `res.ok`」)→ **3 failed**(contract 1 + provider spec 2)→ 還原,`grep` = 0
+- [x] ⚠️ **記低一個分層事實**:`assign.service` 嗰條「queues an error outcome」**冇**紅,因為 F4 mock 咗抽象 ⇒ assign 側守唔到 provider 側嘅 mapping bug。呢個係正常分工,但唔可以當佢有雙重保險
+- [x] 全套 **588 / 588**(575→588)· lint 0 · tsc 0
 
 ## F6 — doc-sync
 
