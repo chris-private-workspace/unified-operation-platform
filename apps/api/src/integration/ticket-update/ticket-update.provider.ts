@@ -10,6 +10,23 @@
  *   - DirectTicketProvider (default)   — ServiceNow Table API directly
  *   - N8nTicketProvider    (W40 F2)    — n8n workflow 2004
  *
+ * ── CH-010 / ADR-0018: what these methods write to ──────────────────────────
+ * The interface did not change: both methods still take the RITM sys_id and
+ * still mean "this request is fulfilled" / "this request is stuck". What
+ * changed is WHICH RECORD carries that decision into ServiceNow.
+ *
+ * Patching the RITM's own state does not close it here. Ricoh's instance drives
+ * RITM state from its catalog tasks, so the platform closes the task and lets
+ * ServiceNow's workflow move the RITM — proven live on 2026-07-29: closing
+ * SCTASK0071496 took RITM0046984 from state 1 / stage execution to state 3 /
+ * stage complete within five seconds, with the platform never touching it.
+ *
+ * 🔴 Only the direct implementation does this today. Workflow 2004 has
+ * `sc_req_item` baked into its patch URL, so the n8n implementation would still
+ * be patching the RITM — a different action behind the same switch, which D0
+ * forbids. Until 2004 gains task support, N8nTicketProvider fails loudly rather
+ * than doing the old thing quietly (ADR-0018 D6).
+ *
  * ── Why there is no addWorkNote here (W40 OQ-A, Chris 2026-07-28) ────────────
  * The platform's existing write-back after a successful assign is a plain work
  * note that does NOT touch state. Workflow 2004 has no such mode: reading its
@@ -120,12 +137,17 @@ export abstract class TicketUpdateProvider {
 }
 
 /**
- * ServiceNow state values, read from workflow 2004's `Validate & Build Patch`
- * node rather than from the ADR prose (W39's lesson: where the platform sends
- * or parses something, the workflow JSON is the source of truth).
+ * ServiceNow RITM state values, read from workflow 2004's `Validate & Build
+ * Patch` node rather than from the ADR prose (W39's lesson: where the platform
+ * sends or parses something, the workflow JSON is the source of truth).
  *
  *   mode 1 → { state: '2', work_notes }
  *   mode 0 → { state: '3', close_notes }
+ *
+ * Still exported because the n8n implementation reports the state 2004 asked
+ * ServiceNow for. The DIRECT implementation no longer writes RITM state at all
+ * (CH-010) — it closes the catalog task and lets ServiceNow's own workflow move
+ * the RITM.
  */
 export const RITM_STATE = {
   workInProgress: '2',
@@ -133,9 +155,39 @@ export const RITM_STATE = {
 } as const;
 
 /**
- * Both implementations write to sc_req_item and nothing else. Hard-coded rather
- * than taken from SERVICENOW_DEFAULT_TABLE: 2004 has the table baked into its
- * patch URL, so letting the direct side follow a config value would make the
- * two paths diverge the moment someone changes that setting.
+ * The catalog task table — what the direct implementation writes to (CH-010 /
+ * ADR-0018 D4). Hard-coded for the same reason RITM_TABLE was: a config value
+ * quietly deciding which table one of two supposedly-equivalent providers
+ * writes to is exactly the divergence this seam exists to prevent.
+ *
+ * (`RITM_TABLE` was removed with CH-010. ADR-0018 D4 said to keep it because
+ * "the work note path still uses it" — that turned out to be wrong: the work
+ * note path calls snow.addWorkNote() with no table argument, so it resolves
+ * SERVICENOW_DEFAULT_TABLE. Nothing referenced the constant afterwards.)
  */
-export const RITM_TABLE = 'sc_req_item';
+export const TASK_TABLE = 'sc_task';
+
+/**
+ * Catalog task state values.
+ *
+ * ⚠️ Provenance is WEAKER than RITM_STATE's, and that matters: `sys_choice` is
+ * 403 for the integration account even though it is an admin, so these were
+ * derived from the data instead. 800 sc_task rows on the dev instance
+ * (2026-07-29):
+ *
+ *   state 3 × 595 — all active=false   ← dominant terminal state
+ *   state 7 × 151 — all active=false
+ *   state 1 ×  24 — all active=true
+ *   state 4 ×  24 — all active=false
+ *   state -5 ×  4
+ *   state 2 ×   2
+ *
+ * `3` matches the SN default (Closed Complete) and the value the platform,
+ * 1007 and 2004 have always used on the RITM. Confirmed live: patching a task
+ * to 3 closed it and ServiceNow then moved its RITM to state 3 / stage
+ * complete on its own.
+ */
+export const TASK_STATE = {
+  workInProgress: '2',
+  closedComplete: '3',
+} as const;

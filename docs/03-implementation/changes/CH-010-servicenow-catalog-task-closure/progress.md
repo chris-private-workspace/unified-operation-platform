@@ -2,7 +2,7 @@
 change_id: CH-010
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: blocked        # blocked | in-progress | done
+status: done           # blocked | in-progress | done
 ---
 
 # CH-010 — Progress
@@ -143,6 +143,78 @@ OQ-2 嘅答案係「**因為係 admin 權限帳號**」。即係平台對 SN 嘅
 
 ---
 
-## Completion summary(填於 done)
+## Day 2 — 2026-07-29:實作 + live 驗證 + 收官
 
-_(未開工)_
+### 開工次序刻意調轉:先做 live 實驗,再寫 code
+
+方案 B 成敗全繫於「close task → RITM 自動推」。Chris 口頭答咗,但**未驗**。照住未驗嘅前提寫晒實作,錯咗就成份拆返。所以先做實驗。
+
+結果證明呢個決定係啱嘅 —— **頭兩次實驗都冇得出預期結果**:
+
+| # | 對象 | 結果 |
+|---|---|---|
+| 1 | `SCTASK0027606` → `RITM0023203`(2023 年 AD onboarding 單) | task close 成功,但 **RITM 60 秒都冇郁** |
+| 2 | `SCTASK0071510` → `RITM0046999`(license 類) | **403 —— business rule `Validate "Assigned to" before close`** |
+| **3** | `SCTASK0071496` → `RITM0046984`(license 類,補 assigned_to) | ✅ **5 秒內 RITM state 1→3 · stage execution→complete · active→false** |
+
+⇒ 方案 B **成立**,但有兩個 ADR 冇預見嘅前置條件(見下)。若當初直接寫 code,實驗 #1 嗰個「冇郁」會喺實作完之後先出現,而嗰陣好難分辨係 code 錯定係前提錯。
+
+### 🔴 兩個實測揪出、寫進 ADR 補註嘅嘢
+
+**① `assigned_to` 係 close 嘅前置條件。** 同一張 task:`{state:'3'}` → 403;`{assigned_to, state:'3'}` → 200。Chris 拍板 = integration 帳號 + **只喺空值時填**。
+
+🔴 **絕不覆蓋已有 assignee** —— 覆蓋等於把人哋張單嘅負責人改走,而且**兩種情況 close 都會成功,所以完全睇唔見**。呢個係本次最易靜靜做錯嘅位,已有專門 test。
+
+順帶解釋咗之前查唔明嘅現象:**點解咁多 RITM 被直接 close 而 task 留住開** —— close task 會被擋,close RITM 唔會。
+
+**② Day 1 講嘅「772 張零反例」已經有反例。** `RITM0047290` 有兩張同時 active 嘅 task,而且係 **`D365 User License Maintenance Request`** —— 正正係本 seam 會收到嗰類單。規則唔變(唯一 active + fail-closed),但**理由由「防禦未見過嘅情況」變成「已知會發生」**。抽樣得出嘅規律唔係規律。
+
+### 實作
+
+| 檔 | 改動 |
+|---|---|
+| `ticket-update.provider.ts` | 加 `TASK_TABLE` / `TASK_STATE`(註明出處係經驗值域);**刪 `RITM_TABLE`**;`RITM_STATE` 保留 |
+| `servicenow.service.ts` | 加 `getIntegrationUserSysId()`(lazy + cache,唔喺 boot 做);`request()` 加 `logPath` —— 因為新 caller 個 query string 帶住 `SERVICENOW_USER`,而 error log 本來會原文印 path(H4) |
+| `direct-ticket.provider.ts` | 重寫:查 task → 唯一 active → 補 assigned_to(只喺空值)→ PATCH `sc_task` |
+| `n8n-ticket.provider.ts` | 兩個方法 throw;**刪走** W40 個 2004 client |
+
+**`RITM_TABLE` 刪咗** —— ADR D4 話「work note 路徑仲用緊」係錯:work note 走 `addWorkNote()` 冇傳 table,用緊 `SERVICENOW_DEFAULT_TABLE`。已入 ADR 補註 ②。
+
+**n8n client 刪而唔係留低休眠**:留低就係冇 caller 到達得到、因此測唔到嘅 code。跟 W38 收窄 D2 同一原則。重新啟用 = 對住 2004 新 mode 重寫,唔係 revert。
+
+### 驗證
+
+- **api 599 / 55 suites 全綠**,lint 零 output,build OK
+- 我改嘅四個 spec:direct **5→14**、boundary 4→5、contract 9→9、n8n **13→7**(減嗰 6 條係跟住被刪嘅 2004 client 走,唔係放棄覆蓋)
+- 🔴 **A11 行真 code path**:造一個 `OutboundFailure`(kind `servicenow.ticket_update`)→ `POST /admin/outbound-failures/:id/retry` → HTTP 200、`open → resolved`;`SCTASK0071391` state 1→3 + assigned_to 由空變有值 + close_notes = 平台嗰句;**`RITM0046766` state 1→3 · stage execution→complete,而平台完全冇掂過佢**。順帶亦證實 ADR-0017 W40 **OQ-D**(ticket state repair 必須走 seam)喺新寫入對象下仍然成立
+- fixture 已刪,`ch010_rows_left = 0`
+
+### 我改動咗嘅 dev SN 記錄(完整交代)
+
+| 記錄 | 改咗咩 | 連帶 |
+|---|---|---|
+| `SCTASK0027606` | state 2→3 | RITM0023203 **冇郁** |
+| `SCTASK0071496` | assigned_to + state 1→3 | **RITM0046984 自動 close** |
+| `SCTASK0071510` | 試過但 403,**零改動** | — |
+| `SCTASK0071391` | assigned_to + state 1→3(經平台) | **RITM0046766 自動 close** |
+
+全部係 dev instance,Chris 已授權。RITM 一旦被 workflow 推走就**還原唔到**。
+
+### 紀律自檢
+
+**H1** ✅ 零 schema(`schema.prisma` diff 0)· **H2** ✅ 零新 dep · **H3** ✅ 冇掂 REQ / 1007 AD task / ledger / reconcile / stage machine · **H4** ✅ 新增 `logPath` 就係為咗唔畀 `SERVICENOW_USER` 入 log;實驗腳本全程唔印憑證 / 人名 · **H5** ✅ critical path 覆蓋(fail-closed 兩個分支、assigned_to 三個分支、error contract)· **H7** ✅ 每個結論都有真 output · **H8** ✅ 全程 Read/Grep/Glob,無 bash 讀檔
+
+**Commit**:`<hash>` — `feat(integration): CH-010 — 履行完成改為 close catalog task`
+
+---
+
+## Completion summary
+
+**Status**:✅ done(2026-07-29)。
+
+平台之前 PATCH RITM state 收到 200 就當成功,但喺 Ricoh instance 嗰張單**根本冇 close** —— 而且唔會入失敗佇列、冇 audit,兩邊都唔嘈。而家改為 close catalog task,RITM 交返 SN workflow 推,已 live 證實。
+
+**唔可以忘記嘅兩件**:
+
+1. 🔴 **`n8n-ticket` 掣鎖死 `direct`** —— 2004 未支援 task 之前揀 n8n 會逐張單 throw(入失敗佇列,寫明點解同點解決)
+2. 🔴 **assigned_to 只填空值** —— 覆蓋人哋嘅 assignee 係唯一一個「做錯咗但完全睇唔見」嘅失敗模式

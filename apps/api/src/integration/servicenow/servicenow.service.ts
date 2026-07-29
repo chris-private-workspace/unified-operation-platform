@@ -20,6 +20,8 @@ export class ServiceNowService implements OnModuleInit {
   private baseUrl!: string;
   private authHeader!: string;
   private defaultTable!: string;
+  /** undefined = not looked up yet; null = looked up and not found (CH-010). */
+  private integrationUserSysId: string | null | undefined;
 
   constructor(
     private readonly config: ConfigService,
@@ -53,10 +55,19 @@ export class ServiceNowService implements OnModuleInit {
       )) ?? 'sc_req_item';
   }
 
+  /**
+   * `logPath` exists for one reason: the error log below prints the path
+   * verbatim, and CH-010 added a caller whose query string contains
+   * SERVICENOW_USER — half of the basic-auth pair, which connectors.ts
+   * classifies as a secret. Callers whose path carries something that must not
+   * be logged pass a redacted label instead. Defaults to `path`, so every
+   * existing caller is unaffected.
+   */
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
+    logPath: string = path,
   ): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
@@ -85,7 +96,7 @@ export class ServiceNowService implements OnModuleInit {
        * path here (unlike BUG-004, where the UPN was IN the path).
        */
       this.logger.error(
-        `ServiceNow ${method} ${path} -> ${res.status}: ${scrubPii(text)}`,
+        `ServiceNow ${method} ${logPath} -> ${res.status}: ${scrubPii(text)}`,
       );
       throw new Error(`ServiceNow request failed (${res.status})`);
     }
@@ -175,5 +186,42 @@ export class ServiceNowService implements OnModuleInit {
     table = this.defaultTable,
   ): Promise<void> {
     await this.updateRecord(sysId, { work_notes: note }, table);
+  }
+
+  /**
+   * sys_id of the integration account itself (CH-010).
+   *
+   * Needed because Ricoh's instance runs a business rule — `Validate "Assigned
+   * to" before close` — that rejects a task close with HTTP 403 when the task
+   * has no assignee. Proven on 2026-07-29: the same task refused `{state:'3'}`
+   * and accepted `{assigned_to, state:'3'}`.
+   *
+   * Resolved lazily and cached, NOT at boot: onModuleInit already fails the
+   * whole application when ServiceNow is misconfigured, and adding a lookup
+   * there would extend that to "ServiceNow must be reachable to start".
+   *
+   * `null` is cached too — a missing user is a configuration fact, not a
+   * transient one, and re-querying it on every close would add a round trip to
+   * a path that is already going to fail.
+   */
+  async getIntegrationUserSysId(): Promise<string | null> {
+    if (this.integrationUserSysId !== undefined) {
+      return this.integrationUserSysId;
+    }
+    const user = this.config.getOrThrow<string>('SERVICENOW_USER');
+    const data = await this.request<{ result: ServiceNowRecord[] }>(
+      'GET',
+      `/api/now/table/sys_user?sysparm_query=user_name=${encodeURIComponent(
+        user,
+      )}&sysparm_fields=sys_id&sysparm_limit=1`,
+      undefined,
+      // H4 — the real path carries the service account name; see `logPath`.
+      '/api/now/table/sys_user?sysparm_query=user_name=<redacted>',
+    );
+    // Via a local, not by returning the field: reading the property back would
+    // widen to `string | null | undefined` again and fail the return type.
+    const resolved: string | null = data.result?.[0]?.sys_id ?? null;
+    this.integrationUserSysId = resolved;
+    return resolved;
   }
 }
