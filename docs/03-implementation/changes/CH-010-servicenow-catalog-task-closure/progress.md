@@ -81,6 +81,68 @@ Chris 揀 **B**:平台只 close 自己嗰張 catalog task,RITM 交返 SN workflo
 
 ---
 
+## Day 1 — 2026-07-29:五條 OQ 全部解決,ADR-0018 轉 Accepted(**仍未開工**)
+
+### Chris 答咗兩條 gate
+
+| OQ | 答案 |
+|---|---|
+| **OQ-1** 🔴 | 「喺 UOP **只需要處理 catalog task 嘅狀態就足夠**,RITM 嘅狀態由 ServiceNow workflow 去處理」⇒ **方案 B 成立**,方案 A fallback 唔啟用 |
+| **OQ-2** 🔴 | **有寫權** —— 因為呢個係 **admin 權限**嘅帳號 |
+
+### 餘下三條由 read-only 查證自解(唔使再等一轉)
+
+**OQ-3 — `state` 值域**:`sys_choice` **即使 admin 帳號都仍然 403** ⇒ 係 table-level 限制,唔係 role 問題。改用 800 筆真數據反推:
+
+| state | 次數 | active=true |
+|---|---|---|
+| **3** | **595** | **0** |
+| 7 | 151 | 0 |
+| 1 | 24 | 24 |
+| 4 | 24 | 0 |
+| -5 | 4 | 3 |
+| 2 | 2 | 1 |
+
+`3` = 壓倒性主導嘅終態,同 SN 預設、同平台/1007/2004 對 RITM 一直用嘅值三方一致 ⇒ close 寫 `3`、hold 寫 `2`。
+⚠️ **仍係推斷,唔係 instance choice list 確認** —— constant 要寫明出處。
+
+**OQ-4 — 認邊張 task**(本日最有價值嘅發現):抽 800 筆覆蓋 **772 張 RITM**
+
+| | |
+|---|---|
+| 總 task 數 | 1 張:**745** · 2 張:26 · 3 張:1 |
+| **active** task 數 | 0 張:744 · **1 張:28** · **≥2 張:0** 🔴 |
+
+⇒ 「多張 task」真實存在(27 張 RITM),但**佢哋唔會同時 active** —— 順序行。close 嗰刻永遠只面對一張。
+**「唯一 active」呢條規則有 772 個樣本、零反例。**
+
+其他識別方式查過都冇用:`sys_class_name` 全部 `sc_task`、`order` 全部空。`assignment_group` 有值但**刻意唔用** —— 綁死 group id 之後 SN 側改組織就爛。
+
+⚠️ 但 `≥2` 嘅分支**照樣要寫要有 test**:抽樣冇出現 ≠ 唔會發生,而嗰個 case 一旦發生,「揀第一個」= close 咗人哋張單。
+
+**OQ-5 — RITM `stage`**:併入 OQ-1 答案 —— `stage` 係 RITM 屬性,整個 RITM 交返 SN workflow。
+
+### ⚠️ 順帶揭出一個唔屬本 change 嘅問題
+
+OQ-2 嘅答案係「**因為係 admin 權限帳號**」。即係平台對 SN 嘅寫入面,技術上遠闊過實際需要(只需要讀寫 `sc_req_item` / `sc_task` 三個欄)。
+
+唔係本 change 造成,亦唔阻住本 change —— 但係 **least-privilege 缺口**:平台任何一個 bug 嘅爆炸半徑,由「改錯一張單」變成「admin 做得到嘅任何嘢」。⇒ 轉 **DEPLOY-harden**(H3,唔喺本 change 順手做),已記入 BACKLOG + ADR-0018。
+
+### 狀態變化
+
+- **ADR-0018**:`Proposed → Accepted`;D3 由「待 OQ-4」寫成具體規則 + 反例數據;新增 **D3b**(state 值)
+- **CH-010 spec**:D2/D3 填實;**R1/R2 消解**,R3 降到 Low(有 772 樣本)、R4 降到 Low;§7 changelog 記低「**scope 冇擴,只係把待定項填實**」
+- **checklist**:`blocked → ready`,Gate 0 七項打勾
+
+### 仍然未開工 —— 剩返兩件
+
+1. 🔴 **Chris approve 本 spec**(`proposed → approved`,PROCESS R1.change)
+2. 🔴 **SN owner 畀一張測試 RITM**(A11 要真 close 一次;**絕不掂真客戶單**)
+
+**Commit**:`<hash>` — `docs(adr): ADR-0018 Accepted + CH-010 五條 OQ 全解`
+
+---
+
 ## Completion summary(填於 done)
 
 _(未開工)_

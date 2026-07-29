@@ -1,8 +1,8 @@
 # ADR-0018: ServiceNow 履行完成改為 close catalog task,RITM 交返 SN 自己嘅 workflow 推
 
 **Date**: 2026-07-29
-**Status**: **Proposed** —— 🔴 **OQ-1 / OQ-2 未有答案之前唔可以 Accept**(理由見 §Open Questions)
-**Approver**: Chris Lai(方案方向 2026-07-29 已 approve;細節待 SN owner 答完 OQ)
+**Status**: **Accepted**(2026-07-29 —— OQ-1 / OQ-2 兩個 gate 已答,見 §Open Questions)
+**Approver**: Chris Lai
 
 ## Context
 
@@ -80,13 +80,44 @@ sc_task 可讀(78 欄),關鍵欄位:
 
 理由:如果 close 落 task 而 hold 仍然落 RITM,同一個 seam 兩個方法寫兩張唔同嘅單,語意會極難解釋,而且 hold 咗 RITM 之後 SN workflow 可能再推唔郁。**一個 seam 一個對象。**
 
-### D3 — 選 task 嘅規則:平台只掂**自己嗰張**,一張都揀唔到就 fail-closed
+### D3 — 選 task 嘅規則:**該 RITM 底下唯一嗰張 `active=true` task**,否則 fail-closed
 
-一張 RITM 可以有多過一張 catalog task(SN 常見:approval task + fulfilment task)。平台**絕不**「見到 active task 就全部 close」。
+平台**絕不**「見到 active task 就全部 close」。
 
-具體識別規則 **⇒ OQ-4**,未有答案之前唔可以實作。
+**規則(2026-07-29 實測定案,OQ-4)**:由 RITM sys_id 查 `sc_task`,取 `active=true` 嗰啲 ——
 
-**Fail-closed**:揀唔到唯一一張 task → **唔 PATCH 任何嘢**,入 `OutboundFailure` 佇列(ADR-0011 pattern)+ 記 audit,由人手處理。沿用 ADR-0017 D4 對 SKU resolve 嘅同一態度:**多過一個候選 = 唔准揀第一個**。
+- **剛好 1 張** → 就係佢,PATCH
+- **0 張 或 ≥2 張** → **唔 PATCH 任何嘢**,入 `OutboundFailure` 佇列(ADR-0011 pattern)+ 記 audit,由人手處理
+
+**點解「唯一 active」夠用 —— 有反例檢查,唔係假設**:抽 800 筆 `sc_task` 覆蓋 **772 張 RITM**:
+
+| 觀察 | 數字 |
+|---|---|
+| 每張 RITM 嘅 **總** task 數 | 1 張:**745** · 2 張:26 · 3 張:1 |
+| 每張 RITM 嘅 **active** task 數 | 0 張:744 · **1 張:28** · **≥2 張:0** 🔴 |
+
+⇒ **772 張入面冇一張有兩個或以上 active task。** 即係話「多張 task」呢個情況真實存在(27 張),但**唔會同時 active** —— 佢哋係順序行嘅。close 嗰刻要面對嘅永遠係一張。
+
+**其他識別方式查過都冇用**:`sys_class_name` 全部 `sc_task`(冇 subclass)· `order` 全部空。`assignment_group` 有值但**唔需要用** —— 加咗只會令規則綁死一組 group id,SN 側改組織就爛。
+
+⚠️ **`≥2 張` 嘅分支仍然要寫、要有 test。** 抽樣冇出現 ≠ 唔會發生;而嗰個 case 一旦發生,「揀第一個」就係 close 咗人哋張單。沿用 ADR-0017 D4 對 SKU resolve 嘅同一態度:**多過一個候選 = 唔准揀第一個**。
+
+### D3b — close 寫 `state = '3'`,hold 寫 `state = '2'`(OQ-3)
+
+`sys_choice` 就算用 admin 帳號都仍然 **403**(table-level 限制,唔係 role 問題),所以值域由**真數據反推**:
+
+| state | 出現次數 | 其中 active=true |
+|---|---|---|
+| **3** | **595** | **0** |
+| 7 | 151 | 0 |
+| 1 | 24 | **24** |
+| 4 | 24 | 0 |
+| -5 | 4 | 3 |
+| 2 | 2 | 1 |
+
+`3` 係壓倒性主導嘅**終態**(595 筆全部 `active=false`),同 SN 預設 `3 = Closed Complete` 一致,亦同平台 / 1007 / 2004 一直對 RITM 用嘅值一致(`RITM_STATE.closedComplete`)。`2` 見到有 active 嘅,對應 Work in Progress。
+
+⚠️ **呢個係推斷,唔係 instance 自己嘅 choice list 確認。** 信心高(終態分佈 + 三個現存實作都用 3),但 label 對應未經 SN owner 書面確認 —— 實作時 constant 要**寫明出處係經驗值域**,同 `RITM_STATE` 寫明出處係 2004 JSON 一樣。
 
 ### D4 — `sc_task` 加入 seam ④ 嘅寫入面,`RITM_TABLE` 保留
 
@@ -114,17 +145,25 @@ sc_task 可讀(78 欄),關鍵欄位:
 - **唔做** 「close 完再查返 RITM 有冇真係 close」嘅輪詢確認 —— 想做嘅話係另一個 change(而且大機會要等 SN 側 async workflow 跑完,唔係即時可讀)。
 - **唔改** work note 路徑(仍然直連 `ServiceNowService` 寫 RITM,ADR-0017 W40 OQ-A 已拍板)。
 
-## Open Questions（🔴 前兩條係 Accept 嘅 gate)
+## Open Questions
 
-| OQ | 問題 | 點解 blocking | 問邊個 |
-|---|---|---|---|
-| **OQ-1** 🔴 | **close 晒 catalog task 之後,RITM 會唔會自動 advance 到 Closed Complete?** | **方案 B 嘅整個前提就係呢句。** 如果唔會自動推,平台 close 咗 task 但冇人 close RITM ⇒ 張單**永遠唔會 close**,比今日更差(今日至少 RITM 個 state 係 3)。答案係「唔會」的話,本 ADR 要改揀方案 A | SN owner / Andy |
-| **OQ-2** 🔴 | **integration 帳號有冇 `sc_task` 寫權?** | 讀係實測到嘅(78 欄),**寫冇測** —— 測一次就要真改一張真客戶單,唔可以為咗探路而做。而且 2004 個 sticky 已警告 `n8napiservice1` 有 **row-level ACL**,「睇得到 ≠ 改得到」 | SN owner / Andy |
-| OQ-3 | `sc_task.state` 嘅值域係咩?close 應該寫邊個值? | `sys_choice` 返 **403**,integration 帳號讀唔到值域。實測見到 `-5` 同 `1`。SN 預設係 `-5 Pending / 1 Open / 2 WIP / 3 Closed Complete / 4 Closed Incomplete / 7 Cancelled`,但**喺呢個 instance 未經證實**,唔可以照抄 | SN owner |
-| OQ-4 | 一張 RITM 有多張 task 嗰陣,平台應該認邊張?(`assignment_group`? `short_description`? `sys_class_name`? 定係「唯一 active 嗰張」?) | D3 fail-closed 規則要有具體判斷條件先寫得出 | SN owner |
-| OQ-5 | RITM 個 `stage`(見到 `execution`)需唔需要平台掂? | 樣本 RITM 停喺 `execution`。若 stage 要人手推,方案 B 一樣唔完整 | SN owner |
+**全部已解決(2026-07-29)。** 前兩條係 Accept 嘅 gate,由 Chris 代 SN owner 答;後三條由 read-only 查證自行解決。
 
-⚠️ **OQ-1 唔係「實作細節」,係「本 ADR 揀邊個方案」。** 所以本 ADR 停喺 **Proposed**,唔會因為方向已 approve 就標 Accepted。
+| OQ | 問題 | 答案 |
+|---|---|---|
+| **OQ-1** 🔴 | close 晒 catalog task 之後,RITM 會唔會自動 advance? | ✅ **Chris 2026-07-29**:「喺 UOP 只需要處理 **catalog task** 嘅狀態就足夠,**RITM 嘅狀態由 ServiceNow workflow 去處理**」⇒ **方案 B 成立**,fallback(方案 A)唔啟用 |
+| **OQ-2** 🔴 | integration 帳號有冇 `sc_task` 寫權? | ✅ **有** —— Chris 確認該帳號係 **admin 權限**。⚠️ 見下面「權限觀察」 |
+| OQ-3 | `sc_task.state` 值域 | ✅ 由真數據反推,見 **D3b**。`sys_choice` 即使 admin 帳號都仍然 403 ⇒ table-level 限制,唔係 role 問題 |
+| OQ-4 | 多張 task 時認邊張 | ✅ **「唯一 active」**,772 張 RITM 零反例,見 **D3** |
+| OQ-5 | RITM 個 `stage`(見到 `execution`)使唔使平台掂? | ✅ **唔使** —— 併入 OQ-1 嘅答案:`stage` 係 RITM 嘅屬性,而 RITM 整體交返 SN workflow |
+
+### ⚠️ 權限觀察(唔阻住本 ADR,但要記低)
+
+OQ-2 嘅答案係「**因為呢個係 admin 權限嘅帳號**」。即係話平台今日對 ServiceNow 嘅寫入面,**技術上遠闊過佢實際需要嘅範圍**(需要嘅只係:讀 `sc_req_item` / `sc_task`,寫該兩張表嘅 `state` / `work_notes` / `close_notes`)。
+
+呢個唔係本 ADR 造成,亦唔阻住本 ADR —— 但係一個 **least-privilege 缺口**:平台任何一個 bug 嘅爆炸半徑,由「改錯一張單」變成「admin 做得到嘅任何嘢」。
+
+⇒ 建議喺 **DEPLOY-harden** 順帶處理(換一個 scoped 嘅 integration role),**唔喺本 change 做**(H3)。已記入 BACKLOG。
 
 ## Alternatives Considered
 

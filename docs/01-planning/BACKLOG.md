@@ -76,7 +76,8 @@
 > **ServiceNow 首次接通 ✅**(2026-07-29):probe `ok: true`。之前一直失敗**唔係憑證問題** —— 公司 proxy 只 MITM `ricohapdev.service-now.com`(冇攔截 Graph),而 Node 唔讀 Windows 憑證庫 ⇒ `SELF_SIGNED_CERT_IN_CHAIN`;`--use-system-ca` 解決,已入 `restart-stack` skill。
 > **🔴 CH-010 + ADR-0018 開單(2026-07-29,`proposed` / `Proposed`,未開工)**:Chris 指出「RITM 要 **catalog task** 完成先 close 得到」。查證證實平台 direct、n8n 2004、n8n 1007 **三邊都只寫 `sc_req_item`**,全套 workflow `sc_task` 零命中;SN dev 亦見 RITM 停 `execution` 而 task 仲 active。⇒ 今日平台會「宣稱完成但張單實際冇 close,而且兩邊都唔嘈」。方案 B(平台只 close 自己嗰張 task,RITM 交返 SN workflow 推)方向已 approve,但**兩重 gate 未過**:ADR-0018 要等 **OQ-1**(close task 後 RITM 會唔會自動推 —— 答「唔會」即要改方案)同 **OQ-2**(帳號有冇 `sc_task` 寫權)· spec 要 Chris approve。五條 OQ 已併入 `SERVICENOW-CONTRACT-ALIGNMENT.md` **🅖-2**(G3-G8)交 SN owner。
 > **下一個候選**(全部無新阻塞):**DEPLOY-harden** / **AUTH-2b**(兩者都卡 IT app reg)· **TD-1**(`/audit` 篩選 option 補齊)· **OD1 daily reconcile**(W37 已鋪好 `@Cron` pattern,但 ADR-0015 明文只係「鋪路」,要做就開新 phase)· **Drift-resolve**(⬆️ 相對更值錢咗:CH-008 之後 DD-3 嘅 create 缺口更加浮面)。
-> ⏸️ **CH-010 唔算「可立即開工」** —— 佢卡喺 SN owner 答 G3/G4,唔係卡技術。
+> **CH-010 gate 已清(2026-07-29 同日)**:Chris 答 **G3**(「UOP 只需處理 catalog task,RITM 交 SN workflow」⇒ 方案 B 成立)+ **G4**(有寫權)。**G5/G6/G7 由 read-only 查證自解** —— 800 筆 `sc_task` 反推 state 值域(`3` 佔 595 且全 inactive ⇒ close 寫 3);**772 張 RITM 零反例**支持「唯一 `active=true` 嗰張」呢條選 task 規則(多張 task 存在但唔會同時 active)。**ADR-0018 → Accepted**,checklist `blocked → ready`。剩返:①Chris approve spec ②SN owner 畀一張測試 RITM(A11,絕不掂真客戶單)。
+> 🆕 **SEC-002(順帶揭出,轉 DEPLOY-harden)**:ServiceNow integration 帳號係 **admin 權限**,而平台實際只需要讀寫 `sc_req_item`/`sc_task` 三個欄 ⇒ **least-privilege 缺口**,平台一個 bug 嘅爆炸半徑由「改錯一張單」變成「admin 做得到嘅任何嘢」。唔阻住 CH-010,建議 go-live 前換 scoped role(已寫入 `SERVICENOW-CONTRACT-ALIGNMENT.md` 🅖-3 問 SN owner)。
 
 ---
 
