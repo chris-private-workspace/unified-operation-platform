@@ -60,6 +60,7 @@ export class IntegrationStatusService {
       outboundSelected,
       licenseSelected,
       ticketSelected,
+      senderConfigured,
     ] = await Promise.all([
       this.graphLastSuccess(),
       this.serviceNowLastSuccess(),
@@ -67,6 +68,7 @@ export class IntegrationStatusService {
       this.n8nSelected(),
       this.n8nLicenseSelected(),
       this.n8nTicketSelected(),
+      this.emailConfigured(),
     ]);
 
     return [
@@ -140,7 +142,42 @@ export class IntegrationStatusService {
         lastSuccessNote:
           'Not recorded — ticket updates do not store which provider performed them',
       },
+      {
+        ...CONNECTORS.email,
+        /**
+         * CH-011 / ADR-0019 D4 — OPTIONAL, so `required` is not reachable here.
+         * The platform boots and runs with no ACS config at all; email simply is
+         * not available. `active` is judged on the sender address because that
+         * is the only side this service is allowed to see — the connection
+         * string is a secret and its presence is reported separately, as
+         * `configured via env`, by the config view (ADR-0013 D2/D5).
+         */
+        state: senderConfigured ? 'active' : 'inactive',
+        lastSuccessAt: null,
+        /**
+         * Blank, and it has to be. ADR-0019 D5 asks for this to come from a real
+         * send rather than from "config looks present" — but nothing in the
+         * schema records a send, and adding a table for it is not in CH-011's
+         * scope. So this reports the gap, exactly like n8n-inbound above, rather
+         * than quietly reusing "somebody configured it" as if it were evidence.
+         *
+         * 🔴 That leaves this connector with no health signal at all: it is not
+         * probeable either (ADR-0019 D5). The first real send is the only proof,
+         * which is why CH-011 A11 is judged on the recipient receiving it.
+         */
+        lastSuccessNote:
+          'Not recorded — the platform does not store sent messages',
+      },
     ];
+  }
+
+  /**
+   * CH-011 — same rule as the selection reads below: through the resolver, so a
+   * DB override set in the UI is seen here too (BUG-005 is exactly the bug of
+   * this panel reading a different source from the runtime).
+   */
+  private async emailConfigured(): Promise<boolean> {
+    return !!(await this.connectorConfig.resolve('email', 'acsSenderAddress'));
   }
 
   /**

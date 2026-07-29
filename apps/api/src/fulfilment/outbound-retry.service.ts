@@ -13,6 +13,12 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
+import { NotificationService } from '../integration/email/notification.service';
+import {
+  REPLAYABLE_TEMPLATES,
+  TEMPLATES,
+  type TemplateKey,
+} from '../integration/email/templates';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { RequestSubmissionProvider } from './request-submission.provider';
@@ -52,6 +58,9 @@ export class OutboundRetryService {
     // was produced by whichever provider is configured, and replaying it
     // directly would repair an n8n close by calling the Table API.
     private readonly tickets: TicketUpdateProvider,
+    // CH-011. Injected as the abstract class, like every other integration
+    // dependency here — this file must not know ACS exists.
+    private readonly notifications: NotificationService,
     private readonly audit: AuditService,
   ) {}
 
@@ -71,6 +80,9 @@ export class OutboundRetryService {
           break;
         case OUTBOUND_FAILURE_KINDS.SERVICENOW_TICKET_UPDATE:
           await this.repairTicketUpdate(failure);
+          break;
+        case OUTBOUND_FAILURE_KINDS.NOTIFICATION_SEND:
+          await this.repairNotification(failure);
           break;
         default:
           throw new BadRequestException(
@@ -218,6 +230,49 @@ export class OutboundRetryService {
     // refused the PATCH). That is still a failed repair — I2: it must not be
     // marked resolved.
     if (outcome.status !== 'updated') {
+      throw new BadRequestException(outcome.details);
+    }
+  }
+
+  /**
+   * CH-011 — re-send a notification that did not go out.
+   *
+   * 🔴 Two guards, both about the same thing: the queue row does NOT carry the
+   * template's parameters (see `PAYLOAD_WHITELIST['notification.send']`), so a
+   * repair can only re-render templates that need none.
+   *
+   *  - an unknown template fails loudly rather than picking a default;
+   *  - a known template that is not in `REPLAYABLE_TEMPLATES` is refused, with
+   *    the reason, so the operator is told to have the user request it again.
+   *
+   * Without the second guard AUTH-4c-C's reset mail would be replayable, and
+   * "replay" there means mailing somebody a link whose token no longer works.
+   */
+  private async repairNotification(failure: OutboundFailure) {
+    const payload = (failure.payload ?? {}) as Bag;
+    const to = String(payload.to ?? '');
+    const template = String(payload.template ?? '') as TemplateKey;
+
+    if (!to) {
+      throw new BadRequestException(
+        'This notification failure has no recorded recipient — nothing to repair.',
+      );
+    }
+    if (!(template in TEMPLATES)) {
+      throw new BadRequestException(
+        `Unknown notification template '${template}' — cannot repair`,
+      );
+    }
+    if (!REPLAYABLE_TEMPLATES.includes(template)) {
+      throw new BadRequestException(
+        `'${template}' cannot be re-sent from the queue because its contents are single-use. Ask the recipient to request it again.`,
+      );
+    }
+
+    const outcome = await this.notifications.send({ to, template });
+
+    // I2 again: "email is still not configured" is not a repair.
+    if (outcome.status !== 'sent') {
       throw new BadRequestException(outcome.details);
     }
   }

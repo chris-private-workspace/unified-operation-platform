@@ -438,6 +438,13 @@ model ConnectorConfig {
   ticketUpdateProvider String? // TICKET_UPDATE_PROVIDER override ('direct' | 'n8n')
   n8nTicketWebhookUrl  String? // N8N_TICKET_WEBHOOK_URL override (webhook base, no trailing path)
 
+  // Email / ACS (CH-011 / ADR-0019 D4) — non-secret only.
+  // ACS_CONNECTION_STRING carries the access key and stays in env, same rule as
+  // every other credential above. Adding this column is the ALTER TABLE that
+  // ADR-0013's W39 note predicted: ConnectorConfig is named columns, not a
+  // key-value bag, so a new connector always costs a migration.
+  acsSenderAddress String? // ACS_SENDER_ADDRESS override (e.g. no-reply@example.com)
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }

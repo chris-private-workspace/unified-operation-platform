@@ -15,6 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "ts-node prisma/seed.ts",
     "baseline:assigned": "ts-node prisma/init-assigned-baseline.ts",
+    "email:check": "ts-node scripts/send-connectivity-check.ts",
     "demo:ledger": "ts-node prisma/seed-demo-ledger.ts",
     "demo:mock-sn": "node scripts/demo-harness/mock-servicenow.js",
     "demo:mock-n8n": "node scripts/demo-harness/mock-n8n.js",
@@ -24,6 +25,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@azure/communication-email": "^1.1.0",
     "@azure/identity": "^4.5.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@nestjs/common": "^10.4.15",

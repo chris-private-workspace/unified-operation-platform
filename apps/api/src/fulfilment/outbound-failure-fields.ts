@@ -41,6 +41,14 @@ export const OUTBOUND_FAILURE_KINDS = {
    * it is already in is idempotent on ServiceNow's side, and it opens nothing.
    */
   SERVICENOW_TICKET_UPDATE: 'servicenow.ticket_update',
+  /**
+   * CH-011 / ADR-0019 D3 — an outbound notification did not go out.
+   *
+   * Swallowed at the call site like `servicenow.worknote`: the caller's own flow
+   * must not fail because a courtesy message could not be delivered. Recorded so
+   * "nobody got told" is a visible fact rather than a silent one.
+   */
+  NOTIFICATION_SEND: 'notification.send',
 } as const;
 
 /** Which transition a `servicenow.ticket_update` failure was attempting. */
@@ -95,6 +103,25 @@ const PAYLOAD_WHITELIST: Record<OutboundFailureKind, readonly string[]> = {
   // was. No table: seam ④ only ever writes sc_req_item (workflow 2004 has it
   // baked into its patch URL, so the direct side pins it too).
   'servicenow.ticket_update': ['snTarget', 'note', 'transition'],
+  /**
+   * CH-011. PII note, same shape of decision as `request.submit` above: `to` is
+   * a personal address and it is stored deliberately, because without it the
+   * message cannot be re-sent at all.
+   *
+   * 🔴 `params` is NOT here, and that is a security decision rather than an
+   * oversight. Template parameters are where a single-use secret lives —
+   * AUTH-4c-C will pass a password-reset token (ADR-0019 D8). Persisting that in
+   * a queue row an operator can read would turn a delivery failure into a
+   * credential leak, and replaying a stale reset token days later is worse than
+   * sending nothing.
+   *
+   * The consequence, stated so it is not discovered by surprise: a retry
+   * re-renders the template with NO parameters. That is fine for
+   * `connectivity-check` (it has none). When 4c-C lands, a failed reset mail
+   * must be re-requested by the user, never replayed by an operator — see the
+   * guard in `OutboundRetryService.repairNotification`.
+   */
+  'notification.send': ['to', 'template'],
 };
 
 /** Line items travel inside payload for the two request kinds. */
@@ -123,6 +150,7 @@ const EXTERNAL_REF_WHITELIST: Record<OutboundFailureKind, readonly string[]> = {
   'request.mirror': ['serviceNowSysId', 'serviceNowNumber'],
   'servicenow.worknote': [],
   'servicenow.ticket_update': [],
+  'notification.send': [],
 };
 
 const EXTERNAL_LINE_FIELDS = ['serviceNowSysId', 'serviceNowNumber'] as const;

@@ -22,6 +22,9 @@ export const CONNECTORS = {
   'n8n-inbound': { key: 'n8n-inbound', label: 'n8n (inbound intake)' },
   'n8n-license': { key: 'n8n-license', label: 'n8n (license operations)' },
   'n8n-ticket': { key: 'n8n-ticket', label: 'n8n (ticket updates)' },
+  // CH-011 / ADR-0019 — the first connector that is not an integration with
+  // another *system of record*; it is an outbound notification transport.
+  email: { key: 'email', label: 'Email (Azure Communication Services)' },
 } as const;
 
 export type ConnectorKey = keyof typeof CONNECTORS;
@@ -66,6 +69,21 @@ export const PROBEABLE: Record<ConnectorKey, string | null> = {
    */
   'n8n-ticket':
     'Workflow 2004 only changes a real ticket’s state, so it is never called as a test',
+  /**
+   * NOT probeable (ADR-0019 D5, Chris 2026-07-29). ACS has no read-only
+   * operation worth calling: the only thing this connector does is deliver a
+   * real message to a real person's inbox, and a health check that mails
+   * somebody is not a health check — the same reasoning as `n8n-outbound`
+   * above, which opens a real ticket.
+   *
+   * 🔴 The accepted cost, stated so nobody rediscovers it as a surprise:
+   * whether the sender domain actually delivers is not knowable until the first
+   * real send (CH-011 R1). `lastSuccessAt` therefore has to come from a real
+   * send, never from "config looks present" (ADR-0010 D4).
+   * Do not add a probe here.
+   */
+  email:
+    'Sending a test email delivers a real message to a real person, so it is never called as a test',
 };
 
 // ── W34 / ADR-0013 — connector CONFIG spec (Model C) ───────────
@@ -82,7 +100,12 @@ export interface EditableField {
   label: string;
   /** Env var used as the fallback when the column is null (ConfigService). */
   envKey: string;
-  kind: 'text' | 'url' | 'guid' | 'enum';
+  /**
+   * `email` added by CH-011. It is not decoration: ADR-0019 D5 removed the probe
+   * for this connector, so write-time validation is the ONLY feedback an
+   * operator gets before a real send fails. `text` would have accepted anything.
+   */
+  kind: 'text' | 'url' | 'guid' | 'enum' | 'email';
   /** Allowed values when kind === 'enum'. */
   enumValues?: readonly string[];
 }
@@ -204,6 +227,19 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
     ],
     // The credential that lets a caller close a customer's ticket.
     secrets: [{ envKey: 'N8N_TICKET_WEBHOOK_KEY', label: 'Webhook key' }],
+  },
+  // CH-011 / ADR-0019 D4 — the sender address is non-secret and belongs in the
+  // UI; the connection string carries the access key and stays in env forever.
+  email: {
+    editable: [
+      {
+        column: 'acsSenderAddress',
+        label: 'Sender address',
+        envKey: 'ACS_SENDER_ADDRESS',
+        kind: 'email',
+      },
+    ],
+    secrets: [{ envKey: 'ACS_CONNECTION_STRING', label: 'Connection string' }],
   },
 };
 

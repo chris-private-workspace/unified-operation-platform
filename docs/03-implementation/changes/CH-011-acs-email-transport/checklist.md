@@ -23,44 +23,47 @@ last_updated: 2026-07-29
 ## Implementation
 
 ### Dependency + 邊界(D1 / D2)
-- [ ] `@azure/communication-email` **只**加入 `apps/api/package.json`
-- [ ] 確認 `apps/web` + root 兩個 `package.json` **diff = 0**(A1)
-- [ ] `EmailService` 落 `apps/api/src/integration/email/`,vendor SDK 唔出呢個資料夾
-- [ ] Boundary test 靜態鎖住,**要有正面半邊**(W40:negative-only assertion 會永遠綠)(A2)
+- [x] `@azure/communication-email` **只**加入 `apps/api/package.json`(`^1.1.0`,+5 packages)
+- [x] 確認 `apps/web` + root 兩個 `package.json` **diff = 0**(A1,`git diff --stat` 實證)
+- [x] `AcsEmailService` 落 `apps/api/src/integration/email/`,vendor SDK 唔出呢個資料夾
+- [x] Boundary test 靜態鎖住,**有正面半邊**(A2)
+      ⚠️ 條 test **捉到自己第一版寫錯** —— 查 class 名令 `notification-dispatch` 個註解變咗違規;改查 **import path**(W39 喺 license seam 撞過同一個 false positive,同一個修法)
 
 ### 通知底座(D3)
-- [ ] `NotificationService.send({ to, template, params })` 介面
-- [ ] Template 機制 = typed code,一個 template 一個檔,出 subject + text + html
-- [ ] 落 **`connectivity-check`** 一個 template;🔴 **唔落 password-reset template**(屬 4c-C)(A8)
-- [ ] 失敗入 `OutboundFailure` —— **沿用 ADR-0011**,新增一個 kind,唔新發明機制
-- [ ] `POST /admin/outbound-failures/:id/retry` 真係重寄(A7)
+- [x] `NotificationService.send({ to, template, params })` 介面(abstract class)
+- [x] Template 機制 = typed code,出 subject + **text**(唔可選)+ html
+- [x] 落 **`connectivity-check`** 一個 template;🔴 **零 password-reset template**(A8)
+- [x] 失敗入 `OutboundFailure` —— **沿用 ADR-0011**,新 kind `notification.send`
+- [x] retry 真係重寄(A7);➕ **`REPLAYABLE_TEMPLATES` 正面清單**擋住單次內容嘅 template
+- [x] 🔴 **payload 刻意唔存 `params`** —— 4c-C 會經 params 傳單次 reset token,存低就把送信失敗升級成憑證洩漏
 
 ### Connector + config(D4)
-- [ ] `connectors.ts` 加 key `email` + label
-- [ ] `CONNECTOR_CONFIG.email`:`acsSenderAddress`(editable)+ `ACS_CONNECTION_STRING`(secret)
-- [ ] 🔴 **H1 additive migration**:`ConnectorConfig` 加 nullable `acsSenderAddress`
-- [ ] 🔴 **絕不 `getOrThrow`** —— state 永遠唔會係 `required`(A3)
-- [ ] `PROBEABLE.email` 寫理由字串(唔畀探,D5)
+- [x] `connectors.ts` 加 key `email` + label
+- [x] `CONNECTOR_CONFIG.email`:`acsSenderAddress`(editable)+ `ACS_CONNECTION_STRING`(secret)
+- [x] 🔴 **H1 additive migration** `20260729071105_acs_sender_address` —— SQL 得一行 `ADD COLUMN "acsSenderAddress" TEXT`
+- [x] 🔴 **絕不 `getOrThrow`** —— state 永遠唔會係 `required`(A3)
+- [x] `PROBEABLE.email` 寫理由字串(唔畀探,D5)
+- [x] ➕ **計劃外**:`EditableField` 加 `kind: 'email'` + 寫入時格式驗證。**唔係裝飾** —— D5 拆走咗 probe,寫入驗證係操作員喺真寄失敗之前**唯一**嘅回饋
 
 ### H4 邊界(D6 —— 三條都要 test)
-- [ ] connection string 唔入 DB / log / API 回應(A4)
-- [ ] 收件人 email 唔原封 log,用 `scrubPii()`;**test spy logger**(A5,RISK R5 明文要求)
-- [ ] ACS 回應 / error body scrub 之後先 log(A6,BUG-007 先例)
+- [x] connection string 唔入 DB / log / API 回應(A4)
+- [x] 收件人 email 唔原封 log,用 `scrubPii()`;**test spy logger**(A5)
+- [x] ACS 回應 / error body scrub 之後先 log(A6)
 
 ## Verification
 
-- [ ] **A1** 三個 `package.json` diff 核對(只 api 有新 dep)
-- [ ] **A2** boundary test 正反兩邊都真係守到
-- [ ] **A3** connector state 三態驗(未配置 `inactive` / 配置 `active` / **永遠唔會 `required`**)
-- [ ] **A4** 🔴 secret leak —— **實證**既有 derive-from-`CONNECTOR_CONFIG` 嘅 leak test 真係覆蓋到新 key,唔可以假設
-- [ ] **A5** 🔴 收件人 PII —— **spy logger**,唔可以只 assert exception message
-- [ ] **A6** ACS body scrub
-- [ ] **A7** 失敗入佇列 + retry 真重寄
-- [ ] **A8** template 出 subject/text/html;零 password-reset template
-- [ ] **A9** 🔴 **唔設任何 `ACS_*` env → app boot 得起 + 既有 api test 全綠**(D4 optional 嘅真證明)
-- [ ] **A10** api test 不降(現 **599**)· lint 零 output · build OK
-- [ ] **A11** 🔴 **live 真寄一封**,以**真係收到**為準(唔係 API 返 202 就算);script 唔留 production 路徑
-- [ ] **A12** fails-before 實證 A4 / A5 兩條硬紅線
+- [x] **A1** `git diff --stat` 實證:只有 `apps/api/package.json` +1 行;root + `apps/web` **diff 0**(lockfile 郁 = monorepo 單一 lockfile 嘅預期行為)
+- [x] **A2** boundary test 正反兩邊都守到(4 條:SDK 只喺 email/ · transport 真係 import 佢 · 只有 module 名 concrete class · 真有 consumer 依賴 abstraction)
+- [x] **A3** connector state 三態 + live 驗:`GET /admin/integrations` 真返 `state: "inactive"` · `probeable: false` + 理由 · secret `configured: false`
+- [x] **A4** 🔴 **實證咗,唔係假設** —— 加 connector 之後未補 fixture 就跑,既有守門**即刻紅**:`- "ACS_CONNECTION_STRING"` / `- "ACS_SENDER_ADDRESS"` / `- "email"`(2 failed / 18 passed)→ 補完 20/20。W39+W40 把手抄清單改成由 inventory derive,今日兌現
+- [x] **A5** 🔴 spy logger(唔係 assert exception):成功路徑唔 log 收件人 · vendor 引用返地址嗰陣 log 出 `[redacted-email]` · 兩條都有正面半邊防止「乜都冇 log」都算過
+- [x] **A6** ACS error body 經 `scrubPii()` 先入 log **同** exception —— 兩個面都驗(BUG-004 就係一個乾淨一個漏)
+- [x] **A7** 失敗入佇列(dispatcher 3 條)+ retry 真重寄(retry 4 條,含「still not configured 唔算修好」)
+- [x] **A8** template 出 subject/text/html 三樣;**零 password-reset template**
+- [x] **A9** 🔴 **live 實證**:`.env` 一個 `ACS_*` 都冇 → app 真 boot,`:3100/docs/api` · `:5173/` · `:5173/api/me` 三個 **200**,pid 39888/45596 係新嘅;626 test 全綠
+- [x] **A10** api **599 → 626**(58 suites)· lint 零 output · build OK
+- [ ] 🚧 **A11** 🔴 **live 真寄一封** —— **等 Chris 落 `.env` 兩個 key**(§4.4 唔准 AI 掂 `.env*`,而且我刻意冇讀過個 accesskey 值)。script + npm 指令已就緒,以**收件人真係收到**為準
+- [x] **A12** fails-before 兩條硬紅線:**A4** 天然示範(見上)· **A5/A6** 拆走 `scrubPii` 一行 → **2 failed / 7 passed**,而成功路徑嗰條照綠(啱,佢唔經 scrub)→ 即時還原
 
 ## Cross-Cutting
 

@@ -18,6 +18,7 @@ import { DirectServiceNowProvider } from './direct-servicenow.provider';
 import { N8nWorkflowProvider } from './n8n-workflow.provider';
 import { OutboundFailureService } from './outbound-failure.service';
 import { OutboundRetryService } from './outbound-retry.service';
+import { NotificationDispatchService } from './notification-dispatch.service';
 import { OutboundFailureController } from './outbound-failure.controller';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from './activity.service';
@@ -89,6 +90,10 @@ export async function requestSubmissionProviderFactory(
     OutboundRequestService,
     OutboundFailureService, // ADR-0011 — outbound failure queue
     OutboundRetryService,
+    // CH-011 / ADR-0019 — send + record-on-failure. Lives here rather than in
+    // the integration layer so the transport never has to reach back into the
+    // failure queue (that would be an integration → fulfilment cycle).
+    NotificationDispatchService,
     ActivityService, // CH-006 — cross-request activity feed (read-only)
     // W37 / ADR-0015 — the platform's first @Cron. No controller: it is driven
     // by the scheduler, not by a request.
@@ -106,6 +111,11 @@ export async function requestSubmissionProviderFactory(
       inject: [ConfigService, ServiceNowService, ConnectorConfigService],
     },
   ],
-  exports: [RequestService, StageService, AssignService],
+  exports: [
+    RequestService,
+    StageService,
+    AssignService,
+    NotificationDispatchService,
+  ],
 })
 export class FulfilmentModule {}

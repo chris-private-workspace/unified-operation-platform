@@ -114,4 +114,55 @@ PR **#48** merged(`7ac40fd`,獨立驗證 —— `gh pr view` MERGED + `git ls-re
 
 ---
 
+## Day 2 — 2026-07-29(實作,A11 以外全部達標)
+
+### 交付
+
+| 層 | 檔 |
+|---|---|
+| Integration | `email/notification.service.ts`(abstract + 型別)· `email/templates.ts` · `email/acs-email.service.ts` · `email/email.boundary.spec.ts` · `email/acs-email.service.spec.ts` |
+| Connector | `connectors.ts`(key / PROBEABLE / CONNECTOR_CONFIG / 新 `kind:'email'`)· `connector-config.service.ts`(email 驗證)· `integration-status.service.ts`(+`emailConfigured()`) |
+| Schema | `20260729071105_acs_sender_address` —— **SQL 得一行** `ADD COLUMN "acsSenderAddress" TEXT` |
+| Fulfilment | `notification-dispatch.service.ts` + spec · `outbound-failure-fields.ts`(新 kind + whitelist)· `outbound-retry.service.ts`(`repairNotification`) |
+| Ops | `scripts/send-connectivity-check.ts` + `npm run email:check` |
+
+**api 599 → 626 test / 58 suites** · lint 零 output · build OK。
+
+### 三個「守門真係捉到嘢」嘅位
+
+**① A4 唔使我證,佢自己紅畀我睇。** 加完 `email` connector、未補 leak fixture 就跑既有 test —— **2 failed**,逐個列出 `ACS_CONNECTION_STRING` / `ACS_SENDER_ADDRESS` / `email` 冇覆蓋到。W39(手抄 4 個 key → iterate `CONNECTOR_KEYS`)同 W40(`list()` 手寫陣列 → 對返 inventory)嗰兩次「唔好靠人手同步」嘅功夫,今日直接兌現。spec A4 特別寫住「**要實證唔可以假設**」,結果連實證都唔使我特登去砌。
+
+**② boundary test 捉到自己第一版。** 我查 `AcsEmailService` 呢個 class 名,結果 `notification-dispatch.service.ts` 個**註解**提到佢(解釋 scrub 已經喺上游做咗)就被當成違規。W39 喺 license seam 撞過**一模一樣**嘅 false positive,結論亦一樣:**boundary 係「file import 咗乜」,唔係「file 講起過乜」** ⇒ 改查 import path。
+
+**③ A12 fails-before:** 拆走 `scrubPii` 一行 → **2 failed / 7 passed**。而「成功路徑唔 log 收件人」嗰條**照綠** —— 呢個先係重點:佢本來就唔經 scrub,如果佢都紅,即係我條 test measure 緊第二樣嘢。
+
+### 幾個實作判斷(值得記低,免得日後重推)
+
+**① `params` 唔入失敗佇列 —— 呢個係安全決定唔係疏忽。** ADR-0019 D8 講明 4c-C 會經 `params` 傳單次 reset token。存低就等於把「送信失敗」升級成「憑證躺喺一張操作員睇得到嘅 queue row 度」。連帶後果:retry 只可以重寄**唔需要 params** 嘅 template ⇒ 加咗 `REPLAYABLE_TEMPLATES` **正面清單**(跟 W40 把 `KINDS_WITH_LINE_ITEMS` 由「除咗 X 之外」倒轉成明列嘅同一理由 —— 寫成排除式就會靜靜 opt-in 所有未來 template,而下一個 template 正正係唔可以 replay 嗰個)。
+
+**② dispatcher 擺喺 `fulfilment` 唔擺喺 `integration`。** 失敗佇列喺 fulfilment;如果 email service 自己記錄失敗,就係 `integration → fulfilment` 循環。本 repo 早就答咗呢條:**integration 返 outcome,caller 記失敗**(CH-010 個 `direct-ticket.provider` 就係咁)。冇新發明。
+
+**③ ops script 唔用 `NestFactory.createApplicationContext(AppModule)`。** 咁會連 `ScheduleModule` 一齊起,而 ADR-0015 個 sync sweep **會寫**(向真 Graph 開 sync gate)。一個「連線檢查」唔應該有能力做呢件事 ⇒ 三個依賴手工 wire,但用嘅係**真 class**,行嘅係 production 路徑。
+
+**④ 計劃外加咗 `kind: 'email'` 欄位驗證。** D5 拆走咗 probe,所以寫入時驗證係操作員喺「真寄失敗」之前**唯一**嘅回饋。`text` 會照單全收。
+
+### 兩個環境坑(唔係 code 問題,但食咗時間)
+
+- **`prisma generate` EPERM** —— 唔係公司 DLP(memory 記錄嗰個),係**跑緊嘅 backend 鎖住 `query_engine-windows.dll.node`**。停 stack → generate 307ms 完成,零下載。
+- kill-zombies dry-run 出 15 個,**逐行 trace 得返本項目**先執行;冇誤中其他項目。
+
+### 🚧 剩返 A11
+
+**等 Chris 落 `.env` 兩個 key**(CLAUDE.md §4.4 唔准 AI 掂 `.env*`;而且我全程只讀 key 名冇讀值,所以連個 accesskey 都唔喺我手上):
+
+```
+ACS_CONNECTION_STRING=endpoint=https://<resource>.communication.azure.com/;accesskey=<key>
+ACS_SENDER_ADDRESS=UnifiedOperationsPortal@rci-t.com
+```
+
+然後 `npm run email:check -w @uop/api -- --to=<你個地址>`。
+🔴 **判準係你真係收到封信,唔係 script 印咗 `sent`** —— custom domain(`rci-t.com`)嘅失敗模式就係 ACS 收貨但 DNS 側唔送達,而 API 照返 Succeeded(R1)。
+
+---
+
 ## Day N — (待開工)
