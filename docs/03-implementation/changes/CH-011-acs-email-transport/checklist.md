@@ -1,14 +1,15 @@
 ---
 change_id: CH-011
 spec_ref: ./spec.md
-status: in-progress      # blocked | ready | in-progress | done
+status: done             # blocked | ready | in-progress | done
 last_updated: 2026-07-29
 ---
 
 # CH-011 — Checklist
 
 > Atomic checkbox items derived from `spec.md §3` acceptance criteria。
-> ✅ **Gate 0 五項全清(2026-07-29)** —— status `blocked → in-progress`,可以開工。
+> ✅ **收官(2026-07-29)** —— A1–A12 **12/12 全過**,零延後項。
+> Gate 0 五項全清 → 實作 → A11 live 真寄且**收件人確認收到**。
 
 ## Gate 0 — 開工前必須有嘅答案(✅ 5/5 全過)
 
@@ -62,7 +63,10 @@ last_updated: 2026-07-29
 - [x] **A8** template 出 subject/text/html 三樣;**零 password-reset template**
 - [x] **A9** 🔴 **live 實證**:`.env` 一個 `ACS_*` 都冇 → app 真 boot,`:3100/docs/api` · `:5173/` · `:5173/api/me` 三個 **200**,pid 39888/45596 係新嘅;626 test 全綠
 - [x] **A10** api **599 → 626**(58 suites)· lint 零 output · build OK
-- [ ] 🚧 **A11** 🔴 **live 真寄一封** —— **等 Chris 落 `.env` 兩個 key**(§4.4 唔准 AI 掂 `.env*`,而且我刻意冇讀過個 accesskey 值)。script + npm 指令已就緒,以**收件人真係收到**為準
+- [x] **A11** 🔴 **live 真寄一封,而且真係收到** —— sender `UnifiedOperationsPortal@rci-t.com` → `chris.lai@rapo.com.hk`,ACS operation `1b693bde-2daf-4069-bdc8-2ce7b4033748`,stamp `2026-07-29T07:49:57.531Z`;**Chris 確認收到**(判準達成,唔係靠 script 印 `sent`)
+      ⚠️ **第一次係失敗嘅**:`self-signed certificate in certificate chain` = 公司 proxy MITM(同 ServiceNow 當日一樣),`NODE_OPTIONS=--use-system-ca` 解決。**環境問題唔係 code 問題**,已寫入 script header
+      ➕ **意外收穫**:嗰次失敗把 **A7 完整行咗一次真嘅** —— throw → dispatcher 唔 rethrow → 入 `OutboundFailure`,而 DB 真 row 嘅 `payload` **只有 `to` + `template`,冇 `params`**(安全決定喺真跑入面成立)
+      ✅ 測試產物已清:`DELETE 1` → `notification.send` 剩 **0**、整個佇列 **0**(回到測試前 baseline)
 - [x] **A12** fails-before 兩條硬紅線:**A4** 天然示範(見上)· **A5/A6** 拆走 `scrubPii` 一行 → **2 failed / 7 passed**,而成功路徑嗰條照綠(啱,佢唔經 scrub)→ 即時還原
 
 ## Cross-Cutting

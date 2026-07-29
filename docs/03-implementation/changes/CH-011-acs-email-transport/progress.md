@@ -1,7 +1,7 @@
 ---
 change_id: CH-011
 spec_ref: ./spec.md
-status: in-progress      # blocked | ready | in-progress | done
+status: done             # blocked | ready | in-progress | done
 last_updated: 2026-07-29
 ---
 
@@ -162,6 +162,60 @@ ACS_SENDER_ADDRESS=UnifiedOperationsPortal@rci-t.com
 
 然後 `npm run email:check -w @uop/api -- --to=<你個地址>`。
 🔴 **判準係你真係收到封信,唔係 script 印咗 `sent`** —— custom domain(`rci-t.com`)嘅失敗模式就係 ACS 收貨但 DNS 側唔送達,而 API 照返 Succeeded(R1)。
+
+---
+
+## Day 3 — 2026-07-29(A11 通過,CH-011 ✅ 收官)
+
+### A11 —— 真寄,而且真係收到
+
+| | |
+|---|---|
+| Sender | `UnifiedOperationsPortal@rci-t.com`(custom domain) |
+| 收件人 | `chris.lai@rapo.com.hk` |
+| ACS operation | `1b693bde-2daf-4069-bdc8-2ce7b4033748` |
+| Stamp | `2026-07-29T07:49:57.531Z` |
+| 判準 | **Chris 確認收到** —— 唔係靠 script 印 `sent` |
+
+呢個判準由 spec 寫落去嗰刻就係咁,唔係事後加嘅保留:custom domain 嘅失敗模式係「ACS 收貨但 DNS 側唔送達」而 API 照返 `Succeeded`(R1),加上 D5 冇 probe ⇒ 第一次真寄係**唯一**證據。
+
+### 🔴 第一次係失敗嘅 —— 而嗰次失敗比成功更有價值
+
+```
+WARN [AcsEmailService] ACS send failed: self-signed certificate in certificate chain
+WARN [NotificationDispatchService] Notification 'connectivity-check' not delivered — queued for repair
+outcome : threw (queued)
+```
+
+**成因 = 公司 proxy MITM outbound TLS,而 Node 唔讀 Windows 憑證庫** —— 同 ServiceNow 當日一模一樣嘅嘢(`--use-system-ca` 解決)。**環境問題,唔係 code 問題,亦唔係 ACS 配置問題**。已寫入 script header,因為下一個人一定會撞。
+
+⚠️ **部署面**:`restart-stack` skill 已經幫 API 設咗呢個 flag,但**獨立 script 唔受惠**。Azure UAT(ADR-0012)容器入面冇公司 proxy,理論上唔需要 —— 但「理論上」三個字唔算驗證,部署嗰陣要真試。
+
+**點解話呢次失敗有價值**:佢把 **A7 完整行咗一次真嘅**,而呢個係 mock 證唔到嘅 ——
+transport throw → dispatcher **冇** rethrow(caller 生還)→ 真 row 入 `OutboundFailure`:
+
+```json
+"kind": "notification.send",
+"payload": { "to": "chris.lai@rapo.com.hk", "template": "connectivity-check" },
+"lastError": "Email send failed: self-signed certificate in certificate chain"
+```
+
+🔴 **`payload` 得 `to` + `template`,冇 `params`** —— 嗰個「唔存 params 免得 4c-C 嘅 reset token 躺喺 queue row」嘅決定,喺真 DB 入面成立咗,唔淨係 unit test 講。
+
+### 測試產物已清
+
+用 **`DELETE` 而唔用 `abandon`**:`abandon` 會寫一條 audit,把「有人決定唔修復」呢個**營運決定**歸到一個真人身上,但呢張 row 由頭到尾係連線測試嘅產物,唔係營運事件 —— 留低會係一條假紀錄。跟返 CH-008 / CH-010「fixture 驗完即刪 + 對返 baseline」。
+
+實證:`DELETE 1` → `notification.send` 剩 **0**、整個 `OutboundFailure` **0**(= 測試前 baseline)。
+
+### 收官狀態
+
+**A1–A12 全部達標,零延後項。** api **599 → 626** test / 58 suites · lint 0 · build OK · 零 `.env` 改動(§4.4)。
+
+### 下游
+
+**AUTH-4c-C** 而家**冇技術阻塞**:transport 通咗、底座落地、設計已由 ADR-0019 D8 定死。
+🔴 但要記住 R2 —— **CH-011 呢刻仍然係零 production caller**,呢舊 code 嘅價值要 4c-C 落地先兌現。緩解唔係技術手段,係「緊接住做」。
 
 ---
 

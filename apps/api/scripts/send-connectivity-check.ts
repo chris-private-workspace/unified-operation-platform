@@ -10,6 +10,15 @@ import { OutboundFailureService } from '../src/fulfilment/outbound-failure.servi
  *
  * Run: npm run email:check -w @uop/api -- --to=<address>
  *
+ * 🔴 On the corporate network you must run it with
+ *     $env:NODE_OPTIONS='--use-system-ca'
+ * or the first send dies with `self-signed certificate in certificate chain`.
+ * The proxy MITMs outbound TLS and Node does not read the Windows certificate
+ * store — the identical failure ServiceNow hit (see the restart-stack skill,
+ * which already sets this for the API but cannot for a standalone script).
+ * It is an environment problem, not a configuration one: nothing about ACS is
+ * wrong when it happens.
+ *
  * ## Why this script exists at all
  *
  * CH-011 ships the transport; its first real caller arrives with AUTH-4c-C
