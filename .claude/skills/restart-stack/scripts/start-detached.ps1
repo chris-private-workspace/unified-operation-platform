@@ -21,7 +21,17 @@ Write-Output ''
 Write-Output '=== starting (detached) ==='
 foreach ($j in $jobs) {
   $prefix = ''
-  if ($DisableAuthBypass -and $j.Name -eq 'api') { $prefix = "`$env:AUTH_DEV_BYPASS='false'; " }
+  if ($j.Name -eq 'api') {
+    # 公司 proxy MITM 咗 ServiceNow(插自己個 root CA),而 Node 有自己一套 bundled
+    # CA store、唔會讀 Windows 憑證庫 → `fetch` 死喺 SELF_SIGNED_CERT_IN_CHAIN,
+    # 表面症狀係 SN probe 失敗。curl 用 schannel 所以睇落又「通」,好誤導。
+    # 2026-07-29 實測:同一個 fetch 加咗呢個 flag 就攞到 401(TLS 通,淨係差認證)。
+    # 注意 **唔可以**寫入 apps/api/.env —— NODE_OPTIONS 要喺 node 起之前存在,
+    # dotenv 係 process 起咗之後先 load,擺落 .env 完全冇作用。
+    # 對 Graph 無副作用(實測加唔加都 200;Graph host 根本冇被 MITM)。
+    $prefix = "`$env:NODE_OPTIONS='--use-system-ca'; "
+  }
+  if ($DisableAuthBypass -and $j.Name -eq 'api') { $prefix += "`$env:AUTH_DEV_BYPASS='false'; " }
   $p = Start-Process powershell `
     -ArgumentList '-NoExit', '-Command', "Set-Location '$RepoRoot'; $prefix$($j.Cmd)" `
     -WindowStyle Normal -PassThru
