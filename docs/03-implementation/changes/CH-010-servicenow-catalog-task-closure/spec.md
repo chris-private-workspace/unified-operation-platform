@@ -51,9 +51,14 @@ Chris 2026-07-29:「除咗 requested item 之外,其實係要更新 **catalog ta
 
 **D1 — 介面形狀一個字唔改。** `TicketUpdateProvider` 仍然係兩個方法、收 RITM sys_id、返同一個 `TicketUpdateOutcome`。**只改實作寫邊張 record。** 咁樣 `assign.service` 嘅 trigger 邏輯(ADR-0017 W40 OQ-E)同 `ticketHeldAt` 守門完全唔使郁。
 
-**D2 — 新增「RITM → 平台負責嘅 task」解析。** 落 `ServiceNowService`(vendor 層),因為佢係 query SN 嘅地方。**唯一命中先算數**,規則待 ADR-0018 **OQ-4**。
+**D2 — 新增「RITM → 平台負責嘅 task」解析。** 落 `ServiceNowService`(vendor 層),因為佢係 query SN 嘅地方。
+**規則(ADR-0018 D3 已定案)**:查該 RITM 底下 `active=true` 嘅 `sc_task` —— **剛好 1 張**先算命中。
 
-**D3 — fail-closed。** 零命中 / 多過一個候選 → 唔 PATCH,回 `{status:'error'}` + 入失敗佇列。⚠️ **絕不揀第一個** —— 同 ADR-0017 D4 對 SKU resolve 嘅態度一致。
+**D3 — fail-closed。** **0 張 或 ≥2 張** → 唔 PATCH,回 `{status:'error'}` + 入失敗佇列。
+⚠️ **絕不揀第一個** —— 同 ADR-0017 D4 對 SKU resolve 嘅態度一致。
+⚠️ **`≥2` 嘅分支要寫要有 test**,即使 772 張 RITM 抽樣**零反例** —— 抽樣冇出現 ≠ 唔會發生,而嗰個 case 一旦發生,揀錯就係 close 咗人哋張單。
+
+**D3b — state 值(ADR-0018 D3b)**:close 寫 `'3'`,hold 寫 `'2'`。constant 要**寫明出處係經驗值域**(`sys_choice` 即使 admin 帳號都 403),同 `RITM_STATE` 寫明出處係 2004 JSON 一樣。
 
 **D4 — `TASK_TABLE = 'sc_task'` hard-code**,同 `RITM_TABLE` 一樣唔跟 `SERVICENOW_DEFAULT_TABLE`(理由相同:唔畀設定令兩條路分岔)。`RITM_TABLE` **保留**(work note 路徑仍然用)。
 
@@ -88,10 +93,10 @@ Chris 2026-07-29:「除咗 requested item 之外,其實係要更新 **catalog ta
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| **R1** | 🔴 **OQ-1 答案係「RITM 唔會自動推」** ⇒ 方案 B 令張單永遠唔 close,**比今日更差** | **Med** | **High** | 呢個係 ADR-0018 嘅 Accept gate,唔係實作風險 —— 未有答案唔開工;答「唔會」即改揀方案 A(ADR-0018 已保留為 fallback) |
-| **R2** | 🔴 帳號冇 `sc_task` 寫權(OQ-2)⇒ 每次 close 都失敗 | Med | High | 開工前要 SN owner 確認;`n8napiservice1` 已知有 row-level ACL,「睇得到 ≠ 改得到」 |
-| R3 | task 識別規則(OQ-4)寫得太闊 → close 咗唔屬平台責任嗰張(例:approval task) | Med | **High** | D3 fail-closed:**唯一命中先做**,多過一個唔准揀第一個;A3 專門守 |
-| R4 | `sc_task.state` 值寫錯(OQ-3,`sys_choice` 403 讀唔到值域) | Med | Med | 唔可以照抄 SN 預設值;要 SN owner 書面確認先 hard-code,同 `RITM_STATE` 一樣寫明出處 |
+| ~~R1~~ | ~~OQ-1 答案係「RITM 唔會自動推」~~ | — | — | ✅ **已消解**(2026-07-29):Chris 拍板「UOP 只需處理 catalog task,RITM 交 SN workflow」⇒ 方案 B 成立 |
+| ~~R2~~ | ~~帳號冇 `sc_task` 寫權~~ | — | — | ✅ **已消解**:有寫權(admin 帳號)。⚠️ 但揭出 **least-privilege 缺口** —— 轉 DEPLOY-harden,唔喺本 change 做 |
+| R3 | task 識別規則太闊 → close 咗唔屬平台責任嗰張 | **Low**(772 張 RITM 零反例) | **High** | D3 fail-closed:**唯一 active 先做**,0 或 ≥2 都唔郁;**A3 要有 `≥2` 嘅 test**(抽樣冇出現 ≠ 唔會發生) |
+| R4 | `sc_task.state` 值寫錯 | Low | Med | 值域由 800 筆真數據反推(`3` 佔 595 且全 inactive);⚠️ 仍係**推斷唔係 instance choice list 確認** —— constant 要寫明出處 |
 | R5 | 平台改咗而 2004 冇改 ⇒ 兩條路做緊唔同嘅事(違反 D0) | Med | High | D5 + A6:n8n 路徑 fail-loud;ADR-0018 D6 要求同時更新 n8n sticky note |
 | R6 | 反查多咗一個 SN round-trip,每次 close 慢咗 | High | Low | 接受 —— close 唔喺 assign 嘅同步 critical path(失敗會入佇列,ADR-0011 OD4) |
 
@@ -102,17 +107,19 @@ Chris 2026-07-29:「除咗 requested item 之外,其實係要更新 **catalog ta
 
 ## 6. Dependencies
 
-- 🔴 **ADR-0018 要由 Proposed → Accepted**(需 OQ-1 / OQ-2 答案)—— 未 Accept 一行 code 都唔寫
-- 🔴 **SN owner 要答 OQ-3(state 值域)/ OQ-4(task 識別規則)** —— 冇呢兩個答案寫唔出 D2/D3
-- 🔴 **A11 需要 SN owner 指定嘅測試 RITM fixture**
+- ✅ **ADR-0018 已 Accepted**(2026-07-29,OQ-1/OQ-2 已答)
+- ✅ **OQ-3 / OQ-4 / OQ-5 已由 read-only 查證自解**(見 ADR-0018 D3 / D3b)
+- ✅ ServiceNow 連線:2026-07-29 已打通(probe `ok: true`)
+- 🔴 **仍然要:A11 嘅測試 RITM fixture**(SN owner 指定;絕不攞真客戶單試 close)
 - n8n 側 2004 改動(**唔阻住平台開工**,但阻住切 `n8n-ticket` 掣)
-- ServiceNow 連線本身:✅ 2026-07-29 已打通(probe `ok: true`)
+- 🔴 **仍然要:Chris approve 本 spec**(PROCESS R1.change)—— 呢個係最後一重 gate
 
 ## 7. Spec Changelog（deviation log）
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-29 | Initial draft(**proposed**) | Chris 指出 catalog task 缺口;查證確認三邊實作都只寫 `sc_req_item`;Chris 揀方案 B 並要求開 ADR + CH | — |
+| 2026-07-29 | **五條 OQ 全部解決**,D2/D3 由「待定」寫成具體規則;R1/R2 消解,R3/R4 降級 | **OQ-1/OQ-2** Chris 答(方案 B 成立 · 有寫權)。**OQ-3/4/5** read-only 查證自解:800 筆 `sc_task` 反推 state 值域(`3` 佔 595 全 inactive)· **772 張 RITM 零反例**支持「唯一 active」· `stage` 併入 OQ-1 答案。**spec scope 冇擴,只係把待定項填實** | AI(查證)+ Chris(OQ-1/2) |
 
 ---
 
