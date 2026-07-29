@@ -14,6 +14,32 @@ import { DirectTicketProvider } from './ticket-update/direct-ticket.provider';
 import { N8nTicketProvider } from './ticket-update/n8n-ticket.provider';
 
 /**
+ * W39 — the switch for seam ② (ADR-0017 D1: one per seam; ADR-0013 C2: read
+ * once at boot, a change takes effect on restart).
+ *
+ * Anything other than the exact string 'n8n' resolves to Graph. That asymmetry
+ * is deliberate: unset, a typo, or a half-finished config must all land on the
+ * behaviour that has always been there, never on the one that routes real
+ * licence assignments through a third party.
+ *
+ * Exported as of the W40 follow-up. It was written inline, which meant the one
+ * property worth testing — the fail-safe direction — had no test at all, while
+ * the identical switch for seam ④ did. Two switches guarding the same class of
+ * mistake should not have two different levels of proof.
+ */
+export async function licenseOpsProviderFactory(
+  graph: GraphLicenseProvider,
+  n8n: N8nLicenseProvider,
+  connectorConfig: ConnectorConfigService,
+): Promise<LicenseOperationsProvider> {
+  const choice = await connectorConfig.resolve(
+    'n8n-license',
+    'licenseOpsProvider',
+  );
+  return choice === 'n8n' ? n8n : graph;
+}
+
+/**
  * W40 — the switch for seam ④ (ADR-0017 D1: one per seam; ADR-0013 C2: read
  * once at boot, a change takes effect on restart).
  *
@@ -22,10 +48,10 @@ import { N8nTicketProvider } from './ticket-update/n8n-ticket.provider';
  * been there — never on the one that lets a third party close a customer's
  * ticket.
  *
- * Exported (unlike seam ②'s inline factory) so that fail-safe direction can be
- * asserted directly. It is the one property here worth a test: getting it
- * backwards would not break anything visibly, it would just quietly start
- * routing real ticket closures through n8n.
+ * Exported so that fail-safe direction can be asserted directly. It is the one
+ * property here worth a test: getting it backwards would not break anything
+ * visibly, it would just quietly start routing real ticket closures through
+ * n8n.
  *
  * No webhook-URL check at boot, deliberately: N8nTicketProvider resolves the
  * URL per call and reports a missing one as a configuration problem rather than
@@ -70,26 +96,7 @@ export async function ticketUpdateProviderFactory(
     N8nLicenseProvider,
     {
       provide: LicenseOperationsProvider,
-      /**
-       * W39 — the switch (ADR-0017 D1: one per seam, ADR-0013 C2: read once at
-       * boot, change takes effect on restart).
-       *
-       * Anything other than the exact string 'n8n' resolves to Graph. That
-       * asymmetry is deliberate: unset, a typo, or a half-finished config must
-       * all land on the behaviour that has always been there, never on the one
-       * that routes real licence assignments through a third party.
-       */
-      useFactory: async (
-        graph: GraphLicenseProvider,
-        n8n: N8nLicenseProvider,
-        connectorConfig: ConnectorConfigService,
-      ): Promise<LicenseOperationsProvider> => {
-        const choice = await connectorConfig.resolve(
-          'n8n-license',
-          'licenseOpsProvider',
-        );
-        return choice === 'n8n' ? n8n : graph;
-      },
+      useFactory: licenseOpsProviderFactory,
       inject: [
         GraphLicenseProvider,
         N8nLicenseProvider,
