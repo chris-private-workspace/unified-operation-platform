@@ -341,8 +341,20 @@ export class AssignService {
       // had: a work note on the parent mirror, direct (OQ-A — 2004 has no
       // note-without-state mode, so this path cannot go through the seam).
       const snTarget = request.serviceNowSysId;
+      /**
+       * BUG-006 — this used to pass 'sc_req_item' here too. The sys_id had two
+       * possible sources but the table name only ever had one, and the two have
+       * to move together: the parent REQ lives in sc_request (that is the table
+       * DirectServiceNowProvider creates it in), so addressing it in the RITM
+       * table looks up a record that does not exist there.
+       *
+       * Named once and reused for the queued payload, because the retry path
+       * replays that payload — two literals here would be two things to keep in
+       * step, and only one of them would be visible from the other.
+       */
+      const snTable = 'sc_request';
       try {
-        await this.snow.addWorkNote(snTarget, note, 'sc_req_item');
+        await this.snow.addWorkNote(snTarget, note, snTable);
       } catch (err) {
         this.logger.warn(
           `ServiceNow write-back failed for request ${request.id}: ${
@@ -355,7 +367,7 @@ export class AssignService {
         // (OD4 unchanged); it just stops being invisible.
         await this.failures.record({
           kind: OUTBOUND_FAILURE_KINDS.SERVICENOW_WORKNOTE,
-          payload: { snTarget, note, table: 'sc_req_item' },
+          payload: { snTarget, note, table: snTable },
           error: err,
           requestId: request.id,
         });
