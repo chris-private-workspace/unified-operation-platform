@@ -1,8 +1,8 @@
 # ADR-0019: Email 通知傳輸採用 Azure Communication Services,並以此解封 AUTH-4c-C
 
 **Date**: 2026-07-29
-**Status**: Proposed
-**Approver**: Chris Lai(待拍板 —— H2 新 dependency + H1 schema,見 §Open Questions)
+**Status**: Accepted
+**Approver**: Chris Lai(2026-07-29 —— H2 新 dependency `@azure/communication-email` + H1 `ConnectorConfig` additive 欄,連同三項前置拍板[拆兩份 · 鋪通知底座 · 唔畀探]同三條 OQ 全部答齊,見 §Open Questions)
 
 ## Context
 
@@ -148,13 +148,18 @@ CLAUDE.md §3.1:「Vendor SDK 只准喺 `src/integration/`;domain / orchestratio
 
 ---
 
-## Open Questions(要答先可以 `Proposed → Accepted`)
+## Open Questions —— ✅ 三條全部已答(2026-07-29),本 ADR 由此 `Proposed → Accepted`
 
-| # | 問題 | 點解 blocking |
+| # | 問題 | 答案 |
 |---|---|---|
-| **OQ-1** 🔴 | **ACS resource 有冇 provisioned sender address?** Azure-managed domain(`DoNotReply@<guid>.azurecomm.net`)定 custom domain? | 冇 verified sender 就**一封都寄唔出**,live 驗證做唔到。呢個係唯一一個平台側解決唔到嘅前置 |
-| **OQ-2** | 「收件人解析」收窄成「caller 傳地址」(D3)—— **approve 定推翻**? | 決定底座嘅大細。我建議收窄,理由 = 推導所需嘅 policy 一條都未存在 |
-| **OQ-3** | CH-011 零 caller,live 證明用一次性 ops script(跟 ADR-0014 F3)—— 接受? | 唔接受嘅話就要合返一份做,即推翻「拆兩份」 |
+| **OQ-1** 🔴 | ACS 有冇 provisioned sender address? | ✅ **有** —— `UnifiedOperationsPortal@rci-t.com`(Chris 2026-07-29)。⚠️ 呢個係 **custom domain**(`rci-t.com`)唔係 Azure-managed(`*.azurecomm.net`),即係背後靠 DNS 側 SPF/DKIM 驗證。**因為 D5 唔畀探,呢個地址寄唔寄得出要到 CH-011 A11 第一次真寄先知** —— 呢個唔係新風險,係揀「唔畀探」嗰陣就接受咗嘅代價 |
+| **OQ-2** | 「收件人解析」收窄成「caller 傳地址」(D3)—— approve 定推翻? | ✅ **Approve 收窄**(Chris 2026-07-29)⇒ **D3 成立**。底座只收 caller 明確傳入嘅地址;**唔建**由 role / OpCo / 訂閱偏好推導收件人嗰層。AUTH-4c-C 嘅收件人 = `AppUser.email`,一個欄位 |
+| **OQ-3** | CH-011 零 caller,live 證明用一次性 ops script(跟 ADR-0014 F3)—— 接受? | ✅ **接受**(Chris 2026-07-29)⇒ 「拆兩份」維持。A11 = 一次性 script 經真 ACS 寄一封,**以真係收到為準**(唔係 API 返 202 就算);script 唔留 production 路徑 |
+
+### 實作補註(Accept 之後補,收緊 / 補時序空白,非推翻)
+
+- **Sender address 屬非機密欄** ⇒ 落 `ACS_SENDER_ADDRESS` env + `acsSenderAddress` DB 欄(D4),UI 改得。**唔係 secret**,所以可以寫入文件。真 secret 只有 connection string。
+- **Custom domain 嘅連帶影響**:Azure-managed domain 開箱即用但地址樣衰(`DoNotReply@<guid>.azurecomm.net`);custom domain 樣靚但**多一層 DNS 依賴**——DNS 記錄一旦被改 / 過期,失敗模式係「ACS 收貨但唔送達」,而**平台側睇落完全成功**。⇒ CH-011 A11 必須**以收件人真係收到為準**,唔可以以 API 回應為準。呢點已寫入 CH-011 A11。
 
 ---
 

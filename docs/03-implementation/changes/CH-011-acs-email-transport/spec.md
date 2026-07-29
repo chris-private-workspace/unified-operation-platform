@@ -22,11 +22,11 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:AI(執行)· 決策 = Chris Lai
-> **Status**:`proposed` —— **兩重 gate 都未過**
-> 1. ⬜ **ADR-0019 `Proposed → Accepted`**(三條 OQ 未答,OQ-1 sender address 係硬前置)
-> 2. ⬜ 本 spec `proposed → approved`(PROCESS R1.change)
+> **Status**:`proposed` —— **兩重 gate,一重已過**
+> 1. ✅ **ADR-0019 `Proposed → Accepted`**(2026-07-29;三條 OQ 全答 —— sender = `UnifiedOperationsPortal@rci-t.com` · 收件人解析收窄 approve · 零 caller 用 ops script 驗)
+> 2. ⬜ 本 spec `proposed → approved`(PROCESS R1.change)—— **最後一格**
 >
-> 🔴 **開工前必須兩重都過。** 冇 sender address 連 live 驗證都做唔到(A11)。
+> 🔴 **第 2 重未過之前一行 code 都唔可以寫。**
 
 ## 1. Context (Why)
 
@@ -99,14 +99,15 @@ Vendor SDK(`EmailClient`)**只准出現喺呢個資料夾**(CLAUDE.md §3.1)。D
 - [ ] **A8** Template 機制:`connectivity-check` 出到 subject + text + html 三樣;**零 password-reset template**(D3)
 - [ ] **A9** 🔴 **冇配置 ACS 時平台完全照舊**:唔設任何 `ACS_*` env → app **boot 得起** + **既有 api test 全部照樣綠**(= D4「optional 唔 getOrThrow」嘅真證明,唔係口頭承諾)
 - [ ] **A10** api test 不降 + 新增覆蓋(現 **599**);`npm run lint`(api)零 output;`npm run build` OK
-- [ ] **A11** 🔴 **live 真寄一封** —— 一次性 ops script 經真 ACS 寄去 Chris 指定地址,**以真係收到為準**(唔係「API 返 202」就算)。script 唔留 production 路徑
+- [ ] **A11** 🔴 **live 真寄一封** —— 一次性 ops script 經真 ACS,由 **`UnifiedOperationsPortal@rci-t.com`** 寄去 Chris 指定收件地址。
+      🔴 **以收件人真係收到為準,唔係「API 返 202」就算** —— custom domain 嘅失敗模式正正係「ACS 收貨但唔送達」,嗰種情況平台側**睇落完全成功**(R1)。script 唔留 production 路徑
 - [ ] **A12** fails-before 實證:至少 A4 / A5 兩條硬紅線,要示範「拆走守門就變紅」
 
 ## 4. Risks
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| **R1** | 🔴 **ACS sender address 未 provisioned** ⇒ 一封都寄唔出 | **未知**(ADR-0019 **OQ-1** 未答) | **High**(A11 直接做唔到) | 開工前必須答 OQ-1。呢個係唯一一個平台側解決唔到嘅前置 |
+| **R1** | ~~sender address 未 provisioned~~ → **改為:custom domain 送達失敗而平台睇落成功** | Med | **High**(靜默唔送達 = 用戶收唔到重設信而系統話成功) | 🟡 **已降級**:地址有咗(`UnifiedOperationsPortal@rci-t.com`)。但佢係 **custom domain**(`rci-t.com`)唔係 Azure-managed,靠 DNS SPF/DKIM ⇒ 失敗模式係「**ACS 收貨但唔送達**」,而 API 會照返 202。而 D5 又刻意唔畀探 ⇒ **A11 必須以收件人真係收到為準**,唔可以以 API 回應為準 |
 | **R2** | 零 caller 嘅 code 變技術債(若 AUTH-4c-C 遲遲唔做) | Med | Med | 本 spec 開宗明義寫明呢個特性;ADR-0019 Consequences 亦記低。**緩解係「4c-C 緊接住做」,唔係技術手段** |
 | **R3** | connection string 洩漏(入 log / DB / API) | Low | **High** | A4 + D6;既有 leak test 已由 `CONNECTOR_CONFIG` derive(W40),新 key 自動入網 —— 但 **A4 要實證**唔可以假設 |
 | **R4** | 收件人 email(PII)入 plaintext log | **Med**(已發生三次 —— BUG-001/004/007) | Med | A5 **spy logger**;`scrubPii()` 共用 helper,唔准自寫 regex |
@@ -120,9 +121,9 @@ Vendor SDK(`EmailClient`)**只准出現喺呢個資料夾**(CLAUDE.md §3.1)。D
 
 ## 6. Dependencies
 
-- ⬜ **ADR-0019 `Proposed → Accepted`** —— 三條 OQ 未答(**OQ-1 sender address = 硬前置**)
-- ⬜ **Chris approve 本 spec**(`proposed → approved`)
-- ⬜ **ACS sender address 已 provisioned 且可寄**(R1)
+- ✅ **ADR-0019 Accepted**(2026-07-29,三條 OQ 全答)
+- ⬜ **Chris approve 本 spec**(`proposed → approved`)—— **唯一剩低嘅 gate**
+- 🟡 **ACS sender address = `UnifiedOperationsPortal@rci-t.com`**(R1 降級)—— 地址有咗,但**「可寄」未證實**:custom domain 靠 DNS SPF/DKIM,而 D5 唔畀探 ⇒ 要到 **A11 第一次真寄**先知
 - ✅ `OutboundFailure` 失敗佇列已存在(ADR-0011,W31)
 - ✅ `scrubPii()` 共用 helper 已存在(BUG-004)
 - ✅ Connector config 機制已存在(ADR-0013,W34)
@@ -133,6 +134,7 @@ Vendor SDK(`EmailClient`)**只准出現喺呢個資料夾**(CLAUDE.md §3.1)。D
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-29 | Initial draft(**proposed**) | Chris 要求開 CH-011 + ADR 做 ACS email 並一併處理 AUTH-4c-C;AI 三項提問後 Chris 拍板:**拆兩份** · **順便鋪通知底座**(AI 曾 push back,Chris 揀咗)· **唔畀探** | — |
+| 2026-07-29 | **三條 OQ 全答 ⇒ ADR-0019 Accepted**;R1 由「sender 未 provisioned」**改寫**成「custom domain 靜默唔送達」;A11 收緊為「以收件人真係收到為準」;§6 依賴更新。**scope 冇擴,只係把待定項填實 + 一個風險換咗面目** | OQ-1 = `UnifiedOperationsPortal@rci-t.com`(Chris)· OQ-2 = approve 收窄(D3 成立)· OQ-3 = 接受 ops script。⚠️ **R1 唔係消失咗而係變咗形**:地址有咗解決咗「寄唔出」,但揭出 custom domain 特有嘅「ACS 收貨但唔送達 + API 照返 202」—— 而 D5 唔畀探令呢個位冇第二層守門 | **Chris Lai**(OQ)+ AI(風險改寫) |
 
 ---
 

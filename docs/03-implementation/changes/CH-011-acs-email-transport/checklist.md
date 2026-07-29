@@ -8,16 +8,18 @@ last_updated: 2026-07-29
 # CH-011 — Checklist
 
 > Atomic checkbox items derived from `spec.md §3` acceptance criteria。
-> 🔴 **status = `blocked`** —— Gate 0 三項未過,**一項 code 都唔可以寫**(PROCESS R1.change)。
+> 🔴 **status 仍然係 `blocked`** —— Gate 0 **五項中四項已過**,剩返 **spec approve** 一格。
+> 未過之前**一項 code 都唔可以寫**(PROCESS R1.change)。
 
-## Gate 0 — 開工前必須有嘅答案(全部未解決)
+## Gate 0 — 開工前必須有嘅答案(4/5 已過)
 
-- [ ] **OQ-1** 🔴 **ACS sender address 有冇 provisioned?** Azure-managed(`DoNotReply@<guid>.azurecomm.net`)定 custom domain?
-      → 冇 verified sender **一封都寄唔出**,A11 直接做唔到。**唯一一個平台側解決唔到嘅前置**
-- [ ] **OQ-2** 「收件人解析」收窄成「caller 傳地址」(ADR-0019 D3)—— approve 定推翻?
-- [ ] **OQ-3** CH-011 零 caller,live 證明用一次性 ops script(跟 ADR-0014 F3)—— 接受?
-- [ ] **ADR-0019** `Proposed → Accepted`(H2 新 dep + H1 schema 要 owner 拍板)
-- [ ] **Chris approve 本 spec**(`proposed → approved`)
+- [x] **OQ-1** 🔴 ACS sender address → ✅ **`UnifiedOperationsPortal@rci-t.com`**(Chris 2026-07-29)
+      ⚠️ **custom domain**(`rci-t.com`)唔係 Azure-managed ⇒ 靠 DNS 側 SPF/DKIM。**因為 D5 唔畀探,寄唔寄得出要到 A11 第一次真寄先知**(揀「唔畀探」嗰陣已接受嘅代價)
+      ⚠️ 連帶:custom domain 嘅失敗模式係「ACS 收貨但唔送達」,平台側**睇落完全成功** ⇒ **A11 必須以收件人真係收到為準**
+- [x] **OQ-2** 收件人解析收窄成「caller 傳地址」→ ✅ **Approve**(Chris 2026-07-29)⇒ ADR-0019 **D3 成立**,唔建推導層
+- [x] **OQ-3** 零 caller 嘅 live 證明用一次性 ops script → ✅ **接受**(Chris 2026-07-29)⇒「拆兩份」維持
+- [x] **ADR-0019** `Proposed → Accepted`(2026-07-29;三條 OQ 全答 + 三項前置拍板)
+- [ ] 🔴 **Chris approve 本 spec**(`proposed → approved`)—— **最後一格,未過**
 
 ## Implementation
 

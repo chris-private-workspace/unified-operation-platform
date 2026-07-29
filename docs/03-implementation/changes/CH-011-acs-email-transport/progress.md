@@ -67,4 +67,49 @@ Gate 0 五項全清 → checklist `blocked → ready` → 先開始 code。
 
 ---
 
+## Day 1 — 2026-07-29(Gate 0 收窄至一格,仍然零行 code)
+
+### 做咗咩
+
+PR **#48** merged(`7ac40fd`,獨立驗證 —— `gh pr view` MERGED + `git ls-remote` 對得上,唔靠 push 命令自報)。Chris 答齊三條 OQ ⇒ **ADR-0019 `Proposed → Accepted`**。
+
+| OQ | 答案 |
+|---|---|
+| **OQ-1** | **`UnifiedOperationsPortal@rci-t.com`** |
+| **OQ-2** | **Approve 收窄** ⇒ ADR-0019 D3 成立,唔建收件人推導層 |
+| **OQ-3** | **接受** 一次性 ops script ⇒「拆兩份」維持 |
+
+### 🔴 一個要記住嘅發現:R1 唔係消失咗,係換咗面目
+
+原本 R1 = 「sender address 未 provisioned ⇒ 一封都寄唔出」。地址一有,直覺會當佢消解 —— **但佢係 custom domain(`rci-t.com`)而唔係 Azure-managed(`*.azurecomm.net`)**,而兩者嘅失敗模式**唔同**:
+
+| | Azure-managed | Custom domain |
+|---|---|---|
+| 依賴 | 開箱即用 | **多一層 DNS**(SPF / DKIM) |
+| 壞咗點樣 | 配置錯 → 直接報錯 | **ACS 收貨但唔送達 —— API 照返 202** |
+
+⇒ 新 R1 = **「靜默唔送達,而平台側睇落完全成功」**。而 **D5 刻意唔畀探**,即係呢個位**冇第二層守門**。
+
+**所以 A11 收緊咗**:由「真寄一封」改成「**以收件人真係收到為準,唔係 API 返 202 就算**」。
+呢個正正係 AP-1(假驗收)同 CH-008 A8(第一次係假驗)同一類陷阱 —— 202 係「ACS 收咗你張單」嘅事實,唔係「人收到封信」嘅事實。
+
+### 代查嘅嘢(結果 + 佢證明唔到咩)
+
+開 PR 前掃過全部 **8 個 subscription**(3 個 tenant),`CommunicationServices` + `EmailServices` **零命中**。
+⚠️ **呢個證明唔到「唔存在」** —— 連接字串明明喺 `.env`,即係 resource 一定喺度。只收窄到「目前 `az` 身份睇唔到」(第四個 tenant,或者 RBAC 擋住 —— 嗰種情況 `az resource list` 返空白而唔報錯)。**最後係靠 Chris 直接畀答案,唔係靠我掃出嚟。**
+
+### Gate 0 現況
+
+| 項 | 狀態 |
+|---|---|
+| OQ-1 / OQ-2 / OQ-3 | ✅ 全答 |
+| ADR-0019 Accepted | ✅ |
+| **Chris approve spec** | ⬜ **最後一格** |
+
+### Next
+
+spec `proposed → approved` → checklist `blocked → ready` → 開工。
+
+---
+
 ## Day N — (待開工)
