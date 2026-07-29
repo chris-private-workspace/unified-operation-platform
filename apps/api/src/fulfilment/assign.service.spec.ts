@@ -206,12 +206,20 @@ describe('AssignService', () => {
         where: { id: 'r1' },
         data: { status: 'COMPLETED' },
       });
-      // fallback: this line has no RITM → write back to the parent REQ mirror,
-      // still targeting the sc_req_item table (two-level, ADR-0008 / CONTRACT §4).
+      /**
+       * Fallback: this line has no RITM → write back to the parent REQ mirror.
+       *
+       * BUG-006 — this assertion used to say 'sc_req_item', and the comment
+       * above it used to say "still targeting the sc_req_item table" as though
+       * that were the design. It was not: the parent REQ lives in sc_request
+       * (two-level, ADR-0008 D6 / CONTRACT §4), so the old value addressed a
+       * REQ sys_id inside the RITM table. The test and the comment were
+       * agreeing with each other rather than with ServiceNow.
+       */
       expect(snow.addWorkNote).toHaveBeenCalledWith(
         'sys1',
         expect.stringContaining('SPE_E3'),
-        'sc_req_item',
+        'sc_request',
       );
     });
 
@@ -249,10 +257,11 @@ describe('AssignService', () => {
       await service.assignLineItem('li1', undefined, ADMIN);
 
       expect(tickets.closeComplete).not.toHaveBeenCalled();
+      // BUG-006: the parent REQ is addressed in sc_request, not sc_req_item.
       expect(snow.addWorkNote).toHaveBeenCalledWith(
         'sys1',
         expect.any(String),
-        'sc_req_item',
+        'sc_request',
       );
     });
 
@@ -804,6 +813,13 @@ describe('AssignService', () => {
       expect(entry.payload.snTarget).toBe('sys1');
       expect(entry.payload.note).toMatch(/SPE_E3 assigned via platform/);
       expect(entry.requestId).toBe('r1');
+      /**
+       * BUG-006 — the queued table has to match the one we actually tried.
+       * `repairWorkNote` replays this payload verbatim, so a payload that
+       * disagreed with the original call would make every retry fail the same
+       * way the first attempt did, forever, with nothing pointing at why.
+       */
+      expect(entry.payload.table).toBe('sc_request');
     });
 
     it('the ledger increment still happened despite the note failing', async () => {
