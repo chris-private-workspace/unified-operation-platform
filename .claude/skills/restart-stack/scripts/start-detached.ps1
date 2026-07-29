@@ -8,9 +8,10 @@ param(
 )
 . (Join-Path $PSScriptRoot '_common.ps1')
 
-# infra 先確認(healthy 就唔動 —— 唔做無謂 destructive)
-Write-Output '=== infra check ==='
-docker compose --project-directory $RepoRoot ps --format '{{.Name}} | {{.Status}}'
+# infra 先**確保起到**(唔止睇一睇)——`up -d` + host port publish 驗證 + 真連線探測。
+# 以前呢度淨係 `ps` 印一行出嚟,結果 2026-07-29 撞到 redis 根本冇跑、跑咗又冇
+# publish port 兩件事都靜靜過關。詳見 ensure-infra.ps1 頭註。
+& (Join-Path $PSScriptRoot 'ensure-infra.ps1')
 
 $jobs = @()
 if (-not $WebOnly) { $jobs += @{ Name = 'api'; Cmd = 'npm run start:dev' } }
