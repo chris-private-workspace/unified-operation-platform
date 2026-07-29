@@ -25,6 +25,12 @@ COPY apps/api ./apps/api
 WORKDIR /app/apps/api
 RUN npx prisma generate
 RUN npm run build            # nest build -> apps/api/dist
+# BUG-008: the entrypoint runs `node dist/main`, and a green build does NOT mean
+# that file exists — tsc silently relocates the emit root when a .ts outside src/
+# joins the compile set. Every gate we had (626 tests, lint, nest build, az acr
+# build) passed while shipping an image that crash-looped on every start. This
+# line is the only one that would have caught it, so it stays.
+RUN test -f dist/main.js
 
 # ---------- runtime ----------
 FROM node:20-slim AS runtime

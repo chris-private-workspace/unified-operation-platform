@@ -1,4 +1,21 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "prisma"]
+  // BUG-008: rootDir pins the emit layout to src/, so the entrypoint's
+  // `node dist/main` can never drift again. Without it tsc uses the COMMON
+  // PARENT of everything it compiles — CH-011 added scripts/*.ts (the first .ts
+  // outside src/) and that silently moved main.js to dist/src/main.js, which
+  // crash-looped every container. rootDir also turns the next such addition into
+  // a loud TS6059 build error instead of a silent relayout.
+  //
+  // Build-only on purpose: tsconfig.json stays unpinned so ts-node (prisma/seed.ts,
+  // scripts/send-connectivity-check.ts) and ts-jest keep working.
+  "compilerOptions": { "rootDir": "./src" },
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "prisma",
+    "scripts"
+  ]
 }
