@@ -12,6 +12,8 @@ import { N8nLicenseProvider } from './license-ops/n8n-license.provider';
 import { TicketUpdateProvider } from './ticket-update/ticket-update.provider';
 import { DirectTicketProvider } from './ticket-update/direct-ticket.provider';
 import { N8nTicketProvider } from './ticket-update/n8n-ticket.provider';
+import { NotificationService } from './email/notification.service';
+import { AcsEmailService } from './email/acs-email.service';
 
 /**
  * W39 — the switch for seam ② (ADR-0017 D1: one per seam; ADR-0013 C2: read
@@ -112,6 +114,10 @@ export async function ticketUpdateProviderFactory(
       useFactory: ticketUpdateProviderFactory,
       inject: [DirectTicketProvider, N8nTicketProvider, ConnectorConfigService],
     },
+    // CH-011 / ADR-0019 — NOT a seam. There is one transport, so this is a plain
+    // alias rather than a factory: consumers depend on the abstract class purely
+    // to keep the ACS SDK inside src/integration/email/ (D1/D2).
+    { provide: NotificationService, useClass: AcsEmailService },
   ],
   exports: [
     GraphService,
@@ -119,6 +125,7 @@ export async function ticketUpdateProviderFactory(
     ConnectorConfigService,
     LicenseOperationsProvider,
     TicketUpdateProvider,
+    NotificationService,
   ],
 })
 export class IntegrationModule {}

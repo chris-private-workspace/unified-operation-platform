@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
 import { AuditService } from '../audit/audit.service';
+import { NotificationService } from '../integration/email/notification.service';
 
 const ADMIN = { id: 'admin' } as unknown as AppUser;
 
@@ -75,6 +76,7 @@ describe('OutboundRetryService', () => {
   let provider: { submit: jest.Mock };
   let snow: any;
   let tickets: { closeComplete: jest.Mock; markInProgress: jest.Mock };
+  let notifications: { send: jest.Mock };
   let audit: { log: jest.Mock };
 
   beforeEach(async () => {
@@ -116,6 +118,10 @@ describe('OutboundRetryService', () => {
         .fn()
         .mockResolvedValue({ status: 'updated', newState: '2' }),
     };
+    // CH-011 — the abstraction, never the ACS service (email.boundary.spec).
+    notifications = {
+      send: jest.fn().mockResolvedValue({ status: 'sent', messageId: 'op-1' }),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -126,6 +132,7 @@ describe('OutboundRetryService', () => {
         { provide: ServiceNowService, useValue: snow },
         { provide: TicketUpdateProvider, useValue: tickets },
         { provide: AuditService, useValue: audit },
+        { provide: NotificationService, useValue: notifications },
       ],
     }).compile();
     service = moduleRef.get(OutboundRetryService);
@@ -304,6 +311,96 @@ describe('OutboundRetryService', () => {
       await expect(service.reopen('f-mirror', ADMIN)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  /**
+   * CH-011 — repairing a notification.
+   *
+   * The interesting half is not "it re-sends"; it is WHAT IT REFUSES to
+   * re-send. The queue row deliberately does not store template parameters
+   * (ADR-0019 D8 will put a single-use reset token there), so a replay can only
+   * ever re-render templates that need none. Everything else has to be refused
+   * loudly, or AUTH-4c-C will ship a button that mails somebody a dead link.
+   */
+  describe('CH-011 — notification repairs', () => {
+    const notificationFailure = (
+      payload: Record<string, unknown>,
+      id = 'f-mail',
+    ) => ({
+      id,
+      kind: 'notification.send',
+      status: 'open',
+      payload,
+      externalRef: null,
+      attemptCount: 1,
+      requestId: null,
+    });
+
+    it('re-sends through the abstraction — a real send, not a no-op resolve', async () => {
+      failures.findById.mockResolvedValue(
+        notificationFailure({
+          to: 'someone.private@rci-t.com',
+          template: 'connectivity-check',
+        }),
+      );
+
+      await service.retry('f-mail', ADMIN);
+
+      expect(notifications.send).toHaveBeenCalledWith({
+        to: 'someone.private@rci-t.com',
+        template: 'connectivity-check',
+      });
+      expect(failures.markResolved).toHaveBeenCalled();
+    });
+
+    it('🔴 refuses a template whose contents are single-use', async () => {
+      failures.findById.mockResolvedValue(
+        notificationFailure({
+          to: 'someone.private@rci-t.com',
+          // Stand-in for AUTH-4c-C's reset mail: a real template key that is
+          // deliberately absent from REPLAYABLE_TEMPLATES would behave the same
+          // way. Using an unknown key here keeps this test independent of when
+          // 4c-C lands.
+          template: 'password-reset',
+        }),
+      );
+
+      await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(notifications.send).not.toHaveBeenCalled();
+      expect(failures.markResolved).not.toHaveBeenCalled();
+    });
+
+    it('refuses when no recipient was recorded, instead of sending nowhere', async () => {
+      failures.findById.mockResolvedValue(
+        notificationFailure({ template: 'connectivity-check' }),
+      );
+
+      await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(notifications.send).not.toHaveBeenCalled();
+    });
+
+    it('treats "still not configured" as a failed repair, not a resolved one', async () => {
+      failures.findById.mockResolvedValue(
+        notificationFailure({
+          to: 'someone.private@rci-t.com',
+          template: 'connectivity-check',
+        }),
+      );
+      notifications.send.mockResolvedValue({
+        status: 'not_configured',
+        details: 'ACS_CONNECTION_STRING is not set',
+      });
+
+      await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(failures.markResolved).not.toHaveBeenCalled();
+      expect(failures.markAttemptFailed).toHaveBeenCalled();
     });
   });
 

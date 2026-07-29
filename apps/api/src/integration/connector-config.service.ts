@@ -194,6 +194,17 @@ export class ConnectorConfigService {
           );
         }
         break;
+      case 'email':
+        // Shape only — deliberately not RFC-complete. It exists to catch the
+        // realistic mistake (a display name, a URL, a truncated paste), because
+        // CH-011's connector has no probe (ADR-0019 D5) and therefore no other
+        // feedback before a real send fails.
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          throw new BadRequestException(
+            `${field.label} must be an email address`,
+          );
+        }
+        break;
       case 'text':
         break;
     }

@@ -93,6 +93,13 @@ describe('IntegrationStatusService', () => {
     TICKET_UPDATE_PROVIDER: 'n8n',
     N8N_TICKET_WEBHOOK_URL: 'https://n8n.internal/webhook-ticket',
     N8N_TICKET_WEBHOOK_KEY: 'SECRET-N8N-TICKET-DO-NOT-LEAK',
+    // CH-011 — the ACS connection string embeds the access key, so it is the
+    // one value here whose leak would hand somebody the ability to send mail
+    // as this organisation. Shaped like the real thing so a partial echo would
+    // still be caught.
+    ACS_SENDER_ADDRESS: 'no-reply@fixture.example.com',
+    ACS_CONNECTION_STRING:
+      'endpoint=https://fixture.communication.azure.com/;accesskey=SECRET-ACS-DO-NOT-LEAK',
   };
 
   /**
@@ -149,6 +156,51 @@ describe('IntegrationStatusService', () => {
    * connector was invisible in the admin panel. Derived from the inventory now,
    * so the next connector cannot be registered and then quietly go unreported.
    */
+  /**
+   * CH-011 A3 — email is OPTIONAL (ADR-0019 D4). `required` would mean the app
+   * cannot boot without it, which is exactly what D4 refused: a convenience
+   * feature must not be able to take the platform down by being misconfigured.
+   */
+  describe('email connector (CH-011)', () => {
+    it('is inactive when no sender address is configured anywhere', async () => {
+      build();
+      expect(byKey(await service.list(), 'email').state).toBe('inactive');
+    });
+
+    it('is active once env supplies a sender', async () => {
+      build({ ACS_SENDER_ADDRESS: 'no-reply@fixture.example.com' });
+      expect(byKey(await service.list(), 'email').state).toBe('active');
+    });
+
+    it('honours a DB override, like every other connector (BUG-005)', async () => {
+      build({}, { acsSenderAddress: 'override@fixture.example.com' });
+      expect(byKey(await service.list(), 'email').state).toBe('active');
+    });
+
+    it('🔴 is never reported as required, whatever the config', async () => {
+      for (const setup of [
+        () => build(),
+        () => build({ ACS_SENDER_ADDRESS: 'no-reply@fixture.example.com' }),
+        () => build({}, { acsSenderAddress: 'override@fixture.example.com' }),
+      ]) {
+        setup();
+        expect(byKey(await service.list(), 'email').state).not.toBe('required');
+      }
+    });
+
+    /**
+     * Not derivable: nothing in the schema records a sent message, and this
+     * connector has no probe either (D5). Reporting the gap beats reusing
+     * "somebody configured it" as if it were evidence of working.
+     */
+    it('never guesses a last-success time, and says why', async () => {
+      build({ ACS_SENDER_ADDRESS: 'no-reply@fixture.example.com' });
+      const row = byKey(await service.list(), 'email');
+      expect(row.lastSuccessAt).toBeNull();
+      expect(row.lastSuccessNote).toMatch(/does not store sent messages/);
+    });
+  });
+
   it('reports every connector in the inventory — not a hand-written list', async () => {
     const rows = await service.list();
     expect(rows.map((r) => r.key).sort()).toEqual([...CONNECTOR_KEYS].sort());
