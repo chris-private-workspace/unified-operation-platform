@@ -39,7 +39,13 @@ if ($procs) {
 }
 
 Write-Output ''
-Write-Output '=== [4] endpoint reachability(以此為準,唔係 container health flag) ==='
+Write-Output '=== [4] code drift(切 branch / pull 之後嘅隱形殺手) ==='
+# 呢一項唔喺 [1]-[3] 入面睇得出 —— 容器、port、進程可以全部綠色,但 Prisma client
+# 對唔上新 schema,backend 一 build 就死。read-only,只報告。
+& (Join-Path $PSScriptRoot 'sync-code.ps1')
+
+Write-Output ''
+Write-Output '=== [5] endpoint reachability(以此為準,唔係 container health flag) ==='
 foreach ($u in "http://localhost:$ApiPort/docs/api", "http://localhost:$WebPort/") {
   try {
     $r = Invoke-WebRequest -Uri $u -TimeoutSec 10 -UseBasicParsing
