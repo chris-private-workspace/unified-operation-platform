@@ -2,60 +2,205 @@ import { ServiceNowService } from '../servicenow/servicenow.service';
 import { DirectTicketProvider } from './direct-ticket.provider';
 
 /**
- * W40 F1 — what the default implementation actually sends.
+ * CH-010 — what the default implementation actually sends.
  *
- * The field maps are the whole contract with ServiceNow: state '2' vs '3', and
- * work_notes vs close_notes. Getting one of them wrong does not fail loudly —
- * it closes a ticket that should have been put on hold, or leaves a fulfilled
- * one open. So they are asserted literally rather than through a helper that
- * could carry the same mistake into the assertion.
+ * Two things decide whether this seam is safe, and neither fails loudly if it
+ * is wrong:
+ *
+ *  1. WHICH RECORD it patches. Patching the RITM looks successful (ServiceNow
+ *     answers 200) while the request stays open — the bug CH-010 fixes.
+ *  2. WHICH TASK it picks. Closing the wrong one closes someone else's work,
+ *     and the ticket looks correctly handled afterwards.
+ *
+ * So both are asserted literally rather than through helpers that could carry
+ * the same mistake into the assertion.
  */
 describe('DirectTicketProvider', () => {
-  let snow: { updateRecord: jest.Mock };
+  let snow: {
+    query: jest.Mock;
+    updateRecord: jest.Mock;
+    getIntegrationUserSysId: jest.Mock;
+  };
   let provider: DirectTicketProvider;
 
+  /** One active task, already assigned — the simple case. */
+  const assignedTask = {
+    sys_id: 'TASK1',
+    number: 'SCTASK001',
+    assigned_to: { value: 'someone', link: 'x' },
+  };
+  /** Reference fields come back as { value: '' } when empty, not undefined. */
+  const unassignedTask = {
+    sys_id: 'TASK1',
+    number: 'SCTASK001',
+    assigned_to: { value: '', link: '' },
+  };
+
   beforeEach(() => {
-    snow = { updateRecord: jest.fn().mockResolvedValue({ state: '3' }) };
+    snow = {
+      query: jest.fn().mockResolvedValue([assignedTask]),
+      updateRecord: jest.fn().mockResolvedValue({ state: '3' }),
+      getIntegrationUserSysId: jest.fn().mockResolvedValue('INTEGRATION_USER'),
+    };
     provider = new DirectTicketProvider(snow as unknown as ServiceNowService);
   });
 
-  it('markInProgress patches state 2 + work_notes on sc_req_item', async () => {
-    snow.updateRecord.mockResolvedValue({ state: '2' });
+  describe('it moves the catalog task, never the RITM', () => {
+    it('closeComplete patches state 3 + close_notes on sc_task', async () => {
+      const outcome = await provider.closeComplete('RITM_SYS', 'fulfilled');
 
-    const outcome = await provider.markInProgress('SYS1', 'procurement');
+      expect(snow.query).toHaveBeenCalledWith(
+        'request_item=RITM_SYS^active=true',
+        'sc_task',
+        20,
+      );
+      expect(snow.updateRecord).toHaveBeenCalledWith(
+        'TASK1',
+        { state: '3', close_notes: 'fulfilled' },
+        'sc_task',
+      );
+      expect(outcome).toEqual({ status: 'updated', newState: '3' });
+    });
 
-    expect(snow.updateRecord).toHaveBeenCalledWith(
-      'SYS1',
-      { state: '2', work_notes: 'procurement' },
-      'sc_req_item',
-    );
-    expect(outcome).toEqual({ status: 'updated', newState: '2' });
-  });
+    it('markInProgress patches state 2 + work_notes on sc_task', async () => {
+      snow.updateRecord.mockResolvedValue({ state: '2' });
 
-  it('closeComplete patches state 3 + close_notes on sc_req_item', async () => {
-    const outcome = await provider.closeComplete('SYS2', 'fulfilled');
+      const outcome = await provider.markInProgress('RITM_SYS', 'procurement');
 
-    expect(snow.updateRecord).toHaveBeenCalledWith(
-      'SYS2',
-      { state: '3', close_notes: 'fulfilled' },
-      'sc_req_item',
-    );
-    expect(outcome).toEqual({ status: 'updated', newState: '3' });
+      expect(snow.updateRecord).toHaveBeenCalledWith(
+        'TASK1',
+        { state: '2', work_notes: 'procurement' },
+        'sc_task',
+      );
+      expect(outcome).toEqual({ status: 'updated', newState: '2' });
+    });
+
+    /**
+     * The regression CH-010 exists to prevent. Before it, both methods wrote to
+     * sc_req_item — which ServiceNow accepts and which leaves the request open.
+     */
+    it('never writes to sc_req_item', async () => {
+      await provider.closeComplete('RITM_SYS', 'n');
+      await provider.markInProgress('RITM_SYS', 'n');
+
+      for (const call of snow.updateRecord.mock.calls) {
+        expect(call[2]).toBe('sc_task');
+      }
+      for (const call of snow.query.mock.calls) {
+        expect(call[1]).toBe('sc_task');
+      }
+    });
+
+    it('never sends close_notes on a hold, or work_notes on a close', async () => {
+      await provider.markInProgress('RITM_SYS', 'n');
+      expect(snow.updateRecord.mock.calls[0][1]).not.toHaveProperty(
+        'close_notes',
+      );
+
+      await provider.closeComplete('RITM_SYS', 'n');
+      expect(snow.updateRecord.mock.calls[1][1]).not.toHaveProperty(
+        'work_notes',
+      );
+    });
   });
 
   /**
-   * The two transitions must not be able to leak into each other: a close that
-   * also wrote work_notes, or a hold that wrote close_notes, would be visible
-   * in ServiceNow as the wrong kind of ticket activity.
+   * `Validate "Assigned to" before close` rejects an unassigned close with 403.
+   * Proven live on 2026-07-29: the same task refused `{state:'3'}` and accepted
+   * `{assigned_to, state:'3'}`.
    */
-  it('never sends close_notes on a hold, or work_notes on a close', async () => {
-    await provider.markInProgress('SYS1', 'n');
-    expect(snow.updateRecord.mock.calls[0][1]).not.toHaveProperty(
-      'close_notes',
-    );
+  describe('assigned_to', () => {
+    it('fills an empty assignee with the integration account', async () => {
+      snow.query.mockResolvedValue([unassignedTask]);
 
-    await provider.closeComplete('SYS1', 'n');
-    expect(snow.updateRecord.mock.calls[1][1]).not.toHaveProperty('work_notes');
+      await provider.closeComplete('RITM_SYS', 'fulfilled');
+
+      expect(snow.updateRecord).toHaveBeenCalledWith(
+        'TASK1',
+        {
+          state: '3',
+          close_notes: 'fulfilled',
+          assigned_to: 'INTEGRATION_USER',
+        },
+        'sc_task',
+      );
+    });
+
+    /**
+     * 🔴 The one that matters. Taking a human's ticket away from them to satisfy
+     * a rule that is already satisfied would be invisible — the close succeeds
+     * either way.
+     */
+    it('never overwrites an assignee that is already set', async () => {
+      await provider.closeComplete('RITM_SYS', 'fulfilled');
+
+      expect(snow.updateRecord.mock.calls[0][1]).not.toHaveProperty(
+        'assigned_to',
+      );
+      expect(snow.getIntegrationUserSysId).not.toHaveBeenCalled();
+    });
+
+    it('treats a missing assigned_to field as unassigned', async () => {
+      snow.query.mockResolvedValue([{ sys_id: 'TASK1', number: 'SCTASK001' }]);
+
+      await provider.closeComplete('RITM_SYS', 'n');
+
+      expect(snow.updateRecord.mock.calls[0][1]).toHaveProperty(
+        'assigned_to',
+        'INTEGRATION_USER',
+      );
+    });
+
+    /**
+     * Without an assignee ServiceNow would answer 403. Saying so up front beats
+     * attempting the patch and reporting the vendor's refusal.
+     */
+    it('reports an error instead of patching when the integration account cannot be resolved', async () => {
+      snow.query.mockResolvedValue([unassignedTask]);
+      snow.getIntegrationUserSysId.mockResolvedValue(null);
+
+      const outcome = await provider.closeComplete('RITM_SYS', 'n');
+
+      expect(outcome.status).toBe('error');
+      expect(snow.updateRecord).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * ADR-0018 D3 — fail closed. Both branches are real: 772 RITMs sampled had at
+   * most one active task, but RITM0047290 (a D365 User License Maintenance
+   * Request — exactly the kind this seam is handed) has two.
+   */
+  describe('picking the task', () => {
+    it('patches nothing when the RITM has no open task', async () => {
+      snow.query.mockResolvedValue([]);
+
+      const outcome = await provider.closeComplete('RITM_SYS', 'n');
+
+      expect(outcome.status).toBe('error');
+      expect(snow.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('patches nothing when the RITM has several open tasks', async () => {
+      snow.query.mockResolvedValue([
+        { sys_id: 'TASK1', number: 'SCTASK001' },
+        { sys_id: 'TASK2', number: 'SCTASK002' },
+      ]);
+
+      const outcome = await provider.closeComplete('RITM_SYS', 'n');
+
+      expect(outcome.status).toBe('error');
+      expect(snow.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('applies the same rule to markInProgress', async () => {
+      snow.query.mockResolvedValue([]);
+
+      const outcome = await provider.markInProgress('RITM_SYS', 'n');
+
+      expect(outcome.status).toBe('error');
+      expect(snow.updateRecord).not.toHaveBeenCalled();
+    });
   });
 
   /**
@@ -64,25 +209,30 @@ describe('DirectTicketProvider', () => {
    * failure (ADR-0011 OD4), and an outcome would look to them like ServiceNow
    * had answered.
    */
-  it('lets a transport failure throw instead of reporting an outcome', async () => {
-    snow.updateRecord.mockRejectedValue(
-      new Error('ServiceNow request failed (503)'),
-    );
+  describe('error contract', () => {
+    it('lets a failed patch throw instead of reporting an outcome', async () => {
+      snow.updateRecord.mockRejectedValue(
+        new Error('ServiceNow request failed (503)'),
+      );
 
-    await expect(provider.closeComplete('SYS1', 'n')).rejects.toThrow(
-      'ServiceNow request failed (503)',
-    );
+      await expect(provider.closeComplete('RITM_SYS', 'n')).rejects.toThrow(
+        'ServiceNow request failed (503)',
+      );
+    });
+
+    it('lets a failed task lookup throw as well', async () => {
+      snow.query.mockRejectedValue(
+        new Error('ServiceNow request failed (503)'),
+      );
+
+      await expect(provider.closeComplete('RITM_SYS', 'n')).rejects.toThrow();
+    });
   });
 
-  /**
-   * ServiceNow does not always echo the field back. Reporting null there would
-   * tell the caller "unknown" about a patch ServiceNow had just accepted, so
-   * the requested state is used instead — the one thing we do know.
-   */
   it('falls back to the requested state when ServiceNow echoes no state', async () => {
     snow.updateRecord.mockResolvedValue({});
 
-    await expect(provider.closeComplete('SYS1', 'n')).resolves.toEqual({
+    await expect(provider.closeComplete('RITM_SYS', 'n')).resolves.toEqual({
       status: 'updated',
       newState: '3',
     });

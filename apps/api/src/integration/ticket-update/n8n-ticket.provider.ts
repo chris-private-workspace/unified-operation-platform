@@ -1,41 +1,53 @@
-import {
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConnectorConfigService } from '../connector-config.service';
-import { N8N_TICKET_PATH } from '../connectors';
-import { scrubPii } from '../scrub-pii';
 import {
-  RITM_STATE,
   TicketUpdateOutcome,
   TicketUpdateProvider,
 } from './ticket-update.provider';
 
 /**
- * The n8n implementation of seam ④ (ADR-0017 D3, 辛 / W40) — workflow 2004.
+ * The n8n implementation of seam ④ — currently a REFUSAL, and deliberately so
+ * (CH-010 / ADR-0018 D6).
  *
- *   POST {base}/wf4-sn-update   header x-uop-secret
- *   body { ritmId, mode: 0|1, notes? }
+ * ── Why there is no 2004 client here any more ───────────────────────────────
+ * Seam ④ now means "move the RITM's CATALOG TASK". Workflow 2004 cannot do
+ * that: `sc_req_item` is baked into its patch URL, and its own sticky note
+ * calls that deliberate — "RITM ONLY. 3 fields: state, work_notes, close_notes
+ * … No stage, no tasks, no REQ".
  *
- * Every shape below was read out of 2004's own nodes, not out of the ADR prose.
- * The two disagree in three places (W40 plan §2.2), the biggest being that D3
- * lists an addWorkNote this workflow has no mode for — which is why the seam
- * does not have one either.
+ * Three options existed and only one is honest:
  *
- * D0 still holds: the platform decides that a request is fulfilled or stuck.
- * This class only carries that over.
+ *   patch the RITM anyway  → the two positions of one switch would do different
+ *                            things to a customer's ticket. That is exactly
+ *                            what ADR-0017 D0 forbids, and it is the bug
+ *                            CH-010 exists to fix.
+ *   fall back to direct    → the switch would silently not mean what it says.
+ *                            An operator would believe n8n is handling tickets
+ *                            while the Table API is.
+ *   refuse                 → chosen.
  *
- * 🔴 RITM division of labour — this provider must only ever be handed a LICENSE
- * RITM (RequestLineItem.serviceNowSysId). n8n 1007 closes the AD-type RITMs and
- * already PATCHes state=3 itself; if both sides touched the same ticket they
- * would fight over its state.
+ * W40's working 2004 client (webhook call, `x-uop-secret`, the two response
+ * shapes, the rule that its `details` field is never passed through) was
+ * REMOVED rather than left dormant. Untestable code that no caller can reach
+ * rots quietly, and the project has the precedent: W38 took 3 of the 5 methods
+ * ADR-0017 D2 listed, on the principle that a seam must not pretend a vendor
+ * can do something it cannot. Re-enabling n8n is therefore a conscious rebuild
+ * against whatever task-capable mode 2004 gains — not a revert. The old client
+ * is in git history at the commit that introduced this comment; the workflow
+ * JSON stays the source of truth for its shapes (W39's lesson).
+ *
+ * Refusing PER CALL rather than at boot is deliberate: every caller of this
+ * seam queues the failure (ADR-0011 OD4), so a wrong switch shows up as an
+ * OutboundFailure naming the reason — recoverable, and visible without taking
+ * the application down with it.
+ *
+ * The constructor keeps its dependencies: the class is still a registered
+ * provider that the factory can select, and dropping them would make
+ * re-enabling it a larger change than it should be.
  */
 @Injectable()
 export class N8nTicketProvider extends TicketUpdateProvider {
-  private readonly logger = new Logger(N8nTicketProvider.name);
-
   constructor(
     private readonly config: ConfigService,
     private readonly connectorConfig: ConnectorConfigService,
@@ -43,166 +55,26 @@ export class N8nTicketProvider extends TicketUpdateProvider {
     super();
   }
 
-  // ── plumbing (same shape as N8nLicenseProvider — deliberately) ─────────────
-
-  private async baseUrl(): Promise<string> {
-    const url = await this.connectorConfig.resolve(
-      'n8n-ticket',
-      'n8nTicketWebhookUrl',
-    );
-    if (!url) {
-      // Not a vendor outage — someone selected n8n without finishing its
-      // configuration. Say that, rather than letting an undefined URL surface
-      // as a confusing fetch error.
-      throw new ServiceUnavailableException(
-        'The n8n ticket provider is selected but its webhook URL is not configured.',
-      );
-    }
-    return url.replace(/\/+$/, '');
-  }
-
-  private secret(): string {
-    const key = this.config.get<string>('N8N_TICKET_WEBHOOK_KEY');
-    if (!key) {
-      throw new ServiceUnavailableException(
-        'The n8n ticket provider is selected but N8N_TICKET_WEBHOOK_KEY is not set.',
-      );
-    }
-    return key;
-  }
-
   /**
-   * One POST to 2004. Transport failure and a non-2xx both THROW — 2004 answers
-   * HTTP 400 for a bad secret or a bad mode, which is a wiring mistake on our
-   * side rather than a per-ticket outcome, so it must not come back looking
-   * like a business answer.
-   *
-   * H4: the shared key travels in a header and is never logged; `action` is a
-   * fixed string and is never interpolated with anything ticket-specific.
+   * The note is deliberately absent from both signatures below: a method may
+   * declare fewer parameters than the one it overrides, and nothing here can
+   * use it. `sysId` IS used — it lands in the failure queue, where the first
+   * question is always "which ticket".
    */
-  private async call(
-    body: Record<string, unknown>,
-    action: string,
-  ): Promise<Record<string, any>> {
-    const url = `${await this.baseUrl()}/${N8N_TICKET_PATH}`;
-    // Resolved BEFORE the try, deliberately — the same trap W39 hit: inline in
-    // the fetch() arguments it would be evaluated inside the try, so "nobody
-    // set the key" would be reported as "n8n is unavailable", sending whoever
-    // is on call to investigate a third party for our own mistake.
-    const secret = this.secret();
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-uop-secret': secret,
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (err) {
-      // BUG-004 lesson 2: treat any string an external system hands us as
-      // capable of carrying PII, even when we believe it cannot.
-      this.logger.error(
-        `n8n unreachable while trying to ${action}: ${scrubPii(
-          (err as Error)?.message,
-        )}`,
-      );
-      throw new ServiceUnavailableException(
-        `n8n is unavailable — could not ${action}. Please retry.`,
-      );
-    }
-    if (!res.ok) {
-      this.logger.error(
-        `n8n returned HTTP ${res.status} while trying to ${action}`,
-      );
-      throw new ServiceUnavailableException(
-        `n8n rejected the request — could not ${action}. Please retry.`,
-      );
-    }
-    try {
-      return (await res.json()) as Record<string, any>;
-    } catch {
-      throw new ServiceUnavailableException(
-        `n8n returned a malformed response — could not ${action}. Please retry.`,
-      );
-    }
-  }
-
-  /**
-   * Shared result reading for both transitions.
-   *
-   * 🔴 A 200 from the webhook does NOT mean the ticket moved. 2004 calls its
-   * ServiceNow PATCH with `neverError: true` and then reports
-   * `status: 'success' | 'error'` plus the PATCH's own `httpStatus`. This is
-   * not hypothetical: 2004 runs under the `n8napiservice1` credential, which
-   * has row-level ACL, so a RITM it cannot see fails the PATCH while the
-   * webhook still answers 200 (plan §5 R4).
-   *
-   * `details` from the workflow is deliberately dropped (same call as W39
-   * OQ-2): 2004 fills it with `JSON.stringify(snErrorBody).substring(0,500)`,
-   * the exact shape BUG-004 was about. `httpStatus` is kept because it is a
-   * number, cannot carry PII, and is the one fact that makes an ACL failure
-   * distinguishable from a wrong sys_id.
-   */
-  private read(
-    body: Record<string, any>,
-    requestedState: string,
-    action: string,
-  ): TicketUpdateOutcome {
-    if (body.status !== 'success') {
-      this.logger.warn(
-        `n8n could not ${action}: workflow reported ${String(
-          body.status,
-        )} (ServiceNow HTTP ${String(body.httpStatus)})`,
-      );
-      return {
-        status: 'error',
-        details: `The n8n ticket workflow could not update the ticket (ServiceNow returned HTTP ${String(
-          body.httpStatus ?? 'unknown',
-        )}). See the n8n execution log for details.`,
-      };
-    }
-    // Same fallback as the direct provider: reporting null for a patch that
-    // just succeeded would tell the caller "unknown" about something we know.
-    const reported = body.newState;
-    return {
-      status: 'updated',
-      newState: reported == null ? requestedState : String(reported),
-    };
-  }
-
-  // ── seam methods ──────────────────────────────────────────────────────────
-
-  /** 2004 mode 1 — state '2' + work_notes. */
-  async markInProgress(
-    sysId: string,
-    note: string,
-  ): Promise<TicketUpdateOutcome> {
-    const body = await this.call(
-      { ritmId: sysId, mode: 1, notes: note },
-      'mark the ticket as in progress',
+  private refuse(action: string, sysId: string): never {
+    throw new Error(
+      `The n8n ticket provider cannot ${action} ${sysId}: workflow 2004 updates ` +
+        'the RITM, but the platform now closes the catalog task instead ' +
+        "(ADR-0018). Switch the n8n-ticket connector back to 'direct' until " +
+        '2004 supports catalog tasks.',
     );
-    return this.read(body, RITM_STATE.workInProgress, 'mark the ticket');
   }
 
-  /**
-   * 2004 mode 0 — state '3' + close_notes.
-   *
-   * The note we send is not the note ServiceNow ends up with: 2004 appends
-   * "Handled & generated by n8n." to anything that does not already say so, and
-   * truncates at 3900 characters. That is deliberate on their side and useful
-   * on ours (the ticket shows which path wrote it), so the contract test
-   * asserts the resulting STATE and not the text (W40 OQ-C).
-   */
-  async closeComplete(
-    sysId: string,
-    note: string,
-  ): Promise<TicketUpdateOutcome> {
-    const body = await this.call(
-      { ritmId: sysId, mode: 0, notes: note },
-      'close the ticket',
-    );
-    return this.read(body, RITM_STATE.closedComplete, 'close the ticket');
+  async markInProgress(sysId: string): Promise<TicketUpdateOutcome> {
+    this.refuse('put a ticket on hold for', sysId);
+  }
+
+  async closeComplete(sysId: string): Promise<TicketUpdateOutcome> {
+    this.refuse('close a ticket for', sysId);
   }
 }

@@ -165,6 +165,55 @@ OQ-2 嘅答案係「**因為呢個係 admin 權限嘅帳號**」。即係話平�
 
 ⇒ 建議喺 **DEPLOY-harden** 順帶處理(換一個 scoped 嘅 integration role),**唔喺本 change 做**(H3)。已記入 BACKLOG。
 
+## 實作補註(implementation notes)
+
+> **性質**:CH-010 落地時實測揪出、而寫本 ADR 嗰陣冇嘅資訊。上面已 Accepted 嘅決定**一個字都冇改** —— 呢度只係**補前置條件**同**更正一個講錯咗嘅事實**。要推翻上面任何一條,寫新 ADR。
+
+### 🔴 ① close 一張 task 需要 `assigned_to` —— 本 ADR 完全冇預見
+
+Ricoh instance 有 business rule **`Validate "Assigned to" before close`**:冇 assignee 就 **HTTP 403**。同一張 task 對照實測(2026-07-29):
+
+```
+{state:'3'}                    → 403 Operation ... aborted by Business Rule
+{assigned_to, state:'3'}       → 200
+```
+
+**Chris 拍板**:assignee = **integration 帳號本身**(事實正確 —— 的確係平台做),而且 **只喺欄位為空時先填**。
+
+🔴 **絕不覆蓋已有 assignee**:覆蓋 = 把人哋張單嘅負責人改走,而且**完全睇唔見** —— close 兩種情況都會成功。呢個係本次最容易靜靜做錯嘅位。
+
+順帶解釋咗一個之前查唔明嘅現象:**點解咁多 RITM 被直接 close 而 task 留住開** —— close task 會被 business rule 擋,close RITM 唔會,所以大家繞過咗。
+
+### ② D4 講「`RITM_TABLE` 唔刪」係錯,已刪
+
+D4 寫「佢仲有 caller(work note 路徑)」。實情:work note 走 `snow.addWorkNote(sysId, note)` **冇傳 table**,即係用 `SERVICENOW_DEFAULT_TABLE`,同 `RITM_TABLE` 無關。CH-010 之後零 caller ⇒ 刪咗,加 `TASK_TABLE`。`RITM_STATE` 保留(n8n provider 仍然引用)。
+
+### 🔴 ③ D3 引用嘅「772 張零反例」**已經有反例**
+
+寫 D3 嗰陣抽 800 筆得出「冇一張 RITM 有 ≥2 個 active task」。落地時再查,揾到 **`RITM0047290` 有兩張同時 active** —— 而且佢係 **`D365 User License Maintenance Request`,正正係本 seam 會收到嗰類單**。
+
+**結論唔變**(規則仍然係「唯一 active」+ fail-closed),但**理由改變**:`≥2` 唔再係「防禦一個未見過嘅情況」,而係**已知會發生**。抽樣得出嘅規律唔係規律 —— 呢句已寫入 `direct-ticket.provider.ts` 同 test。
+
+### ④ n8n 側:2004 client 係**刪咗**,唔係留低休眠
+
+D6 講「2004 未改之前 `n8n-ticket` 掣鎖死 `direct`」。落地方式 = `N8nTicketProvider` **兩個方法都 throw**,並且**移除**咗 W40 個 2004 client(webhook 呼叫 / `x-uop-secret` / 兩種 response 形狀 / `details` 唔傳遞規則)。
+
+理由:留低就係**冇任何 caller 到達得到、因此測唔到**嘅 code。跟返 W38 收窄 D2 嘅同一原則(「seam 唔應該扮 vendor 做得到佢做唔到嘅嘢」)。重新啟用 n8n = 對住 2004 **新嘅** task-capable mode 重寫,唔係 revert。舊 client 喺 git history。
+
+**per-call throw 而唔係 boot 時 throw**:每個 caller 都會把失敗入 `OutboundFailure`(ADR-0011 OD4),所以掣揀錯會變成一條寫明原因嘅失敗紀錄 —— 可補救、睇得見,而唔係成個 app 起唔到。
+
+### ⑤ Live 驗證(A11)—— 行真 code path,唔係手動 curl
+
+```
+POST /admin/outbound-failures/:id/retry   (kind=servicenow.ticket_update, transition=close)
+  → OutboundRetryService.repairTicketUpdate → TicketUpdateProvider → DirectTicketProvider
+SCTASK0071391  state 1→3 · active→false · assigned_to (空)→(有值) · close_notes = 平台嗰句
+  ↓ 平台完全冇掂過 RITM
+RITM0046766    state 1→3 · stage execution→complete · active→false
+```
+
+同時證實咗 ADR-0017 W40 **OQ-D**(ticket state 嘅 repair 必須走 seam)喺新寫入對象下仍然成立。
+
 ## Alternatives Considered
 
 - **A — 平台 close task,然後自己再 PATCH RITM `state=3`** — rejected(Chris 2026-07-29 揀 B):做得到而且「保證」張單 close,但等於把 SN 嘅狀態機規則複製入平台。SN 側改咗(加多張 task、加 approval、改 stage 流程)平台唔會知,而且會出現「平台強推 close 但 SN workflow 仲以為喺 execution」呢類更難查嘅狀態。**保留為 OQ-1 答「唔會自動推」時嘅 fallback。**

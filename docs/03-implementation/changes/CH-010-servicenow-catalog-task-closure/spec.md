@@ -1,9 +1,9 @@
 ---
 change_id: CH-010
 title: "履行完成改為 close catalog task(sc_task),RITM 交返 SN workflow 推"
-status: proposed          # draft | proposed | approved | active | done | cancelled
+status: approved          # draft | proposed | approved | active | done | cancelled
 created: 2026-07-29
-target_completion: TBD    # 🔴 blocked on ADR-0018 OQ-1 / OQ-2
+target_completion: 2026-07-30
 affects_components:
   - apps/api/src/integration/ticket-update (seam ④ 兩個實作)
   - apps/api/src/integration/servicenow (query by RITM → task)
@@ -20,9 +20,14 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:AI(執行)· 決策 = Chris Lai
-> **Status**:`proposed` —— 🔴 **兩重 gate,兩個都要過先可以開工**
-> 1. **ADR-0018 由 Proposed → Accepted**(需 OQ-1 / OQ-2 有答案)
-> 2. 本 spec 由 Chris approve(PROCESS R1.change)
+> **Approved by**:**Chris Lai(2026-07-29)** —— 兩重 gate 全部已過
+> 1. ✅ ADR-0018 `Proposed → Accepted`(2026-07-29,OQ-1/OQ-2 已答)
+> 2. ✅ 本 spec approved(PROCESS R1.change)
+>
+> **測試環境**:Chris 2026-07-29 明確授權 —— 「呢個 ServiceNow 環境本來就係 **dev 環境**,可以隨便搵一啲
+> request 記錄去檢查或者進行測試」⇒ **A11 唔再需要專門 fixture**(G8 解除)。
+> ⚠️ 但仍然:改之前記低 before-state、改完報清楚改咗邊張;**close 之後未必還原得返**(SN business rule
+> 可能唔准反向,而且 RITM 一旦被 workflow 推走就更加唔可逆)。
 
 ## 1. Context (Why)
 
@@ -110,9 +115,9 @@ Chris 2026-07-29:「除咗 requested item 之外,其實係要更新 **catalog ta
 - ✅ **ADR-0018 已 Accepted**(2026-07-29,OQ-1/OQ-2 已答)
 - ✅ **OQ-3 / OQ-4 / OQ-5 已由 read-only 查證自解**(見 ADR-0018 D3 / D3b)
 - ✅ ServiceNow 連線:2026-07-29 已打通(probe `ok: true`)
-- 🔴 **仍然要:A11 嘅測試 RITM fixture**(SN owner 指定;絕不攞真客戶單試 close)
+- ✅ **A11 測試對象**:Chris 授權喺 dev instance 自由揀 request 記錄(G8 解除)
+- ✅ **Chris approve 本 spec**(2026-07-29)⇒ **可以開工**
 - n8n 側 2004 改動(**唔阻住平台開工**,但阻住切 `n8n-ticket` 掣)
-- 🔴 **仍然要:Chris approve 本 spec**(PROCESS R1.change)—— 呢個係最後一重 gate
 
 ## 7. Spec Changelog（deviation log）
 
@@ -120,6 +125,7 @@ Chris 2026-07-29:「除咗 requested item 之外,其實係要更新 **catalog ta
 |---|---|---|---|
 | 2026-07-29 | Initial draft(**proposed**) | Chris 指出 catalog task 缺口;查證確認三邊實作都只寫 `sc_req_item`;Chris 揀方案 B 並要求開 ADR + CH | — |
 | 2026-07-29 | **五條 OQ 全部解決**,D2/D3 由「待定」寫成具體規則;R1/R2 消解,R3/R4 降級 | **OQ-1/OQ-2** Chris 答(方案 B 成立 · 有寫權)。**OQ-3/4/5** read-only 查證自解:800 筆 `sc_task` 反推 state 值域(`3` 佔 595 全 inactive)· **772 張 RITM 零反例**支持「唯一 active」· `stage` 併入 OQ-1 答案。**spec scope 冇擴,只係把待定項填實** | AI(查證)+ Chris(OQ-1/2) |
+| 2026-07-29 | **proposed → approved**(spec 內容零改動)+ G8 解除 | Chris approve;並明確授權 dev instance「隨便搵 request 記錄檢查 / 測試」⇒ A11 唔再等專門 fixture | **Chris Lai** |
 
 ---
 

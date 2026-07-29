@@ -80,15 +80,26 @@ describe('ticket-update seam boundary (W40 OQ-A / OQ-D)', () => {
   });
 
   /**
-   * Both implementations must write to sc_req_item and only sc_req_item.
-   * Workflow 2004 has the table baked into its patch URL, so if the direct side
-   * followed SERVICENOW_DEFAULT_TABLE the two paths would silently diverge the
-   * day someone changes that setting — a config value quietly deciding which
-   * table one of two supposedly-equivalent providers writes to.
+   * CH-010 — the direct implementation writes to sc_task and nothing else.
+   *
+   * The negative half is the point. Patching sc_req_item is what this change
+   * removed, and it is a change that cannot be caught by watching for failures:
+   * ServiceNow answers 200 to a RITM state patch, the platform reports the line
+   * item fulfilled, and the request stays open with nobody informed.
+   */
+  it('the direct implementation writes to sc_task, not to the RITM', () => {
+    const direct = src('integration/ticket-update/direct-ticket.provider.ts');
+    expect(direct).toContain('TASK_TABLE');
+    expect(direct).not.toContain('RITM_TABLE');
+  });
+
+  /**
+   * Still pinned rather than inherited, for the reason that outlived
+   * RITM_TABLE: a config value quietly deciding which table a provider writes
+   * to is the divergence this seam exists to prevent.
    */
   it('the direct implementation pins the table instead of inheriting the configured default', () => {
     const direct = src('integration/ticket-update/direct-ticket.provider.ts');
-    expect(direct).toContain('RITM_TABLE');
     expect(direct).not.toContain('defaultTable');
   });
 });
