@@ -73,7 +73,10 @@
 > **路線更新(2026-07-27)**:Chris 提出兩個 onboarding 缺口 → **CH-009**(assign 前可用量可見度,✅ PR #29)+ **ADR-0015**(sync sweep,Accepted **未實作**)+ **ADR-0016**(預算 gate)→ **W36 ✅ 收官**(gate + ADMIN 具名 override + 前端入口 + preflight SQL/runbook;api 410 · web 180)。
 > **W37 ✅ 收官**(2026-07-27):**SYNC-sweep** 落地,全 repo 第一個 `@Cron`;**RISK R3** 由 ⚠️ Open → 🟡 Mitigating。
 > **CH-008 ✅ 收官**(2026-07-27):0/0 ledger 行**預設隱藏**(server-side,兩個 GET 收 `?includeEmpty=true`)+ `assetStatus` 加 `Empty`/neutral 修正「0/0 顯示成綠色 Headroom」誤導。零 schema / 零 dep / 零 ADR;api **433** · web **188**。⚠️ **R1 仍然成立**:隱藏之後靠 toggle 搵返該格,因為 **DD-3**(冇 create endpoint)未解 —— toggle = 唯一入口,唔可以之後順手收埋。
+> **ServiceNow 首次接通 ✅**(2026-07-29):probe `ok: true`。之前一直失敗**唔係憑證問題** —— 公司 proxy 只 MITM `ricohapdev.service-now.com`(冇攔截 Graph),而 Node 唔讀 Windows 憑證庫 ⇒ `SELF_SIGNED_CERT_IN_CHAIN`;`--use-system-ca` 解決,已入 `restart-stack` skill。
+> **🔴 CH-010 + ADR-0018 開單(2026-07-29,`proposed` / `Proposed`,未開工)**:Chris 指出「RITM 要 **catalog task** 完成先 close 得到」。查證證實平台 direct、n8n 2004、n8n 1007 **三邊都只寫 `sc_req_item`**,全套 workflow `sc_task` 零命中;SN dev 亦見 RITM 停 `execution` 而 task 仲 active。⇒ 今日平台會「宣稱完成但張單實際冇 close,而且兩邊都唔嘈」。方案 B(平台只 close 自己嗰張 task,RITM 交返 SN workflow 推)方向已 approve,但**兩重 gate 未過**:ADR-0018 要等 **OQ-1**(close task 後 RITM 會唔會自動推 —— 答「唔會」即要改方案)同 **OQ-2**(帳號有冇 `sc_task` 寫權)· spec 要 Chris approve。五條 OQ 已併入 `SERVICENOW-CONTRACT-ALIGNMENT.md` **🅖-2**(G3-G8)交 SN owner。
 > **下一個候選**(全部無新阻塞):**DEPLOY-harden** / **AUTH-2b**(兩者都卡 IT app reg)· **TD-1**(`/audit` 篩選 option 補齊)· **OD1 daily reconcile**(W37 已鋪好 `@Cron` pattern,但 ADR-0015 明文只係「鋪路」,要做就開新 phase)· **Drift-resolve**(⬆️ 相對更值錢咗:CH-008 之後 DD-3 嘅 create 缺口更加浮面)。
+> ⏸️ **CH-010 唔算「可立即開工」** —— 佢卡喺 SN owner 答 G3/G4,唔係卡技術。
 
 ---
 

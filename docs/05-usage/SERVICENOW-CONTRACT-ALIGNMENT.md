@@ -100,6 +100,24 @@
   - **G2** — 履行完要唔要**推 RITM/REQ state**(如 fulfilled / closed complete)?定只留 work note?
 - **✍️ 你答**:______________________________________________
 
+### 🅖-2 Catalog task(`sc_task`)—— 🔴 2026-07-29 新增,**最高優先**
+
+**背景**:Chris 指出「RITM 要 catalog task 完成先 close 得到」。查證後確認平台同 n8n **兩邊都只寫 `sc_req_item`,從來冇掂過 `sc_task`**(全套 10 個 workflow `sc_task` 零命中)。而 SN dev 實測見到 `RITM0042590` 停喺 `state=1 / stage=execution`,底下 `SCTASK0064121` 仲係 `state=-5 active=true` —— 同 Chris 講法一致。
+
+**今日後果**:平台 PATCH `sc_req_item.state=3` 收到 2xx 就當成功,但張單可能**根本冇 close**。平台會標記完成、唔入失敗佇列、冇 audit —— 兩邊都唔會嘈。
+
+**擬議做法(ADR-0018 方案 B,方向已由 Chris approve)**:平台改為只 close **自己負責嗰張 catalog task**,RITM 交返 ServiceNow 自己嘅 workflow 推。
+
+- **待確認(前兩條係 blocking,冇答案唔會開工)**:
+  - **G3** 🔴 — **close 晒 catalog task 之後,RITM 會唔會自動 advance 到 Closed Complete?** 若「唔會」,平台改咗之後張單會**永遠唔 close**,即係要改揀另一個方案(平台 close task 之後自己再推 RITM)。**呢條決定咗個方案本身,唔係細節。**
+  - **G4** 🔴 — integration 帳號(`SERVICENOW_USER`)有冇 **`sc_task` 寫權**?讀權我哋已實測到(78 個欄位讀得到),但**寫權冇測** —— 測一次就要真改一張真單。⚠️ 2004 workflow 個 sticky 已警告 `n8napiservice1` 有 **row-level ACL**,「睇得到 ≠ 改得到」。
+  - **G5** — `sc_task.state` 嘅**值域**係咩?close 應該寫邊個值?(我哋讀 `sys_choice` 返 **403**;實測數據見到 `-5` 同 `1`。SN 預設係 `-5 Pending / 1 Open / 2 Work in Progress / 3 Closed Complete / 4 Closed Incomplete / 7 Cancelled`,但**喺你哋 instance 未經證實**,唔敢照抄)
+  - **G6** — 一張 RITM 底下有**多過一張** task 嗰陣(例:approval task + fulfilment task),平台應該**認邊張**?靠 `assignment_group`?`short_description`?`sys_class_name`?定係「唯一 active 嗰張」?
+    ⚠️ 平台**唔會**「見到 active task 就全部 close」—— 認唔出唯一一張就唔會郁,寧可入失敗佇列等人手處理。
+  - **G7** — RITM 個 **`stage`**(實測見到 `execution`)使唔使平台掂?定係一樣由 SN workflow 推?
+  - **G8** — 可唔可以畀一張**測試用 RITM**(連底下 task)做 live 驗證?🔴 我哋**絕對唔會**攞真客戶單試 close。
+- **✍️ 你答**:______________________________________________
+
 ---
 
 ## 🅗 n8n outbound webhook（只在行 `REQUEST_SUBMISSION_PROVIDER=n8n` 時）
