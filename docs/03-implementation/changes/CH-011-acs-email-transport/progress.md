@@ -1,7 +1,7 @@
 ---
 change_id: CH-011
 spec_ref: ./spec.md
-status: blocked          # blocked | ready | in-progress | done
+status: in-progress      # blocked | ready | in-progress | done
 last_updated: 2026-07-29
 ---
 
@@ -104,11 +104,13 @@ PR **#48** merged(`7ac40fd`,獨立驗證 —— `gh pr view` MERGED + `git ls-re
 |---|---|
 | OQ-1 / OQ-2 / OQ-3 | ✅ 全答 |
 | ADR-0019 Accepted | ✅ |
-| **Chris approve spec** | ⬜ **最後一格** |
+| **Chris approve spec** | ✅ **已 approve**(2026-07-29,spec 內容零改動) |
+
+⇒ **Gate 0 五項全清**,`blocked → in-progress`。R1 pre-doc 要求已滿足,可以開工。
 
 ### Next
 
-spec `proposed → approved` → checklist `blocked → ready` → 開工。
+按 spec §2.1 D1→D6 落地:dep → `EmailService` + boundary → template 機制 → connector + additive migration → H4 三條邊界(全部要 test)→ 失敗佇列接線 → ops script live 驗(A11,**以真係收到為準**)。
 
 ---
 

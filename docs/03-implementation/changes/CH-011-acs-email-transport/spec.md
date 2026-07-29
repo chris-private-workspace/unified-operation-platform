@@ -1,7 +1,7 @@
 ---
 change_id: CH-011
 title: "Email 傳輸層(Azure Communication Services)+ 最小通知底座"
-status: proposed          # draft | proposed | approved | active | done | cancelled
+status: approved          # draft | proposed | approved | active | done | cancelled
 created: 2026-07-29
 target_completion: 2026-07-31
 affects_components:
@@ -22,11 +22,11 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:AI(執行)· 決策 = Chris Lai
-> **Status**:`proposed` —— **兩重 gate,一重已過**
+> **Status**:**`approved`** —— **兩重 gate 全部已過,可以開工**
 > 1. ✅ **ADR-0019 `Proposed → Accepted`**(2026-07-29;三條 OQ 全答 —— sender = `UnifiedOperationsPortal@rci-t.com` · 收件人解析收窄 approve · 零 caller 用 ops script 驗)
-> 2. ⬜ 本 spec `proposed → approved`(PROCESS R1.change)—— **最後一格**
+> 2. ✅ **Chris approve 本 spec**(2026-07-29,spec 內容零改動)
 >
-> 🔴 **第 2 重未過之前一行 code 都唔可以寫。**
+> **Spec locked。** 之後任何 deviation 必須入 §7 changelog(PROCESS R3)。
 
 ## 1. Context (Why)
 
@@ -122,7 +122,7 @@ Vendor SDK(`EmailClient`)**只准出現喺呢個資料夾**(CLAUDE.md §3.1)。D
 ## 6. Dependencies
 
 - ✅ **ADR-0019 Accepted**(2026-07-29,三條 OQ 全答)
-- ⬜ **Chris approve 本 spec**(`proposed → approved`)—— **唯一剩低嘅 gate**
+- ✅ **Chris approve 本 spec**(2026-07-29)⇒ **可以開工**
 - 🟡 **ACS sender address = `UnifiedOperationsPortal@rci-t.com`**(R1 降級)—— 地址有咗,但**「可寄」未證實**:custom domain 靠 DNS SPF/DKIM,而 D5 唔畀探 ⇒ 要到 **A11 第一次真寄**先知
 - ✅ `OutboundFailure` 失敗佇列已存在(ADR-0011,W31)
 - ✅ `scrubPii()` 共用 helper 已存在(BUG-004)
@@ -135,6 +135,7 @@ Vendor SDK(`EmailClient`)**只准出現喺呢個資料夾**(CLAUDE.md §3.1)。D
 |---|---|---|---|
 | 2026-07-29 | Initial draft(**proposed**) | Chris 要求開 CH-011 + ADR 做 ACS email 並一併處理 AUTH-4c-C;AI 三項提問後 Chris 拍板:**拆兩份** · **順便鋪通知底座**(AI 曾 push back,Chris 揀咗)· **唔畀探** | — |
 | 2026-07-29 | **三條 OQ 全答 ⇒ ADR-0019 Accepted**;R1 由「sender 未 provisioned」**改寫**成「custom domain 靜默唔送達」;A11 收緊為「以收件人真係收到為準」;§6 依賴更新。**scope 冇擴,只係把待定項填實 + 一個風險換咗面目** | OQ-1 = `UnifiedOperationsPortal@rci-t.com`(Chris)· OQ-2 = approve 收窄(D3 成立)· OQ-3 = 接受 ops script。⚠️ **R1 唔係消失咗而係變咗形**:地址有咗解決咗「寄唔出」,但揭出 custom domain 特有嘅「ACS 收貨但唔送達 + API 照返 202」—— 而 D5 唔畀探令呢個位冇第二層守門 | **Chris Lai**(OQ)+ AI(風險改寫) |
+| 2026-07-29 | **proposed → approved**(spec 內容零改動) | Chris approve ⇒ Gate 0 五項全清,可以開工 | **Chris Lai** |
 
 ---
 

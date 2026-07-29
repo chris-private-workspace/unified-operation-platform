@@ -1,17 +1,16 @@
 ---
 change_id: CH-011
 spec_ref: ./spec.md
-status: blocked          # blocked | ready | in-progress | done
+status: in-progress      # blocked | ready | in-progress | done
 last_updated: 2026-07-29
 ---
 
 # CH-011 — Checklist
 
 > Atomic checkbox items derived from `spec.md §3` acceptance criteria。
-> 🔴 **status 仍然係 `blocked`** —— Gate 0 **五項中四項已過**,剩返 **spec approve** 一格。
-> 未過之前**一項 code 都唔可以寫**(PROCESS R1.change)。
+> ✅ **Gate 0 五項全清(2026-07-29)** —— status `blocked → in-progress`,可以開工。
 
-## Gate 0 — 開工前必須有嘅答案(4/5 已過)
+## Gate 0 — 開工前必須有嘅答案(✅ 5/5 全過)
 
 - [x] **OQ-1** 🔴 ACS sender address → ✅ **`UnifiedOperationsPortal@rci-t.com`**(Chris 2026-07-29)
       ⚠️ **custom domain**(`rci-t.com`)唔係 Azure-managed ⇒ 靠 DNS 側 SPF/DKIM。**因為 D5 唔畀探,寄唔寄得出要到 A11 第一次真寄先知**(揀「唔畀探」嗰陣已接受嘅代價)
@@ -19,7 +18,7 @@ last_updated: 2026-07-29
 - [x] **OQ-2** 收件人解析收窄成「caller 傳地址」→ ✅ **Approve**(Chris 2026-07-29)⇒ ADR-0019 **D3 成立**,唔建推導層
 - [x] **OQ-3** 零 caller 嘅 live 證明用一次性 ops script → ✅ **接受**(Chris 2026-07-29)⇒「拆兩份」維持
 - [x] **ADR-0019** `Proposed → Accepted`(2026-07-29;三條 OQ 全答 + 三項前置拍板)
-- [ ] 🔴 **Chris approve 本 spec**(`proposed → approved`)—— **最後一格,未過**
+- [x] **Chris approve 本 spec**(`proposed → approved`,2026-07-29,spec 內容零改動)
 
 ## Implementation
 
