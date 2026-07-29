@@ -76,6 +76,14 @@ BUG-004:`` `... ${err.message}` `` —— 睇落係 log 一個錯誤,好正常�
 ## 唔做嘅嘢(有意識)
 
 - **冇**把全部 12 處 raw-message log 一次過改 —— 其餘 8 處嘅 vendor 呼叫唔涉及特定 user,同一 pattern 唔係同一風險(§1.3)
+
+  > **⚠️ 2026-07-28 更正(BUG-007)** —— **收窄範圍呢個決定係啱嘅,但上面寫嘅理由唔準確。**
+  >
+  > 「其餘 8 處**唔涉及特定 user**」對 `ServiceNowService.request()` 唔成立:`DirectServiceNowProvider.submit()` 開 REQ 嗰陣送嘅係 `short_description: \`M365/D365 license request — ${targetUpn}\``,即係**確確實實帶住 UPN**。
+  >
+  > 真正嘅理由應該係「**當時冇逐個 caller 查證**」。BUG-007 逐個查完 5 個 caller 先講得出邊處有 PII、邊處冇(`query()` 唯一 caller 傳空字串,所以 path 側乾淨 —— 呢點同本 bug 相反)。
+  >
+  > **教訓**:「呢類唔同風險」係一個**斷言**,同「呢個 test 綠」一樣需要證據。當時寫落去嗰陣冇證據支撐,而佢讀落好似有。
 - **冇**把 regex 寫得更闊去捉非 email 格式嘅識別碼 —— 咁會開始食走 AADSTS 碼呢啲**我哋 log 呢段文字嘅唯一原因**
 
 ## RISK_REGISTER

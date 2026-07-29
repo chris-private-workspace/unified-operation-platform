@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConnectorConfigService } from '../connector-config.service';
+import { scrubPii } from '../scrub-pii';
 
 // ── Types ──
 // The Table API returns records as flat maps. Reference fields come back as
@@ -68,8 +69,23 @@ export class ServiceNowService implements OnModuleInit {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
+      /**
+       * BUG-007 — the response body is a string ServiceNow chose, so it is
+       * scrubbed before it reaches a log (same helper as BUG-004; a second
+       * regex here would be a second thing to keep correct).
+       *
+       * Why this path in particular: the outbound create sends
+       * `short_description: "M365/D365 license request — {targetUpn}"`, so a
+       * failing create is a request whose payload contains a UPN. Whether
+       * ServiceNow echoes it back is not something we get to find out safely.
+       *
+       * `method` / `path` / `status` stay verbatim — they are the whole reason
+       * to log this, and all five callers were checked: the only `query()`
+       * caller passes an empty query, so nothing user-identifying reaches a
+       * path here (unlike BUG-004, where the UPN was IN the path).
+       */
       this.logger.error(
-        `ServiceNow ${method} ${path} -> ${res.status}: ${text}`,
+        `ServiceNow ${method} ${path} -> ${res.status}: ${scrubPii(text)}`,
       );
       throw new Error(`ServiceNow request failed (${res.status})`);
     }
