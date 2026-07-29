@@ -51,3 +51,40 @@ scratch DB 用完即 drop,冇碰 dev DB。
 | 2026-07-29 | 三次攞 log 失敗(proxy MITM)→ rollback 到 `uat-0cf0cf3` |
 | 2026-07-29 | 本機重現成功,root cause 確證,開 BUG-008(Sev2) |
 | 2026-07-29 | Chris 批 1+2+3(tsconfig 根治 + Dockerfile gate + 開單) |
+| 2026-07-29 | fix commit `1bc7cdb`;626 test / lint 全綠;`node dist/main.js` 本機真 boot |
+| 2026-07-29 | ACR build `uat-1bc7cdb`(api `ckb` / web `ckc` 都 Succeeded) |
+| 2026-07-29 | 部署 UAT → api `--0000006` + web `--0000005` 都 Running/Healthy;smoke 全過 |
+
+## 2026-07-29 · 修復 + 部署
+
+**Fix**(commit `1bc7cdb`):
+
+1. `tsconfig.build.json` 加 `"rootDir": "./src"` + exclude 加 `"scripts"`。
+   **刻意只落 build config** —— `tsconfig.json` 加 `rootDir` 會令 `prisma/seed.ts`
+   (UAT entrypoint 真係會跑)同 `scripts/*.ts` 走 ts-node 時撞 TS6059。
+2. `Dockerfile` build stage 加 `RUN test -f dist/main.js`。
+3. **冇**改 `docker-entrypoint.sh` —— 改佢做 `dist/src/main` 係跟住浮動嘅嘢走。
+
+**途中撞到第二個 build 陷阱**:改完 rebuild,`dist/main.js` 仍然唔存在、build exit 0
+零輸出,差啲以為 fix 錯方向。真相係我早一步跑嘅 `tsc --noEmit` 留低咗
+`apps/api/tsconfig.build.tsbuildinfo`(喺 `dist/` **外面**),令之後每次 build 都當
+「已是最新」靜靜 skip emit。清走就正常。已入 anti-patterns **AP-14**。
+
+**驗證**:
+
+| 項 | 結果 |
+|---|---|
+| emit 佈局 | `dist/main.js` True · `dist/src/main.js` False · `dist/scripts` False |
+| 本機真 boot | `node dist/main.js` + UAT env 集 + scratch DB → `Nest application successfully started` |
+| api test / lint | **626 passed / 58 suites**(同 fix 前一致)· lint 零 output |
+| ACR build | api `ckb` Succeeded · web `ckc` Succeeded(`Step 1/29` = 新 gate 真係行過) |
+| UAT revision | api `--0000006` RunningAtMaxScale/Healthy · web `--0000005` Running/Healthy · 同 tag |
+| UAT smoke | web 200 · api docs 200 · `/api/me` 401 · **login probe 401(唔係 500)⇒ migrate 成功** |
+
+## Closeout
+
+UAT 已經行緊 `uat-1bc7cdb`,即 W35 → CH-011 全部功能(包括 ADR-0015 sync sweep
+同 ADR-0016 預算 gate —— 呢兩個行為改變之前因為 rollback 而未生效,今次一齊上)。
+
+**遺留**(見 postmortem §6):`az acr build` 本機 stream log 會 charmap crash(exit 1 係假象);
+ACS 兩個 env 未入 `aca.bicep` ⇒ UAT email connector 仍 `inactive`。
