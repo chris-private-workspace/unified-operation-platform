@@ -84,6 +84,7 @@ az monitor log-analytics workspace get-shared-keys -g <rg> -n <law> --query prim
 az acr credential show -n <acr> --query 'passwords[0].value' -o tsv
 ```
 - Graph/ServiceNow 首次可 placeholder(constructor getOrThrow 只需非空值先 boot)。
+- **`acsConnectionString`(email,CH-012)同樣係必填 securestring** —— 未接 ACS 就填非空 placeholder,`acs-email.service.ts` 會當 malformed 而 disable email 並 log,唔會阻 boot(ADR-0019 D4)。**但 `acsSenderAddress` 填錯就係最靜嘅錯法**:ACS 會收貨但唔送達,而 API 仍返 `Succeeded`(CH-011 R1)—— 呢個 connector 冇 probe,**第一次真寄係唯一證據**。`appBaseUrl` 漏填 → 密碼重設信永遠寄唔出,但 API 照返 204。
 - `databaseUrl = postgresql://uop:<DBPW>@<pg>.postgres.database.azure.com:5432/platform?sslmode=require`。
 - **DB 密碼一入 params 檔即 persist** —— 唔會再重演 W34「舊 DBPW 唔知、要繞 image-only update」。
 
@@ -120,13 +121,18 @@ curl -sS -k -m 30 -X POST $WEB/api/auth/login -H 'Content-Type: application/json
 
 **HTTP code → 邊層壞咗**(W33 實戰對照):`404`「app does not exist」= nginx Host header 錯 / api replica 未 ready · `301` = ACA internal ingress 迫 https(要 `allowInsecure`)· `401` login = admin 未 seed(seed 失敗)· `500` = DB 連唔到(migrate 失敗)· `200` = 該層通。瀏覽器(信公司 CA)唔使 `-k`。
 
-## 8. 已烘入 artifact 嘅 4 個配置(唔使再踩)
+## 8. 已烘入 artifact 嘅 5 個配置(唔使再踩)
 
-W33 落地踩過,已 fix 入 artifact —— **重部署唔會再遇**,但改動時要知:
+落地踩過,已 fix 入 artifact —— **重部署唔會再遇**,但改動時要知:
 1. **entrypoint 非致命**(migrate/seed 失敗唔 crash container)—— `docker-entrypoint.sh`
 2. **nginx `Host $proxy_host`**(唔可 `$host`,否則 ACA internal ingress 404)—— `nginx.conf.template`
 3. **api ingress `allowInsecure:true`**(否則 http upstream 被 301→https)—— `aca.json`
 4. **runtime `npm ci --include=dev`**(否則 `NODE_ENV=production` omit ts-node → seed 跑唔到)—— `apps/api/Dockerfile`
+5. **`rootDir: "./src"` 釘死 emit 佈局 + `RUN test -f dist/main.js` build gate**(BUG-008,2026-07-29)—— `apps/api/tsconfig.build.json` + `apps/api/Dockerfile`
+
+> **第 5 項嘅背景**:冇 `rootDir` 嗰陣,tsc 用「所有被編譯檔案嘅共同父目錄」做輸出根。CH-011 加咗 `src/` 以外第一個 `.ts`,輸出根即由 `src/` 抬升到 `apps/api/`,`dist/main.js` 唔再存在,**每個容器一起身就 `MODULE_NOT_FOUND` → CrashLoopBackOff**(UAT 同步 `2b5057a` 全掛,rollback 到 `uat-0cf0cf3`)。
+>
+> 🔴 而 626 test 綠 · `npm run build` 成功 · lint 零 output · `az acr build` Succeeded —— **四道 gate 全部攔唔到**。所以呢啲綠燈唔可以當部署會成功;真正嘅 pass 標準係 revision Running/Healthy + smoke 過。詳見 `03-build-images.md`「emit 佈局」同 `docs/03-implementation/bugs/BUG-008-dist-entrypoint-path-drift/`。
 
 ## 9. Rollback
 
@@ -138,6 +144,8 @@ W33 落地踩過,已 fix 入 artifact —— **重部署唔會再遇**,但改動
 - `az` **sequential**(並發互鎖 hang)· CLI charmap crash 查 management plane · 背景被殺 server-side 照完
 - `az postgres flexible-server create` 呢版本**無** `--database-name` → 分步建 DB
 - `NODE_ENV=production` + `npm ci` 會 omit devDeps(連累 ts-node seed)→ `--include=dev`
+- **加 `src/` 以外嘅 `.ts` 落 api 會搬走編譯輸出根** → 已由 `rootDir` 攔住(§8.5);見到 tsc 報 TS6059 就係呢道閘響,唔好靠改 entrypoint 兜
+- **`az acr build` Succeeded 唔證明容器起得身** → 一定要驗 revision `Running/Healthy`
 - ACA app-to-app:Host = upstream host、internal ingress 要 `allowInsecure` 或 https upstream
 - `--public-access 0.0.0.0` = allow Azure services(ACA 到到);hardening 收窄
 

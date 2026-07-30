@@ -19,9 +19,28 @@ docker build -f apps/api/Dockerfile -t uop-api:<tag> .
 docker build -f apps/web/Dockerfile -t uop-web:<tag> .
 ```
 
-- `uop-api`:multi-stage(build:`npm ci --workspace=@uop/api` → `prisma generate` → `nest build`;runtime:`--omit=dev` + 由 build stage copy `.prisma` client)。runtime `node dist/main`,`EXPOSE 3000`。
+- `uop-api`:multi-stage(build:`npm ci --workspace=@uop/api` → `prisma generate` → `nest build`;runtime:`--omit=dev` + 由 build stage copy `.prisma` client)。runtime `node dist/main`,`EXPOSE 3000`。**`dist/main.js` 呢個路徑係有前提嘅,見下面「emit 佈局」。**
 - `uop-web`:multi-stage(build:`npm ci --workspace=@uop/web` → `vite build`;runtime:`nginx:1.27-alpine` serve `dist` + `nginx.conf.template`)。`EXPOSE 8080`。
 - `--workspace` scope install → `uop-web` image 唔會拖 api 嘅 `argon2`/`prisma`。
+
+### 🔴 emit 佈局:`rootDir` 釘死 `dist/main.js`(BUG-008)
+
+`docker-entrypoint.sh` 最後一行係 `exec node dist/main` —— 呢個路徑**唔係天然成立**。
+
+TypeScript 喺冇 `rootDir` 嗰陣,用「所有被編譯檔案嘅共同父目錄」做輸出根。所以只要有一個 `src/` 以外嘅 `.ts` 被 include 落 build,輸出根就會由 `src/` 抬升到 `apps/api/`,`main.js` 靜靜搬去 `dist/src/main.js`,**每個容器一起身就 `MODULE_NOT_FOUND` → CrashLoopBackOff**。
+
+CH-011 加 `apps/api/scripts/send-connectivity-check.ts`(`src/` 以外第一個 `.ts`)就係咁觸發,UAT 同步 `2b5057a` 全掛,rollback 到 `uat-0cf0cf3`。詳見 `docs/03-implementation/bugs/BUG-008-dist-entrypoint-path-drift/`。
+
+現有兩道閘(**改動時唔好拆**):
+
+| 閘 | 位置 | 作用 |
+|---|---|---|
+| `"rootDir": "./src"` + exclude `scripts` | `apps/api/tsconfig.build.json` | 將來再有 `src/` 以外嘅 `.ts` 被 include,**tsc 直接報錯**,而唔係靜靜搬走 entrypoint |
+| `RUN test -f dist/main.js` | `apps/api/Dockerfile`(build stage) | 「build 成功但一定死」嘅 image 喺 ACR 就爆,唔會流到部署 |
+
+> 兩者都**只落 `tsconfig.build.json`**,刻意唔落 `tsconfig.json` —— 嗰度加 `rootDir` 會令 `prisma/seed.ts`(UAT entrypoint 真係會跑)同 `scripts/*.ts` 走 ts-node 時撞 TS6059。
+>
+> ⚠️ **呢個 bug 冇任何一道原有 gate 攔得到**:626 個 test 綠(ts-jest 直接跑 `src/**`,唔碰 `dist`)· `npm run build` 成功(tsc 唔當換佈局係問題)· lint 零 output · `az acr build` Succeeded(只證明 image build 到,**唔證明佢起得身**)。所以「test 綠 + build 綠」唔可以當部署會成功。
 
 ### uop-web 嘅 Entra SSO build-arg(build-time 烘死)
 
@@ -64,14 +83,21 @@ az acr build --registry <acr> --image uop-web:<tag> -f apps/web/Dockerfile .
 
 `az acr build` 上傳 context(已受 `.dockerignore` 收窄)去 ACR Tasks,喺 Azure build → 直接入 registry,一步完成、繞開 proxy。
 
-## 未驗證項(誠實記錄)
+## 驗證狀態(2026-07-30 更新)
 
-- ❌ **image build 未喺本機成功**(卡 Docker Hub CDN 503,環境問題)。Dockerfile 邏輯(workspace scope、prisma copy、nginx template)**未經一次成功 build 驗證**。
-- 首次 `az acr build` / 換網 build 時要**實測**以下未證假設:
-  - `argon2@0.44` 喺 `node:20-slim` 有 prebuilt binary(若 `npm ci` 因 native 編譯失敗 → build stage 加 `python3 make g++`)。
-  - `prisma generate` 喺容器內攞到 `debian-openssl-3.0.x` engine(ACR 側網路正常應 OK;若卡 = R1 同款)。
-  - runtime stage copy `node_modules/.prisma` 足夠(`@prisma/client` 由 `npm ci --omit=dev` 提供)。
-- 呢啲**必須真 build 綠燈先可當 pass**,唔可憑 Dockerfile 睇落啱就當成功(H7)。
+**Dockerfile 邏輯已由真 build + 真部署證實。** W32 寫落嘅三個「未證假設」已經由多次成功嘅 `az acr build` 間接證實 —— 若 `argon2` native 編譯失敗或 `prisma generate` 攞唔到 engine,build 根本唔會 Succeeded:
+
+| 原假設 | 現況 |
+|---|---|
+| `argon2` 喺 `node:20-slim` 有 prebuilt binary | ✅ 成功 build 已證(否則 `npm ci` 會失敗) |
+| `prisma generate` 喺容器內攞到 `debian-openssl-3.0.x` engine | ✅ 同上 |
+| runtime stage copy `node_modules/.prisma` 足夠 | ✅ 容器實際 Running/Healthy 已證 |
+
+現行 UAT = **`uat-1bc7cdb`**(api revision `--0000006`、web `--0000005`,兩者 Running/Healthy,smoke 全過)。
+
+> ⚠️ **本地** `docker build` 仍然未成功過(卡 Docker Hub CDN 503,環境問題,見上一節)。「已驗證」指嘅係 **`az acr build` 這條路徑**。
+>
+> 而且 build 綠 ≠ 起得身 —— BUG-008 就係 build Succeeded 但每個容器都 crash(見上面「emit 佈局」)。真正嘅 pass 標準係 **revision Running/Healthy + smoke test 過**(H7)。
 
 ## Image tag 策略
 

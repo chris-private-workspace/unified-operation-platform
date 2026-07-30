@@ -1,3 +1,17 @@
+// ⚠️ `aca.json` IS THE DEPLOYED ARTIFACT — this file is kept in sync, not deployed.
+// The Bicep CLI can't install behind the corporate proxy, so every real deployment
+// runs `az deployment group create --template-file aca.json`. Change both, and treat
+// aca.json as the as-built source of truth when they disagree.
+//
+// Known drift from aca.json as of 2026-07-30 (NOT introduced by CH-012, and not fixed
+// here because it is outside that change's scope — see CH-012 spec §7):
+//   1. api ingress is missing `allowInsecure: true`. aca.json has it; without it the
+//      http upstream gets a 301 to https and nginx can't reach the api
+//      (04-deploy-runbook.md §8.3).
+//   2. API_UPSTREAM here is 'http://${api.name}'; aca.json uses the api app's
+//      resolved internal ingress FQDN.
+// Deploying from this file as-is would reproduce a bug that aca.json already fixed.
+//
 // Azure Container Apps — uop-api (internal) + uop-web (external, single origin).
 // Deployed via `az deployment group create` (core CLI) because the `containerapp`
 // az extension can't install behind the corporate proxy (aka.ms SSL MITM) — see
@@ -50,6 +64,23 @@ param authJwtSecret string
 @description('break-glass local admin initial password (seed sets it; force-change on first login)')
 param localAdminInitialPassword string
 
+// --- email / ACS (CH-011, ADR-0019) + password-reset link base (W41) ---
+// Required (like graphClientSecret / servicenowPassword): a non-empty placeholder is
+// fine before ACS is wired — the service treats a malformed value as "email disabled"
+// and logs it, rather than failing boot (ADR-0019 D4).
+@secure()
+@description('ACS connection string — endpoint=https://<res>.communication.azure.com/;accesskey=<key>')
+param acsConnectionString string
+
+@description('Verified ACS sender address. ADMIN can override via Settings > Integrations (DB wins over env).')
+param acsSenderAddress string = ''
+
+// Must be the web app's public URL. Deliberately a hand-filled parameter, not
+// `web.properties.configuration.ingress.fqdn`: web already depends on api, so having
+// api read web's FQDN would be a circular dependency.
+@description('Public base URL, e.g. https://ca-uop-web.<env>.eastasia.azurecontainerapps.io')
+param appBaseUrl string = ''
+
 var envName = 'cae-uop-uat'
 var apiName = 'ca-uop-api'
 var webName = 'ca-uop-web'
@@ -95,6 +126,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'intake-api-key', value: intakeApiKey }
         { name: 'auth-jwt-secret', value: authJwtSecret }
         { name: 'local-admin-initial-password', value: localAdminInitialPassword }
+        { name: 'acs-connection-string', value: acsConnectionString }
       ]
     }
     template: {
@@ -123,6 +155,11 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'SERVICENOW_PASSWORD', secretRef: 'servicenow-password' }
             { name: 'INTAKE_API_KEY', secretRef: 'intake-api-key' }
             { name: 'AUTH_JWT_SECRET', secretRef: 'auth-jwt-secret' }
+            // Email (CH-011) + password-reset link base (W41). Both read with `get`,
+            // not `getOrThrow` — unset means "feature off", not "refuse to boot".
+            { name: 'ACS_SENDER_ADDRESS', value: acsSenderAddress }
+            { name: 'APP_BASE_URL', value: appBaseUrl }
+            { name: 'ACS_CONNECTION_STRING', secretRef: 'acs-connection-string' }
           ]
         }
       ]

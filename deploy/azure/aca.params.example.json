@@ -20,7 +20,11 @@
     "servicenowPassword": { "value": "<SECRET: ServiceNow password — 未接可用非空 placeholder>" },
     "intakeApiKey": { "value": "<SECRET: openssl rand -hex 32 — 線① n8n→平台 X-Intake-Key>" },
     "authJwtSecret": { "value": "<SECRET: openssl rand -base64 48>" },
-    "localAdminInitialPassword": { "value": "<SECRET: break-glass admin 初始密碼>" }
+    "localAdminInitialPassword": { "value": "<SECRET: break-glass admin 初始密碼>" },
+    "acsConnectionString": { "value": "<SECRET: endpoint=https://<res>.communication.azure.com/;accesskey=<key> — 未接可用非空 placeholder>" },
+    "acsSenderAddress": { "value": "UnifiedOperationsPortal@rci-t.com" },
+    "appBaseUrl": { "value": "https://ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerapps.io" }
   },
+  "_acs_email_note": "ACS email（CH-011 / ADR-0019）+ 密碼重設連結（W41）。acsConnectionString 係 SECRET 且必填 —— 未接 ACS 就填非空 placeholder（同 graphClientSecret 一樣），service 會當 malformed 而 disable email 並 log，唔會令平台起唔到身（ADR-0019 D4）。acsSenderAddress 必須係 ACS 上已驗證嘅 sender domain，否則 ACS 會收貨但唔送達而 API 仍返 Succeeded（CH-011 R1）—— 冇 probe，第一次真寄係唯一證據。appBaseUrl 係手填（唔用 reference()，因為 web 已經 dependsOn api，反向 reference 會 circular）；重建 ACA env 後個 FQDN 會變，記得更新。",
   "_n8n_outbound_note": "線②(平台→n8n)嘅 N8N_OUTBOUND_WEBHOOK_KEY / N8N_OUTBOUND_WEBHOOK_URL / REQUEST_SUBMISSION_PROVIDER 現時未 wire 落 aca.json template（provider 寫死 direct）。要部署 n8n outbound，需先擴 aca.json（加 3 個 param + secret + env），再喺此檔加對應 param。詳見 04-deploy-runbook.md §4。"
 }

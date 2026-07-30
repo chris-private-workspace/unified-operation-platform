@@ -5,8 +5,12 @@
 
 ## 狀態
 
-**✅ W33 = 已部署上線**(2026-07-22,`rcitest` sub)—— UAT live,break-glass admin 登入驗證通過。實際環境見 [`07-uat-as-built.md`](./07-uat-as-built.md)。W32 = 部署準備(ADR-0012 + 文件 + build artifacts)。
+**✅ UAT live**(首次上線 W33 / 2026-07-22,`rcitest` sub)—— break-glass admin 登入驗證通過。現行 image **`uat-1bc7cdb`**(api revision `--0000006` / web `--0000005`,BUG-008 修復後),已含 W35 → CH-011 全部功能。實際環境見 [`07-uat-as-built.md`](./07-uat-as-built.md)。
 > **實際部署路徑同 W32 原藍圖有大出入**(公司 proxy 擋所有 data-plane → 手寫 ARM / self-migrate / ACA native secret)—— [`04-deploy-runbook.md`](./04-deploy-runbook.md) 已更新為 **as-built 可行路徑**,請以佢為準。
+>
+> 🔴 **講 env 狀態要分清「template」同「running container」兩本帳** —— 日常部署走 `--image` 唔碰 template,env 亦可以直接設落 container,所以由 template 推論唔到 container。**一律 `az containerapp show` 實測。**(呢批文件曾經寫錯「container 只有 16 個 env / email 唔會 work」,實測係 **19 個**,ACS 兩個早已設,email 一直寄得出。)
+>
+> email / 密碼重設配置已齊(container 實測三個 env + template 已接線 **CH-012**)。剩低嘅係端到端**真寄真收**做證據 —— ACS 冇 probe,sender domain 唔對會收貨但唔送達而 API 仍返 `Succeeded`。詳見 [`02-environment-reference.md`](./02-environment-reference.md)「可選功能」同 CH-012 §8。
 
 ## 一頁 topology 摘要
 
@@ -39,6 +43,7 @@ Logs ────────────▶ Log Analytics workspace
 ## 文件
 
 - `RCI Project Authorization Request Process v1.9.docx` —— Ricoh RIT 官方 PAR 流程文件(治理來源;摘要見 `05-rci-par-process.md`)。
+- `Azure UAT 部署流程 v1.0.docx` —— 把本目錄嘅 runbook 整合成一份可交付 / 離線閱讀嘅文件(封面 / 目錄 / topology 同流程 diagram / 環境變數表 / 文件核對結果)。**由 `docx-source/` 生成,唔好手改 .docx** —— rebuild 步驟見該目錄 README。
 
 ## 硬規矩(貫穿全部文件)
 
