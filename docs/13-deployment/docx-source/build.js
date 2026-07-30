@@ -94,6 +94,8 @@ const headRow = (labels, widths) => new TableRow({
 });
 
 const dataRow = (cells, widths, o = {}) => new TableRow({
+  // 唔好喺頁界劈開一行:拆開之後續頁只會見到其中一格有字、其餘欄空白,睇落似壞咗
+  cantSplit: true,
   children: cells.map((c, i) => cell(c, widths[i], {
     shade: o.shade ?? (o.zebra ? LIGHT : undefined),
     mono: o.monoCols?.includes(i),
@@ -691,12 +693,12 @@ const doc = new Document({
         table([3150, 1050, 5438], [
           headRow(["文件", "最後更新", "核對結果"], [3150, 1050, 5438]),
           dataRow(["README.md", "07-27", "狀態段仍以 W33 / W34 為最新,未反映 BUG-008 後嘅實際 image"], [3150, 1050, 5438], { monoCols: [0, 1] }),
-          dataRow(["01-topology.md", "07-22", "未逐項核對(架構本身無變)"], [3150, 1050, 5438], { zebra: true, monoCols: [0, 1] }),
+          dataRow(["01-topology.md", "07-22", "🔴 四處把 hardening 目標當成現況寫:secret / DB 存取 / ACR 認證 / SSO"], [3150, 1050, 5438], { zebra: true, monoCols: [0, 1] }),
           dataRow(["02-environment-reference.md", "07-22", "缺六個變數:ACS 兩個、APP_BASE_URL、SYNC_SWEEP 三個"], [3150, 1050, 5438], { monoCols: [0, 1] }),
           dataRow(["03-build-images.md", "07-22", "仍寫 node dist/main 而未提 rootDir 約束;「未驗證項」已過時"], [3150, 1050, 5438], { zebra: true, monoCols: [0, 1] }),
           dataRow(["04-deploy-runbook.md", "07-23", "§8 只列四項(BUG-008 應為第五);secret 清單缺 ACS"], [3150, 1050, 5438], { monoCols: [0, 1] }),
-          dataRow(["05-rci-par-process.md", "07-22", "未逐項核對(治理流程,較穩定)"], [3150, 1050, 5438], { zebra: true, monoCols: [0, 1] }),
-          dataRow(["06-prod-hardening-checklist.md", "07-22", "未逐項核對"], [3150, 1050, 5438], { monoCols: [0, 1] }),
+          dataRow(["05-rci-par-process.md", "07-22", "亦寫 secret 存 Key Vault;但 PAR 係提交畀 RCI 嘅申請文件 → 交 owner 判斷"], [3150, 1050, 5438], { zebra: true, monoCols: [0, 1] }),
+          dataRow(["06-prod-hardening-checklist.md", "07-22", "已確認無落差 —— 佢本身係 unchecked 目標清單,寫 Key Vault 正確"], [3150, 1050, 5438], { monoCols: [0, 1] }),
           dataRow(["07-uat-as-built.md", "07-23", "image tag 過時;secret 策略與 04 矛盾"], [3150, 1050, 5438], { zebra: true, monoCols: [0, 1] }),
           dataRow(["08-n8n-integration-go-live.md", "07-28", "§1.0 前提過時 —— 仍以 uat-0cf0cf3 推斷 W36 route 未部署"], [3150, 1050, 5438], { monoCols: [0, 1] }),
         ]),
@@ -713,10 +715,12 @@ const doc = new Document({
           dataRow(["已修", "image tag 改 uat-1bc7cdb + revision;secret 策略對齊 04;deferred 加 email 接線", "07-uat-as-built.md"], [1150, 5450, 3038], { zebra: true, monoCols: [2] }),
           dataRow(["已修", "§1.0 前提更正 —— route 應已隨 uat-1bc7cdb 部署(未實測,保留探測法)", "08-n8n-integration-go-live.md"], [1150, 5450, 3038], { monoCols: [2] }),
           dataRow(["已修", "狀態段更新現行 image + 標示 email 缺口;文件索引加本 docx", "README.md"], [1150, 5450, 3038], { zebra: true, monoCols: [2] }),
+          dataRow(["已修", "四處由 hardening 目標改回 as-built(secret / DB / ACR / SSO);刪走一條唔存在嘅 Key Vault 連線;加對照表", "01-topology.md"], [1150, 5450, 3038], { monoCols: [2] }),
         ]),
         p(t("", { size: 12 }), { after: 200 }),
         callout("核對範圍聲明", [
-          "01、05、06 三份文件未逐項核對 —— 分別屬架構描述、治理流程與 hardening 清單,在此期間無對應 code 變更,但唔等於已確認最新。若需完整核對,應另行處理。",
+          [t("九份文件已全部核對。", { size: 18, bold: true }), t("餘下唯一未決:", { size: 18 }), t("05-rci-par-process.md", { mono: true, size: 17 }), t(" 亦寫「secret 存 Key Vault」,但佢係提交畀 RCI 治理嘅申請文件,描述目標架構有可能係刻意 —— ", { size: 18 }), t("需 owner 判斷要唔要改成 as-built,或者補一句「上線後 hardening」。", { size: 18, bold: true })],
+          [t("01 一度被判為「架構本身無變、未逐項核對」——", { size: 18, bold: true }), t(" 實際上佢嘅「資源清單(UAT)」把四樣 hardening 目標當成現況寫。教訓同 08 那條一樣:", { size: 18 }), t("「內容應該無變」係假設,唔係核對。", { size: 18, bold: true })],
           [t("08 一度被判為「無落差」,後來發現 §1.0 仍以 ", { size: 18 }), t("uat-0cf0cf3", { mono: true, size: 17 }), t(" 推斷 W36 route 未部署 —— 已更正。可見「最後 commit 日期新」唔等於內容最新。", { size: 18 })],
           [t("🔴 本核對本身犯過一次同類錯:", { size: 18, bold: true }), t("由 ", { size: 18 }), t("aca.json", { mono: true, size: 17 }), t(" 冇 ACS parameter,推論 running container「只有 16 個 env、email 唔會 work」。", { size: 18 }), t("實測係 19 個,ACS 兩個早已直接設落 container ——", { size: 18, bold: true }), t(" email 一直寄得出。根因係「template 有冇」同「container 有冇」兩本帳被混埋一齊講(見 6.2)。教訓:講 env 狀態一律實測,唔好由 template 推論。", { size: 18 })],
         ], "warn"),
