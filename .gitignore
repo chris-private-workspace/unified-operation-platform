@@ -42,6 +42,9 @@ Thumbs.db
 # Word / Excel / PowerPoint 開住個檔嗰陣嘅鎖檔(~$xxx.docx)——
 # 會喺 docs/ 出現,唔屬於 repo,亦唔應該連同 doc 改動一齊 add 落去。
 ~$*
+# .claude/skills/docgen/ 嘅 Python helper 跑完會留低 bytecode cache。
+__pycache__/
+*.pyc
 
 # === Playwright MCP 本機截圖 / snapshot artifact（唔入 repo）===
 .playwright-mcp/
