@@ -215,11 +215,12 @@ describe('AuthController', () => {
       expect(send).not.toHaveBeenCalled();
     });
 
-    it('does not send (and still returns) when APP_BASE_URL is unset', async () => {
+    it('issues nothing at all when APP_BASE_URL is unset', async () => {
       const send = jest.fn();
+      const issue = jest.fn().mockResolvedValue(ISSUED);
       await expect(
         makeController({
-          passwordReset: { issue: jest.fn().mockResolvedValue(ISSUED) },
+          passwordReset: { issue },
           notifications: { send },
           appBaseUrl: undefined,
         }).forgotPassword({ email: 'ops@example.com' }),
@@ -228,6 +229,16 @@ describe('AuthController', () => {
       // A link to nowhere is worse than no mail: it teaches the user the reset
       // is broken rather than that it is unconfigured.
       expect(send).not.toHaveBeenCalled();
+
+      // 🔴 The assertion that pins the ORDER, and the whole point of this test.
+      // `issue()` writes an audit row saying `reason: 'issued'` and starts the
+      // caller's 5-minute cooldown. Doing that for a mail which cannot be sent
+      // leaves the audit trail actively lying — it answers "why did my user
+      // never get the mail" with "we sent it" — and ADR-0009 makes that trail
+      // the one place operations is supposed to trust. Asserting only on `send`
+      // (as this test originally did) passes either way, so the order could
+      // regress silently.
+      expect(issue).not.toHaveBeenCalled();
     });
 
     /**

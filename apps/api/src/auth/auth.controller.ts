@@ -105,13 +105,19 @@ export class AuthController {
   @HttpCode(204)
   @ApiNoContentResponse()
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
-    const issued = await this.passwordReset.issue(dto.email);
-    if (!issued) return;
-
     // OQ-1: `get`, never `getOrThrow`. Email is optional (ADR-0019 D4) and a
     // convenience feature must not be able to stop the platform from booting —
     // BUG-008 has just finished demonstrating what an api that will not start
-    // costs. Unset means no mail; the token still exists and simply expires.
+    // costs.
+    //
+    // 🔴 Checked BEFORE issue(), deliberately. When this is unset the feature is
+    // misconfigured, and issuing anyway costs twice: it burns the caller's
+    // 5-minute cooldown on a mail that cannot go out, and the audit row would
+    // read `reason: 'issued'` while nothing was ever sent. An audit trail that
+    // answers "why did my user never get the mail" with "we sent it" is worse
+    // than one that stays quiet, because ADR-0009 makes it the one place
+    // operations is meant to trust. A configuration fault belongs to ops — this
+    // logger.error, which monitoring reads — not to the business audit trail.
     const baseUrl = this.config.get<string>('APP_BASE_URL');
     if (!baseUrl) {
       this.logger.error(
@@ -119,6 +125,9 @@ export class AuthController {
       );
       return;
     }
+
+    const issued = await this.passwordReset.issue(dto.email);
+    if (!issued) return;
 
     // OQ-4: fragment, not query string. Never reaches the server, so the token
     // stays out of the nginx access log in front of this app and out of Referer.

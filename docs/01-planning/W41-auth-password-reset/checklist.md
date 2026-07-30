@@ -184,19 +184,30 @@ last_updated: 2026-07-29
 - [x] ⚠️ **本機無法驗 consume 半段** —— raw token 只出現喺郵件,而我哋刻意唔 log(G9)。
       呢個係設計正確嘅後果,唔係缺口;consume 只能靠真郵件驗(F8c)
 
-### F8d — 途中發現(已 raise,**待 Chris 裁決**,見 plan §9 changelog)
+### F8d — 途中發現 → **Chris 裁決「修」→ 已修** ✅(見 plan §9 changelog)
 
-- [ ] 🔴 **`APP_BASE_URL` 未設時 audit 會報一個誤導性嘅 `reason: 'issued'`** ——
-      controller 係喺 `issue()` **之後**才檢查 baseUrl,所以 token 已建、audit 已寫,而郵件一封都冇寄。
-      即係「為咩我個用戶收唔到信」呢個問題,audit 答唔到:佢會答 `issued`,唯一線索係 api log
-      嗰句 `logger.error`。一行會講大話嘅 audit,同 ADR-0009 個精神直接衝突
-- [x] **刻意唔單方面改** —— 有一個 3 行移位嘅修法(檢查移到 `issue()` 前 ⇒ 唔建 token、唔寫 audit、
-      唔燒 cooldown 窗口),但佢會令未設時**完全冇** audit 記錄,直接偏離 OQ-1 字面嘅「audit 記低」
-      (Chris 親自批准)。按 §13「Spec wins,除非 explicitly raise + get approval」⇒ 只 raise + 記錄。
-      另註:現有 test `'does not send … when APP_BASE_URL is unset'` 只 assert `send` 冇被叫,
-      **冇** assert `issue` 冇被叫 ⇒ 真要改順序,呢條 test 要同步加 assert 先接得住
-- [x] UAT 已於 2026-07-30 設好 `APP_BASE_URL` ⇒ 實務上唔會走到呢個分支(但唔等於無害:
-      將來新開環境忘記設就會中)
+- [x] 🔴 **`APP_BASE_URL` 未設時 audit 會報一個誤導性嘅 `reason: 'issued'`** ——
+      controller 原本喺 `issue()` **之後**才檢查 baseUrl,所以 token 已建、audit 已寫,而郵件一封都冇寄。
+      即係「為咩我個用戶收唔到信」呢個問題,audit 答唔到:佢會答 `issued`。一行會講大話嘅 audit,
+      同 ADR-0009 個精神直接衝突 —— **已修**
+- [x] **先 raise 後改,冇單方面動** —— 原本刻意唔改(會偏離 OQ-1 字面嘅「audit 記低」,而嗰句係
+      Chris 親自批准嘅),按 §13「Spec wins,除非 explicitly raise + get approval」只 raise。
+      **Chris 拍板要修之後才改** ⇒ plan §9 加一行正式收窄 OQ-1:「未設 → 照返 204 +
+      **只 log,唔寫 audit**」
+- [x] 改動本體 = **檢查移到 `issue()` 之前**(`auth.controller.ts`)⇒ 未設時**唔建 token、唔寫
+      audit、唔燒用戶個 5 分鐘 cooldown**,只留一行 `logger.error`。**統一 204 不變** ——
+      唔可以因為配置錯而變成一個可以用嚟枚舉帳號嘅訊號
+- [x] 🔴 **fails-before 實證**(唔止聲稱):暫時把順序改返舊嘅 → **只有新嗰條 assertion 紅**
+      (`expect(issue).not.toHaveBeenCalled()` · `Received number of calls: 1` · `1: "ops@example.com"`)、
+      其餘 **12 條照綠** ⇒ 佢精準接住順序 regression 而唔誤傷其他行為。改返正確順序後全綠
+- [x] 連帶兩處必須同步,否則會留低錯文件 / 接唔住 regression:
+      · `.env.example` 原本寫「唔設嘅後果:**token 照發**、照返 204」—— 移咗檢查之後 token 唔會再發,
+        已改寫(並寫明為咩 audit 唔記)
+      · test 由 `'does not send … when APP_BASE_URL is unset'` 改名 `'issues nothing at all …'`
+        並加 `expect(issue).not.toHaveBeenCalled()` —— 舊版只 assert `send`,**兩種順序都會綠**
+- [x] api **651 test 全綠 / 59 suites** · lint `exit=0`
+- [x] UAT 已於 2026-07-30 設好 `APP_BASE_URL` ⇒ 實務上唔會走到呢個分支(但修完之後,將來新開
+      環境忘記設嘅後果由「audit 講大話」變成「audit 沉默 + 一行 error log」)
 
 ### F8c — 部署 + 端到端
 
