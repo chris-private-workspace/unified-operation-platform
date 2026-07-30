@@ -53,6 +53,7 @@ model AppUser {
   handledRequests Request[] // requests this operator is handling
   events          RequestEvent[]
   refreshTokens   RefreshToken[] // AUTH-4c-B rotating refresh sessions (local accounts)
+  passwordResetTokens PasswordResetToken[] // AUTH-4c-C self-service reset (local accounts)
   ledgerAdjustments LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
   auditLogs       AuditLog[] // platform audit trail entries this operator caused (ADR-0009)
 }
@@ -69,6 +70,29 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime? // set on rotation / logout (null = still valid)
   createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ── PasswordResetToken (AUTH-4c-C / ADR-0019 D8 #1) — single-use, 30-minute
+// self-service password reset. Deliberately the SAME shape as RefreshToken
+// above: opaque high-entropy token, only its SHA-256 hash persisted (H4), and
+// cascade-deleted with the user. The difference is `usedAt` instead of
+// `revokedAt` — a reset token is spent by being used exactly once, it is not
+// rotated.
+//
+// 🔴 The raw token is returned to the caller ONCE, to be put in an email, and
+// never stored. That is what makes a replay from the outbound failure queue
+// impossible by construction (see REPLAYABLE_TEMPLATES in templates.ts).
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique // SHA-256 of the opaque reset token
+  expiresAt DateTime
+  usedAt    DateTime? // set the moment it is spent (null = still usable)
+  createdAt DateTime  @default(now()) // also drives the per-account cooldown
 
   @@index([userId])
 }

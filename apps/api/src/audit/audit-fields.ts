@@ -35,6 +35,17 @@ export const AUDIT_ACTIONS = {
   AUTH_LOGIN_SUCCESS: 'auth.login_success',
   AUTH_LOGIN_FAILED: 'auth.login_failed',
   AUTH_LOCKED: 'auth.locked',
+  /**
+   * AUTH-4c-C / ADR-0019 D8 #8 — somebody asked for a password-reset mail.
+   *
+   * Recorded on EVERY request, including the ones that send nothing (unknown
+   * address, SSO account, deactivated account, cooldown). That is not
+   * over-logging: D8 #4 makes the HTTP response uniform on purpose, so this row
+   * is the ONLY place the outcome is visible — both abuse detection and "why did
+   * my user never get a mail" run on it. The outcome travels in
+   * `metadata.reason`, the address in `metadata.emailAttempted`.
+   */
+  AUTH_PASSWORD_RESET_REQUESTED: 'auth.password_reset_requested',
   OPCO_CREATE: 'opco.create',
   OPCO_UPDATE: 'opco.update',
   CATALOG_UPDATE: 'catalog.update',
@@ -168,10 +179,17 @@ export const AUDIT_METADATA_KEYS = [
   'correlationId',
   'source',
   /**
-   * Q1 (Chris, 2026-07-20): the one place we deliberately store PII in metadata.
+   * Q1 (Chris, 2026-07-20): the one deliberate PII exception in metadata.
    * Without it a failed login is just "someone failed" — you cannot tell which
    * account is being probed, which makes credential-stuffing detection and
    * lockout triage impossible.
+   *
+   * W41 — now written by TWO events, and the second one needs it for the same
+   * reason: `auth.password_reset_requested` returns a uniform 204 whatever
+   * happens (ADR-0019 D8 #4), so without the address a burst of reset requests
+   * is likewise just "someone asked". Noted here rather than left implicit,
+   * because a whitelisted PII key with an out-of-date justification is exactly
+   * how the next reader talks themselves into a third use.
    */
   'emailAttempted',
   /**

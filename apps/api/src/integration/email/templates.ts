@@ -18,14 +18,14 @@ export interface RenderedEmail {
 }
 
 /**
- * The only template CH-011 ships.
+ * Every template the platform can send.
  *
- * 🔴 There is deliberately NO password-reset template here. It belongs to
- * AUTH-4c-C (ADR-0019 D8) and putting it in now would blur the line between two
- * changes that were split on purpose — CH-011 would end up half-implementing a
- * flow it cannot test.
+ * `password-reset` landed in W41 / AUTH-4c-C. CH-011 deliberately shipped
+ * without it — it would have been half-implementing a flow it could not test —
+ * and this is the phase that closes that gap. It is also the caller ADR-0019
+ * Consequences named: the base layer no longer has zero production callers.
  */
-export type TemplateKey = 'connectivity-check';
+export type TemplateKey = 'connectivity-check' | 'password-reset';
 
 /**
  * Sent by the CH-011 A11 ops script and by nothing else. It exists so the
@@ -56,11 +56,54 @@ function connectivityCheck(params: Record<string, string>): RenderedEmail {
   };
 }
 
+/**
+ * W41 / AUTH-4c-C. Everything interpolated here goes through `escapeHtml` —
+ * `displayName` is user-controlled (an admin types it when creating the account)
+ * and `resetUrl` carries a token, so neither is treated as trusted markup.
+ *
+ * 🔴 The link uses a FRAGMENT (`#token=`), not a query string (plan OQ-4). A
+ * fragment is never sent to the server, so the token stays out of the nginx
+ * access log that fronts this very application (ADR-0012) and out of any
+ * `Referer` header. The cost is that the reset page reads `location.hash`
+ * instead of a query param — a few lines, in exchange for a single-use
+ * credential not being written down in plain text on the way in.
+ */
+function passwordReset(params: Record<string, string>): RenderedEmail {
+  const displayName = params.displayName ?? '';
+  const resetUrl = params.resetUrl ?? '';
+  const ttlMinutes = params.ttlMinutes ?? '30';
+  const greeting = displayName ? `Hi ${displayName},` : 'Hi,';
+
+  return {
+    subject: 'Unified Operation Platform — reset your password',
+    text: [
+      greeting,
+      '',
+      'Somebody asked to reset the password for this account. Open the link',
+      `below to choose a new one. It works once and expires in ${ttlMinutes} minutes.`,
+      '',
+      resetUrl,
+      '',
+      'If this was not you, no action is needed — your password has not changed,',
+      'and the link above is the only way to change it.',
+    ].join('\n'),
+    html: [
+      `<p>${escapeHtml(greeting)}</p>`,
+      '<p>Somebody asked to reset the password for this account. Use the link',
+      `below to choose a new one. It works once and expires in ${escapeHtml(ttlMinutes)} minutes.</p>`,
+      `<p><a href="${escapeHtml(resetUrl)}">Choose a new password</a></p>`,
+      '<p>If this was not you, no action is needed — your password has not',
+      'changed, and the link above is the only way to change it.</p>',
+    ].join(''),
+  };
+}
+
 export const TEMPLATES: Record<
   TemplateKey,
   (params: Record<string, string>) => RenderedEmail
 > = {
   'connectivity-check': connectivityCheck,
+  'password-reset': passwordReset,
 };
 
 /**
@@ -68,10 +111,13 @@ export const TEMPLATES: Record<
  *
  * Stated as a positive list, for the reason W40 inverted `KINDS_WITH_LINE_ITEMS`
  * to one: written as "everything except X" it would silently opt in every future
- * template, and the next template to arrive is AUTH-4c-C's password reset — the
- * one that must NOT be replayable. Its content depends on a single-use token
- * that `notification.send` deliberately does not persist, so a replay would send
- * a broken or stale reset link.
+ * template.
+ *
+ * 🔴 That template has now arrived and it stays OUT. `password-reset` depends on
+ * a single-use token which `notification.send` deliberately does not persist
+ * (the failure-queue payload whitelist carries `to` and `template`, never
+ * `params`), so a replay could only ever send a broken or already-spent link —
+ * while looking, to the operator who clicked retry, like a successful resend.
  *
  * A new template has to ask to be here.
  */

@@ -3,6 +3,8 @@ import { AppShell } from '@/components/shell/app-shell';
 import { RequireAuth } from '@/components/auth/require-auth';
 import { Login } from '@/pages/login';
 import { ForcePasswordChange } from '@/pages/force-password-change';
+import { ForgotPassword } from '@/pages/forgot-password';
+import { ResetPassword } from '@/pages/reset-password';
 import { Settings } from '@/pages/settings';
 import { Overview } from '@/pages/overview';
 import { Catalog } from '@/pages/catalog';
@@ -20,6 +22,10 @@ import { OutboundFailures } from '@/pages/outbound-failures';
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
   { path: '/change-password', element: <ForcePasswordChange /> },
+  // W41 / AUTH-4c-C — both outside RequireAuth by definition: whoever needs them
+  // cannot sign in. The reset token travels in the URL fragment (plan OQ-4).
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password', element: <ResetPassword /> },
   {
     path: '/',
     element: (

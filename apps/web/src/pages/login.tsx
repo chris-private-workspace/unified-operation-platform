@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMsal } from '@azure/msal-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -197,6 +197,15 @@ export function Login() {
 
             <div className="mt-[14px] flex items-center justify-between">
               <Checkbox label="Keep me signed in" disabled />
+              {/* W41 — the right-hand slot the handoff layout already left open.
+                  A ghost Button rather than a bare anchor: the system has no
+                  text-link pattern, and inventing one is exactly what H6 asks
+                  us not to do (DS-3 still holds — one primary per view). */}
+              <Link to="/forgot-password">
+                <Button variant="ghost" size="sm" type="button">
+                  Forgot password?
+                </Button>
+              </Link>
             </div>
 
             {error && (
