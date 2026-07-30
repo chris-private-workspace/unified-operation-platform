@@ -160,6 +160,8 @@ CLAUDE.md §3.1:「Vendor SDK 只准喺 `src/integration/`;domain / orchestratio
 
 - **Sender address 屬非機密欄** ⇒ 落 `ACS_SENDER_ADDRESS` env + `acsSenderAddress` DB 欄(D4),UI 改得。**唔係 secret**,所以可以寫入文件。真 secret 只有 connection string。
 - **Custom domain 嘅連帶影響**:Azure-managed domain 開箱即用但地址樣衰(`DoNotReply@<guid>.azurecomm.net`);custom domain 樣靚但**多一層 DNS 依賴**——DNS 記錄一旦被改 / 過期,失敗模式係「ACS 收貨但唔送達」,而**平台側睇落完全成功**。⇒ CH-011 A11 必須**以收件人真係收到為準**,唔可以以 API 回應為準。呢點已寫入 CH-011 A11。
+- ✅ **「零 production caller」呢筆債已清**(2026-07-30,**W41 / AUTH-4c-C**)。Consequences › Negative 嗰條寫住「真 caller 喺 4c-C 到;若 4c-C 遲遲唔做,呢舊 code 就會變成同類債」—— 4c-C 已落地並部署上 UAT(`uat-7e1f00b`,api revision `--0000010` Healthy),`POST /auth/forgot-password` 經 `NotificationDispatchService` 呼叫 `password-reset` template ⇒ transport 有真 production 路徑,唔再只靠一次性 ops script。**債清嘅係「零 caller」,唔係 D5「唔畀探」嘅代價** —— 後者仍然成立:配置錯依然要到真寄先知,所以 W41 F8c 同 CH-011 A11 一樣,判準係**收件人真係收到**。
+- ⚠️ **`APP_BASE_URL` 係第三個「唔畀探」嘅配置**(W41 新增,`auth.controller.ts` 用 `config.get` 而非 `getOrThrow`,理由同 D4:可選功能配置錯唔應該令平台起唔到身)。⇒ 未設嘅失敗模式係**靜默**:token 照發、`POST /auth/forgot-password` 照返 204,用戶就係等唔到信。仲有一層加深:**audit 會寫 `reason:'issued'`**(controller 喺 `issue()` 之後才檢查 baseUrl)⇒ 連 audit 都答唔到「為咩收唔到信」。詳見 W41 `plan.md` §9 changelog(**待 owner 裁決**)。
 
 ---
 
@@ -173,5 +175,5 @@ CLAUDE.md §3.1:「Vendor SDK 只准喺 `src/integration/`;domain / orchestratio
 - **ADR-0017** D1(一個 seam 一個掣 —— 本 ADR 刻意**唔**跟,理由見 D1)
 - **ADR-0012** Azure UAT topology(同雲理由)
 - **RISK R5**(外部字串入 log)· **BUG-004** / **BUG-007**(scrubPii 先例)
-- **CH-011**(transport 實作)· AUTH-4c-C phase(待開)
+- **CH-011**(transport 實作)· **W41 / AUTH-4c-C**(`docs/01-planning/W41-auth-password-reset/` —— D8 落地,transport 嘅第一個真 production caller)
 - CLAUDE.md §5 **H1 / H2 / H3 / H4** · §3.1(vendor SDK 只准喺 integration)

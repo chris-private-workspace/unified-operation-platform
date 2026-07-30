@@ -198,16 +198,60 @@ last_updated: 2026-07-29
 - [x] UAT 已於 2026-07-30 設好 `APP_BASE_URL` ⇒ 實務上唔會走到呢個分支(但唔等於無害:
       將來新開環境忘記設就會中)
 
-### F8c — 端到端(需先部署 W41)
+### F8c — 部署 + 端到端
 
-- [ ] W41 commit + PR + merge
-- [ ] build image + deploy UAT
-- [ ] 端到端:真寄一封 → 真收到 → 真重設 → 舊 session 真失效
+- [x] W41 commit `7e1f00b`(22 files / +1943 / -39)+ **PR #51**
+      —— push 後用獨立 `git ls-remote` 驗 sha、PR 用獨立 `gh pr list` 驗存在
+      (memory:git/gh 嘅 network 寫操作會**假報成功**,唔可以信佢自己嘅 output)
+- [x] build image `uat-7e1f00b` —— api run **`ckd` Succeeded**(4m08s)· web run **`cke` Succeeded**
+      —— 兩者都係查 **management plane** 拎真實狀態,唔靠 CLI stdout
+- [x] 🔴 **BUG-008 嗰道 `RUN test -f dist/main.js` build gate 過咗** —— 即係 W41 新增嘅檔案
+      (全部喺 `src/` 內)冇再次搬走 emit 根。呢道閘第一次真正幫到手就係今次
+- [x] deploy **image-only**(`az containerapp update --image`)—— 刻意**唔走 ARM `aca.json`**:
+      `ACS_*` / `APP_BASE_URL` 未 wire 落 template,ARM 重部署會抹走 running container 上
+      手動設嘅 secret / env(見 `docs/13-deployment/07-uat-as-built.md`)
+- [x] 真驗證(唔信 `exit=0`,BUG-008 教訓):`ca-uop-api--0000010` **RunningAtMaxScale/Healthy** ·
+      `ca-uop-web--0000006` **Running/Healthy** · 兩者 image tag 都係 `uat-7e1f00b`
+- [x] 🔴 **決定性 probe:同一個 endpoint 部署前 404、部署後 204** ⇒ W41 真上線,唔係推論
+      | probe | 前 | 後 |
+      |---|---|---|
+      | `POST /auth/login`(唔存在帳號)| 401 | 401(無 regression · migration OK)|
+      | `POST /auth/forgot-password` | **404** | **204** |
+      | `POST /auth/reset-password`(假 token)| — | **400** `This reset link is invalid or has expired` |
+- [x] ⚠️ 誠實註腳:probe「弱密碼 + 假 token」返嘅係**同一句 token 錯誤** ⇒ token 檢查喺密碼驗證
+      之前短路,所以呢個 probe **驗唔到**密碼政策(政策本身由 G6 unit test 覆蓋)。token 無效時
+      唔做任何其他事,本身係正確設計
+- [x] 對 `admin@uop.local` 真發一次 → **204**。個地址係假嘅收唔到信,所以 token 冇人拎得到
+      (token 只出現喺郵件裡)⇒ 零安全風險,但 ACS 會真被呼叫
+- [ ] 🔴 **端到端真寄一封 → 真收到 → 真重設 → 舊 session 真失效** —— 🚧 **需 owner 執行**,
+      原因:UAT 冇一個「local-password + 真實可收件 email」嘅帳號(`admin@uop.local` 地址係假嘅;
+      `chris.lai@rapo.com.hk` 係 SSO 無密碼 ⇒ **唔合資格重設**),而建 / 改 user 要 admin 登入,
+      而我唔處理密碼。步驟見 progress Day 2
 - [ ] 🔴 **以收件人真係收到為準**,唔可以以 API 202 為準(ADR-0019 OQ-1 custom domain 風險)
+
+### F8e — 環境坑(記落嚡,將來部署會再撞)
+
+- [x] `az acr build` 撞 **`'charmap' codec can't encode '✔'`** —— az CLI 個 log streaming 用
+      cp1252,遇到 `prisma generate` / `vite build` 輸出嘅 `✔` 就 crash,**exit=1 但 ACR 側 build
+      照跑完**。`04-deploy-runbook.md` 現有嘅對策係「crash 之後查 management plane」,但
+      **加 `--no-logs` 係更好嘅預防**(實測 web build 一次過乾淨 `exit=0`)⇒ 值得補入文件
+- [x] `az containerapp logs show` **查唔到** —— 佢走 `eastasia.azurecontainerapps.dev`(**data plane**)
+      → 撞公司 proxy 自簽證書 `CERTIFICATE_VERIFY_FAILED`。`az monitor log-analytics query` 又要另裝
+      extension。⇒ **本機睇唔到 UAT container log,要用 Azure Portal**(瀏覽器信公司 CA)。
+      呢點對「email 有冇真寄出」嘅診斷特別重要,因為 email 失敗**唔入** `OutboundFailure` 佇列
 
 ## Closeout
 
-- [ ] api / web test 全綠 · lint 零 output
-- [ ] BACKLOG 同步(R7)
-- [ ] progress Day-N(R2)
-- [ ] ADR-0019 Consequences「零 caller」一筆債:標記已清
+- [x] api / web test 全綠 · lint 零 output —— **api 651 / 59 suites · web 196 / 24 files ·
+      兩邊 `lint exit=0`**(commit 前重跑過,唔靠上一輪嘅記憶)
+- [x] BACKLOG 同步(R7)—— `AUTH-4c-C` 由 🟡 解封中 → 🟢 實作+部署完成,前置欄改成兩項
+      待 owner + 一項待裁決。**冇強行加 W41 入 phase 表**:嗰個表本身已唔係完整索引
+      (W37 排喺 W36 前,W38–W40 都唔在表內)
+- [x] progress Day-N(R2)—— Day 2 + F8c 端到端 8 步(交 owner 執行)
+- [x] ADR-0019「零 caller」債已清 —— 寫入 **「實作補註」section 而唔係改 Consequences**
+      (§6:Accepted ADR 唔改內容)。並補記第三個「唔畀探」配置 `APP_BASE_URL`
+- [x] 🔴 **債清嘅範圍講清楚**:清嘅係「零 production caller」,**唔係** D5「唔畀探」嘅代價 ——
+      後者仍然成立,所以 F8c 同 CH-011 A11 一樣,判準係**收件人真係收到**
+
+> ⚠️ **Phase 未 closed** —— 尚欠 F6 light+dark 目視 + F8c 端到端真寄真收,兩者都交 owner。
+> 收到結果後補勾,再做最終 closeout commit。

@@ -71,4 +71,33 @@ crash loop,而 BUG-008 啱啱先因為同類原因(容器起唔到身)死過一�
    單方面修**:個 3 行移位修法會令未設時完全冇 audit,直接偏離 OQ-1 字面嘅「audit 記低」(Chris
    親自批准)⇒ 按 §13 只 raise + 入 plan §9 changelog,**待 Chris 裁決**。
 
-**下一步**:commit + PR → build + deploy UAT → F8c 端到端真寄真收(**以真係收到為準**)。
+**F8c — 部署**:commit `7e1f00b` → **PR #51** → build `uat-7e1f00b`(api run `ckd` / web run `cke`,
+兩個都係查 management plane 拎真實狀態)→ deploy **image-only**(刻意唔走 ARM,因為 `ACS_*` /
+`APP_BASE_URL` 未 wire 落 `aca.json`,ARM 會抹走 running container 上手動設嘅 secret)。
+`--0000010` / `--0000006` 都 **Healthy**,而**同一個 endpoint 部署前 404、部署後 204** ⇒ W41 真上線。
+
+順帶:**BUG-008 嗰道 `RUN test -f dist/main.js` build gate 過咗** —— W41 新增嘅檔案全部喺 `src/` 內,
+冇再次搬走 emit 根。呢道閘第一次真正幫到手就係今次。
+
+**兩個環境坑**:`az acr build` 會撞 `'charmap' codec can't encode '✔'`(cp1252 撞 prisma/vite 嘅勾號,
+**exit=1 但 ACR 側 build 照跑完**)⇒ 加 `--no-logs` 係比「crash 後查 management plane」更好嘅預防。
+`az containerapp logs show` 走 data plane,撞公司 proxy 自簽證書 ⇒ **本機睇唔到 UAT container log,
+要用 Azure Portal**;而 email 失敗**唔入** `OutboundFailure` 佇列,所以呢點對診斷特別重要。
+
+## 🚧 F8c 端到端 —— 需 owner 執行(唔係我唔做,係我做唔到)
+
+**為咩要你做**:UAT 冇一個「local-password + 真實可收件 email」嘅帳號 —— `admin@uop.local` 個地址
+係假嘅收唔到信,而 `chris.lai@rapo.com.hk` 係 SSO 無密碼 ⇒ **由設計上唔合資格重設**。而建 / 改 user
+要 admin 登入,而我唔處理密碼。
+
+1. 登入 `https://ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerapps.io`(`admin@uop.local`)
+2. **Settings › Users & roles → 建一個新 local user**,email = 你真實收得到信嘅地址。
+   ⚠️ **建新 user,唔好改 admin 自己個 email** —— 改咗會鎖死你自己唯一嘅 break-glass 入口
+3. Sign out。想驗「舊 session 真失效」就**先喺另一個無痕窗口用新 user 登入一次並留住**
+4. `/forgot-password` → 入嗰個真實地址 → Send reset link
+5. 🔴 **等真封信,以真係收到為準**(記得睇 spam)。ADR-0019 OQ-1 個風險係 custom domain 靠 DNS 側
+   SPF/DKIM,失敗模式係「ACS 收貨但唔送達,而平台側睇落完全成功」⇒ 收唔到就去 **Azure Portal** 睇
+   `ca-uop-api` 個 container log(本機 az CLI 睇唔到,見上面環境坑)
+6. 撳連結 → 應該落 `/reset-password#token=…` → 設新密碼 → 應該自動彈返 `/login`
+7. 用**新**密碼登入 → 成功;第 3 步嗰個無痕窗口 **應該已經失效**(refresh token 全撤)
+8. 再撳一次**同一條**連結 → 應該話 `This reset link is invalid or has expired`(單次性)
