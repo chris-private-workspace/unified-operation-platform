@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import runpy
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -87,7 +88,13 @@ def ensure_utf8_mode() -> None:
     if sys.flags.utf8_mode:
         return
     os.environ["PYTHONUTF8"] = "1"
-    os.execv(sys.executable, [sys.executable, "-X", "utf8", str(Path(__file__).resolve()), *sys.argv[1:]])
+    # 唔用 os.execv —— Windows 冇真正嘅 exec,Python 要自己將 argv 拼成一條命令列,
+    # 而佢唔會幫帶空格嘅參數加引號。結果「Azure UAT 部署流程.docx」會散成四個參數,
+    # 目標 script 就收到一個唔存在嘅檔名。subprocess 會經 list2cmdline 正確 quote。
+    completed = subprocess.run(
+        [sys.executable, "-X", "utf8", str(Path(__file__).resolve()), *sys.argv[1:]]
+    )
+    sys.exit(completed.returncode)
 
 
 def main() -> int:
