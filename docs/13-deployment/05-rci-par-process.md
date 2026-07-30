@@ -23,6 +23,14 @@
 
 > ✅ = 技術上已定，可直接填；🔲 = **待 Chris / RIT 填**（業務/命名/數量）。
 
+> 🔴 **填表原則(Chris 拍板 2026-07-30):寫 as-built,同時列明 hardening 目標。**
+>
+> 公司網 proxy 只放行 management plane、擋晒 data-plane,令四樣嘢同原藍圖唔同(secret 存法 / DB 網路 / ACR 認證 / SSO)。本 pack **一律填實際會 deploy 嘅嘢**,後面用「⚠️ 目標:…」標出 hardening 方向。
+>
+> **點解唔填目標架構**:流程 ⑤ 有 **Reg. Information & Security Manager endorse**、⑥ 有 **GM CISO IT approve** —— 佢哋 endorse 嘅係一個**網路 / secret 態勢**。填「private access」而實際 `--public-access 0.0.0.0`,等於向治理機構描述咗一個唔存在嘅態勢;而列一條唔存在嘅 `uop-api → Key Vault` 連線,會令防火牆審批開一條唔需要嘅通道。
+>
+> 完整對照(四項 × 現況/目標/點解未做)見 [`01-topology.md`](./01-topology.md)「as-built vs hardening 目標」;逐項 checklist 見 [`06-prod-hardening-checklist.md`](./06-prod-hardening-checklist.md)。
+
 ### Basic Information
 | 欄位 | 值 |
 |---|---|
@@ -39,21 +47,21 @@
 | VM | ✅ **無**（全 PaaS / 容器,零 VM）|
 | **Other Resources**（PAR 明列欄）| |
 | ├ Azure Container Apps | ✅ `uop-api`(NestJS · internal ingress · targetPort 3000)、`uop-web`(nginx SPA + `/api` proxy · external ingress · targetPort 8080)|
-| ├ Key Vault | ✅ 存全部 secret（清單見 `02-environment-reference.md`）|
+| ├ Key Vault | ⚠️ **已 provision,但未接線** —— secret 現時存喺 **ACA native secureString**(經 ARM securestring 傳入,encrypted at rest)。KV data-plane（`vault.azure.net`）喺公司網被 SSL-MITM 擋,所以連唔到。**⚠️ 目標:遷 KV + Managed Identity**。secret 清單見 `02-environment-reference.md` |
 | ├ Azure Container Registry | ✅ Required = **Yes**（存兩個 image）|
-| ├ PostgreSQL（Other PaaS）| ✅ Azure Database for **PostgreSQL Flexible Server** v16，Burstable，private access |
+| ├ PostgreSQL（Other PaaS）| ✅ Azure Database for **PostgreSQL Flexible Server** v16，Burstable。🔴 網路 = **`--public-access 0.0.0.0`**(Azure portal 顯示為「Allow public access from any Azure service within Azure to this server」)—— **唔係** private access。ACA 要靠佢連得到 DB。**⚠️ 目標:private access / VNet integration**。呢欄直接關乎安全審查,**唔可以只寫 private access** |
 | ├ Log Analytics | ✅ container log（RCI 標準）|
 | ├ AKS / Blob / Azure OpenAI / Event Grid | ✅ **暫無**（Redis/BullMQ 未 wired;AI 屬未來 tier）|
 
 ### Communication protocol between components
 （直接取自 `01-topology.md` 網路表）
 
-| Source | Destination | Protocol | Port |
-|---|---|---|---|
-| Browser | `uop-web`(external ingress) | HTTPS | 443 |
+| Source | Destination | Protocol | Port | 備註 |
+|---|---|---|---|---|
+| Browser | `uop-web`(external ingress) | HTTPS | 443 | |
 | `uop-web` nginx | `uop-api`(internal) | HTTP | 3000 |
 | `uop-api` | PostgreSQL Flexible | TCP/TLS | 5432 |
-| `uop-api` | Key Vault | HTTPS | 443 |
+| ~~`uop-api`~~ | ~~Key Vault~~ | ~~HTTPS~~ | ~~443~~ | 🔴 **唔好填呢行** —— secret 由 ACA 直接注入,container 從來唔會去 KV 攞。遷 KV(hardening)之後先加返,否則會令防火牆開一條唔需要嘅通道 |
 | `uop-api` | Microsoft Graph（outbound） | HTTPS | 443 |
 | `uop-api` | ServiceNow Table API（outbound） | HTTPS | 443 |
 | `uop-api` ↔ n8n（若啟用） | HTTPS | 443 | UAT 預設 direct，暫唔用 |
