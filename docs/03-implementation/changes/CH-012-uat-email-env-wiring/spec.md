@@ -108,7 +108,7 @@ ADR-0013 Model C 下,`acsSenderAddress` 屬非機密、ADMIN 可喺 Settings ›
 | A2 | api container 有齊三個 env | ✅ | template 靜態 19(json 同 bicep 都數過);**running container 亦實測 19**(2026-07-30,`az containerapp show` —— 但注意呢三個 env 唔係本 change 令 container 有嘅,見 §8 頂) |
 | A7 | 冇真 secret 入 repo | ✅ | `aca.params.uat.json` 仍喺 `.gitignore`;只 commit example,9 個 SECRET 值全部仍係 `<…>` placeholder 形式 |
 | A3 | `ACS_CONNECTION_STRING` 唔出現喺任何 API 回應 / audit / log | ❌ 未驗 | 要部署後打 `GET /admin/integrations` 睇 connector read-model(ADR-0013 D5 三重守) |
-| A4 | 🔴 **真寄一封信到真收件人並確認收到** | ❌ 未驗 | 唯一可信證據。ACS 冇 probe,sender domain 未驗證時會**收貨但唔送達**而 API 仍返 `Succeeded`(CH-011 R1) |
+| A4 | 🔴 **真寄一封信到真收件人並確認收到** | ✅ | **2026-07-30 真寄,Chris 確認收到。** `npm run email:check -w @uop/api -- --to=chris.lai@rapo.com.hk`(`NODE_OPTIONS=--use-system-ca`,否則死喺 proxy MITM 自簽證書)· sender `UnifiedOperationsPortal@rci-t.com` · stamp `2026-07-30T08:06:39.608Z` · ACS operation `31bb7805-587c-47ca-862f-8bc7b208d9ed`。⚠️ **判準係收件人確認,唔係 script 印咗 `sent`** —— custom sender domain 嘅失敗模式正正係 ACS 返 `Succeeded` 而 DNS 側掉咗(CH-011 R1) |
 | A5 | `POST /auth/forgot-password` → 真收到重設信,連結入得去 | ❌ 未驗 | 端到端驗 W41 路徑,連結格式 `<APP_BASE_URL>/reset-password#token=…` |
 | A6 | revision `Running/Healthy` + `04 §7` smoke 全過 | ❌ 未驗 | **唔可以只睇 `az acr build` Succeeded**(BUG-008 教訓) |
 
@@ -162,11 +162,20 @@ ADR-0013 Model C 下,`acsSenderAddress` 屬非機密、ADMIN 可喺 Settings ›
 | `deploy/azure/aca.params.example.json` | +3 placeholder · `_acs_email_note` 說明三個坑 |
 | `docs/13-deployment/04-deploy-runbook.md` | §4 secret 說明加 ACS 三項 |
 
+**A4 已過(2026-07-30)—— 但要睇清楚佢證明咗咩**:
+
+| 證明到 | **證明唔到** |
+|---|---|
+| ACS 憑證有效 · transport 通 · `rci-t.com` custom sender domain 真係送得到(唔止 ACS 收貨) | **UAT container 嗰組 secret 值**同本機 `.env` 一唔一樣 |
+
+🔴 呢封信係喺**本機**用 `apps/api/.env` 嘅憑證寄,**唔係經 UAT container**。UAT container 實測有齊三個 env **名**,但 secret **值**查唔到(亦唔應該查)。**唔好由呢邊推另一邊** —— 呢個 change 開頭就係咁錯過一次(§8 頂)。
+
 **未完成**:
 
-1. **A4 / A5 端到端真寄真收** —— 唔使等部署(container 已經齊料,而 `--image` 部署又唔碰 template)⇒ **而家就做得**。判準同 CH-011 A11 一致:收件人真係收到。
-2. A3(`ACS_CONNECTION_STRING` 唔出現喺 API 回應 / audit / log)
-3. **下次走全量 ARM 之前**:確認 gitignored `aca.params.uat.json` 有 `acsConnectionString` 真值 + `appBaseUrl` 係現行 web FQDN,否則會抹走 container 現值
-4. A4/A5/A3 全過之後 status → `done`,並寫 `report.md`
+1. **A5 密碼重設端到端** —— 要行 `POST /auth/forgot-password` 條路(而唔係直接叫 transport),先驗到 `APP_BASE_URL` 同連結格式。⚠️ 需要收件地址係該環境嘅 **local** account:W41 對 SSO / 唔存在 / cooldown 一律返 `204` 但**真零寫入**(anti-enumeration),所以打錯對象會「成功」但冇信。同 W41 **F8c** 係同一件事。
+2. A3(`ACS_CONNECTION_STRING` 唔出現喺 API 回應 / audit / log)—— 打 `GET /admin/integrations` 睇 connector read-model(ADR-0013 D5 三重守)。
+3. A6 **不適用** —— 本 change 唔觸發部署(container 已齊料,`--image` 唔碰 template)。template 改動會喺**下次全量 ARM** 生效,嗰時先驗 revision Healthy。
+4. **下次走全量 ARM 之前**:確認 gitignored `aca.params.uat.json` 有 `acsConnectionString` 真值 + `appBaseUrl` 係現行 web FQDN,否則宣告式 template 會抹走 container 現值。
+5. A5 / A3 過之後 status → `done`,並寫 `report.md`。
 
 🔴 **「配置齊」唔等於「信寄得出」。** 呢個 connector 冇 probe,sender domain 唔對嗰陣 ACS 會收貨但唔送達而 API 仍返 `Succeeded`。漏 `APP_BASE_URL` 更深一層 —— audit 寫 `reason:'issued'` 而信一封都冇寄,連 audit 都答唔到「為咩收唔到信」。
