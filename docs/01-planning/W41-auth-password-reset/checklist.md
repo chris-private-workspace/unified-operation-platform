@@ -207,9 +207,22 @@ last_updated: 2026-07-29
       —— 兩者都係查 **management plane** 拎真實狀態,唔靠 CLI stdout
 - [x] 🔴 **BUG-008 嗰道 `RUN test -f dist/main.js` build gate 過咗** —— 即係 W41 新增嘅檔案
       (全部喺 `src/` 內)冇再次搬走 emit 根。呢道閘第一次真正幫到手就係今次
-- [x] deploy **image-only**(`az containerapp update --image`)—— 刻意**唔走 ARM `aca.json`**:
-      `ACS_*` / `APP_BASE_URL` 未 wire 落 template,ARM 重部署會抹走 running container 上
-      手動設嘅 secret / env(見 `docs/13-deployment/07-uat-as-built.md`)
+- [x] deploy **image-only**(`az containerapp update --image`)—— 刻意**唔走 ARM**。
+      ⚠️ **我落決定嗰陣嘅理由已經過時**:我當時讀到嘅文件話「`ACS_*` / `APP_BASE_URL` 未 wire
+      落 template」,但同 branch 上嘅 **CH-012(`600ff40`,Chris 決定「隨 W41 一齊上」)**
+      已經接線落 `aca.json` + `aca.bicep`(+3 param / +1 secret / +3 env)。
+      **結論唔變,但理由要換**:走 ARM 要 gitignored params 檔有真值(`acsConnectionString`
+      係**必填 securestring** —— CH-012 D3 刻意由 defaultValue 空改為必填),而 `--image`
+      完全唔掂 secret / config,係 as-built 文件嘅日常首選
+- [x] 🔴 **一個文件事實錯誤,直接影響 F8c 判斷**:`07-uat-as-built.md` / `README.md` /
+      `02-environment-reference.md` 同 CH-012 個 commit message 都寫住「api container
+      **只有 16 個 env**」/「`ACS_*` 一個都冇 wire」。**實測係 19**(設 `APP_BASE_URL` 前 18),
+      而 `ACS_CONNECTION_STRING`(secretRef `acs-connection-string`)+ `ACS_SENDER_ADDRESS`
+      **兩個都已經在**(Chris 2026-07-29 親手設落 container)。
+      ⇒ **CH-012 講「仲要做:owner 填 params 真值 → 隨 W41 部署 → 真寄」呢步對 F8c 唔係前置** ——
+      running container 已經齊料,`--image` 部署又冇碰過 template ⇒ **F8c 端到端而家就做得**。
+      教訓:**「template 有冇」同「container 有冇」係兩本帳**,混埋一齊就會得出「email 喺 UAT
+      唔 work」呢個錯結論。講 env 狀態一律 `az containerapp show` 實測
 - [x] 真驗證(唔信 `exit=0`,BUG-008 教訓):`ca-uop-api--0000010` **RunningAtMaxScale/Healthy** ·
       `ca-uop-web--0000006` **Running/Healthy** · 兩者 image tag 都係 `uat-7e1f00b`
 - [x] 🔴 **決定性 probe:同一個 endpoint 部署前 404、部署後 204** ⇒ W41 真上線,唔係推論
