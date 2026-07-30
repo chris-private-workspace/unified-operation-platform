@@ -358,16 +358,37 @@ describe('OutboundRetryService', () => {
       failures.findById.mockResolvedValue(
         notificationFailure({
           to: 'someone.private@rci-t.com',
-          // Stand-in for AUTH-4c-C's reset mail: a real template key that is
-          // deliberately absent from REPLAYABLE_TEMPLATES would behave the same
-          // way. Using an unknown key here keeps this test independent of when
-          // 4c-C lands.
+          // W41: this stopped being a stand-in. `password-reset` is now a REAL
+          // template key that is deliberately absent from REPLAYABLE_TEMPLATES,
+          // so this test finally exercises the case it was written for — the
+          // actual reset mail, whose token the queue never stored.
           template: 'password-reset',
         }),
       );
 
       await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
-        BadRequestException,
+        // Assert the MESSAGE, not just the type: when this key became real the
+        // case silently moved from the unknown-template branch to this one, and
+        // a bare `toThrow(BadRequestException)` would have passed either way.
+        /single-use/,
+      );
+      expect(notifications.send).not.toHaveBeenCalled();
+      expect(failures.markResolved).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown template rather than picking a default', async () => {
+      failures.findById.mockResolvedValue(
+        notificationFailure({
+          to: 'someone.private@rci-t.com',
+          template: 'not-a-real-template',
+        }),
+      );
+
+      // Added in W41: the unknown-template branch used to be covered by the test
+      // above, by accident, because 'password-reset' was not a real key yet.
+      // Losing that coverage the moment 4c-C landed would have been invisible.
+      await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
+        /Unknown notification template/,
       );
       expect(notifications.send).not.toHaveBeenCalled();
       expect(failures.markResolved).not.toHaveBeenCalled();
