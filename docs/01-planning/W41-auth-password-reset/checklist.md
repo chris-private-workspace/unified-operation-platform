@@ -262,7 +262,52 @@ last_updated: 2026-07-29
 - [x] `az containerapp logs show` **查唔到** —— 佢走 `eastasia.azurecontainerapps.dev`(**data plane**)
       → 撞公司 proxy 自簽證書 `CERTIFICATE_VERIFY_FAILED`。`az monitor log-analytics query` 又要另裝
       extension。⇒ **本機睇唔到 UAT container log,要用 Azure Portal**(瀏覽器信公司 CA)。
-      呢點對「email 有冇真寄出」嘅診斷特別重要,因為 email 失敗**唔入** `OutboundFailure` 佇列
+      呢點對「email 有冇真寄出」嘅診斷特別重要 —— 但**唔係**因為失敗冇記錄
+- [x] ⚠️ **我喺上一行原本寫錯咗一句,已修**:原文係「email 失敗**唔入** `OutboundFailure` 佇列」。
+      嗰句係推論而且錯 —— 我睇 schema 個 `kind` 註解只列三個值就落結論,但 `kind` 係 `String`
+      **冇 enum 約束**,而 CH-011 A11 第一次寄失敗(proxy MITM TLS)**真係入咗佇列**。
+      🔴 但今次測試 ACS **接受**咗,所以我**冇直接重現**入佇列呢點 —— 只可以講原推論錯,
+      唔可以講已證實反面。真正嘅診斷困難係另一回事,見 F8f
+
+### F8f — 本機真跑 consume 前半段 + audit fix 真環境對照(2026-07-30,owner 選「唔做真寄」)
+
+> owner 決定唔寄真信(`chris.lai@rapo.com.hk` 係 **SSO 帳號**,由設計上唔合資格重設,而
+> plus-alias / gmail 兩條路都有 SPF/DKIM 不確定性會污染診斷)。所以改為驗到「ACS 真被呼叫」為止。
+
+- [x] 建測試 user `w41.e2e@uop.local`(local provider,REGIONAL)—— **dev-bypass 令 admin API
+      免密碼可叫**,所以「要 admin 登入」呢個障礙喺本機唔成立(UAT 仍然成立)
+- [x] 🔴 **第一次 POST 乜都冇發生**:204 但 **零 token、零 audit、零 OutboundFailure**。
+      推論鏈(基於確定 code path,唔係猜):`issue()` 一定寫 audit ⇒ audit 零新行 ⇒ `issue()`
+      冇被呼叫 ⇒ 而 controller 喺 `issue()` 之前**只有一個 return 點** = `if (!baseUrl) return`
+      ⇒ **本機 `.env` 冇 `APP_BASE_URL`**
+- [x] 🔴 **呢個「失敗」其實係 F8d 個 fix 嘅真環境驗證,而且有前後對照**(同一個 DB、同一個操作):
+
+      | | fix 之前(F8b,01:25)| fix 之後(baseUrl 未設)|
+      |---|---|---|
+      | token | **建咗** | **零** |
+      | audit | **`reason:'issued'`** | **零** |
+      | 信 | **從來冇寄** | 冇寄 |
+
+      ⇒ F8b 留喺 dev DB 嗰行 `issued` 就係「誤導性 audit」嘅**真實標本**,唔係假想情境
+- [x] 帶 shell env `APP_BASE_URL=http://localhost:5173` 重啟 api 重跑(**唔碰 `.env`**,§4.4;
+      跟 `restart-stack` skill 認可嘅 `Start-Process` 傳 env 模式)⇒ 今次:
+      token **1 → 2**(屬測試 user · `hash_len=64` · unused · **TTL `00:29:46`**)· audit 新一行
+      **`issued`** · `leaks_params = f`
+- [x] 🔴 **ACS 真被呼叫,而且接受咗(202)** —— 推論完整:token 建咗 ⇒ `issue()` 返非 null ⇒
+      controller **一定**行到 `notifications.send()`(唯一 code path);而 `send()` 失敗會入佇列,
+      佇列 **0 行** ⇒ 冇 throw ⇒ ACS 收貨
+- [x] 🔴 **順帶真實重現咗 ADR-0019 OQ-1 / CH-011 R1 嗰個風險** —— 收件地址 `w41.e2e@uop.local`
+      係一個**根本唔存在嘅 domain**,而平台側**所有信號全綠**:HTTP 204 · token 建咗 · audit
+      `issued` · 失敗佇列空。冇任何一處睇得出嗰封信一定送唔到。
+      ⇒ F8c 嗰條「**以收件人真係收到為準**」係實測出嚟嘅必要條件,唔係謹慎修辭;
+      D5「唔畀探」嘅代價亦由理論變咗實證
+- [x] ⚠️ **consume 半段仍然驗唔到**(舊 session 失效 / token 單次)—— raw token 只出現喺郵件,
+      而我哋刻意唔 log(G9),連失敗佇列個 `payload` 都**唔含 `params`**(實測 `leaks_params = f`)。
+      呢個係設計正確嘅後果,唔係缺口
+- [x] 清理:測試 user 停用(200)· 測試 token `DELETE 1` · 佇列回 0 baseline
+- [ ] 🚧 **收工還原 shell env**(起返一個唔帶 `APP_BASE_URL` 嘅 api)—— 等 owner 做完 F6 目視先做,
+      避免中斷。**建議 owner 自己喺 `.env` 加一行 `APP_BASE_URL=http://localhost:5173`**
+      (`.env.example` 本身有佢),否則本機 forgot-password 永遠靜默唔 work
 
 ## Closeout
 

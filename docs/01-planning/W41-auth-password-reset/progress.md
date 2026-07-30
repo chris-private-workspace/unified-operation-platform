@@ -109,6 +109,32 @@ crash loop,而 BUG-008 啱啱先因為同類原因(容器起唔到身)死過一�
 `allowInsecure:true` · `API_UPSTREAM` 用 `'http://${api.name}'` 而唔係 resolved internal FQDN
 ⇒ 照 bicep 部署會重現一個 `aca.json` 已修好嘅 bug。冇任何流程用到 bicep。）
 
+## F8f — 本機真跑(2026-07-30 下午)· 三個發現,兩個係意外收穫
+
+owner 決定唔寄真信:佢自己個地址 `chris.lai@rapo.com.hk` 係 **SSO 帳號**,由設計上唔合資格
+email 重設。呢點本身值得記 —— **owner 本人永遠用唔到呢個功能**,佢係為冇 Entra 帳號嘅
+local-password user(外部 / 臨時人員)而做。要真驗就需要「local-password + 真實 mailbox」
+呢個組合,而嗰個組合喺 owner 身上唔存在。
+
+**發現一:本機 `.env` 一直缺 `APP_BASE_URL`。** 第一次 POST 返 204 但零 token、零 audit、
+零佇列。推論鏈(基於確定 code path):`issue()` 一定寫 audit ⇒ audit 零新行 ⇒ `issue()` 冇被
+呼叫 ⇒ 而 controller 喺 `issue()` 之前只有一個 return 點 = `if (!baseUrl) return`。
+⇒ 任何本機開發者跑 forgot-password 都係**靜默唔 work**,而 `.env.example` 明明有嗰個 key。
+
+**發現二(意外收穫):F8d 個 fix 攞到真環境前後對照。** 同一個 DB、同一個操作 ——
+fix 之前(F8b,01:25)建咗 token + 寫咗 `reason:'issued'`,而本機 baseUrl 一直未設,即
+**嗰封信從來冇寄過**;fix 之後零 token 零 audit。⇒ F8b 留喺 dev DB 嗰行 `issued` 就係
+「誤導性 audit」嘅**真實標本**,唔係我 raise 嗰陣講嘅假想情境。
+
+**發現三(意外收穫):真實重現咗 ADR-0019 OQ-1 / CH-011 R1。** 帶 shell env 重啟後重跑,
+token 建咗、audit `issued`、佇列 0 行 ⇒ **ACS 真被呼叫而且接受咗 202**。但收件地址
+`w41.e2e@uop.local` 係一個**根本唔存在嘅 domain** —— 而平台側**所有信號全綠**,冇任何一處
+睇得出嗰封信一定送唔到。⇒ 「以收件人真係收到為準」係實測出嚟嘅必要條件,唔係謹慎修辭。
+
+**同時糾正咗我自己一句錯話**:我早前寫「email 失敗唔入 `OutboundFailure` 佇列」,理由係
+schema 個 `kind` 註解只列三個值 —— 但 `kind` 係 `String` 冇 enum 約束,而 CH-011 A11 第一次
+寄失敗真係入咗佇列。⚠️ 今次 ACS 接受咗,所以我**冇直接重現**入佇列,只可以講原推論錯。
+
 ## 🚧 F8c 端到端 —— 需 owner 執行(唔係我唔做,係我做唔到)
 
 **為咩要你做**:UAT 冇一個「local-password + 真實可收件 email」嘅帳號 —— `admin@uop.local` 個地址
