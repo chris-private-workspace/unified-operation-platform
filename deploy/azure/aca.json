@@ -23,7 +23,10 @@
     "servicenowPassword": { "type": "securestring" },
     "intakeApiKey": { "type": "securestring" },
     "authJwtSecret": { "type": "securestring" },
-    "localAdminInitialPassword": { "type": "securestring" }
+    "localAdminInitialPassword": { "type": "securestring" },
+    "acsConnectionString": { "type": "securestring" },
+    "acsSenderAddress": { "type": "string", "defaultValue": "" },
+    "appBaseUrl": { "type": "string", "defaultValue": "" }
   },
   "variables": {
     "envName": "cae-uop-uat",
@@ -68,7 +71,8 @@
             { "name": "servicenow-password", "value": "[parameters('servicenowPassword')]" },
             { "name": "intake-api-key", "value": "[parameters('intakeApiKey')]" },
             { "name": "auth-jwt-secret", "value": "[parameters('authJwtSecret')]" },
-            { "name": "local-admin-initial-password", "value": "[parameters('localAdminInitialPassword')]" }
+            { "name": "local-admin-initial-password", "value": "[parameters('localAdminInitialPassword')]" },
+            { "name": "acs-connection-string", "value": "[parameters('acsConnectionString')]" }
           ]
         },
         "template": {
@@ -93,7 +97,10 @@
                 { "name": "GRAPH_CLIENT_SECRET", "secretRef": "graph-client-secret" },
                 { "name": "SERVICENOW_PASSWORD", "secretRef": "servicenow-password" },
                 { "name": "INTAKE_API_KEY", "secretRef": "intake-api-key" },
-                { "name": "AUTH_JWT_SECRET", "secretRef": "auth-jwt-secret" }
+                { "name": "AUTH_JWT_SECRET", "secretRef": "auth-jwt-secret" },
+                { "name": "ACS_SENDER_ADDRESS", "value": "[parameters('acsSenderAddress')]" },
+                { "name": "APP_BASE_URL", "value": "[parameters('appBaseUrl')]" },
+                { "name": "ACS_CONNECTION_STRING", "secretRef": "acs-connection-string" }
               ]
             }
           ],

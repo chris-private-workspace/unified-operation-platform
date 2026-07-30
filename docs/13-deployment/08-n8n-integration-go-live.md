@@ -52,18 +52,21 @@ W36 嘅 code 喺 **PR #33 已 merge 入 `main`**,但 **UAT 冇自動更新**:
                              ci.yml 自己寫住「另可加獨立 deploy workflow」= 未建
 ```
 
-UAT 而家仍然跑緊 **`uop-api:uat-0cf0cf3`**(W34 image,2026-07-23)—— 嗰個 build **根本冇 `/requests/intake/n8n` 呢條 route**。
+> **📌 2026-07-30 更新** —— 本節原本寫「UAT 仍跑 `uop-api:uat-0cf0cf3`(W34),嗰個 build 根本冇 `/requests/intake/n8n`」。**呢個前提已經過時**:UAT 而家跑 **`uat-1bc7cdb`**(BUG-008 修復後,api revision `--0000006`),而該 tag 基於 `main`,BUG-008 收官記錄列明含「W35 → CH-011 全部功能」,**即係 W36 條 route 應該已經部署**。
+>
+> ⚠️ 但**我未實測過該 route**,所以唔敢斷言。下面嘅探測法照用,當作出發前嘅確認步驟,唔再當作「預期會 404」。
+> 節標題嘅教訓依然成立:**CI 冇 deploy workflow,merge 入 main 唔會自動更新 UAT** —— 每次都要自己確認 UAT 實際跑邊個 tag。
 
-⚠️ **誤判風險**:n8n 打過去收到嘅係 **404**,唔係 §4 表列嘅 400。**唔好當成 header / payload 出錯去 debug n8n** —— 係條 route 未存在。
+**出發前確認**:向該 route POST **唔帶 key**(`07-uat-as-built.md` 記錄嘅探測法,無 key 喺 guard 層直接彈返,零副作用):
 
-**點分辨**:向該 route POST **唔帶 key**(`07-uat-as-built.md` 記錄嘅探測法,無 key 喺 guard 層直接彈返,零副作用):
+| 回應 | 意思 | 跟住做 |
+|---|---|---|
+| **401** | 已部署,route 在(依現況推斷應該係呢個) | 直接行 §1.1 |
+| **404** | 未部署 | 跑下面嘅 image-only 部署 |
 
-| 回應 | 意思 |
-|---|---|
-| **404** | 未部署 |
-| **401** | 已部署,route 在 |
+⚠️ **若真係收到 404**:唔好當成 header / payload 出錯去 debug n8n —— 係條 route 未存在。
 
-**部署**(image-only,唔掂 secret / DB 密碼 —— `07-uat-as-built.md` §W34 re-deploy):
+**部署**(只喺上面探測返 404 時才需要;image-only,唔掂 secret / DB 密碼 —— `07-uat-as-built.md`「image-only re-deploy」):
 
 ```bash
 TAG=uat-$(git rev-parse --short main)
