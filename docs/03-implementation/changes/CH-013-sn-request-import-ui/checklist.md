@@ -19,9 +19,9 @@ last_updated: 2026-07-31
 
 ## A — 後端：共用 lookup service（ADR-0021 D6）
 
-- [ ] A1 抽 `ServiceNowLookupService`:REQ number → `sc_request` → `sc_req_item[]` → 每張數 `sc_task^active=true`
-- [ ] A2 `intake-from-servicenow.ts` 改為 consume 佢(script 唔刪,同 endpoint 共用同一份,免 drift)
-- [ ] A3 unit test:REQ 查唔到 / RITM 零張 / active task 0·1·2+ 三種 count(**SN 一律 mock**,§3.4)
+- [x] A1 抽 `ServiceNowLookupService`:REQ number → `sc_request` → `sc_req_item[]` → 每張數 `sc_task^active=true` — 落 `src/integration/servicenow/`,module provider + export 已佈線
+- [x] A2 `intake-from-servicenow.ts` 改為 consume 佢(script 唔刪,同 endpoint 共用同一份,免 drift)— `--req` 同 `--list` 兩個 mode 都行 service;**refactor 前後真 SN 輸出逐個字一致**
+- [x] A3 unit test:REQ 查唔到 / RITM 零張 / active task 0·1·2+ 三種 count(**SN 一律 mock**,§3.4)— **11 test**,含 fails-before 實證 + 兩條「零寫入」assertion
 
 ## B — 後端：兩條 endpoint（ADR-0021 D1）
 
@@ -36,8 +36,8 @@ last_updated: 2026-07-31
 
 ## C — 後端：硬邊界驗證（ADR-0021 D2）
 
-- [ ] C1 `git diff` 確認以下四項 **diff = 0**:`intake.service.ts` · `dto/n8n-intake.dto.ts` · `intake-key.guard.ts` · 既有兩條 intake route
-- [ ] C2 既有 intake test 全綠、一條 assertion 都唔使改
+- [x] C1 `git diff` 確認以下四項 **diff = 0**:`intake.service.ts` · `dto/n8n-intake.dto.ts` · `intake-key.guard.ts` · 既有兩條 intake route — **實跑 `git diff --stat origin/main` 六項全空**(順帶加驗 `n8n-native-intake.dto.ts` + `intake-adapter.service.ts`)
+- [x] C2 既有 intake test 全綠、一條 assertion 都唔使改 — **api 672 passed / 60 suites**(A 組前 661,+11 全部係新檔)
 
 ## D — 後端測試
 

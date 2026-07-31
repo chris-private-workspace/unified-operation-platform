@@ -57,9 +57,59 @@ status: in-progress     # in-progress | closed
 
 ---
 
-## Day 1 — YYYY-MM-DD
+## Day 1 — 2026-07-31（A 組 + C 組）
 
-（開工後填）
+### Done
+
+- **A1** `ServiceNowLookupService` — `src/integration/servicenow/`,module provider + export 佈線
+- **A2** `intake-from-servicenow.ts` 改為 consume 佢(`--req` + `--list` 兩個 mode)
+- **A3** 11 個 unit test(SN 全 mock)
+- **C1** ADR-0021 D2 硬邊界 `git diff` 實證
+- **C2** 既有 test 全綠,零 assertion 改動
+
+### Decisions
+
+**① service 放 `src/integration/servicenow/` 而唔係 `src/fulfilment/`。**
+
+ADR-0021 D6 兩個位置都容許。揀前者因為佢係純 SN 查詢 —— 零 domain 邏輯、零 Prisma ⇒ script 手動 wire 只需傳一個 `ServiceNowService`(script 唔 boot AppModule,理由見佢檔頭:`createApplicationContext` 會起 ScheduleModule,而 ADR-0015 sync sweep **會寫**)。放 fulfilment 層就要拖多啲嘢入 script 嘅手動 wiring。
+
+**② `LookedUpRitm.activeTasks` 帶 raw record,但型別上明文標「server-side only」。**
+
+兩個 caller 要唔同深度:UI 只需要 count,terminal 要 state / assigned_to。如果 service 只返 count,script 就要自己再查一次 task ⇒ 正正係 D6 想避免嘅 drift。所以 service 返 raw,**由 HTTP 層負責收窄**(B 組 DTO 要逐個欄 pick,唔可以直接序列化)。呢個邊界寫咗入 type 嘅 doc comment,唔係口頭約定。
+
+**③ 順序 loop,唔用 `Promise.all`。**
+
+一張 REQ 已經係 `1 + N` 個 GET,`listRecent` 再乘以頁數。呢啲跑喺撳掣之後,唔喺 request path,latency 唔係任何人嘅瓶頸 —— 但係打嘅係公司共用 instance。
+
+### 驗證（唔係「跑咗就當過」）
+
+| 項 | 證據 |
+|---|---|
+| **fails-before 實證** | 把 `importable: count === 1` mutate 成 `count >= 1` → 「two active tasks」條 test **真係紅**,diff 顯示 `importable: false → true`。改返即綠。⇒ 嗰條 assertion 真係睇住行為,唔係陪跑 |
+| **零寫入** | 兩條 `expect(updateRecord/createRecord).not.toHaveBeenCalled()`。lookup 今日全部係 GET,但冇任何結構性嘢阻止日後有人加寫入,而寫入喺 preview 路徑會**每次撳掣都 fire** |
+| **refactor 行為保持** | 真 SN 跑 `--req=REQ0044038`,refactor 前後輸出**逐個字一致**;`--list` 15 張單,舊嗰批 REQ 嘅 ✅/🔴 判斷同時間戳全部對得上 |
+| **C1 硬邊界** | `git diff --stat origin/main` 對六個檔 → **完全空** |
+| **全 suite** | api **672 passed / 60 suites**(A 組前 661)· `lint exit=0` 零 error 零 warning |
+
+### Blockers
+
+- 冇。
+
+### Effort
+
+- Planned:0.25 日(A 組);Actual:~0.3 日
+
+### Commits
+
+| Hash | Subject |
+|---|---|
+| _(pending)_ | `refactor(integration): 抽 ServiceNowLookupService,script 同未來 endpoint 共用(CH-013 A1-A3)` |
+
+---
+
+## Day 2 — YYYY-MM-DD
+
+（B 組:兩條 endpoint）
 
 ---
 
