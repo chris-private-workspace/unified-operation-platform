@@ -534,6 +534,46 @@ export interface ActivityEvent {
   requestRef: string;
 }
 
+// ── CH-013 / ADR-0021 — import a real ServiceNow REQ (ADMIN only) ──
+
+/** One active catalog task under a RITM. Only what the server chose to publish. */
+export interface ServiceNowLookupTask {
+  number: string;
+  state: string;
+}
+
+export interface ServiceNowLookupRitm {
+  number: string;
+  title: string;
+  activeTaskCount: number;
+  /** false when activeTaskCount ≠ 1 — the platform could not close it (ADR-0018 D3). */
+  importable: boolean;
+  blockedReason: string | null;
+  tasks: ServiceNowLookupTask[];
+}
+
+/** GET /requests/servicenow-lookup?req= */
+export interface ServiceNowLookupResult {
+  number: string;
+  shortDescription: string;
+  openedAt: string;
+  items: ServiceNowLookupRitm[];
+}
+
+/**
+ * POST /requests/import-from-servicenow body.
+ *
+ * No `ritmSysId`: the server re-reads the REQ and resolves it (ADR-0021 D5).
+ * `skuId` is the M365 GUID, never a name or a catalogue row id.
+ */
+export interface ImportFromServiceNowBody {
+  reqNumber: string;
+  opcoCode: string;
+  targetUpn: string;
+  targetDisplayName?: string;
+  items: { ritmNumber: string; skuId: string; quantity?: number }[];
+}
+
 /**
  * GET /fulfilment/requests → the service returns the full Request plus `opco`
  * and `lineItems` (richer than RequestDto). Fields beyond the DTO are real.

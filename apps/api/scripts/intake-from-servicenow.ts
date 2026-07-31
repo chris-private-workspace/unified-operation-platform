@@ -2,6 +2,10 @@ import { config as loadEnv } from 'dotenv';
 import { join } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { ServiceNowService } from '../src/integration/servicenow/servicenow.service';
+import {
+  LookedUpRequest,
+  ServiceNowLookupService,
+} from '../src/integration/servicenow/servicenow-lookup.service';
 
 /**
  * ONE-SHOT: turn a real ServiceNow REQ number into platform test data.
@@ -26,9 +30,21 @@ import { ServiceNowService } from '../src/integration/servicenow/servicenow.serv
  * ServiceNow. Here the operator has only a REQ number, so we ask.
  *
  * Same shape as `send-connectivity-check.ts` and the ADR-0014 baseline script:
- * deploy/test-time ops, NOT a product feature. It is also the executable
- * specification for the upload UI, if that gets approved — the lookup below is
- * exactly what the UI would have to do server-side.
+ * deploy/test-time ops, NOT a product feature.
+ *
+ * ## Its UI counterpart (CH-013 / ADR-0021)
+ *
+ * Settings › Integrations › "Import request from ServiceNow" now does the same
+ * job for people who would rather not open a terminal. Both go through the SAME
+ * `ServiceNowLookupService` (D6), so they can never disagree about whether a
+ * given RITM is importable.
+ *
+ * They differ in one way worth knowing: `--post` below goes through the m2m
+ * intake route (needs INTAKE_API_KEY), while the UI goes through the
+ * user-authenticated one. Same `IntakeService` at the end, same result — but the
+ * UI's audit row records WHO imported, and this one has no actor to record.
+ *
+ * Runbook: `docs/05-usage/SERVICENOW-REQUEST-IMPORT.md`
  *
  * ## It does not boot AppModule
  *
@@ -48,9 +64,10 @@ import { ServiceNowService } from '../src/integration/servicenow/servicenow.serv
 
 loadEnv({ path: join(__dirname, '..', '.env') });
 
+// The REQ→RITM→task walk moved to ServiceNowLookupService (CH-013 / ADR-0021
+// D6) so this script and the import endpoint cannot drift apart. What stays
+// here is what only a terminal wants: the journal read below, and the printing.
 const REQ_TABLE = 'sc_request';
-const RITM_TABLE = 'sc_req_item';
-const TASK_TABLE = 'sc_task';
 const JOURNAL_TABLE = 'sys_journal_field';
 
 function arg(name: string): string | undefined {
@@ -164,6 +181,9 @@ async function main(): Promise<void> {
       { resolve } as never,
     );
     await snow.onModuleInit();
+    // Same class the import endpoint injects — not a copy of it. That is the
+    // whole point of ADR-0021 D6: if the walk changes, both callers change.
+    const lookup = new ServiceNowLookupService(snow);
 
     // ── 0. --list: what can this account actually SEE? ────────────────────
     // Worth its own mode. "Not found" and "not visible to me" are the same
@@ -171,43 +191,25 @@ async function main(): Promise<void> {
     // the PROJ-001 fixture rows are invisible to this credential (row ACL). So
     // when a lookup misses, the next question is always this one.
     if (list) {
-      const recent = await snow.query(
-        'ORDERBYDESCsys_created_on',
-        REQ_TABLE,
-        15,
-      );
-      console.log(
-        `${REQ_TABLE}: ${recent.length} row(s) visible to the integration account\n`,
-      );
       // Each REQ is scanned down to its tasks, because "which request can I
       // test with" is the only question this mode is ever asked. A REQ whose
       // RITM has 0 or 2+ active tasks cannot complete the flow (ADR-0018 D3),
       // and finding that out here costs two GETs instead of a failed assign.
+      const recent = await lookup.listRecent(15);
+      console.log(
+        `${REQ_TABLE}: ${recent.length} row(s) visible to the integration account\n`,
+      );
       for (const r of recent) {
-        console.log(
-          `  ${text(r.number)}  ${String(r.sys_id)}  ${text(r.sys_created_on)}`,
-        );
-        const d = text(r.short_description);
-        if (d) console.log(`    ${d}`);
+        console.log(`  ${r.number}  ${r.sysId}  ${r.openedAt}`);
+        if (r.shortDescription) console.log(`    ${r.shortDescription}`);
 
-        const items = await snow.query(
-          `request=${String(r.sys_id)}`,
-          RITM_TABLE,
-          20,
-        );
-        if (items.length === 0) {
+        if (r.items.length === 0) {
           console.log('    (no RITM)');
           continue;
         }
-        for (const it of items) {
-          const t = await snow.query(
-            `request_item=${String(it.sys_id)}^active=true`,
-            TASK_TABLE,
-            20,
-          );
-          const mark = t.length === 1 ? '✅' : '🔴';
+        for (const it of r.items) {
           console.log(
-            `    ${mark} ${text(it.number)} · ${t.length} active task(s) · ${text(it.short_description) || '(no title)'}`,
+            `    ${it.importable ? '✅' : '🔴'} ${it.number} · ${it.activeTaskCount} active task(s) · ${it.title || '(no title)'}`,
           );
         }
       }
@@ -225,64 +227,40 @@ async function main(): Promise<void> {
       console.log('');
     }
 
-    // ── 1. REQ number → sys_id ────────────────────────────────────────────
-    const req = await snow.getRecordByNumber(reqNumber as string, REQ_TABLE);
-    if (!req) {
+    // ── 1. REQ number → the request and everything under it ───────────────
+    // One call now. The task count per RITM is the point: DirectTicketProvider
+    // requires EXACTLY one active task (ADR-0018 D3) and fails closed on 0 or
+    // 2+, so a RITM that does not satisfy that here will not be closable later
+    // either — better to see it now than after the assign has happened.
+    const found: LookedUpRequest | null = await lookup.lookupByNumber(
+      reqNumber as string,
+    );
+    if (!found) {
       throw new Error(
         `${reqNumber} was not found in ${REQ_TABLE}. Check the number, and that the integration account can see it (row-level ACL).`,
       );
     }
-    const reqSysId = String(req.sys_id);
-    console.log(`REQ  ${reqNumber}  sys_id=${reqSysId}`);
-    const desc = text(req.short_description);
-    if (desc) console.log(`     ${desc}`);
+    console.log(`REQ  ${found.number}  sys_id=${found.sysId}`);
+    if (found.shortDescription) console.log(`     ${found.shortDescription}`);
 
-    // ── 2. REQ → its RITMs ────────────────────────────────────────────────
-    const ritms = await snow.query(`request=${reqSysId}`, RITM_TABLE, 50);
-    if (ritms.length === 0) {
+    if (found.items.length === 0) {
       throw new Error(
-        `${reqNumber} has no ${RITM_TABLE} rows. A request with no items cannot produce a line item.`,
+        `${reqNumber} has no sc_req_item rows. A request with no items cannot produce a line item.`,
       );
     }
 
-    // ── 3. each RITM → its ACTIVE catalog tasks ───────────────────────────
-    // The count is the point. DirectTicketProvider.pickTask() requires EXACTLY
-    // one active task (ADR-0018 D3) and fails closed on 0 or 2+, so a RITM that
-    // does not satisfy that here will not be closable later either — better to
-    // see it now than after the assign has already happened.
-    console.log(`\n${ritms.length} RITM(s):\n`);
-    const rows: {
-      number: string;
-      sysId: string;
-      title: string;
-      tasks: number;
-    }[] = [];
-
-    for (const r of ritms) {
-      const sysId = String(r.sys_id);
-      const tasks = await snow.query(
-        `request_item=${sysId}^active=true`,
-        TASK_TABLE,
-        20,
+    // ── 2. print what was found ───────────────────────────────────────────
+    console.log(`\n${found.items.length} RITM(s):\n`);
+    for (const item of found.items) {
+      console.log(`  ${item.number}  ${item.sysId}`);
+      console.log(`    ${item.title || '(no short_description)'}`);
+      console.log(
+        `    active catalog tasks: ${item.activeTaskCount}  ${item.importable ? 'OK' : `🔴 ${item.blockedReason}`}`,
       );
-      const entry = {
-        number: text(r.number),
-        sysId,
-        title: text(r.short_description),
-        tasks: tasks.length,
-      };
-      rows.push(entry);
-
-      const verdict =
-        entry.tasks === 1
-          ? 'OK'
-          : entry.tasks === 0
-            ? '🔴 no active task — the platform will refuse to close this'
-            : `🔴 ${entry.tasks} active tasks — the platform cannot tell which is its own`;
-      console.log(`  ${entry.number}  ${entry.sysId}`);
-      console.log(`    ${entry.title || '(no short_description)'}`);
-      console.log(`    active catalog tasks: ${entry.tasks}  ${verdict}`);
-      for (const t of tasks) {
+      // The raw task records are server-side detail the service carries for
+      // exactly this: a terminal wants state / assignee, an HTTP client does not
+      // get them (see the type's own warning).
+      for (const t of item.activeTasks) {
         console.log(
           `      · ${text(t.number)} state=${text(t.state)} assigned_to=${ref(t.assigned_to) || '(empty)'}`,
         );
@@ -290,7 +268,9 @@ async function main(): Promise<void> {
       }
     }
 
-    const selected = only ? rows.filter((r) => r.number === only) : rows;
+    const selected = only
+      ? found.items.filter((r) => r.number === only)
+      : found.items;
     if (only && selected.length === 0) {
       throw new Error(`--only=${only} matched none of the RITMs above.`);
     }
@@ -319,10 +299,13 @@ async function main(): Promise<void> {
       sentAt: new Date().toISOString(),
       request: {
         requestId: reqNumber,
-        openedDate: text(req.opened_at) || new Date().toISOString(),
-        remarks: desc || `imported from ${reqNumber}`,
+        openedDate: found.openedAt || new Date().toISOString(),
+        remarks: found.shortDescription || `imported from ${reqNumber}`,
         department: jobFunction,
-        source: { subject: `[${reqNumber}] ${desc}`, sender: upn as string },
+        source: {
+          subject: `[${reqNumber}] ${found.shortDescription}`,
+          sender: upn as string,
+        },
       },
       targetUser: { raw: upn as string, email: upn as string, validated: true },
       licenseItems: selected.map((r) => ({

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { GraphService } from './graph/graph.service';
 import { ServiceNowService } from './servicenow/servicenow.service';
+import { ServiceNowLookupService } from './servicenow/servicenow-lookup.service';
 import { IntegrationController } from './integration.controller';
 import { IntegrationStatusService } from './integration-status.service';
 import { IntegrationProbeService } from './integration-probe.service';
@@ -88,6 +89,9 @@ export async function ticketUpdateProviderFactory(
   providers: [
     GraphService,
     ServiceNowService,
+    // CH-013 / ADR-0021 D6 — read-only REQ→RITM→task walk, shared by the import
+    // endpoint and the ops script so neither grows its own copy.
+    ServiceNowLookupService,
     IntegrationStatusService,
     IntegrationProbeService,
     ConnectorConfigService,
@@ -122,6 +126,7 @@ export async function ticketUpdateProviderFactory(
   exports: [
     GraphService,
     ServiceNowService,
+    ServiceNowLookupService,
     ConnectorConfigService,
     LicenseOperationsProvider,
     TicketUpdateProvider,

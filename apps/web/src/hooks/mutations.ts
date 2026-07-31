@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiDelete, apiPatch, apiPost } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import type {
   AddLineItemBody,
   AdminUser,
@@ -8,6 +8,7 @@ import type {
   CreateOpcoBody,
   CreateRequestBody,
   CreateUserBody,
+  ImportFromServiceNowBody,
   LedgerImportResult,
   LedgerRow,
   LineItemStage,
@@ -18,6 +19,7 @@ import type {
   ReconcileResult,
   RequestLineItem,
   ResetPasswordBody,
+  ServiceNowLookupResult,
   SkuCatalog,
   UpdateCatalogBody,
   UpdateLedgerBody,
@@ -371,6 +373,38 @@ export function useUpdateOpco() {
       qc.invalidateQueries({ queryKey: ['admin', 'opcos'] });
       qc.invalidateQueries({ queryKey: ['opcos'] });
       qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
+    },
+  });
+}
+
+// ── CH-013 / ADR-0021 — import a real ServiceNow REQ (ADMIN only) ──
+
+/**
+ * GET /requests/servicenow-lookup — but as a mutation, deliberately.
+ *
+ * It is a read, yet every call costs a round-trip to a shared corporate
+ * ServiceNow instance (1 + N GETs). A `useQuery` would refetch on mount, on
+ * focus, on reconnect — none of which the operator asked for. This one fires
+ * when a button is pressed and never otherwise.
+ */
+export function useServiceNowLookup() {
+  return useMutation({
+    mutationFn: (reqNumber: string) =>
+      apiGet<ServiceNowLookupResult>(
+        `/requests/servicenow-lookup?req=${encodeURIComponent(reqNumber)}`,
+      ),
+  });
+}
+
+/** POST /requests/import-from-servicenow — creates the platform request. */
+export function useServiceNowImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ImportFromServiceNowBody) =>
+      apiPost<OnboardingRequest>('/requests/import-from-servicenow', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requests'] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'activity'] });
     },
   });
 }

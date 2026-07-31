@@ -76,6 +76,15 @@ describe('permission matrix (derived from @Roles)', () => {
         'OutboundFailureController',
         'OutboundRequestController',
         'PermissionsController',
+        // CH-013 / ADR-0021 D3 — /requests/servicenow-lookup +
+        // /requests/import-from-servicenow, @Roles(ADMIN). The narrowest of the
+        // request-creating surfaces on purpose: it conjures a real platform
+        // request out of nothing but a number typed into a box. Not widened to
+        // OPCO_IT because a request's OpCo comes from ServiceNow and is unknown
+        // until AFTER the lookup — an authorisation gate that needs an external
+        // round-trip before it can answer is a gate that fails in interesting
+        // ways. Widening it means reopening the ADR, not editing this line.
+        'ServiceNowImportController',
         'UserAdminController',
       ]),
     );
