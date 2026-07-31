@@ -16,6 +16,7 @@
     "seed": "ts-node prisma/seed.ts",
     "baseline:assigned": "ts-node prisma/init-assigned-baseline.ts",
     "email:check": "ts-node scripts/send-connectivity-check.ts",
+    "intake:from-sn": "ts-node scripts/intake-from-servicenow.ts",
     "demo:ledger": "ts-node prisma/seed-demo-ledger.ts",
     "demo:mock-sn": "node scripts/demo-harness/mock-servicenow.js",
     "demo:mock-n8n": "node scripts/demo-harness/mock-n8n.js",
