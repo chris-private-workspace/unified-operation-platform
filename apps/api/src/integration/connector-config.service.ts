@@ -9,6 +9,13 @@ import {
   type EditableField,
 } from './connectors';
 
+/**
+ * Shared by `guid` and `sku` — the latter checks this first so a malformed value
+ * is reported as bad shape rather than as "not found in the catalogue".
+ */
+const GUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Where a resolved non-secret value came from. */
 export type FieldSource = 'db' | 'env' | 'unset';
 
@@ -118,7 +125,7 @@ export class ConnectorConfigService {
           `'${key}' is not an editable field of ${connector}`,
         );
       }
-      data[key] = this.validate(field, raw);
+      data[key] = await this.validate(field, raw);
     }
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('No editable fields to update');
@@ -161,8 +168,16 @@ export class ConnectorConfigService {
     return field;
   }
 
-  /** Per-field validation. null / '' clears the override → env fallback. */
-  private validate(field: EditableField, raw: unknown): string | null {
+  /**
+   * Per-field validation. null / '' clears the override → env fallback.
+   *
+   * Async since W42: `kind: 'sku'` has to reach the catalogue. It runs BEFORE
+   * the upsert transaction, so a rejected value never opens one.
+   */
+  private async validate(
+    field: EditableField,
+    raw: unknown,
+  ): Promise<string | null> {
     if (raw === null || raw === '') return null;
     if (typeof raw !== 'string') {
       throw new BadRequestException(`${field.label} must be a string`);
@@ -179,14 +194,38 @@ export class ConnectorConfigService {
         }
         break;
       case 'guid':
-        if (
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            value,
-          )
-        ) {
+        if (!GUID_RE.test(value)) {
           throw new BadRequestException(`${field.label} must be a GUID`);
         }
         break;
+      case 'sku': {
+        // W42 / ADR-0020 D4. Shape first, so a typo reads as a typo.
+        if (!GUID_RE.test(value)) {
+          throw new BadRequestException(`${field.label} must be a GUID`);
+        }
+        const sku = await this.prisma.skuCatalog.findUnique({
+          where: { skuId: value },
+          select: { active: true, skuPartNumber: true },
+        });
+        /**
+         * Rejecting here is the whole point of this kind: `n8n-inbound` cannot
+         * be probed (nothing to call — it is pushed to us), so this message is
+         * the only chance an operator has to learn the id is wrong. Without it
+         * the mistake surfaces as an onboarding request that quietly came in
+         * one line short, days later.
+         */
+        if (!sku) {
+          throw new BadRequestException(
+            `${field.label}: no SKU with id '${value}' exists in the catalogue`,
+          );
+        }
+        if (!sku.active) {
+          throw new BadRequestException(
+            `${field.label}: SKU '${sku.skuPartNumber}' is inactive`,
+          );
+        }
+        break;
+      }
       case 'enum':
         if (!field.enumValues?.includes(value)) {
           throw new BadRequestException(

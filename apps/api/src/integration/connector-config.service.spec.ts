@@ -14,6 +14,7 @@ describe('ConnectorConfigService', () => {
   let service: ConnectorConfigService;
   let prisma: {
     connectorConfig: { findUnique: jest.Mock; upsert: jest.Mock };
+    skuCatalog: { findUnique: jest.Mock };
     $transaction: jest.Mock;
   };
   let audit: { logChange: jest.Mock };
@@ -23,6 +24,8 @@ describe('ConnectorConfigService', () => {
     opts: {
       row?: Record<string, unknown> | null;
       env?: Record<string, string>;
+      /** W42 — what the catalogue returns for a `kind: 'sku'` lookup. */
+      sku?: Record<string, unknown> | null;
     } = {},
   ) => {
     env = opts.env ?? {};
@@ -30,6 +33,9 @@ describe('ConnectorConfigService', () => {
       connectorConfig: {
         findUnique: jest.fn().mockResolvedValue(opts.row ?? null),
         upsert: jest.fn().mockResolvedValue({}),
+      },
+      skuCatalog: {
+        findUnique: jest.fn().mockResolvedValue(opts.sku ?? null),
       },
       // interactive $transaction runs the callback with the same client (W29 pattern)
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
@@ -229,6 +235,51 @@ describe('ConnectorConfigService', () => {
         graphTenantId: '4f63aaa0-5612-4fe8-8175-9f9f4d26c7b4',
       });
       expect(prisma.connectorConfig.upsert).toHaveBeenCalled();
+    });
+
+    /**
+     * W42 / ADR-0020 D4 — `kind: 'sku'`. This connector cannot be probed, so a
+     * write-time rejection is the ONLY feedback an operator gets; a bad id that
+     * is merely well-formed would otherwise surface days later as an onboarding
+     * request that quietly came in one line short.
+     */
+    describe("kind 'sku' (default onboarding SKU)", () => {
+      const GOOD = '06ebc4ee-1bb5-47dd-8120-11324bc54e06';
+
+      it('accepts an active SKU that exists in the catalogue', async () => {
+        build({ sku: { active: true, skuPartNumber: 'SPE_E5' } });
+        await service.update('n8n-inbound', { defaultOnboardingSkuId: GOOD });
+        expect(prisma.connectorConfig.upsert).toHaveBeenCalled();
+        expect(prisma.skuCatalog.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { skuId: GOOD } }),
+        );
+      });
+
+      it('rejects a well-formed GUID that is in no catalogue row', async () => {
+        build({ sku: null });
+        await expect(
+          service.update('n8n-inbound', { defaultOnboardingSkuId: GOOD }),
+        ).rejects.toThrow(/exists in the catalogue/);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('rejects an inactive SKU and names it', async () => {
+        build({ sku: { active: false, skuPartNumber: 'SPE_E5' } });
+        await expect(
+          service.update('n8n-inbound', { defaultOnboardingSkuId: GOOD }),
+        ).rejects.toThrow(/SPE_E5.*inactive/);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it('checks shape BEFORE the catalogue, so a typo reads as a typo', async () => {
+        build({ sku: { active: true, skuPartNumber: 'SPE_E5' } });
+        await expect(
+          service.update('n8n-inbound', { defaultOnboardingSkuId: 'E5' }),
+        ).rejects.toThrow(/must be a GUID/);
+        // "not found" would be a misleading message for a value that was never
+        // an id in the first place.
+        expect(prisma.skuCatalog.findUnique).not.toHaveBeenCalled();
+      });
     });
 
     it('clears an override when the value is empty', async () => {

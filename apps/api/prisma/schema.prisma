@@ -469,6 +469,17 @@ model ConnectorConfig {
   // key-value bag, so a new connector always costs a migration.
   acsSenderAddress String? // ACS_SENDER_ADDRESS override (e.g. no-reply@example.com)
 
+  // n8n inbound intake (W42 / ADR-0020 D4) — non-secret. The first editable
+  // field this connector has ever had; INTAKE_API_KEY stays in env.
+  //
+  // 🔴 A skuId GUID, never a name. The catalogue already carries two E5
+  // variants (SPE_E5 and Microsoft_365_E5_(no_Teams)), so "the E5 one" is not
+  // an identifier — and picking the wrong one puts the wrong product on a real
+  // person's account. Validated on write against an active SkuCatalog row
+  // (kind 'sku'), because this connector cannot be probed: a write-time
+  // rejection is the only feedback an operator ever gets.
+  defaultOnboardingSkuId String? // DEFAULT_ONBOARDING_SKU_ID override
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }

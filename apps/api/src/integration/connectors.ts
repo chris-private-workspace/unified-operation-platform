@@ -104,8 +104,13 @@ export interface EditableField {
    * `email` added by CH-011. It is not decoration: ADR-0019 D5 removed the probe
    * for this connector, so write-time validation is the ONLY feedback an
    * operator gets before a real send fails. `text` would have accepted anything.
+   *
+   * `sku` added by W42 / ADR-0020 D4 for the same reason, one step stronger: it
+   * checks GUID shape AND that the id is a real, ACTIVE SkuCatalog row. Shape
+   * alone would accept a well-formed id that exists nowhere, and the operator
+   * would not find out until the first onboarding request came in short a line.
    */
-  kind: 'text' | 'url' | 'guid' | 'enum' | 'email';
+  kind: 'text' | 'url' | 'guid' | 'enum' | 'email' | 'sku';
   /** Allowed values when kind === 'enum'. */
   enumValues?: readonly string[];
 }
@@ -179,9 +184,31 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
     ],
     secrets: [{ envKey: 'N8N_OUTBOUND_WEBHOOK_KEY', label: 'Webhook key' }],
   },
+  // W42 / ADR-0020 D4 — inbound's first non-secret setting. Until now the
+  // shared key was its only config.
   'n8n-inbound': {
-    // Inbound has no non-secret settings — the shared key is its only config.
-    editable: [],
+    editable: [
+      {
+        /**
+         * The SKU a licence line is created against when ServiceNow sends an
+         * onboarding request with NO licence lines at all (ADR-0020 D1/D2).
+         *
+         * 🔴 A GUID, never a name. The catalogue already carries two E5
+         * variants (SPE_E5 and Microsoft_365_E5_(no_Teams)), so "the E5 one" is
+         * not an identifier — and the wrong pick puts the wrong product on a
+         * real person's account.
+         *
+         * Unset is a supported state, not a broken one: intake then creates the
+         * request with zero lines and warns (D6). It stays fail-SOFT because
+         * nothing is being guessed — losing the request entirely would be worse
+         * than losing one line an operator can see is missing.
+         */
+        column: 'defaultOnboardingSkuId',
+        label: 'Default onboarding SKU',
+        envKey: 'DEFAULT_ONBOARDING_SKU_ID',
+        kind: 'sku',
+      },
+    ],
     secrets: [{ envKey: 'INTAKE_API_KEY', label: 'Intake API key' }],
   },
   // W39 / ADR-0017 seam ② — the switch itself lives here (D1: one switch per

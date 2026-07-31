@@ -7,6 +7,9 @@ import { IntakeAdapterService } from './intake-adapter.service';
 import { IntakeService } from './intake.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { ConnectorConfigService } from '../integration/connector-config.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import {
   N8N_INTAKE_EVENT,
   type N8nNativeIntakeDto,
@@ -58,8 +61,11 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
     request: Record<string, jest.Mock>;
     opco: Record<string, jest.Mock>;
     skuCatalog: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
   };
   let snow: { getRecordByNumber: jest.Mock };
+  let connectorConfig: { resolve: jest.Mock };
+  let audit: { log: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -69,8 +75,13 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
       },
       opco: { findUnique: jest.fn() },
       skuCatalog: { findUnique: jest.fn(), findMany: jest.fn() },
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
     };
     snow = { getRecordByNumber: jest.fn() };
+    // Default: no default SKU configured. Every pre-W42 test carries licence
+    // lines, so injection never runs for them either way.
+    connectorConfig = { resolve: jest.fn().mockResolvedValue(undefined) };
+    audit = { log: jest.fn() };
 
     // The REAL IntakeService is wired in on purpose: "nothing was written" then
     // means the whole path stayed dry, not just that a mock went uncalled.
@@ -80,6 +91,8 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
         IntakeService,
         { provide: PrismaService, useValue: prisma },
         { provide: ServiceNowService, useValue: snow },
+        { provide: ConnectorConfigService, useValue: connectorConfig },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     adapter = moduleRef.get(IntakeAdapterService);
@@ -304,6 +317,151 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
 
     expect(again).toMatchObject({ id: 'r1' });
     expect(prisma.request.create).toHaveBeenCalledTimes(1); // still one
+  });
+
+  // ── default onboarding SKU (W42 / ADR-0020) ──────────────────
+
+  describe('default onboarding SKU', () => {
+    const DEFAULT_GUID = '06ebc4ee-1bb5-47dd-8120-11324bc54e06';
+
+    /** Same as happyMocks but the envelope carries no licence line at all. */
+    const noLicenceMocks = () => {
+      prisma.opco.findUnique.mockResolvedValue({
+        id: 'o-rhk',
+        code: 'RHK',
+        active: true,
+      });
+      snow.getRecordByNumber.mockResolvedValue({ sys_id: REQ_SYS_ID });
+      // The created request echoes back the line it was told to create, so the
+      // audit step has a real line-item id to point at.
+      prisma.request.create.mockImplementation(({ data }: any) => ({
+        id: 'r1',
+        ...data,
+        lineItems: (data.lineItems?.create ?? []).map((l: any, i: number) => ({
+          id: `li-${i}`,
+          ...l,
+        })),
+      }));
+    };
+
+    const emptyPayload = (): N8nNativeIntakeDto => ({
+      ...basePayload(),
+      licenseItems: [],
+    });
+
+    const configureDefault = () => {
+      connectorConfig.resolve.mockResolvedValue(DEFAULT_GUID);
+      prisma.skuCatalog.findUnique.mockResolvedValue({
+        id: 'c-e5',
+        skuId: DEFAULT_GUID,
+        skuPartNumber: 'SPE_E5',
+        active: true,
+      });
+    };
+
+    it('injects the default when ServiceNow carried no licence line', async () => {
+      noLicenceMocks();
+      configureDefault();
+
+      await adapter.intakeNative(emptyPayload());
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create).toHaveLength(1);
+      expect(data.lineItems.create[0]).toMatchObject({
+        skuCatalogId: 'c-e5',
+        quantity: 1,
+        // Nothing in ServiceNow asked for this line, so it has no RITM.
+        serviceNowSysId: null,
+      });
+    });
+
+    it('audits the injection — the platform authored a line nobody requested', async () => {
+      noLicenceMocks();
+      configureDefault();
+
+      await adapter.intakeNative(emptyPayload());
+
+      expect(audit.log).toHaveBeenCalledTimes(1);
+      expect(audit.log.mock.calls[0][1]).toMatchObject({
+        action: AUDIT_ACTIONS.INTAKE_DEFAULT_SKU,
+        targetType: 'RequestLineItem',
+        targetId: 'li-0',
+        actorId: null, // m2m intake — no user to attribute it to
+      });
+    });
+
+    it('does NOT inject when a licence line is already present', async () => {
+      // An E3 request stays an E3 request: ServiceNow stated a choice and the
+      // platform does not second-guess it (D2).
+      happyMocks();
+
+      await adapter.intakeNative(basePayload());
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create).toHaveLength(1);
+      expect(data.lineItems.create[0].skuCatalogId).toBe('c-e5');
+      expect(connectorConfig.resolve).not.toHaveBeenCalled();
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('still creates the request — with zero lines — when no default is configured', async () => {
+      noLicenceMocks();
+      connectorConfig.resolve.mockResolvedValue(undefined);
+
+      const res = await adapter.intakeNative(emptyPayload());
+
+      // Fail-SOFT (D6): a request an operator can see is a line short beats a
+      // request that never arrived.
+      expect(res).toMatchObject({ id: 'r1' });
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create).toHaveLength(0);
+      // A configuration mistake is an ops event, not a business one.
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('treats a configured-but-inactive SKU the same as unconfigured', async () => {
+      noLicenceMocks();
+      connectorConfig.resolve.mockResolvedValue(DEFAULT_GUID);
+      prisma.skuCatalog.findUnique.mockResolvedValue({
+        id: 'c-e5',
+        skuId: DEFAULT_GUID,
+        skuPartNumber: 'SPE_E5',
+        active: false, // deactivated after it was configured
+      });
+
+      await adapter.intakeNative(emptyPayload());
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create).toHaveLength(0);
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('does not audit an injection on an idempotent re-post', async () => {
+      noLicenceMocks();
+      configureDefault();
+      await adapter.intakeNative(emptyPayload());
+      expect(audit.log).toHaveBeenCalledTimes(1);
+
+      /**
+       * Second push of the same REQ: intake returns the existing request and
+       * writes nothing. An audit row here would claim the platform added a line
+       * it did not add this time — the misleading-trail failure W41 had to fix.
+       *
+       * 🔴 The existing request MUST carry the line injected the first time
+       * (`findByReq` uses `include: { lineItems: true }`). Returning an empty
+       * array here would let `auditInjection`'s defensive "line not found"
+       * branch pass this test with the real guard deleted — which is exactly
+       * what happened before this mock was corrected.
+       */
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        lineItems: [{ id: 'li-0', skuCatalogId: 'c-e5' }],
+      });
+      await adapter.intakeNative(emptyPayload());
+
+      expect(prisma.request.create).toHaveBeenCalledTimes(1);
+      expect(audit.log).toHaveBeenCalledTimes(1); // still one
+    });
   });
 });
 

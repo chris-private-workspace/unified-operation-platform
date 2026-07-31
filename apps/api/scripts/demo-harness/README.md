@@ -16,6 +16,7 @@ without touching real ServiceNow / Graph / n8n**. Everything runs under
 | `mock-servicenow.js` | Mock SN Table API (`POST/PATCH /api/now/table/*` → `{result:{sys_id,number}}`), logs payloads. `npm run demo:mock-sn` |
 | `mock-n8n.js` | Mock n8n webhook (sync `{request,lineItems}` response). `npm run demo:mock-n8n` |
 | `cleanup-demo.js` | Delete demo requests by exact `serviceNowSysId` (FK-safe, refuses with no args). `npm run demo:cleanup -- <sysId> ...` |
+| `intake-fixture.js` | Push synthetic onboarding requests down **both** intake routes (W42). `npm run demo:intake -- [--mode canonical\|native\|both] [--count N] [--empty]` |
 
 ## Prereqs
 - Postgres up (repo `docker compose up -d postgres`, host port 5433) + seeded (23 OpCos).
@@ -84,6 +85,46 @@ curl -s -o /dev/null -w "re-post → %{http_code}\n"  -X POST http://localhost:3
 Expect `401 / 201 / 201` — the guard fails closed, the first push builds the
 two-level mirror (with the sync gate carried inline), and the re-post is
 idempotent on the `@unique` REQ sysId. An empty `lineItems` → `400`.
+
+> ⚠️ That last rule is **canonical-only**. The native route below deliberately
+> accepts an empty list (W42 / ADR-0020 D5) — there it means "ServiceNow carried
+> no licence line", which is what triggers the default SKU.
+
+## Scenario 4 — Native n8n envelope + default onboarding SKU (W42)
+
+The only route that exercises `IntakeAdapterService` (Job Function → OpCo,
+licence code → skuId, REQ number → sysId). It reverse-looks-up the REQ number in
+ServiceNow, so point the API at the mock:
+
+```powershell
+npm run demo:mock-sn                        # terminal A
+# terminal B (from apps/api)
+$env:PORT=3101; $env:INTAKE_API_KEY='demo-intake-key'
+$env:SERVICENOW_INSTANCE_URL='http://localhost:8980'
+$env:SERVICENOW_USER='mock'; $env:SERVICENOW_PASSWORD='mock'
+node dist/main
+```
+
+```bash
+# from apps/api — both routes, 2 requests each
+npm run demo:intake
+
+# native only, and with NO licence line → exercises ADR-0020 injection
+npm run demo:intake -- --mode native --empty
+```
+
+`--empty` is the interesting one. With a **Default onboarding SKU** configured
+(Settings → Integrations → n8n (inbound intake)) the created request comes back
+with **one** line item that has **no RITM** — the platform authored it, and an
+`intake.default_sku_injected` audit row says so. With nothing configured it comes
+back with **zero** lines and only a warning in the API log: a missing setting is
+an ops problem, not a business event, and losing the whole request would be worse
+than losing one line an operator can see is absent.
+
+The fixture prints a ready-made `demo:cleanup` command for whatever it created.
+
+> Reaching **assign** still needs a real Graph hit (`findUser`), so this fixture
+> drives the flow as far as READY and no further — that limit is not about n8n.
 
 ## Cleanup (delete the demo rows you created)
 ```bash

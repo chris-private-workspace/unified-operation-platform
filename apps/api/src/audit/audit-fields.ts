@@ -89,6 +89,22 @@ export const AUDIT_ACTIONS = {
    * "the cron ran" is noise, and the sweep runs every 10 minutes forever.
    */
   SYNC_SWEEP: 'sync.sweep',
+  /**
+   * W42 / ADR-0020 D7 — the platform created a licence line that ServiceNow
+   * never asked for.
+   *
+   * This is the first line item the platform has ever authored: every other one
+   * mirrors an `sc_req_item` (ADR-0008 D6). Without this row, nobody looking at
+   * a request later can tell which lines came from ServiceNow and which the
+   * platform added — and one of them is about to put a product on a real
+   * person's account.
+   *
+   * Only the injection is audited. A request that arrived WITH licence lines is
+   * ordinary intake and writes nothing here, and a MISSING/invalid default is
+   * only logged — a configuration mistake is an ops event, not a business one
+   * (same split as W41's unset APP_BASE_URL).
+   */
+  INTAKE_DEFAULT_SKU: 'intake.default_sku_injected',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -149,6 +165,8 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'serviceNowDefaultTable',
       'requestSubmissionProvider',
       'n8nOutboundWebhookUrl',
+      // W42 / ADR-0020 — a skuId GUID, non-secret and system-owned.
+      'defaultOnboardingSkuId',
     ],
     /**
      * W36 / ADR-0016 — event-only, following the OutboundFailure precedent.

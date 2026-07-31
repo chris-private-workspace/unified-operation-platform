@@ -179,12 +179,28 @@ export class N8nNativeIntakeDto {
   @Type(() => N8nTargetUserDto)
   targetUser!: N8nTargetUserDto;
 
+  /**
+   * W42 / ADR-0020 D5 — an EMPTY array is legitimate here.
+   *
+   * It means "ServiceNow carried no licence line at all", and that is precisely
+   * what triggers the default-SKU injection (D1/D2). Until W42 this DTO required
+   * ≥1, so the one payload the business cares about was rejected at the DTO
+   * layer and never reached the adapter.
+   *
+   * ⚠️ Only the NATIVE envelope allows this. The canonical contract
+   * (`N8nIntakeRequestDto`, W24 CONTRACT.md, LOCKED) still requires ≥1 — callers
+   * that speak it keep the stricter guarantee.
+   *
+   * `@ArrayMinSize(0)` is kept rather than dropped so that "empty is allowed" is
+   * something this file states, not something it forgot to say.
+   */
   @ApiProperty({
     type: [N8nLicenseItemDto],
-    description: 'curated licence lines (≥1)',
+    description:
+      'curated licence lines. MAY BE EMPTY — an empty array means ServiceNow carried no licence line, which triggers the default onboarding SKU (ADR-0020)',
   })
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(0)
   @ValidateNested({ each: true })
   @Type(() => N8nLicenseItemDto)
   licenseItems!: N8nLicenseItemDto[];
