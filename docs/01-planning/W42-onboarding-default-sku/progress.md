@@ -80,3 +80,26 @@ last_updated: 2026-07-31
 - 抽 `GUID_RE` 做常數(`guid` 同 `sku` 兩處共用)。
 - **前端零 code 改動**已核實:`integrations-panel.tsx:229` data-driven,前端亦冇 `kind` union type。
 - H4 核對:所有新 log 只帶 REQ number / SKU part number,**零 UPN**。
+
+---
+
+## Day 1(續)— F10 live 驗證
+
+**環境**:mock SN `8980` + API `3101`(`node dist/main`,dist 由 3100 個 `nest start --watch` 維護 —— 實測 dist 已含新 code,所以**唔使自己 build**,避開 `tsbuildinfo` 陷阱同 race)。全程**冇掂 owner 跑緊嘅 3100 / 5173**。
+
+| 驗 | 結果 |
+|---|---|
+| connector 真返新 field | `n8n-inbound → defaultOnboardingSkuId (unset)` ✅ |
+| 未配置 + 空 licence list | **`201`**(唔係 400 ⇒ D5 放寬生效)· **0 行** · `WARN` 零 UPN · **audit 零新行**(baseline 24) |
+| 寫入驗證 | `E5` → 400 `must be a GUID`(shape-first)· 不存在 GUID → 400 `no SKU with id … exists in the catalogue` · 真 SPE_E5 → **200** |
+| 配置後 + 空 licence list | **`201`** · **1 行** · line item id `cms8bwvwr…` **同 audit `targetId` 逐字對上** · `ritmSysId=null` · meta `SPE_E5` / `source=n8n-intake` / **`actor=null`** |
+| 有 licence 行(canonical×2 + native×2) | 每張 **1 行**(唔係 2 行)· audit 不變 ⇒ 冇亂注入 **且 canonical 行為不變** |
+| 重推同一 REQ | `201` 返 existing · audit **26 → 26** ⇒ `preExisting` guard **live 生效** |
+
+**兩個過程中嘅自我糾正**:
+1. 第一次 PATCH connector 四個 case 全部 400,睇落似「驗證 work」—— 但訊息係 `values must be an object`,**body shape 錯**,四個 case 一個都冇真正跑到驗證。改對 body 才見到真訊息。⇒ **400 唔等於驗證 work,要睇訊息。**
+2. 用咗一次 bash `grep` 讀 test output,**違反 H8**,即時改用 Grep 工具。
+
+**Cleanup**:清 5 張 fixture request(4 line items),**保留 `sys-REQ46525400`** —— 佢就係「平台自己加咗一行 E5」嗰張,留畀 owner 喺 UI 睇。harness 兩個進程已停,`3101`/`8980` 回 FREE,`3100`/`5173` 未動。
+
+🚧 **UI 目視(light+dark,H6)未做** —— 交 owner。3100 已跑最新 code 且同一 DB,所以 `http://localhost:5173/settings` → Integrations 直接睇得到。

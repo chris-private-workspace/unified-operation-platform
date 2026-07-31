@@ -32,8 +32,16 @@
 
 ## 收官
 
-- [ ] **F10** Live 驗證:本機 intake→READY 端到端 · connector UI 卡片(**light + dark**,H6)
-- [ ] **F11** Doc sync:BACKLOG(R7)· 更正 `intake-adapter.service.ts:138` 過期註解 · MAPPING/CONTRACT 如受影響
+- [x] **F10** Live 驗證(harness:mock SN 8980 + API 3101,**冇掂 3100/5173**)
+  - [x] 未配置 → `201` + **0 行** + `WARN`(零 UPN)+ **audit 零新行**(baseline 24)
+  - [x] 寫入驗證三態 → `E5`→400 `must be a GUID` · 不存在 GUID→400 `no SKU with id … exists` · 真 SPE_E5→**200**
+  - [x] 配置後 → `201` + **1 行**,line item id **同 audit `targetId` 逐字對上**,`ritmSysId=null`,audit meta `SPE_E5` / `source=n8n-intake` / `actor=null`
+  - [x] 有 licence 行(canonical ×2 + native ×2)→ 每張 **1 行**,audit 不變 ⇒ 冇亂注入 + canonical 行為不變
+  - [x] 重推同一 REQ → `201` 返 existing,audit **26→26**(`preExisting` guard live 生效)
+  - [x] `n8n-inbound` connector 真返 `defaultOnboardingSkuId` field
+  - [ ] 🚧 **UI 卡片目視(light + dark,H6)未做** —— 交 owner:`http://localhost:5173/settings` → Integrations → n8n (inbound intake);3100 已跑最新 code 且同一 DB,值已設好
+  - [x] Cleanup:清 5 張,**保留 `sys-REQ46525400`** 畀 owner 喺 UI 睇「平台加咗一行」
+- [x] **F11** Doc sync:BACKLOG(R7)· 更正 `intake-adapter.service.ts` 過期註解(no-Teams 前提已失效)· harness README(Files 表 + Scenario 4 + 澄清「empty→400」係 canonical-only)
 - [ ] **F12** Acceptance §7 八條逐條驗 + api/web test 全綠 + lint + build
 - [ ] **F13** progress.md 寫齊 Day-N(R2)+ retro
 

@@ -274,8 +274,18 @@ export class IntakeAdapterService {
   /**
    * Returns the single active SKU matching `value` on `column`, or null when
    * there is no match. More than one match is ambiguous and REJECTS rather than
-   * picking the first: today "E5" happens to be unique only because the
-   * no-Teams variant was never curated, and that is luck, not a guarantee.
+   * picking the first.
+   *
+   * ⚠️ Corrected W42. This used to say "E5" is unique only because the no-Teams
+   * variant was never curated. That premise has since expired — the catalogue
+   * now carries BOTH `SPE_E5` and `Microsoft_365_E5_(no_Teams)`, active. The
+   * conclusion still holds, but for a different reason: the match is `equals`
+   * rather than a contains, and only `SPE_E5` carries the `E5` businessAlias
+   * that gets tried first.
+   *
+   * So the ambiguity guard below is no longer hypothetical protection against a
+   * future curation — it is the only thing standing between a second E5 alias
+   * and a licence assigned against the wrong variant.
    */
   private async findUniqueSku(
     column: 'businessAlias' | 'skuPartNumber',
