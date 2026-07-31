@@ -73,8 +73,8 @@ last_updated: 2026-07-31
 
 ## H — 文件
 
-- [ ] H1 `docs/05-usage/` 寫低:幾時用、點解 SKU 要人手揀、同 n8n 正路嘅關係、點清理測試 request
-- [ ] H2 `intake-from-servicenow.ts` 檔頭註解補一句指向呢個 UI(兩者關係)
+- [x] H1 `docs/05-usage/SERVICENOW-REQUEST-IMPORT.md` — 幾時用/唔用 · 兩步操作 · 🔴 licence 唔猜 + 絕不污染 `businessAlias` · sync gate 唔會因導入而開 · idempotent · **🔴 AD 類 RITM 導入得但唔好推去 assign**(ADR-0017 D3,平台分唔出類別 ⇒ 屬操作紀律)· 權限同點解唔開 OPCO_IT · 清理(含「已 assign 過就會整出 drift」)· CLI 等價 · 已知限制
+- [x] H2 `intake-from-servicenow.ts` 檔頭註解補一句指向呢個 UI — 並寫明兩者**共用同一份 lookup**(唔會就「導唔導得」答唔同答案)、以及唯一分別:script 行 m2m route 冇 actor 可記,UI 行 user-authenticated route 會記低邊個導入
 
 ## Cross-Cutting
 

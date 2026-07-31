@@ -30,9 +30,21 @@ import {
  * ServiceNow. Here the operator has only a REQ number, so we ask.
  *
  * Same shape as `send-connectivity-check.ts` and the ADR-0014 baseline script:
- * deploy/test-time ops, NOT a product feature. It is also the executable
- * specification for the upload UI, if that gets approved — the lookup below is
- * exactly what the UI would have to do server-side.
+ * deploy/test-time ops, NOT a product feature.
+ *
+ * ## Its UI counterpart (CH-013 / ADR-0021)
+ *
+ * Settings › Integrations › "Import request from ServiceNow" now does the same
+ * job for people who would rather not open a terminal. Both go through the SAME
+ * `ServiceNowLookupService` (D6), so they can never disagree about whether a
+ * given RITM is importable.
+ *
+ * They differ in one way worth knowing: `--post` below goes through the m2m
+ * intake route (needs INTAKE_API_KEY), while the UI goes through the
+ * user-authenticated one. Same `IntakeService` at the end, same result — but the
+ * UI's audit row records WHO imported, and this one has no actor to record.
+ *
+ * Runbook: `docs/05-usage/SERVICENOW-REQUEST-IMPORT.md`
  *
  * ## It does not boot AppModule
  *
