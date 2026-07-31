@@ -158,9 +158,23 @@ audit 對象係「一次導入」,產生一張 Request。既有 `AuditTargetType
 | **re-import 唔造假 audit** | test assert `intake` 照 call(佢揸 idempotency)但 `audit.log` **零次** |
 | **全 suite** | api **685 / 61 suites** · snapshot 1 passed · `lint exit=0` |
 
-### 未當作已驗嘅嘢（🚧 D1）
+### Live 驗證（同日補做,🚧 D1 已清）
 
-**401 / 403 唔係端到端驗過。** 我寫嘅係 unit test,冇起 HTTP 層。目前嘅保證係:W28 permissions matrix 證明兩條 route 都帶 `@Roles(ADMIN)`(snapshot 已更新),而 guard 本身有自己既有嘅 test。呢個係合理嘅覆蓋論證,但**唔等於**真 HTTP 401/403 驗過 —— 留 G 組 live 做,唔喺度當已驗。
+Chris 指定用 **`REQ0044061`**(`RITM0047356` · 1 active task)。
+
+⚠️ **導入前 flag 咗一件事**:呢張係 **"New Hire Windows Domain Account"**,即 **AD 類 RITM**。ADR-0017 D3 硬規矩係「n8n 1007 只 close AD 類、平台只 close license 類,兩邊**永不**掂對方嘅」。**純導入唔踩線**(導入唔 close 任何嘢),所以照做 —— 但**呢張單唔可以推去 assign**,一 assign 平台就會去 close 一張屬於 1007 嘅 task。已同 Chris 講明。
+
+| 驗證 | 證據 |
+|---|---|
+| lookup 200 | `activeTaskCount: 1` / `importable: true`,同 script `--list` 判斷一致(G3 精神);task 只出 `number` + `state`,**冇 sysId、冇任何 raw SN 欄位** |
+| import 201 | OpCo 解析成 RHK · **`azureSyncedAt: null`**(sync gate 冇被偷開)· line item 個 `serviceNowSysId` = `3bd2a42f…`,**由 server 反查得出,client 從來冇傳過**(D5 實證) |
+| **idempotent** | 同一 body POST 兩次 → DB:request **1** 行 · line item **1** 行 · audit **1** 行 |
+| **audit metadata 真係存到** | DB 查到 `{"reason": "imported from ServiceNow REQ0044061 — 1 line item(s), OpCo RHK", "source": "servicenow-import"}` —— 兩個 key 完整倖存,即係**冇被 `pickAuditMetadata` 丟棄**。呢個係 W36 D6 教訓嘅直接反驗 |
+| **audit 冇 PII** | SQL 掃 `metadata` / `before` / `after` 搵 target UPN → **0 rows** |
+| **403** | 同一份 `dist` 另起 instance 喺 3200,`AUTH_DEV_USER_EMAIL=opco.it.rhk@…`。**control**:`/me` 真返 `role: OPCO_IT`。兩條 route 都 `403 Insufficient role`,而同刻 3100 嘅 ADMIN 200/201 ⇒ A/B 對照 |
+| **401** | 同樣手法,`AUTH_DEV_BYPASS=false`。**control**:`/me` 亦 401(證明 bypass 真係關咗)⇒ 兩條 route 都 401,即**唔係 `@Public()`** |
+
+兩次臨時 instance 都用**現成 `dist`**(watch mode 已 rebuild),唔重新 build、唔郁 running stack;驗完即殺,3100 仍然健在。
 
 ### Blockers
 

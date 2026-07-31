@@ -41,7 +41,7 @@ last_updated: 2026-07-31
 
 ## D — 後端測試
 
-- [ ] 🚧 D1 lookup:401(無 JWT)· 403(非 ADMIN)· 200 · 404 —— **部分**:404 有 unit test;**401/403 唔係端到端驗**,而係由 W28 permissions matrix 保證兩條 route 都帶 `@Roles(ADMIN)`(snapshot 已更新,diff 只有預期嗰兩行)+ guard 自己既有 test。真 HTTP 401/403 **留 G 組 live 驗**,唔喺度當已驗
+- [x] D1 lookup:**401 · 403 · 200 · 404 四樣全部 live 驗到** —— 用同一份 `dist` 另起 instance 喺 3200 做對照,唔郁 running stack:**403** = `AUTH_DEV_USER_EMAIL=opco.it.rhk@…` 令 `/me` 真返 `role: OPCO_IT`(control),兩條 route 都 `403 Insufficient role`,而同刻 3100 嘅 ADMIN 200/201;**401** = `AUTH_DEV_BYPASS=false`,`/me` 亦 401(control,證明 bypass 真係關咗)⇒ 兩條 route 都 401,即**唔係 `@Public()`**;404 有 unit test
 - [x] D2 lookup **零寫入** — unit 層 assert `intake` / `audit` / `$transaction` 全部 not-called
 - [x] D3 import:成功 · idempotent(re-import 唔再 audit)· 400×2(B4 / B5,兩者都 assert 零寫入)
 - [x] D4 assert **`INTAKE_API_KEY` 唔出現喺任何 response** — service/controller **零引用**該 env、route 唔行 `IntakeKeyGuard`;另有 test assert preview view 唔洩漏任何 raw SN 欄位(`assigned_to` / 內部描述 / sys_id)
@@ -67,7 +67,7 @@ last_updated: 2026-07-31
 ## G — Live 驗證（真 `ricohapdev`）
 
 - [ ] G1 用一張**未用過**嘅真 REQ 行完整流程 → 平台真出到 request
-- [ ] G2 同一張再導入一次 → 唔會出第二張
+- [x] G2 同一張再導入一次 → 唔會出第二張 — `REQ0044061` POST 兩次:**request 1 行 · line item 1 行 · audit 1 行**(DB 真查)
 - [ ] G3 UI 顯示嘅 RITM / task 數,同 `npm run intake:from-sn -w @uop/api -- --req=<REQ>`(dry run)**逐個字一致**
 - [ ] G4 DB 抽查 audit row:有 `request.imported_from_servicenow`,而且 **payload 冇 UPN**
 
