@@ -3,7 +3,7 @@ change_id: CH-013
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
 adr_ref: ../../../adr/0021-user-authenticated-servicenow-request-import.md
-status: in-progress     # in-progress | closed
+status: closed          # in-progress | closed
 ---
 
 # CH-013 — Progress
@@ -345,23 +345,53 @@ Chris 拍板要做「連去 request detail」。因為佢要改**共用 primitiv
 
 ---
 
-## Closeout（填於 status=closed）
+## Closeout — 2026-07-31
 
 ### Acceptance verification
 
-（spec §3 逐條 ✅ / ⚠️ / ❌）
+**spec §3 三組共 22 條,全部 ✅**(逐條證據見 spec §3 本身)。三個要留意嘅位:
+
+| | |
+|---|---|
+| §3.1「OpCo 由 Job Function 解析」 | ⚠️ **改咗**:OpCo 由 operator 揀(deviation ②)。原措辭抄自 n8n 路徑,對呢條路唔成立 |
+| §3.1「client 傳唔屬該 REQ 嘅 `ritmSysId` → 400」 | ✅ **比 spec 更強**:body 根本冇 `ritmSysId` 欄位,結構上傳唔到,唔使靠 runtime 檢查 |
+| §3.2「零新 primitive」 | ⚠️ **有偏離**:E5 擴咗 `Toast`(deviation ③,owner approve + design-system 登記) |
 
 ### Effort summary
 
-| Day | Planned (h) | Actual (h) | Variance |
+| Day | 內容 | Planned | Actual |
 |---|---|---|---|
+| 0 | spec + ADR-0021 | —(gate) | ~1h |
+| 1 | A 組 共用 lookup + script 遷移 | 0.25 日 | ~0.3 日 |
+| 2 | B/D 組 endpoint + audit + test | 0.75 日 | ~0.6 日 |
+| 3 | E/F 組 前端 + H6 | 0.75 日 | ~0.7 日 |
+| 4 | G 組 live UI 驗證 | (含喺上面) | ~0.5h |
+| 5 | E5 Toast action | (追加) | ~0.5h |
+| **合計** | | **1.5–2 日** | **~1.8 日** |
 
 ### Lessons
 
-- What worked
-- What didn't / unexpected friction
-- Carry-overs
+**行得通嘅**
+
+- **fails-before 做咗兩次,兩次都真係捉到嘢**(`importable: === 1 → >= 1` 令一條紅;RITM 匹配 → `items[0]` 令兩條紅)。呢個係「呢條 test 到底睇唔睇住行為」嘅唯一誠實答案,成本低得離譜
+- **W28 個 permissions 網準時 fire**。加完 route 即刻兩條紅,而我**冇** reflexive `jest -u` —— 先睇 diff 確認只有預期嗰兩行、零既有 route 移位。呢個 gate 值返成本
+- **硬邊界寫成可執行檢查**(checklist C1 = 真跑 `git diff --stat`),而唔係寫「記得唔好改」。兩次收工各驗一次,兩次全空
+- **spec 落到一半揪出 H1** 好過 code 寫完先揪出
+
+**唔順 / 意料之外**
+
+- 🔴 **`AUDIT_METADATA_KEYS` 差啲又中 W36 D6 個招**。我原本打算把 REQ / RITM number 放落 metadata,**係去查白名單先發現**自訂 key 會被 `pickAuditMetadata` 靜靜丟棄。教訓唔係「記得有呢個坑」(W36 已經寫低咗),而係**寫 audit 之前一定要先開 `audit-fields.ts` 睇一眼**,唔可以靠記憶
+- 🔴 **G3 差啲冤枉自己**。UI 顯示 `0/1/0` 而幾個鐘前 script 顯示 `1/1/1`,第一反應係「我有 bug」。**即時**重跑 script 先知係 SN 嗰邊變咗。⇒ **對照外部系統要同一時間點,攞舊輸出去對幾乎一定會冤枉自己**
+- 🔴 **有時限嘅 UI 行為唔可以用多 round-trip 工具驗**。toast 5 秒消失,`click` → `wait_for` → `evaluate` 每個都係一次 MCP round-trip,兩次都 timeout,睇落好似「toast 冇彈」。改用單一 `run_code_unsafe` 串埋就即刻搞掂。**timeout ≠ 功能壞咗** —— 要靠「只可能喺 success path 發生」嘅副作用去分辨(當時係表單完全 reset)
+- **`apiGet` 吞咗 server message** —— 後端特登寫嘅 404 文案喺前端消失。呢類「兩邊各自正確但接唔埋」嘅 gap,只有端到端行一次先見到
+
+**Carry-overs**
+
+- ⚠️ **AD 類 RITM 唔好推去 assign**(ADR-0017 D3)。平台**分唔出** RITM 類別,所以係**操作紀律唔係技術保護**。已寫入 runbook §4。若日後想技術強制,要一個「RITM 類別」概念 —— 屬新 scope
+- ⚠️ **ADR-0021 Consequences 記低嘅 Negative 仍然成立**:冇任何嘢阻止一個 ADMIN 大量導入。D3 收窄角色 + D7 每次 audit 只係緩解。要 rate limit 就係新一輪 spec
+- ⚠️ **integrations tab 兩個 primary 嘅既有張力**(`AllocationImportPanel` 揀咗 CSV 之後亦會出 primary)。唔屬本 CH 引入,但本 CH 令佢更易撞到。要收就要重新諗個 tab 點分頁
+- ℹ️ `Toast.action` 而家有咗第一個 caller。第二個 caller 出現嗰陣,記得對返 `design-system.md §2` 嗰四條約束
 
 ---
 
-**End of CH-013 progress**
+**End of CH-013 progress** · status `closed` 2026-07-31

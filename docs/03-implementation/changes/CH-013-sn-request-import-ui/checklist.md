@@ -2,7 +2,7 @@
 change_id: CH-013
 spec_ref: ./spec.md
 adr_ref: ../../../adr/0021-user-authenticated-servicenow-request-import.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-07-31
 ---
 
@@ -80,11 +80,12 @@ last_updated: 2026-07-31
 
 ## Cross-Cutting
 
-- [ ] 每個 commit 對應 `progress.md` Day-N entry(R2)
-- [x] ADR written(R5)— ADR-0021
-- [ ] BACKLOG 由「blocked on 用戶決定」→ 進行中 → 完成(R7)
-- [ ] `progress.md` closeout summary 寫好
-- [ ] `progress.md` frontmatter status → `closed`
+- [x] 每個 commit 對應 `progress.md` Day-N entry(R2)— Day 0→5,九個 commit
+- [x] ADR written(R5)— **ADR-0021** + `docs/adr/README.md` index
+- [x] BACKLOG 由「blocked on 用戶決定」→「可開工」→「實作完成待驗收」→ **完成**(R7)
+- [x] `progress.md` closeout summary 寫好 — acceptance 22 條逐條核 + effort + lessons + 四項 carry-over
+- [x] `progress.md` frontmatter status → `closed`
+- [x] **spec §7 changelog 記齊三個 deviation**(R3)— `skuId` GUID · `opcoCode` 必填 · `Toast` 擴充
 
 ---
 

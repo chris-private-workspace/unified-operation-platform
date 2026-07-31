@@ -1,7 +1,7 @@
 ---
 change_id: CH-013
 title: "由 ServiceNow REQ 號碼喺 UI 導入測試 / 補救用嘅 onboarding request"
-status: approved        # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-07-31
 target_completion: 2026-08-04（估算 1.5–2 日,見 §5）
 adr: ADR-0021（Accepted 2026-07-31）
@@ -132,34 +132,34 @@ Chris 嘅要求(逐字):
 
 ### 3.1 後端
 
-- [ ] `GET /requests/servicenow-lookup?req=<REQ>` 未帶 JWT → **401**(唔可以係 `@Public()`)
-- [ ] 帶非授權角色 JWT → **403**
-- [ ] 有效 REQ → 200,列齊全部 RITM,`activeTaskCount` 同真 SN 一致
-- [ ] 唔存在 / 見唔到嘅 REQ → **404**,而且 message 要同時提「可能係 row-level ACL」(唔可以淨係講 not found —— 呢兩樣喺 Table API 係同一個答案)
-- [ ] lookup **零寫入**:跑完 `Request` / `RequestLineItem` / `AuditLog` 行數不變
-- [ ] `POST /requests/import-from-servicenow` 成功 → 201,回傳嘅 request 同既有 intake 一模一樣(OpCo 由 Job Function 解析、line item 掛住 RITM mirror、`azureSyncedAt` **null**)
-- [ ] **同一個 REQ 導入兩次 → 唔會開第二張 request**(沿用 idempotency)
-- [ ] client 傳一個唔屬該 REQ 嘅 `ritmSysId` → **400 且零寫入**(server 自己反查為準)
-- [ ] 揀咗一張 `activeTaskCount ≠ 1` 嘅 RITM → **400**,message 講明佢之後 close 唔到(ADR-0018 D3)
-- [ ] **`INTAKE_API_KEY` 唔會出現喺任何 response / log / 前端 bundle**
-- [ ] 既有兩條 intake route 嘅 guard / DTO / 行為 **diff = 0**
-- [ ] api test:新增 lookup + import 兩組(SN **一律 mock**,§3.4);既有 test 全綠、數字不降
+- [x] `GET /requests/servicenow-lookup?req=<REQ>` 未帶 JWT → **401**(唔可以係 `@Public()`)— live:`AUTH_DEV_BYPASS=false` 另起 instance,**control** 係 `/me` 亦 401
+- [x] 帶非授權角色 JWT → **403** — live:`AUTH_DEV_USER_EMAIL=opco.it.rhk@…`,**control** 係 `/me` 真返 `role: OPCO_IT`;同刻 ADMIN 側 200/201(A-B 對照)
+- [x] 有效 REQ → 200,列齊全部 RITM,`activeTaskCount` 同真 SN 一致 — 見 §3.3
+- [x] 唔存在 / 見唔到嘅 REQ → **404** + message 提 row-level ACL — unit test assert `/ACL/i`
+- [x] lookup **零寫入** — unit assert `intake` / `audit` / `$transaction` 全 not-called
+- [x] `POST /requests/import-from-servicenow` 成功 → 201,shape 同既有 intake 一致、**`azureSyncedAt` null** — live DB 核。⚠️ **OpCo 唔係「由 Job Function 解析」**,係 operator 揀(deviation ②,§7)
+- [x] **同一個 REQ 導入兩次 → 唔會開第二張** — live DB:request 1 / line item 1 / **audit 1**(API 同 UI 兩條路各驗一次)
+- [x] client 傳唔屬該 REQ 嘅 RITM → **400 且零寫入** — 比 spec 更強:body **根本冇 `ritmSysId` 欄位**,結構上傳唔到
+- [x] 揀咗 `activeTaskCount ≠ 1` 嘅 RITM → **400** + 原因 — unit test assert `/nothing to close/i`
+- [x] **`INTAKE_API_KEY` 唔會出現喺任何 response / log / bundle** — service/controller 零引用、route 唔行 `IntakeKeyGuard`;另有 test assert view 唔洩漏任何 raw SN 欄位
+- [x] 既有兩條 intake route 嘅 guard / DTO / 行為 **diff = 0** — `git diff --stat origin/main` 對**六個**檔,A 組同 B 組收工各驗一次,兩次全空
+- [x] api test:lookup + import 兩組(SN 全 mock);既有全綠、數字不降 — **661 → 685 / 61 suites**,零既有 assertion 要改
 
 ### 3.2 前端
 
-- [ ] Settings 見到新 card;非授權角色**完全睇唔到**(唔係 disable,係唔 render)
-- [ ] 入 REQ → RITM 表出到,0 / 2+ active task 嗰啲有明確唔可導入標示 + 原因
-- [ ] 未揀 SKU / 未填 UPN → import 掣 disabled
-- [ ] 導入成功 → toast + 去到 request detail
-- [ ] 導入失敗 → 錯誤照原文顯示,唔可以吞
-- [ ] **H6**:token-only、零新 primitive(用既有 `dialog` / `select` / `input` / `badge`)、**Settings 頁維持一個 primary action**、lucide-only、**light + dark 都行過**
-- [ ] web test 數字不降
+- [x] Settings 見到新 card;非授權角色**完全睇唔到** — test assert `container` 係 empty DOM;live 見到 card 喺 Integrations tab
+- [x] 入 REQ → RITM 表出到,0 / 2+ active task 有明確標示 + 原因 — live `REQ0044059` 三張 RITM 顯示 `0 / 1 / 0`,兩張 blocked 各有原因同 AlertTriangle
+- [x] 未揀 SKU / 未填 UPN(**+ 未揀 OpCo**)→ import 掣 disabled — live 見到 `Import 0 items` disabled → 三項齊備後變 `Import 1 item` enabled
+- [x] 導入成功 → toast + 去到 request detail — live:toast `"REQ0044061 imported. / Open request"` → 撳 → URL 變 `/requests/cms8s936y…` → heading `Request detail`
+- [x] 導入失敗 → 錯誤照原文顯示,唔可以吞 — 順帶修咗 `apiGet`(四個 helper 中唯一唔 surface server `message` 嗰個)
+- [x] **H6**:token-only、**Settings 頁維持一個 primary**、lucide-only、**light + dark 都行過** — DS-1~DS-12 逐條答(progress Day 3);light/dark 各截一張全頁圖 + computed token 值。⚠️ **「零新 primitive」呢一項有偏離**:E5 擴咗 `Toast`(加 optional action)—— owner approve + 走 §5 合法路徑 + 登記 `design-system.md §2`(deviation ③,§7)
+- [x] web test 數字不降 — **196 → 206 / 25 files**
 
 ### 3.3 Live 驗證（真 `ricohapdev`）
 
-- [ ] 用一張**未用過**嘅真 REQ 行完整流程 → 平台真係出到 request
-- [ ] 同一張再導入一次 → 唔會出第二張
-- [ ] 驗證命令:`npm run intake:from-sn -w @uop/api -- --req=<REQ>`(dry run)嘅 RITM / task 數,同 UI 顯示**逐個字一致**
+- [x] 用一張**未用過**嘅真 REQ 行完整流程 → 平台真係出到 request — **`REQ0044059` 全程行 UI**。DB:OpCo RHK · 當刻 `azureSyncedAt` null · line item **只有唯一 importable 嗰張**,兩張 blocked 嘅冇入
+- [x] 同一張再導入一次 → 唔會出第二張 — request 1 / line item 1 / **audit 仍然 1**(冇造假紀錄)
+- [x] script dry run 同 UI **逐個字一致** — 🔴 呢條差啲被誤讀成 bug:UI 顯示 `0/1/0` 而我幾個鐘前跑 `--list` 時三張都係 `1`。**即時**重跑 → 一樣 `0/1/0` ⇒ 係 SN 嗰邊期間 close 咗兩張 task。**教訓:對照要同一時間點,攞舊輸出去對幾乎一定冤枉自己**
 
 ---
 
@@ -223,6 +223,8 @@ Chris 2026-07-31 三項拍板:
 | 2026-07-31 | status → **approved**;§0 / §6.1 / §6.2 gate 標記已清;§1.1 定位、§2.4 角色由「待定」改為決定內容;frontmatter 加 `adr: ADR-0021` + `target_completion` | Chris 三項拍板(H1 approved · 定位 = 長期補救工具 · ADMIN only),ADR-0021 已 Accepted | **Chris Lai** |
 | 2026-07-31 | **§2.2 deviation ①** — import body 收 **`skuId`(GUID)**,唔係 §2.2 原寫嘅 `skuCatalogId` | canonical DTO 本身收 `skuId` 而 `IntakeService` 自己 resolve SkuCatalog(唔存在 / inactive → 400)。傳 GUID 即係「**得一個地方**決定 SKU 存唔存在」;傳 `skuCatalogId` 就要多一層自己轉換,等於多一個會同 canonical 判斷唔一致嘅位。亦係 CLAUDE.md §13「SKU 一律 `skuId` GUID」嘅直接落實 | AI(實作發現;非架構改動,唔觸 ADR) |
 | 2026-07-31 | **§2.2 deviation ②** — import body **新增必填 `opcoCode`**(spec 完全冇提 OpCo 由邊度嚟) | canonical DTO 要 `opcoCode`,但一張 SN 單唔帶平台嘅 OpCo 概念。n8n 路徑由 Job Function 推導,而**嗰個 Job Function 係 n8n 送嘅**;ops script 一直係 operator 自己指定(`--job-function` 預設 hardcode `'RHK IT'`)⇒「自動推導」對呢條路嚟講係假象,只係換個方式問同一條問題。所以**直接叫 ADMIN 揀 OpCo**。連帶:UI(E 組)要多一個 OpCo 下拉,由既有 `GET /opcos` 拉 | AI(spec gap,實作時發現) |
+| 2026-07-31 | **§3.2 deviation ③** — 「**零新 primitive**」呢項有偏離:E5 擴咗 **`Toast`**,加一個 optional `action` | 原本 E5 標咗 🚧 唔做,理由正正係「加 action slot = 改共用 primitive = H6 要先問 owner」。Chris 之後明確話「要」⇒ 走 §5 合法路徑:owner 同意 → 更新 `design-system.md §2`(登記四條約束:text-link 唔係 button · 最多一個 · caller 必須畀更長時間 · action 唔可以係唯一路徑)→ 先落 code。**唔加新 component,只擴既有一個,而且 `action` optional ⇒ 既有 caller 零改動** | **Chris Lai**(2026-07-31 明確 approve) |
+| 2026-07-31 | status → **done**;§3 acceptance 三組逐條核完 | 全部項目交付並 live 驗證;無未清 🚧 | AI(收官) |
 
 ---
 
