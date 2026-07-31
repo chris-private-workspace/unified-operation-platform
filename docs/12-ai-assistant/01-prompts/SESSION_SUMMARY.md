@@ -5,10 +5,11 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-07-27)**:git 連 GitHub **private**(`chris-private-workspace`,`main`;**origin/main = `2058854`**;W38 收官待開 PR)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos[含 `RAPO/IT (RDC2)`]+ admin + 12 catalog SKU)。`apps/web` = 8+ 實畫面(Overview / Catalog / Requests + detail + new[開單] / Drift / Assets / Settings / Login)。**api 467 test · web 188 test**。
+**當前座標(2026-07-31)**:git 連 GitHub **private**(`chris-private-workspace`,`main`;**origin/main = `34ff2d6`** = CH-013 merge commit,PR #62)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api ~685 test(61 suites)· web ~206 test(25 files)**。ADR 到 **0021** · CH 到 **013**。
 
-> ⚠️ **本 worktree 冇 `apps/api/.env`**(得 `.env.example`)—— 要 live 驗證就要自己傳 placeholder env 起(W38 用 port **3200**)。
-> 🔴 **port 3100 跑緊嘅唔一定係本 worktree** —— 實測係 `C:\Users\CLai03\unified-operation-platform` 嗰個 checkout 嘅 `dist` build。驗證前**必查 process ancestry**(AP-11,W36 同 W38 各中過一次)。
+> 🔴 **`apps/api/.env` 喺主 checkout(`C:\Users\CLai03\unified-operation-platform`)係有嘅,而且入面係真憑證**(真 `ricohapdev` ServiceNow + 真 Graph tenant + 真 ACS)。2026-07-31 實證:live 打真 SN / 真 Graph 完全做得到。⚠️ 之前呢度寫住「本 worktree 冇 `.env`」—— 嗰句只對**另一個 worktree** 成立,喺主 checkout 讀會令你以為做唔到 live 驗證。**開工前自己確認一次係邊個 checkout。**
+> 🔴 **port 3100 跑緊嘅唔一定係本 worktree** —— 驗證前**必查 process ancestry**(AP-11,W36 同 W38 各中過一次)。
+> ⚠️ **維護**:呢段同 `CLAUDE.md §0/§9` 每次 closeout 一齊掃 —— 兩份都係無條件注入每個 session,過時 = 下一個 session 用錯前提開工(2026-07-31 實犯)。
 
 **開發路線全鏈完成(詳細歷史 → `BACKLOG.md` + memory `MEMORY.md`,此處唔重複)**:
 - **後端業務層**:W02 C(catalog+對帳)/ W03 D-1(intake)/ W04 D-2(assign+ledger)✅ · **前端全鏈**:W05 scaffold / W06 FE-1(Overview+Catalog)/ W07 FE-2(Requests+detail 讀寫)/ W08 FE-3(Drift + BE-graph-harden)✅ · **BUG-002 ✅**(Graph error wrap→503)。
