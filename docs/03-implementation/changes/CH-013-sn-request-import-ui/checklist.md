@@ -25,14 +25,14 @@ last_updated: 2026-07-31
 
 ## B — 後端：兩條 endpoint（ADR-0021 D1）
 
-- [ ] B1 `GET /requests/servicenow-lookup?req=` — JWT + `@Roles(ADMIN)`,回傳 RITM 列表 + `activeTaskCount` + 可否導入
-- [ ] B2 404 message 同時提「可能係 row-level ACL」(Table API 分唔開「唔存在」同「見唔到」)
-- [ ] B3 `POST /requests/import-from-servicenow` — DTO(REQ number + 每張選中 RITM 嘅 `ritmNumber` + `skuCatalogId` + target UPN)
-- [ ] B4 **server 自己反查**,client 傳嘅 RITM 唔屬該 REQ → 400 零寫入(D5)
-- [ ] B5 揀咗 `activeTaskCount ≠ 1` 嘅 RITM → 400,message 講明之後 close 唔到(ADR-0018 D3)
-- [ ] B6 組 canonical payload → **直接 call `IntakeService`**(唔經 HTTP、唔經 m2m key)
-- [ ] B7 `AuditLog` action `request.imported_from_servicenow`,metadata **非 PII only**(D7)
-- [ ] B8 兩條 route 都唔接受 `X-Intake-Key`
+- [x] B1 `GET /requests/servicenow-lookup?req=` — JWT + `@Roles(ADMIN)`,回傳 RITM 列表 + `activeTaskCount` + 可否導入 — 新 `ServiceNowImportController`(**唔加落 `IntakeController`**:嗰個成個 controller 都係 `@Public()`+`IntakeKeyGuard`,而且一個 controller 揸兩種信任模型就係「route 落錯邊」嘅溫床)
+- [x] B2 404 message 同時提「可能係 row-level ACL」(Table API 分唔開「唔存在」同「見唔到」)
+- [x] B3 `POST /requests/import-from-servicenow` — DTO(REQ number + `opcoCode` + `ritmNumber` + **`skuId` GUID** + target UPN)⚠️ **spec 原寫 `skuCatalogId`,實作改用 `skuId` GUID** —— canonical DTO 收 GUID 且 `IntakeService` 自己 resolve,傳 GUID 即係「一個地方決定 SKU 存唔存在」(§7 changelog)
+- [x] B4 **server 自己反查**,client 傳嘅 RITM 唔屬該 REQ → 400 零寫入(D5)— body **冇 `ritmSysId` 欄位**,結構上就傳唔到
+- [x] B5 揀咗 `activeTaskCount ≠ 1` 嘅 RITM → 400,message 引 `blockedReason`(ADR-0018 D3)
+- [x] B6 組 canonical payload → **直接 call `IntakeService`**(唔經 HTTP、唔經 m2m key);`azureSyncedAt` 刻意留空(RISK R3)
+- [x] B7 `AuditLog` action `request.imported_from_servicenow` + 新 targetType `Request`(白名單 `[]` event-only);metadata 用**既有** `reason`/`source` key —— **冇擴 `AUDIT_METADATA_KEYS`**(擴佢係 privacy 決定;W36 D6 就係喺呢度中過招,自訂 key 會被 `pickAuditMetadata` 靜靜丟棄)
+- [x] B8 兩條 route 都唔接受 `X-Intake-Key` — controller 零 `IntakeKeyGuard` / 零 `@ApiHeader` 引用
 
 ## C — 後端：硬邊界驗證（ADR-0021 D2）
 
@@ -41,11 +41,11 @@ last_updated: 2026-07-31
 
 ## D — 後端測試
 
-- [ ] D1 lookup:401(無 JWT)· 403(非 ADMIN)· 200 · 404
-- [ ] D2 lookup **零寫入**:跑完 `Request` / `RequestLineItem` / `AuditLog` 行數不變
-- [ ] D3 import:201 · idempotent(同一 REQ 兩次唔開第二張)· 400×2(B4 / B5)
-- [ ] D4 assert **`INTAKE_API_KEY` 唔出現喺任何 response**
-- [ ] D5 api test 總數不降、lint 0
+- [ ] 🚧 D1 lookup:401(無 JWT)· 403(非 ADMIN)· 200 · 404 —— **部分**:404 有 unit test;**401/403 唔係端到端驗**,而係由 W28 permissions matrix 保證兩條 route 都帶 `@Roles(ADMIN)`(snapshot 已更新,diff 只有預期嗰兩行)+ guard 自己既有 test。真 HTTP 401/403 **留 G 組 live 驗**,唔喺度當已驗
+- [x] D2 lookup **零寫入** — unit 層 assert `intake` / `audit` / `$transaction` 全部 not-called
+- [x] D3 import:成功 · idempotent(re-import 唔再 audit)· 400×2(B4 / B5,兩者都 assert 零寫入)
+- [x] D4 assert **`INTAKE_API_KEY` 唔出現喺任何 response** — service/controller **零引用**該 env、route 唔行 `IntakeKeyGuard`;另有 test assert preview view 唔洩漏任何 raw SN 欄位(`assigned_to` / 內部描述 / sys_id)
+- [x] D5 api test 總數不降、lint 0 — **672 → 685 / 61 suites**,`lint exit=0`
 
 ## E — 前端（Settings 新 card）
 

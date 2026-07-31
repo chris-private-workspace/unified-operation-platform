@@ -23,6 +23,8 @@ import { OutboundFailureController } from './outbound-failure.controller';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from './activity.service';
 import { SyncSweepService } from './sync-sweep.service';
+import { ServiceNowImportController } from './servicenow-import.controller';
+import { ServiceNowImportService } from './servicenow-import.service';
 
 /**
  * ADR-0008 D3 / Phase 丙 (W26, Fork 3 = config 單選): pick the outbound
@@ -79,6 +81,10 @@ export async function requestSubmissionProviderFactory(
     OutboundRequestController,
     OutboundFailureController,
     ActivityController,
+    // CH-013 / ADR-0021 — separate controller on purpose: IntakeController is
+    // @Public()+IntakeKeyGuard throughout, and one controller holding two trust
+    // models is how a route eventually lands under the wrong one.
+    ServiceNowImportController,
   ],
   providers: [
     RequestService,
@@ -95,6 +101,9 @@ export async function requestSubmissionProviderFactory(
     // failure queue (that would be an integration → fulfilment cycle).
     NotificationDispatchService,
     ActivityService, // CH-006 — cross-request activity feed (read-only)
+    // CH-013 / ADR-0021 — the second caller of IntakeService. The first (n8n)
+    // authenticates with a shared secret; this one authenticates as a person.
+    ServiceNowImportService,
     // W37 / ADR-0015 — the platform's first @Cron. No controller: it is driven
     // by the scheduler, not by a request.
     SyncSweepService,

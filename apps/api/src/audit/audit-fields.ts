@@ -105,6 +105,17 @@ export const AUDIT_ACTIONS = {
    * (same split as W41's unset APP_BASE_URL).
    */
   INTAKE_DEFAULT_SKU: 'intake.default_sku_injected',
+  /**
+   * CH-013 / ADR-0021 D7 — an ADMIN turned a ServiceNow REQ number into a real
+   * platform request through the UI.
+   *
+   * Its own action rather than a flavour of intake, because this is the one
+   * path where a *named person* conjured a request from a number. The m2m
+   * routes have no actor to attribute (`actorId: null` above); this one always
+   * does, and "where did this request come from" is precisely the question it
+   * exists to answer.
+   */
+  INTAKE_FROM_SERVICENOW: 'request.imported_from_servicenow',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -118,6 +129,7 @@ export type AuditTargetType =
   | 'OutboundFailure'
   | 'ConnectorConfig'
   | 'RequestLineItem'
+  | 'Request'
   | 'SyncSweep';
 
 /**
@@ -178,6 +190,16 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
      * already has access to the request.
      */
     RequestLineItem: [],
+    /**
+     * CH-013 / ADR-0021 D7 — event-only, same reasoning as RequestLineItem
+     * directly above: a Request carries `targetUpn` / `requesterEmail`, and
+     * copying either here would duplicate PII into a table with a DIFFERENT
+     * read permission (audit is ADMIN-only). What an auditor needs — which REQ
+     * number, how many lines — travels in the key-restricted `metadata.reason`,
+     * and the UPN stays reachable via targetId for anyone who can already read
+     * the request itself.
+     */
+    Request: [],
     /**
      * W37 / ADR-0015 — batch summary, exactly like AllocationImport: counts
      * only, and they live in `after` rather than `metadata` because that is

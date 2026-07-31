@@ -107,9 +107,80 @@ ADR-0021 D6 兩個位置都容許。揀前者因為佢係純 SN 查詢 —— �
 
 ---
 
-## Day 2 — YYYY-MM-DD
+## Day 2 — 2026-07-31（B 組 + D 組 · 後端完成）
 
-（B 組:兩條 endpoint）
+### Done
+
+- **B1–B8** 兩條 endpoint + DTO + service + audit,全部落新 `ServiceNowImportController` / `ServiceNowImportService`
+- **D2–D5** 13 個 unit test;api **672 → 685 / 61 suites**,`lint exit=0`
+- 🚧 **D1 部分** —— 見下「未當作已驗嘅嘢」
+
+### Decisions
+
+**① 新 controller,唔加落 `IntakeController`。**
+
+除咗 D2 硬邊界(嗰個檔 diff 必須 0)之外,更根本嘅理由:`IntakeController` 成個 class 都係 `@Public()` + `IntakeKeyGuard`。一個 controller 揸兩種信任模型,就係日後有人加 route 加落錯嗰邊嘅溫床。
+
+**② body 收 `skuId` GUID,唔係 `skuCatalogId`(spec deviation ①,已 log §7)。**
+
+canonical DTO 本身收 `skuId`,而 `IntakeService` 自己 resolve 並對唔存在 / inactive 報 400 ⇒ 傳 GUID 即係「**得一個地方**決定 SKU 存唔存在」。傳 `skuCatalogId` 要多一層轉換 = 多一個會同 canonical 判斷唔一致嘅位。
+
+**③ `opcoCode` 由 operator 揀(spec deviation ②,已 log §7)。**
+
+canonical 要 `opcoCode`,但 SN 單唔帶平台嘅 OpCo 概念。n8n 路徑「自動推導」得成,係因為 **n8n 送 Job Function**;而 ops script 一直係 operator 自己指定(`--job-function` 預設 hardcode `'RHK IT'`)。所以對呢條路而言,「推導」只係換個方式問同一條問題 —— 不如直接問。
+
+**④ audit metadata 用既有 key,唔擴白名單。**
+
+原本想放 REQ number / RITM number 落 metadata。查 `AUDIT_METADATA_KEYS` 先發現佢只認七個 key,自訂嘅會被 `pickAuditMetadata` **靜靜丟棄** —— 正正係 W36 D6 中過嗰招。改為跟 `intake-adapter` 先例把資訊放入既有 `reason`(自由文字,REQ number 非 PII)+ `source`。擴白名單係 privacy 決定,唔應該為方便而做。
+
+**⑤ 新 targetType `Request`,白名單 `[]`。**
+
+audit 對象係「一次導入」,產生一張 Request。既有 `AuditTargetType` 冇 `Request`,而用 `RequestLineItem` 指住其中一條 line 係唔準確嘅表達。加一個 event-only target(白名單空),跟 `RequestLineItem` 完全一樣嘅理由:Request 帶 `targetUpn` / `requesterEmail`,複製過嚟就係把 PII 搬入一張**讀權限唔同**(audit = ADMIN-only)嘅表。
+
+**⑥ audit 唔同 intake 同一個 transaction —— 接受,唔繞。**
+
+`IntakeService` 自己揸 `$transaction`,而 D2 禁止改佢。所以 failure mode 係「request 建咗、audit row 冇」,達唔到 W29 喺其他地方做到嘅原子配對。**冇繞過**,因為唯一繞法就係伸手入 `IntakeService` 穿條 tx 出嚟 —— 正正係 ADR 禁嘅嗰個 edit。已寫入 code comment,免得日後被讀成疏忽。
+
+### 🔴 W28 個防護網真係 fire 咗
+
+加完兩條 route,`permissions.spec.ts` 即刻兩條紅(controller 未入 list + matrix snapshot 唔對)。呢個正正係 W29 retro 講嘅「加 `AuditController` → snapshot 即捉到新 route 要 review」。
+
+**冇 reflexive `jest -u`** —— 先睇 diff:只有兩行,`POST /requests/import-from-servicenow → roles [ADMIN]` 同 `GET /requests/servicenow-lookup → roles [ADMIN]`,零既有 route 移位。確認之後先更新。`has no unguarded routes` 由頭到尾冇紅 ⇒ 兩條 route 嘅 `@Roles` 真係生效。
+
+### 驗證
+
+| 項 | 證據 |
+|---|---|
+| **fails-before(第二次)** | 把 RITM 匹配由 `find(i => i.number === choice.ritmNumber)` mutate 成 `items[0]` → **兩條**安全邊界 test 齊紅(「唔屬該 REQ」+「blocked 判斷」)。改返即綠 |
+| **D5 結構性保證** | body **根本冇 `ritmSysId` 欄位** —— 唔係「唔信 client」,係 client 結構上傳唔到 |
+| **preview 唔洩漏** | test assert 序列化後唔含 `assigned_to` / 內部描述 / RITM sys_id |
+| **audit 唔含 UPN** | test assert metadata 序列化後唔含 target UPN |
+| **re-import 唔造假 audit** | test assert `intake` 照 call(佢揸 idempotency)但 `audit.log` **零次** |
+| **全 suite** | api **685 / 61 suites** · snapshot 1 passed · `lint exit=0` |
+
+### 未當作已驗嘅嘢（🚧 D1）
+
+**401 / 403 唔係端到端驗過。** 我寫嘅係 unit test,冇起 HTTP 層。目前嘅保證係:W28 permissions matrix 證明兩條 route 都帶 `@Roles(ADMIN)`(snapshot 已更新),而 guard 本身有自己既有嘅 test。呢個係合理嘅覆蓋論證,但**唔等於**真 HTTP 401/403 驗過 —— 留 G 組 live 做,唔喺度當已驗。
+
+### Blockers
+
+- 冇。
+
+### Effort
+
+- Planned:0.5 日(B 組)+ 0.25(test);Actual:~0.6 日
+
+### Commits
+
+| Hash | Subject |
+|---|---|
+| _(pending)_ | `feat(fulfilment): CH-013 B 組 — SN REQ 導入 endpoint(lookup + import,ADMIN only)` |
+
+---
+
+## Day 3 — YYYY-MM-DD
+
+（E 組:前端 Settings card）
 
 ---
 

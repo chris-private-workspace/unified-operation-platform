@@ -48,7 +48,9 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
   "PATCH /me/password → authenticated []",
   "GET /opcos → roles [ADMIN,REGIONAL,OPCO_IT]",
   "POST /requests → roles [ADMIN,REGIONAL,OPCO_IT]",
+  "POST /requests/import-from-servicenow → roles [ADMIN]",
   "POST /requests/intake → m2m []",
   "POST /requests/intake/n8n → m2m []",
+  "GET /requests/servicenow-lookup → roles [ADMIN]",
 ]
 `;

@@ -221,6 +221,8 @@ Chris 2026-07-31 三項拍板:
 |---|---|---|---|
 | 2026-07-31 | Initial draft(status: proposed) | Chris 要求把 PR #61 個 script 嘅能力搬上 UI | — |
 | 2026-07-31 | status → **approved**;§0 / §6.1 / §6.2 gate 標記已清;§1.1 定位、§2.4 角色由「待定」改為決定內容;frontmatter 加 `adr: ADR-0021` + `target_completion` | Chris 三項拍板(H1 approved · 定位 = 長期補救工具 · ADMIN only),ADR-0021 已 Accepted | **Chris Lai** |
+| 2026-07-31 | **§2.2 deviation ①** — import body 收 **`skuId`(GUID)**,唔係 §2.2 原寫嘅 `skuCatalogId` | canonical DTO 本身收 `skuId` 而 `IntakeService` 自己 resolve SkuCatalog(唔存在 / inactive → 400)。傳 GUID 即係「**得一個地方**決定 SKU 存唔存在」;傳 `skuCatalogId` 就要多一層自己轉換,等於多一個會同 canonical 判斷唔一致嘅位。亦係 CLAUDE.md §13「SKU 一律 `skuId` GUID」嘅直接落實 | AI(實作發現;非架構改動,唔觸 ADR) |
+| 2026-07-31 | **§2.2 deviation ②** — import body **新增必填 `opcoCode`**(spec 完全冇提 OpCo 由邊度嚟) | canonical DTO 要 `opcoCode`,但一張 SN 單唔帶平台嘅 OpCo 概念。n8n 路徑由 Job Function 推導,而**嗰個 Job Function 係 n8n 送嘅**;ops script 一直係 operator 自己指定(`--job-function` 預設 hardcode `'RHK IT'`)⇒「自動推導」對呢條路嚟講係假象,只係換個方式問同一條問題。所以**直接叫 ADMIN 揀 OpCo**。連帶:UI(E 組)要多一個 OpCo 下拉,由既有 `GET /opcos` 拉 | AI(spec gap,實作時發現) |
 
 ---
 
