@@ -1,0 +1,49 @@
+---
+phase: W42-onboarding-default-sku
+plan_ref: ./plan.md
+checklist_ref: ./checklist.md
+last_updated: 2026-07-31
+---
+
+# W42 — Progress
+
+## Day 1 — 2026-07-31 · kickoff + pre-doc
+
+**背景**(Chris 原話兩個問題):n8n 側未接通 ⇒ 收唔到 ServiceNow onboarding 資料 ⇒ 平台做唔到端到端測試;同時業務方要求「所有 user onboarding default 需要 E5,即使 SN 個 requested item 一行 licence 都冇」。
+
+**分類判斷**:兩塊工作(fixture 純 dev tooling · default 注入觸發 H1)。原本 propose 拆兩個 change,**Chris 揀一併做 phase**。⇒ **W42**,配 **ADR-0020**(H1)。
+
+**Grounding**(落 plan 前實讀 / 實測,唔靠記憶):
+
+| 讀咗 / 跑咗 | 攞到嘅嘢 |
+|---|---|
+| `intake.service.ts` | canonical intake **零外部依賴**(純 DB 寫)⇒ fixture 唔使等 n8n;收 0 行 line item 已經 work,唔使改 |
+| `intake-adapter.service.ts` | native 路線**要真 ServiceNow**(REQ number→sysId 反查,:172);fail-closed 哲學同其理由(:24-31) |
+| `assign.service.ts:141` | 🔴 assign 前一定要 Graph `findUser` 真命中 ⇒ **端到端真正卡點唔係 n8n** |
+| `assign.service.ts:339` | 冇 RITM 嘅 line item 有 fallback(work note 落 parent REQ)⇒ 注入行唔會 crash |
+| 兩個 intake DTO | 兩邊都 `@ArrayMinSize(1)` ⇒ 「零 licence 行」永遠入唔到 adapter,**放寬係邏輯必然** |
+| `connectors.ts` | `n8n-inbound` 現時 `editable: []`;`kind` 有 `guid` 但**只驗格式** |
+| `integrations-panel.tsx:229` | `editable.map(...)` ⇒ **前端零 code 改動** |
+| `GET /license/catalog`(實跑,200) | **99 個 active SKU**(SESSION_SUMMARY 寫「12」已 stale → F11)· **兩個 E5 變體並存** |
+
+**🔴 Day 1 最重要嘅發現**:`intake-adapter.service.ts:138` 註解寫「今日 `E5` 唯一,只係因為 no-Teams 變體未 curated,係運氣唔係保證」——
+
+實測 `Microsoft_365_E5_(no_Teams)` **已經 active 咗**。結論(今日仍唯一)仍然成立,但**理由變咗**:`findUniqueSku` 用 `equals` 唔係 contains,而 `businessAlias` 先查、只有 `SPE_E5` 帶 `E5` 呢個 alias。
+
+⇒ default 必須指 `06ebc4ee-1bb5-47dd-8120-11324bc54e06`(SPE_E5)。**「一律 GUID 唔靠名」由紀律變成實證。**(F0b ✅,註解更正入 F11)
+
+**Chris 四項拍板**(2026-07-31):
+1. fixture **兩條路都要** —— 走 canonical 灌數據會完全繞開 adapter,而 adapter 係最新最易錯嗰舊 code
+2. 注入邏輯放 **`IntakeAdapterService`** —— canonical CONTRACT(LOCKED)一個字唔郁
+3. **只喺完全冇 licence 行時加** —— 有 E3 就唔加,尊重 SN 側 curation
+4. default 落 **connector config**(DB + UI),**要驗真實存在** —— 原話「如果是自行填的,一定要驗證是否真實存在」⇒ 新 `kind: 'sku'`
+
+另拍板 fail 行為 = **照收零行 + warn,唔 audit**(沿用 W41 OQ-1 裁決:配置錯屬 ops,唔屬業務 audit)。
+
+**Gate**:G0 ✅ plan approve(draft→active)· G2 ✅ ADR-0020 Accepted · G1 **部分** —— OQ-1/OQ-3 有答案,**OQ-2 仍 open**。
+
+**🚧 OQ-2(未答,阻塞驗收唔阻塞實作)**:成個 CH-B 建基於「n8n 喺 SN 零 licence RITM 時會 POST 一個**空 list**」呢個**未證實前提**。若 n8n workflow 其實根本唔 POST(自己 filter 咗),ADR-0020 落地咗都永遠唔會觸發。**要同 n8n 側對。**
+
+**Branch**:PR #58 已 merge(實測 `mergedAt` 2026-07-30T15:02:21Z),main = `be24b3f` ⇒ 從 main 開 `feat/w42-onboarding-default-sku`。
+
+**Day 1 產出**:`plan.md`(v1.0 active)· `checklist.md` · `docs/adr/0020-*.md`(Accepted)· ADR README index。**零 code 改動。**
