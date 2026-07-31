@@ -73,12 +73,23 @@ shadcn/ui 做底但 re-skin 用上面 token(或 alias `--primary:var(--accent)` 
 | forms | Button · IconButton · Input · Select · Checkbox · Switch · SegmentedControl | `variant`('primary'/'secondary'/'ghost'/'danger')· `size`('sm'/'md'/'lg')· 一 view 一個 primary |
 | display | Card · StatCard · Badge · Avatar | `Badge tone dot`;`StatCard label value tone icon delta sub`(tone 只 tint icon chip,value 保持中性) |
 | navigation | NavItem · Stepper · Tabs · Pagination | `Stepper steps current`(short 3-dot / procurement 6-dot,current 帶 `--ring-accent`) |
-| overlay / feedback | Tooltip · Dialog · Toast · EmptyState | Dialog 45% scrim;Toast bottom-center ~2.6s;EmptyState 用於 all-clear/no-results |
+| overlay / feedback | Tooltip · Dialog · Toast · EmptyState | Dialog 45% scrim;Toast bottom-center ~2.6s(**帶 action 時要更長**,見下);EmptyState 用於 all-clear/no-results |
 
 **Badge = 全系統通用狀態標記。Stage → tone map(必守)**:
 `Ready→ok` · `Quoting / Awaiting vendor→warn` · `Requested→info` · `Blocked→danger` · `Assigned→neutral` · `AI→purple`。
 
 > ⚠️ Tabs / Pagination / Tooltip / EmptyState 係 handoff 額外加、未 wire 入現有畫面 —— 用嗰陣跟各自 `.prompt.md`。
+
+**Toast `action`(owner-approved primitive 擴充,Chris 2026-07-31 · CH-013)**
+
+`Toast` 可以帶**最多一個** follow-up action。約束(違反即 drift):
+
+- **text link,唔係 button** —— toast 係 transient chrome,擺個真 button 落去會喺底下嗰個 view 讀成第二個 primary action(DS-3)。樣式 = `text-accent` + hover underline
+- **最多一個** —— 問兩條問題嘅 toast 係一個扮 toast 嘅 dialog,應該用 Dialog
+- 🔴 **caller 必須畀更長時間**(現行 10s vs 平常 5s)。一個未撳得切就消失嘅 action,比冇 action 更差 —— 佢教識用戶「呢個 UI 唔穩陣」
+- **action 唔可以係唯一路徑** —— toast 會自動消失,所以佢背後嘅目的地必須另有正常入口(CH-013 個案:request 一樣喺 Requests 列表搵得返)
+
+首個 caller:Settings › Integrations 匯入成功後嘅「Open request」。
 
 ---
 

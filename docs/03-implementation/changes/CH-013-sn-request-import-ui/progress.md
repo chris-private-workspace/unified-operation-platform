@@ -305,7 +305,43 @@ Playwright 把截圖同 `.playwright-mcp/` 寫落 **repo root**(memory 有記呢
 
 ### Blockers
 
-- 冇。剩返嘅只有 E5 「連去 request detail」,而佢係一個**要 owner 拍板**嘅 primitive 改動,唔係做唔到。
+- 冇。
+
+---
+
+## Day 5 — 2026-07-31（E5 · Toast action,owner approved）
+
+### 決定同路徑
+
+Chris 拍板要做「連去 request detail」。因為佢要改**共用 primitive**,所以走 §5 嘅合法路徑:owner 同意 → **更新 `design-system.md`** → 先落 code。
+
+`Toast` 加一個 **optional** `action`(既有 caller 零改動),並喺 `design-system.md §2` 登記四條約束:
+
+1. **text link,唔係 button** —— toast 係 transient chrome,擺個真 button 落去會喺底下嗰個 view 讀成第二個 primary(DS-3)
+2. **最多一個** —— 問兩條問題嘅 toast 係一個扮 toast 嘅 dialog
+3. 🔴 **caller 必須畀更長時間**(10s vs 平常 5s)—— 一個未撳得切就消失嘅 action,比冇 action 更差:佢教識用戶「呢個 UI 唔穩陣」
+4. **action 唔可以係唯一路徑** —— toast 會自動消失,所以背後目的地必須另有正常入口(本案:request 一樣喺 Requests 列表搵得返)
+
+### Live 驗證（一個 round-trip,因為 toast 有時限）
+
+前兩次 `wait_for` 都 timeout —— 唔係 toast 冇出,係 **MCP 每個 tool round-trip 都追唔切 5 秒**。改用單一 `run_code_unsafe` 把「import → 等 action → 撳 → 讀 URL」串埋一齊,問題即刻消失。**呢個本身係一個教訓**:一個有時限嘅 UI 行為,唔可以用多個 round-trip 嘅工具去驗。
+
+| | |
+|---|---|
+| toast 內容 | `"REQ0044061 imported.\nOpen request"` |
+| URL before → after | `/settings?tab=integrations` → **`/requests/cms8s936y00018y488vwxjsdg`** |
+| 落到嘅頁 | heading **`Request detail`**,頁面提到 `REQ0044061` |
+| action 樣式(computed) | `color rgb(230,0,39)`(= `#E60027`,accent token)· background **透明** · `padding 0px` · 無底線 ⇒ **真係 text link,唔係 button** |
+
+用 `REQ0044061`(已導入過)做驗證 ⇒ 行 idempotent 路徑,**零副作用**,但一樣行到 `onSuccess`。而個 request id 正正係之前嗰張,證明 idempotent 返同一張。
+
+### Test
+
+加兩條:① 成功後有 `Open request` 且撳咗 `navigate('/requests/req-99')` ② 🔴 **error toast 冇 action**(冇地方可去)。web **204 → 206**,`tsc --noEmit` + lint 0。
+
+### 清理
+
+再次把 Playwright 寫落 repo root 嘅截圖同 `.playwright-mcp/` 移走,`git status` 只剩應有嘅四個改動檔。
 
 ---
 

@@ -20,6 +20,9 @@ vi.mock('@/hooks/mutations', () => ({
 }));
 vi.mock('@/lib/auth/use-current-user', () => ({ useCurrentUser: vi.fn() }));
 
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
+
 const OPCOS: AdminOpco[] = [{ id: 'rhk', code: 'RHK', displayName: 'RHK Co' }];
 
 const CATALOG: SkuCatalog[] = [
@@ -211,6 +214,48 @@ describe('ServiceNowImportPanel', () => {
       ritmNumber: string;
     }[];
     expect(items.map((i) => i.ritmNumber)).toEqual(['RITM0047331']);
+  });
+
+  it('offers "Open request" after a successful import, and it navigates there', () => {
+    importMutate.mockImplementation(
+      (_body: unknown, opts?: { onSuccess?: (r: unknown) => void }) =>
+        opts?.onSuccess?.({ id: 'req-99', serviceNowNumber: 'REQ0044038' }),
+    );
+    render(<ServiceNowImportPanel />);
+    lookUp();
+
+    const [skuSelect, opcoSelect] = screen.getAllByRole('combobox');
+    fireEvent.change(skuSelect, { target: { value: 'guid-e5' } });
+    fireEvent.change(opcoSelect, { target: { value: 'RHK' } });
+    fireEvent.change(screen.getByPlaceholderText('new.hire@rapo.com.hk'), {
+      target: { value: 'x@y.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Import/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open request' }));
+
+    expect(navigateMock).toHaveBeenCalledWith('/requests/req-99');
+  });
+
+  it('🔴 an error toast carries no action — there is nowhere to go', () => {
+    importMutate.mockImplementation(
+      (_body: unknown, opts?: { onError?: (e: unknown) => void }) =>
+        opts?.onError?.(new Error('boom')),
+    );
+    render(<ServiceNowImportPanel />);
+    lookUp();
+
+    const [skuSelect, opcoSelect] = screen.getAllByRole('combobox');
+    fireEvent.change(skuSelect, { target: { value: 'guid-e5' } });
+    fireEvent.change(opcoSelect, { target: { value: 'RHK' } });
+    fireEvent.change(screen.getByPlaceholderText('new.hire@rapo.com.hk'), {
+      target: { value: 'x@y.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Import/ }));
+
+    expect(
+      screen.queryByRole('button', { name: 'Open request' }),
+    ).not.toBeInTheDocument();
   });
 
   it('surfaces the server message when a lookup fails', () => {

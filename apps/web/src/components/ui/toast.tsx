@@ -14,9 +14,22 @@ const toneDot: Record<string, string> = {
 export interface ToastProps {
   message?: string | null;
   tone?: keyof typeof toneDot;
+  /**
+   * ONE optional follow-up (CH-013, Chris approved 2026-07-31 — design-system §2).
+   *
+   * A text link, not a button: a toast is transient chrome, and a real button
+   * here would read as a second primary action on whatever view is underneath.
+   * At most one — a toast that asks two questions is a dialog wearing a
+   * disguise.
+   *
+   * 🔴 Callers that pass this must give the toast longer than the usual ~2.6s.
+   * An action nobody can reach before it disappears is worse than no action:
+   * it teaches people the UI is flaky.
+   */
+  action?: { label: string; onClick: () => void };
 }
 
-export function Toast({ message, tone = 'ok' }: ToastProps) {
+export function Toast({ message, tone = 'ok', action }: ToastProps) {
   if (!message) return null;
   return (
     <div className="fixed bottom-[24px] left-1/2 z-50 -translate-x-1/2">
@@ -28,6 +41,15 @@ export function Toast({ message, tone = 'ok' }: ToastProps) {
           )}
         />
         {message}
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="shrink-0 font-medium text-accent underline-offset-2 hover:underline"
+          >
+            {action.label}
+          </button>
+        )}
       </div>
     </div>
   );

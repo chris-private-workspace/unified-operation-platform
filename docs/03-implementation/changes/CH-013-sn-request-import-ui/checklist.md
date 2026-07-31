@@ -53,7 +53,7 @@ last_updated: 2026-07-31
 - [x] E2 步驟二:逐張 RITM 揀 SKU(既有 `select`,由 `/license/catalog` 拉)+ target UPN input + **OpCo 下拉**(deviation ②)
 - [x] E3 `activeTaskCount ≠ 1` 嘅行明確標唔可導入 + 原因 — 直接用 server 個 `blockedReason` 原文,**唔另寫一套文案**(免兩處 drift)
 - [x] E4 未揀 SKU / 未填 UPN / 未揀 OpCo → import 掣 disabled
-- [ ] 🚧 E5 成功 → toast + **連去 request detail**;失敗 → 錯誤原文顯示唔吞 —— **toast ✅ · 錯誤原文 ✅**(順帶修咗 `apiGet`:佢係四個 api helper 入面**唯一**唔 surface server `message` 嗰個,而我個 404「可能係 row-level ACL」正正靠佢傳到 UI;零 test 依賴舊格式);**「連去 detail」冇做** —— `Toast` primitive 得 `message` + `tone`,冇 action slot,加 slot = 改共用 primitive = **H6 要先問 owner**,唔喺呢個 CH 順手做。現時 toast 講明 request number,操作員去 Requests 頁搵得返。<br>⚠️ **toast 本身冇直接影到**:佢 5 秒自動消失,而 MCP 每次 tool round-trip 都追唔切(試咗兩次,`wait_for` 都 timeout)。間接證據充分 —— 表單完全 reset(`reqInput` 清空、結果區消失、Import 掣冇咗)**只可能發生喺 `onSuccess`**(`onError` 只 `setToast` 唔 reset),而 DB 亦證實 request 真係建咗
+- [x] E5 成功 → toast + **連去 request detail**;失敗 → 錯誤原文顯示唔吞 — **全部做齊,live 驗到**。順帶修咗 `apiGet`:佢係四個 api helper 入面**唯一**唔 surface server `message` 嗰個,而 404「可能係 row-level ACL」正正靠佢傳到 UI(零 test 依賴舊格式)。<br>**「連去 detail」**(Chris 2026-07-31 approve)→ 走 H6 合法路徑:擴 `Toast` primitive 加**一個 optional action**,並登記入 `design-system.md §2`(四條約束:text-link 唔係 button · 最多一個 · caller 必須畀更長時間[10s vs 5s]· action 唔可以係唯一路徑)。live 一個 round-trip 驗到:toast `"REQ0044061 imported. / Open request"` → 撳 → URL 由 `/settings?tab=integrations` 變 `/requests/cms8s936y…` → heading `Request detail`。樣式 computed:`color rgb(230,0,39)`(= `#E60027` accent token)· 背景**透明** · `padding 0` ⇒ 真係 text link。另有 test assert **error toast 冇 action**(冇地方可去)
 - [x] E6 非 ADMIN **完全唔 render**(唔係 disable)— test assert `container` 係 empty DOM
 - [x] E7 web test 不降 — **196 → 204 / 25 files**
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Check, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,8 +55,10 @@ export function ServiceNowImportPanel() {
   const [toast, setToast] = useState<{
     message: string;
     tone: 'ok' | 'danger';
+    action?: { label: string; onClick: () => void };
   } | null>(null);
 
+  const navigate = useNavigate();
   const lookup = useServiceNowLookup();
   const importReq = useServiceNowImport();
   const opcos = useOpcos();
@@ -67,9 +70,11 @@ export function ServiceNowImportPanel() {
   );
 
   // Toast owns no timer of its own (FE-3) — the caller dismisses it.
+  // A toast carrying an action gets longer: the Toast contract says an action
+  // nobody can reach before it vanishes is worse than no action at all.
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 5000);
+    const t = setTimeout(() => setToast(null), toast.action ? 10000 : 5000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -116,8 +121,15 @@ export function ServiceNowImportPanel() {
       {
         onSuccess: (created) => {
           setToast({
-            message: `${result.number} imported — request ${created.serviceNowNumber ?? created.id} is now in the platform.`,
+            message: `${result.number} imported.`,
             tone: 'ok',
+            // The request the operator just created is almost always where they
+            // are heading next — and without this the only way there is to go
+            // hunting for it by number in the Requests list.
+            action: {
+              label: 'Open request',
+              onClick: () => navigate(`/requests/${created.id}`),
+            },
           });
           setReqNumber('');
           setTargetUpn('');
@@ -330,7 +342,13 @@ export function ServiceNowImportPanel() {
       </div>
 
       {/* Toast carries no timer of its own — the effect above owns dismissal. */}
-      {toast && <Toast message={toast.message} tone={toast.tone} />}
+      {toast && (
+        <Toast
+          message={toast.message}
+          tone={toast.tone}
+          action={toast.action}
+        />
+      )}
     </Card>
   );
 }
