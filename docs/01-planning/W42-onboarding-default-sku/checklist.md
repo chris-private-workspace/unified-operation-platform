@@ -10,24 +10,25 @@
 
 ## F0 — Preflight(唔使等 approve,純調查)
 
-- [ ] **F0a** 實測 `POST /requests/intake/n8n` 條 SN 反查本機通唔通(決定 F9 做法)
+- [x] **F0a** ~~實測條 SN 反查本機通唔通~~ —— **問題消失**:`mock-servicenow.js:52-61` 已支援 `GET ?sysparm_query=number=` 反查(為 `getRecordByNumber` 而加),native 路線全程走 mock,唔使打真 SN
 - [x] **F0b** 確認 default SKU GUID = `06ebc4ee-1bb5-47dd-8120-11324bc54e06`(SPE_E5)—— 2026-07-31 實測 catalog 99 SKU,兩個 E5 變體並存(plan §2.3)
-- [ ] **F0c** 確認 fixture 放邊 + 有冇現成 `scripts/` 慣例(OQ-3)
+- [x] **F0c** 確認 fixture 放邊(OQ-3)—— `apps/api/scripts/demo-harness/` **已存在**,fixture 加入該 harness,配 `npm run demo:intake`
 
 ## CH-B — default SKU 注入
 
-- [ ] **F1** ADR-0020 寫好(Proposed)
-- [ ] **F2** `schema.prisma` 加 `defaultOnboardingSkuId` + migration(additive nullable)
-- [ ] **F3** `connectors.ts` 加 `n8n-inbound` editable field + 更正「inbound 冇非機密設定」註解
-- [ ] **F4** Admin 寫入時 SKU 存在性驗證(**視 OQ-1 而定**)
-- [ ] **F5** native DTO `@ArrayMinSize(1)`→`(0)` + swagger 描述寫明空 list 語義
-- [ ] **F6** `ensureDefaultLine()` + audit action + **擴 ADR-0009 D4 白名單** + warn log(H4:log 唔可以帶 target UPN)
-- [ ] **F7** Test:注入 / 有 E3 唔加 / 有 E5 唔重複 / 未配置 / 配置指向 inactive SKU
+- [x] **F1** ADR-0020 寫好 → **Accepted**
+- [x] **F2** `schema.prisma` 加 `defaultOnboardingSkuId` + migration `20260731012942_add_default_onboarding_sku`(additive nullable,零 backfill)
+- [x] **F3** `connectors.ts` 加 `n8n-inbound` editable field + 新 `kind: 'sku'` + 更正「inbound 冇非機密設定」註解
+- [x] **F4** Admin 寫入時 SKU 存在性驗證 —— `validate` 改 async,shape-first 再查 catalogue,inactive 亦拒(**26/26** connector-config test)
+- [x] **F5** native DTO `@ArrayMinSize(1)`→`(0)` + swagger 描述寫明空 list 語義(canonical DTO 保持 ≥1)
+- [x] **F6** `applyDefaultSku()` + `intake.default_sku_injected` action + **擴 ADR-0009 D4 白名單** + warn log(H4:只 log REQ number / SKU part number,零 UPN)
+- [x] **F7** Test:注入 / audit / 有 E3 唔加 / 未配置 / 配置指向 inactive / **重推唔重複 audit** —— adapter **23/23**;🔴 **fails-before 實證**:首版 mock 唔真實,拆 guard 仍全綠 = 假驗證;修正後拆 guard → `Expected 1, Received 2` 真紅
 
 ## CH-A — 測試 fixture
 
-- [ ] **F8** canonical fixture(`POST /requests/intake`)
-- [ ] **F9** native fixture(`POST /requests/intake/n8n`)— 做法待 F0a
+- [x] **F8** canonical fixture(`POST /requests/intake`)—— `intake-fixture.js --mode canonical`
+- [x] **F9** native fixture(`POST /requests/intake/n8n`,含 `--empty` 驗 ADR-0020)+ README Scenario 4 + `npm run demo:intake`
+  - ⚠️ **code 寫好但未實跑** —— 要起 mock SN + API 3101,屬 F10
 
 ## 收官
 

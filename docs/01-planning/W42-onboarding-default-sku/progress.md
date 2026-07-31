@@ -46,4 +46,37 @@ last_updated: 2026-07-31
 
 **Branch**:PR #58 已 merge(實測 `mergedAt` 2026-07-30T15:02:21Z),main = `be24b3f` ⇒ 從 main 開 `feat/w42-onboarding-default-sku`。
 
-**Day 1 產出**:`plan.md`(v1.0 active)· `checklist.md` · `docs/adr/0020-*.md`(Accepted)· ADR README index。**零 code 改動。**
+**Day 1 產出(pre-doc)**:`plan.md`(v1.0 active)· `checklist.md` · `docs/adr/0020-*.md`(Accepted)· ADR README index。
+
+---
+
+## Day 1(續)— 2026-07-31 · F2–F9 實作
+
+**完成**:F1–F9。api test **651 → 661**(59 suites 全綠)· lint **exit 0**。
+
+### 🔴 最重要:fails-before 揭穿咗一個假驗證
+
+寫完「重推唔重複 audit」嗰條 test,先拆走 `preExisting` guard 驗佢會唔會紅 —— **23 個 test 全部仍然綠**。
+
+原因:我 mock 第二次 push 返 `{ id: 'r1', lineItems: [] }`,而 `auditInjection` 入面一個 defensive `if (!line) return` 就撞啱擋住咗。但真實情況係 `findByReq` 用 `include: { lineItems: true }`,existing request **一定帶住第一次注入嗰行**,`find` 會命中 → 寫第二行重複 audit。
+
+**mock 唔真實 → 假通過。** 修正 mock 後再拆 guard:`Expected 1, Received 2` ✅ 真紅;還原 guard → 23/23 綠。
+
+⇒ 順手證明 `preExisting` guard 唔係多餘 code。要唔係做咗 fails-before,交出去嘅係一個**保護唔到嘢嘅防重複 audit**,而佢守護嘅正正係 W41 F8d 修過嗰種誤導性 audit 行。呢個對應 memory `feedback_verification-that-proves-nothing`。
+
+### ⚠️ 發現既有 gap(唔屬本 phase,冇擅自改)
+
+`AUDIT_FIELD_WHITELIST.ConnectorConfig` 只列 6 個 column,但表已有 11 個。缺:`licenseOpsProvider` · `n8nLicenseBaseUrl` · `ticketUpdateProvider` · `n8nTicketWebhookUrl` · `acsSenderAddress`。
+
+⇒ W39 / W40 / CH-011 嘅 connector 配置改動,`before`/`after` 一直被 `pickAuditFields` **靜靜 drop**(audit 行仍在,內容空)。只加咗自己嗰個 `defaultOnboardingSkuId`;其餘**冇掂** —— 該處註解自己講「adding a line here is a privacy decision」,唔係實作者可以順手決定。**待 Chris 決定要唔要開 BUG 單。**
+
+### 🎁 test 主動捉到我一次
+
+`integration-status.service.spec.ts` 有個 registry 強制「任何新 connector env key 都要納入 leak 測試」。加 `DEFAULT_ONBOARDING_SKU_ID` 即刻被 assert 捉住 —— 呢個設計值得記低:**佢令「靜靜加一個 env key 而唔驗漏唔漏」變成做唔到**。
+
+### 其他
+
+- `validate()` 由 sync 改 async(`kind: 'sku'` 要查 catalogue),22 → 26 test 全過,無一條要改。
+- 抽 `GUID_RE` 做常數(`guid` 同 `sku` 兩處共用)。
+- **前端零 code 改動**已核實:`integrations-panel.tsx:229` data-driven,前端亦冇 `kind` union type。
+- H4 核對:所有新 log 只帶 REQ number / SKU part number,**零 UPN**。

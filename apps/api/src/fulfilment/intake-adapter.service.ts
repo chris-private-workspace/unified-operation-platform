@@ -6,10 +6,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
+import { ConnectorConfigService } from '../integration/connector-config.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { IntakeService } from './intake.service';
 import { N8nNativeIntakeDto } from './dto/n8n-native-intake.dto';
 import { N8nIntakeRequestDto } from './dto/n8n-intake.dto';
 import { opcoCodeForJobFunction } from './opco-department-map';
+
+/** The catalogue row a default injection resolved to. */
+type DefaultSku = { id: string; skuId: string; skuPartNumber: string };
 
 /**
  * ADR-0017 D4 — translate n8n's native envelope into the canonical intake DTO.
@@ -38,13 +44,19 @@ export class IntakeAdapterService {
     private readonly prisma: PrismaService,
     private readonly snow: ServiceNowService,
     private readonly intake: IntakeService,
+    private readonly connectorConfig: ConnectorConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async intakeNative(dto: N8nNativeIntakeDto) {
     // Order is cheapest-first so a bad payload fails before we touch the network:
     // constant lookup → DB → ServiceNow.
     const opcoCode = await this.resolveOpcoCode(dto.request.department);
-    const lineItems = await this.resolveLineItems(dto.licenseItems);
+    const resolved = await this.resolveLineItems(dto.licenseItems);
+    const { lineItems, injected } = await this.applyDefaultSku(
+      resolved,
+      dto.request.requestId,
+    );
     const serviceNowSysId = await this.resolveReqSysId(dto.request.requestId);
 
     const canonical: N8nIntakeRequestDto = {
@@ -67,7 +79,135 @@ export class IntakeAdapterService {
     this.logger.log(
       `n8n native intake: REQ ${canonical.serviceNowNumber} → opco ${opcoCode}, ${lineItems.length} line item(s)`,
     );
-    return this.intake.intake(canonical);
+
+    /**
+     * Checked BEFORE the write so a repeat push does not audit an injection
+     * that did not happen this time round. Intake is idempotent on the REQ
+     * sysId, so a re-post returns the existing request untouched — and an audit
+     * row saying "the platform added a line" when it added nothing is exactly
+     * the misleading-trail failure W41 had to go back and fix.
+     */
+    const preExisting = injected
+      ? await this.prisma.request.findUnique({
+          where: { serviceNowSysId },
+          select: { id: true },
+        })
+      : null;
+
+    const created = await this.intake.intake(canonical);
+    if (injected && !preExisting) {
+      await this.auditInjection(created, injected);
+    }
+    return created;
+  }
+
+  // ── default SKU injection (ADR-0020) ─────────────────────────
+
+  /**
+   * ADR-0020 D1/D2 — when ServiceNow carried NO licence line at all, add the
+   * configured default so the operator has something to act on.
+   *
+   * 🔴 Only when the list is completely empty. A request that already carries
+   * an E3 gets no E5: ServiceNow said what it wanted, and the platform does not
+   * second-guess a stated choice (D2).
+   *
+   * The injected line has no RITM (`serviceNowSysId` stays null) because none
+   * exists — nothing in ServiceNow asked for it. `assign.service` already
+   * handles that shape: it falls back to a work note on the parent REQ.
+   */
+  private async applyDefaultSku(
+    resolved: N8nIntakeRequestDto['lineItems'],
+    requestNumber: string,
+  ): Promise<{
+    lineItems: N8nIntakeRequestDto['lineItems'];
+    injected: DefaultSku | null;
+  }> {
+    if (resolved.length > 0) return { lineItems: resolved, injected: null };
+
+    const skuId = await this.connectorConfig.resolve(
+      'n8n-inbound',
+      'defaultOnboardingSkuId',
+    );
+    /**
+     * D6 — fail SOFT, deliberately breaking this service's own fail-closed
+     * habit. Fail-closed exists here because a wrong GUESS assigns the wrong
+     * product to a real person; nothing is being guessed when the default is
+     * simply unset. Rejecting would hand n8n a 400 whose error handling we
+     * cannot see, and a request that never arrives is worse than one an
+     * operator can see is a line short.
+     *
+     * Logged, not audited: a missing setting is an ops event, not a business
+     * one (same split as W41's unset APP_BASE_URL).
+     */
+    if (!skuId) {
+      this.logger.warn(
+        `REQ ${requestNumber.trim()} carried no licence line and no default onboarding SKU is configured — creating it with zero line items`,
+      );
+      return { lineItems: [], injected: null };
+    }
+
+    const sku = await this.prisma.skuCatalog.findUnique({
+      where: { skuId },
+      select: { id: true, skuId: true, skuPartNumber: true, active: true },
+    });
+    // Re-checked at use even though `kind: 'sku'` validates on write: a SKU can
+    // be deactivated after it was configured, and intake must not create a line
+    // against a dead catalogue row.
+    if (!sku || !sku.active) {
+      this.logger.warn(
+        `REQ ${requestNumber.trim()} carried no licence line and the configured default SKU is ${
+          sku ? 'inactive' : 'not in the catalogue'
+        } — creating it with zero line items`,
+      );
+      return { lineItems: [], injected: null };
+    }
+
+    this.logger.log(
+      `REQ ${requestNumber.trim()} carried no licence line — injecting default SKU ${sku.skuPartNumber}`,
+    );
+    // n8n models one RITM as one seat; the default follows the same convention.
+    return {
+      lineItems: [{ skuId: sku.skuId, quantity: 1 }],
+      injected: {
+        id: sku.id,
+        skuId: sku.skuId,
+        skuPartNumber: sku.skuPartNumber,
+      },
+    };
+  }
+
+  /**
+   * ADR-0020 D7 — record that the platform authored this line.
+   *
+   * Every other line item mirrors an `sc_req_item`; this one does not, and
+   * without a trail nobody can later tell the two apart on the same request.
+   *
+   * ⚠️ Not in the same transaction as the write it describes, which ADR-0009
+   * Decision 8.1 would prefer: the request is created inside `IntakeService`'s
+   * own nested write, and ADR-0020 D3 keeps that service untouched. The window
+   * is a DB failure landing between the two calls — the same DB the request was
+   * just written to, so it is narrow, but it is real and stated rather than
+   * papered over.
+   */
+  private async auditInjection(
+    created: { lineItems: { id: string; skuCatalogId: string }[] },
+    sku: DefaultSku,
+  ): Promise<void> {
+    const line = created.lineItems.find((li) => li.skuCatalogId === sku.id);
+    if (!line) return;
+    await this.prisma.$transaction(async (tx) => {
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.INTAKE_DEFAULT_SKU,
+        targetType: 'RequestLineItem',
+        targetId: line.id,
+        // m2m intake — there is no user actor to attribute this to.
+        actorId: null,
+        metadata: {
+          reason: `default onboarding SKU injected: ${sku.skuPartNumber}`,
+          source: 'n8n-intake',
+        },
+      });
+    });
   }
 
   // ── resolvers ────────────────────────────────────────────────

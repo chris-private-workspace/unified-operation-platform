@@ -100,6 +100,9 @@ describe('IntegrationStatusService', () => {
     ACS_SENDER_ADDRESS: 'no-reply@fixture.example.com',
     ACS_CONNECTION_STRING:
       'endpoint=https://fixture.communication.azure.com/;accesskey=SECRET-ACS-DO-NOT-LEAK',
+    // W42 — a skuId GUID. Not a secret, but it is a configured value, and D2
+    // says the status response carries no config value at all, secret or not.
+    DEFAULT_ONBOARDING_SKU_ID: '06ebc4ee-1bb5-47dd-8120-11324bc54e06',
   };
 
   /**

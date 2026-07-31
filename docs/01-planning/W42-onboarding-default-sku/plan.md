@@ -205,6 +205,7 @@ native fixture 卡住 SN 反查,F0 先實測再定做法(真 REQ number / stub /
 6. Settings → Integrations → n8n (inbound intake) 見到「Default onboarding SKU」輸入格;填一個唔存在嘅 GUID **被拒**(OQ-1 決定後定形)。
 7. fixture 跑完,Requests 列表見到新 request,可以推到 READY。
 8. api / web test 全綠 + lint exit 0 + build 出 `dist/main.js`。
+9. **(v1.2 新增)** 拆走 `preExisting` guard 後,「不重複 audit」嗰條 test **必須變紅** —— 否則佢證明唔到嘢(fails-before 已實證一次假通過)。
 
 ## 8. Risks
 
@@ -230,3 +231,5 @@ native fixture 卡住 SN 反查,F0 先實測再定做法(真 REQ number / stub /
 |---|---|---|
 | 2026-07-31 | 0.1 | 初稿(draft,待 approve)。四個方向由 Chris 2026-07-31 拍板:fixture 兩條路都要 · 注入放 adapter · 只喺完全冇 licence 行時加 · default 落 connector config。 |
 | 2026-07-31 | 1.0 | **Chris approve → active**。ADR-0020 Proposed→**Accepted**(H1 解鎖)。OQ-1 答「要驗」→ F4 定形為 `kind: 'sku'`。OQ-3 按建議自決(對齊 `prisma/seed-demo-ledger.ts` pattern),唔另外問。**OQ-2 仍 open**。 |
+| 2026-07-31 | 1.1 | **R3 deviation — CH-A 做法改變(工作量下降)**。實作時發現 `apps/api/scripts/demo-harness/` **已經存在**(`mock-servicenow.js` / `mock-n8n.js` / `cleanup-demo.js` + README),而且 **mock SN 已支援 `GET ?sysparm_query=number=` 反查**(`:52-61`,註解明講為 `getRecordByNumber` 而加)。⇒ **F0a 唔使打真 ServiceNow**、**F9 唔使寫 stub**;F8/F9 由「寫新 fixture」改為「**擴現有 harness**」= 一個 `intake-fixture.js` + `npm run demo:intake` + README Scenario 4。OQ-3 隨之自解。 |
+| 2026-07-31 | 1.2 | **F7 新增一條 acceptance(§7.9)**:fails-before 實證發現首版 test **證明唔到嘢**(mock 返 `lineItems: []` 令 `auditInjection` 個 defensive 分支代替真 guard 通過)。修正 mock 後拆 guard → `Expected 1, Received 2` 真紅。教訓已入 progress Day 1。 |
