@@ -62,6 +62,10 @@ Backend endpoint **冇 `/api` prefix**(`:3100/me` 200、`:3100/api/me` 404);vite
    `ensure-infra.ps1` 已經自動處理呢個 case。
    **同一時間亦唔好假設容器喺度** —— 嗰次 redis 係完全冇跑,而舊版腳本只係 `ps` 印咗出嚟就算。
 4. **冷啟動係「慢,唔係 hang」** —— 只輪詢 endpoint(timeout ≥10s / 次),**絕不**因為一兩次 fail 就殺進程。
+   ⚠️ **但呢條唔可以無限延伸,否則會變成第二種誤判**:`verify.ps1` 跑完 90s 仍然 `port 3100 FREE`
+   **而且** leak watch 明顯偏少(得 web 鏈 ≈ 9 個)⇒ 唔係慢,係嗰條 api 鏈**已經死咗**。
+   分辨方法唔使估:**`Test-Path apps\api\dist\main.js`** —— 唔存在就直接跳去下面「build cache」嗰段。
+   (W41 closeout 實測:我當咗係「冷啟慢過 90 秒」,重驗一次白等,而進程數其實一早已經講咗答案。)
 5. **`.env` 唔改**(§4.4)。要臨時改 auth 行為 → 喺 `Start-Process` 傳 shell env,收工唔加 env 重起還原。
 
 ## Code drift(切 branch / pull 之後最常踩,而 preflight 舊四項完全睇唔到)
@@ -73,6 +77,20 @@ Backend endpoint **冇 `/api` prefix**(`:3100/me` 200、`:3100/api/me` 404);vite
 | npm 依賴 | `package-lock.json` 新過 `node_modules/.package-lock.json` | `npm install` |
 | **Prisma client** | `schema.prisma` 新過 `node_modules/.prisma/client/index.d.ts` | `prisma generate` |
 | DB migration | migration 資料夾數 ≠ `_prisma_migrations` 已套用數 | **只報告,唔自動改 DB** —— 人手 `npm run prisma:deploy -w @uop/api` |
+| **build cache** | `nest build` 返 `exit=0` / watch 印 `Found 0 errors`,但 **`apps\api\dist\main.js` 唔存在** | 刪 `apps\api\*.tsbuildinfo` **同埋** `dist\`,然後**直接起 stack** —— 🔴 **中間唔可以插 `npm run build`**,見下 |
+
+🔴 **build cache 呢個坑值得展開,因為佢係一道無聲假綠燈,而且「清咗好似冇用」**(W41 closeout,實測撞三次):
+
+`nest start --watch` 啟動時**清 `dist/`**,但**唔刪 `tsbuildinfo`**。tsc(`"incremental": true`)讀個 cache
+判斷「輸出已最新」→ **skip emit** → `dist/` 空 → nest 跑 `node dist/main` 報 `MODULE_NOT_FOUND`。
+所以會見到 **`Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出現** —— 兩句夾埋就係佢,唔使再懷疑 TS 錯誤。
+
+**修法有次序要求**:刪 cache + `dist/` 之後**直接起 stack**。若果你「刪 cache → `npm run build` → 起」,
+嗰次 build 會即刻重新生成 tsbuildinfo,而 watch 一起身又清 `dist/` ⇒ **原樣重現**。三次失敗有兩次
+死喺呢個直覺次序。
+
+⚠️ **點解本機會出而 Docker 唔會**:Dockerfile 有 BUG-008 加嘅 `RUN test -f dist/main.js` gate,
+本機 `nest build` **冇呢道閘** ⇒ 本機可以靜靜漂移到起唔到身而完全冇紅燈。同源記錄見 `anti-patterns` **AP-14**。
 
 🔴 **Prisma client stale 唔會令 preflight 變紅** —— 容器、port、進程、endpoint 可以全部綠色,
 但 backend 一 build 就死喺 type error。2026-07-29 由 feat branch 切返 `main`(+50 commits)實測:
