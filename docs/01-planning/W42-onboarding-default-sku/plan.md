@@ -3,8 +3,8 @@ phase: W42-onboarding-default-sku
 name: "intake 測試 fixture(CH-A)+ onboarding default SKU 注入(CH-B)"
 sprint_week: W42
 start_date: 2026-07-31
-end_date:
-status: active                # draft | active | closed
+end_date: 2026-07-31
+status: closed                # draft | active | closed
 spec_refs:
   - docs/adr/0017-n8n-execution-seams-switchable-integration.md **D0**(只換執行器唔換決策者)· **D4**(intake adapter 存在理由)
   - docs/adr/0008-request-intake-d365.md **D6**(REQ/RITM 兩層鏡像)
@@ -197,6 +197,8 @@ native fixture 卡住 SN 反查,F0 先實測再定做法(真 REQ number / stub /
 
 ## 7. Acceptance(每條可證偽)
 
+> **收官結果(2026-07-31)**:1–6 · 8 · 9 **全部達成並有真 output**;**7 部分**(fixture 跑到、Requests 見到,但**冇實際推 stage 到 READY**);第 1/2/3 條驗嘅係「空 `licenseItems`」形態 —— 呢個形態**喺真 n8n contract 下唔會出現**(見 §10 v2.0),所以佢哋證明咗**實作正確**,但**唔等於**業務鏈路已通。
+
 1. `POST /requests/intake/n8n` 帶 `licenseItems: []` + default 已配置 → 建出嘅 Request **恰好 1 行**,`skuId = 06ebc4ee-…`,`serviceNowSysId = null`,`stage = REQUESTED`。
 2. 同上但 **default 未配置** → Request **建到**(唔係 400),**0 行**,log 有 warn,**audit 冇新行**。
 3. `licenseItems: [E3]` → **1 行 E3**,**冇** E5(唔加)。
@@ -232,4 +234,5 @@ native fixture 卡住 SN 反查,F0 先實測再定做法(真 REQ number / stub /
 | 2026-07-31 | 0.1 | 初稿(draft,待 approve)。四個方向由 Chris 2026-07-31 拍板:fixture 兩條路都要 · 注入放 adapter · 只喺完全冇 licence 行時加 · default 落 connector config。 |
 | 2026-07-31 | 1.0 | **Chris approve → active**。ADR-0020 Proposed→**Accepted**(H1 解鎖)。OQ-1 答「要驗」→ F4 定形為 `kind: 'sku'`。OQ-3 按建議自決(對齊 `prisma/seed-demo-ledger.ts` pattern),唔另外問。**OQ-2 仍 open**。 |
 | 2026-07-31 | 1.1 | **R3 deviation — CH-A 做法改變(工作量下降)**。實作時發現 `apps/api/scripts/demo-harness/` **已經存在**(`mock-servicenow.js` / `mock-n8n.js` / `cleanup-demo.js` + README),而且 **mock SN 已支援 `GET ?sysparm_query=number=` 反查**(`:52-61`,註解明講為 `getRecordByNumber` 而加)。⇒ **F0a 唔使打真 ServiceNow**、**F9 唔使寫 stub**;F8/F9 由「寫新 fixture」改為「**擴現有 harness**」= 一個 `intake-fixture.js` + `npm run demo:intake` + README Scenario 4。OQ-3 隨之自解。 |
+| 2026-07-31 | 2.0 | **🔴 OQ-2 答案令 R1 由風險變事實 → phase closed,新 contract 另開 W43**。Chris 確認 n8n 唔送空 list,並交出最新 workflow;實讀 1001/1005 揭 n8n 早喺 **07-26** 已改成 **flat mode-based contract**(`mode:1` + user + OpCo,**冇 `licenseItems` 呢個欄位**),而且 hardcode 打 **canonical** route。⇒ **D1/D4/D6/D7/D8 成立並已 live 驗;D2/D3/D5 實際失效**(詳見 ADR-0020 實作補註)。Chris 兩項拍板:**canonical route 內部分流**(body 帶 `mode` 走新 handler,n8n 唔使改 URL)· **先收 W42 保留現有成果,新 contract 開 W43**。 |
 | 2026-07-31 | 1.2 | **F7 新增一條 acceptance(§7.9)**:fails-before 實證發現首版 test **證明唔到嘢**(mock 返 `lineItems: []` 令 `auditInjection` 個 defensive 分支代替真 guard 通過)。修正 mock 後拆 guard → `Expected 1, Received 2` 真紅。教訓已入 progress Day 1。 |

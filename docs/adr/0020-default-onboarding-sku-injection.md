@@ -121,6 +121,62 @@ D7 下半直接沿用 W41 就同一問題嘅裁決(未設 `APP_BASE_URL` → 只
 
 **呢點必須同 n8n 側對過**(W42 OQ-2)。寫喺呢度,係因為佢唔係實作風險,係**需求成唔成立**嘅前提。
 
+---
+
+## 實作補註(2026-07-31,W42 收官)
+
+> Accepted 之後**唔改上文任何一個字**(§6 慣例)。呢節記低落地後即刻發現嘅事實,同佢對每條決定嘅影響。
+
+### 🔴 Consequences 嗰個「未證實前提」當日就證偽咗
+
+上文 Consequences 寫住:本 ADR 假設 n8n 喺「SN 零 licence RITM」時會 POST 一個**空 `licenseItems`**;若佢根本唔 POST,D1 永遠唔會觸發。
+
+**Chris 2026-07-31 確認 n8n 唔會送空 list**,並交出最新 workflow(`docs/06-reference/03-n8n-workflow/`,舊版改 `_bak`)。
+
+> ⚠️ 該目錄係 **SEC-001 刻意 gitignored**(內含明文憑證),所以**唔會出現喺任何 clone / 其他 worktree**。下面嘅引用係本機實讀嘅結果;要核對原文要向 owner 攞 export。本節只引用**契約性內容**,零憑證。
+
+實讀 1001 / 1005 嘅 `WF1 - Prepare UOP Intake`,真相**比「唔送空 list」更遠**:
+
+n8n 早喺 **2026-07-26** 已經改成 **flat mode-based contract**,code 第二行逐字:
+
+> `n8n sends user + OpCo + mode:1 ONLY. UOP owns the "new joiner -> E5" policy and resolves the SKUs.`
+
+實際 payload(1001 同 1005 一致):
+
+```json
+{ "mode": 1, "targetUpn": "…", "targetDisplayName": "…", "opcoCode": "RHK",
+  "requesterEmail": "…", "source": "1001-immediate", "requestId": "REQ0043858" }
+```
+
+POST 去 **hardcoded** `https://ca-uop-web…/api/requests/intake`,即 **canonical** route。
+
+### 逐條影響
+
+| 決定 | 狀態 |
+|---|---|
+| **D1**(冇 licence 行就注入 default) | ✅ **成立,而且係 n8n 明文交畀 UOP 嘅責任**。方向對咗。 |
+| **D2**(只喺完全冇 licence 行時加;有 E3 唔加) | ⚠️ **實際失效** —— 冇 licence 行係**常態唔係例外**,「有 E3 就唔加」呢個分支喺呢個 contract 下永遠行唔到。 |
+| **D3**(只放 `IntakeAdapterService`) | ❌ **接錯咗 route** —— n8n 打 canonical `/requests/intake`,唔經 adapter。 |
+| **D4**(GUID + `kind:'sku'` 驗存在) | ✅ 不受影響,原樣重用。 |
+| **D5**(native DTO `@ArrayMinSize` 1→0) | ❌ **無用** —— payload **根本冇** `licenseItems` 呢個欄位,唔係「空陣列」。 |
+| **D6**(fail-soft) | ✅ 不受影響。 |
+| **D7**(注入寫 audit / 配置錯只 log) | ✅ 不受影響,live 已驗。 |
+| **D8**(唔反向開 RITM) | ✅ 不受影響。 |
+
+### 保留 vs 重做
+
+**保留**(已 live 驗證,新 contract 一樣要用):`ConnectorConfig.defaultOnboardingSkuId` + `kind:'sku'` 寫入驗證 · `applyDefaultSku` 注入邏輯 · `intake.default_sku_injected` audit · fail-soft · demo harness fixture。
+
+**重做**(W43):**幾時觸發**(由「空 list」改成「`mode` 訊號」)同**掛喺邊條 route**(Chris 2026-07-31 拍板:**canonical route 內部分流** —— body 帶 `mode` 走新 handler,冇 `mode` 逐字不變,n8n 唔使改 URL)。
+
+### 同批發現、屬 n8n 側嘅缺口(唔喺本 ADR 範圍)
+
+1. URL 指 `ca-uop-**web**` 且帶 `/api` 前綴,而 UOP backend 本身冇 prefix —— 要確認 UAT ingress 有冇 rewrite,否則 404。
+2. payload 註解講「交畀 UOP 嘅係 TASK:`serviceNowTaskNumber` + `serviceNowTaskSysId`」,**但兩個欄位都冇喺 payload 出現**。
+3. `resolveOpco` 只認 RHK / RAPO,其餘返 `''` → 現行 UOP 會 404 `OpCo '' not found`。
+4. `requestId` 係 REQ **number** 唔係 sysId;而平台冪等鍵係 sysId。
+5. 2003 sticky 明講:E5 每張 onboarding 都 fire,**assigner 必須 skip 已持有 E5 嘅 user**。
+
 ## References
 
 - `docs/01-planning/W42-onboarding-default-sku/plan.md`(本 ADR 觸發 phase)

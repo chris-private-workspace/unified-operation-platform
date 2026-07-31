@@ -103,3 +103,58 @@ last_updated: 2026-07-31
 **Cleanup**:清 5 張 fixture request(4 line items),**保留 `sys-REQ46525400`** —— 佢就係「平台自己加咗一行 E5」嗰張,留畀 owner 喺 UI 睇。harness 兩個進程已停,`3101`/`8980` 回 FREE,`3100`/`5173` 未動。
 
 🚧 **UI 目視(light+dark,H6)未做** —— 交 owner。3100 已跑最新 code 且同一 DB,所以 `http://localhost:5173/settings` → Integrations 直接睇得到。
+✅ **Chris 2026-07-31 已目視確認冇問題**,fixture request 亦已清走。
+
+---
+
+## Day 1(收官)— 🔴 OQ-2 答案推翻設計前提
+
+**Chris 答 OQ-2:n8n 唔會 post 空 list**,並把最新 workflow 放入 `docs/06-reference/03-n8n-workflow/`(舊版改 `_bak`)。
+
+實讀 1001 / 1005 嘅 `WF1 - Prepare UOP Intake`,發現**比「唔送空 list」更遠**:
+
+> `// WF1 — flat mode-based UOP intake payload (contract 26 Jul 2026).`
+> `// n8n sends user + OpCo + mode:1 ONLY. UOP owns the "new joiner -> E5" policy and resolves the SKUs.`
+
+```json
+{ "mode": 1, "targetUpn": "…", "targetDisplayName": "…", "opcoCode": "RHK",
+  "requesterEmail": "…", "source": "1001-immediate", "requestId": "REQ0043858" }
+```
+
+POST 去 **hardcoded** `https://ca-uop-web…/api/requests/intake`(**canonical** route)。1005 完全 mirror。
+
+⇒ **Chris 今日提嘅需求,正正就係呢個 contract 明文交畀 UOP 嘅責任 —— 方向完全啱。** 但形態唔係「`licenseItems` 空」,而係「**根本冇呢個欄位**」+ 一個 `mode` 訊號,而且打嘅係 canonical route 唔係 adapter route。
+
+**逐條影響**:D1/D4/D6/D7/D8 ✅ 成立且 live 已驗 · **D2 實際失效**(冇 licence 行係常態唔係例外)· **D3 接錯 route** · **D5 無用**(冇嗰個欄位)。全部記入 ADR-0020 **實作補註**(Accepted 唔改原文)。
+
+**Chris 兩項拍板**:①**canonical route 內部分流**(body 帶 `mode` → 新 handler;冇 `mode` → 逐字不變;n8n 唔使改 URL)②**先收 W42 保留成果,新 contract 開 W43**。
+
+---
+
+## Retro(W42)
+
+### 做啱嘅
+
+- **ADR 事前寫低咗「未證實前提」** —— Consequences 明文寫住「若 n8n 根本唔 POST,本 ADR 落地咗都等於冇」。所以前提被推翻嗰刻,唔使爭論影響範圍,只需要按住嗰段逐條核對。**呢個係本 phase 最抵嘅一筆。**
+- **fails-before 揭穿自己一個假驗證**(見上)。
+- **驗證分層**:live 驗到「未配置 / 配置錯 / 配置啱 / 重推」四個狀態,而唔係只驗 happy path(AP-12)。
+
+### 做錯 / 差啲做錯
+
+1. **差啲被「400」呃到** —— 四個 case 全 400 睇落似驗證 work,實際係 body shape 錯,一個都冇跑到驗證。**HTTP 狀態碼唔係驗證通過嘅證據,訊息先係。**
+2. **違反 H8** —— 用 bash `grep` 讀 test output,即時改用 Grep 工具。
+3. **首版 test mock 唔真實** —— `lineItems: []` 令 defensive 分支代替真 guard 通過。
+
+### 最大教訓:應該更早讀 n8n workflow
+
+`docs/06-reference/03-n8n-workflow/` 一直喺 repo 入面。我喺 plan §8 R1 把「n8n 實際行為」列做**最高風險**、喺 §9 OQ-2 列做 open question,**但冇去讀嗰個目錄**,只當佢係外部未知數等人答。
+
+實際上答案(07-26 嘅 contract 改動)**由頭到尾都喺 repo 裡面躺住**。
+
+⇒ **「外部系統點做」唔一定係外部未知數 —— 先搵 repo 有冇佢嘅 spec/export。** 呢個同 W39「JSON 係 SSOT 唔可以照抄 ADR 轉述」係同一條教訓嘅另一半:嗰次講「讀咗但唔可以信轉述」,今次係「根本冇去讀」。
+
+若早一步讀,D2/D3/D5 由一開始就唔會咁設計 —— 省唔到 D1/D4/D6/D7 嘅工(嗰啲照要),但省到 D5 同 adapter 掛載點嘅返工。
+
+### 交付淨值
+
+即使 contract 變咗,**保留落嚟嘅嘢佔本 phase 大部分工作量且全部 live 驗過**:`kind:'sku'` 寫入驗證 · `defaultOnboardingSkuId` 配置 · 注入邏輯 · audit · fail-soft · demo fixture。W43 換嘅係**觸發條件同掛載點**,唔係推倒重來。

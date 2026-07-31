@@ -42,8 +42,17 @@
   - [ ] 🚧 **UI 卡片目視(light + dark,H6)未做** —— 交 owner:`http://localhost:5173/settings` → Integrations → n8n (inbound intake);3100 已跑最新 code 且同一 DB,值已設好
   - [x] Cleanup:清 5 張,**保留 `sys-REQ46525400`** 畀 owner 喺 UI 睇「平台加咗一行」
 - [x] **F11** Doc sync:BACKLOG(R7)· 更正 `intake-adapter.service.ts` 過期註解(no-Teams 前提已失效)· harness README(Files 表 + Scenario 4 + 澄清「empty→400」係 canonical-only)
-- [ ] **F12** Acceptance §7 八條逐條驗 + api/web test 全綠 + lint + build
-- [ ] **F13** progress.md 寫齊 Day-N(R2)+ retro
+- [x] **F12** Acceptance §7 —— **1–6 · 8 · 9 達成**(全部有真 output);**7 部分**(fixture 跑到、Requests 見到,**冇實際推 stage 到 READY**)。api **661/661** · web **196/196** · lint **exit 0** · dist 由 watcher 維護且實測含新 code
+- [x] **F13** progress.md Day-N(R2)+ retro
+- [x] **F14**(收官新增)ADR-0020 **實作補註** —— OQ-2 答案令 D2/D3/D5 實際失效,逐條記低保留 vs 重做
+- [x] **F15**(收官新增)**BUG-009** 開單 —— ConnectorConfig audit 白名單漏 5 個 column(Chris 2026-07-31 批)
+
+## 🚧 移交 W43(唔係漏,係 contract 變咗)
+
+- 🚧 **接 n8n flat mode contract** —— canonical route 內部分流(body 帶 `mode` 走新 handler),Chris 2026-07-31 拍板
+- 🚧 D2 觸發條件重定(由「空 list」→「`mode` 訊號」)· D3 掛載點重定(adapter → canonical 分流)· D5 作廢
+- 🚧 n8n 側五個缺口(`/api` 前綴 · task sysId 講咗冇送 · `resolveOpco` 只認 RHK/RAPO · `requestId` 係 number 唔係 sysId · 2003 E5 idempotency)
+- 🚧 **推 stage 到 READY 嘅端到端** —— 本 phase 只驗到 intake
 
 ## 🚧 明確唔喺本 phase 做(唔係漏)
 
