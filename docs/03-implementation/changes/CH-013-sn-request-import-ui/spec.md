@@ -1,9 +1,10 @@
 ---
 change_id: CH-013
 title: "由 ServiceNow REQ 號碼喺 UI 導入測試 / 補救用嘅 onboarding request"
-status: proposed        # draft | proposed | approved | active | done | cancelled
+status: approved        # draft | proposed | approved | active | done | cancelled
 created: 2026-07-31
-target_completion: TBD（approve 後定）
+target_completion: 2026-08-04（估算 1.5–2 日,見 §5）
+adr: ADR-0021（Accepted 2026-07-31）
 affects_components:
   - apps/api/src/fulfilment（新 endpoint + SN lookup service）
   - apps/web（Settings 新 card）
@@ -19,21 +20,24 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:AI(draft)
-> **Approved by**:_(待 Chris)_
+> **Approved by**:**Chris Lai(2026-07-31)** —— 三項 gate 全部拍板,見 §6.1
 
 ---
 
-## 🔴 0. 開工前必須先解決嘅 gate（讀住先睇下面）
+## ✅ 0. 開工 gate（全部已清 2026-07-31）
 
-呢份 spec **唔可以喺未 approve 之前開始 code**,而且佢觸發咗一條 hard constraint:
+呢個 CH 觸發過一條 hard constraint,而家已經處理妥:
 
 **H1 — 新 API surface + 改動 intake 嘅信任邊界。**
 
-現時 `POST /requests/intake` 同 `POST /requests/intake/n8n` **兩條都係** `@Public()` + `IntakeKeyGuard`,即係話 `IntakeService` 目前**只有一個入口、一個 caller、一個 m2m shared secret**。ADR-0017 OQ-3 係明文咁揀嘅:「one caller, one trust boundary, one secret to rotate」。
+現時 `POST /requests/intake` 同 `POST /requests/intake/n8n` **兩條都係** `@Public()` + `IntakeKeyGuard`,即係話 `IntakeService` 目前**只有一個入口、一個 caller、一個 m2m shared secret**。ADR-0017 D4 OQ-3 係明文咁揀嘅:「one caller, one trust boundary, one secret to rotate」(逐字記錄喺 `intake.controller.ts:50-52`)。
 
-而前端**唔可以**持有 `INTAKE_API_KEY`(H4:嗰個 key 一旦落到 browser bundle 就等於公開)。所以呢個功能**無論點做都要新開一條 user-authenticated 路入 `IntakeService`** —— 亦即 OQ-3 嗰個「一個 caller」嘅前提會由今日起唔再成立。
+而前端**唔可以**持有 `INTAKE_API_KEY`(H4:嗰個 key 一旦落到 browser bundle 就等於公開)。所以呢個功能**無論點做都要新開一條 user-authenticated 路入 `IntakeService`** —— 亦即 OQ-3 嗰個「一個 caller」嘅前提由呢個 CH 落地起唔再成立。
 
-⇒ **需要 owner approve + 一份 ADR**(詳見 §6)。ADR 未寫、未 Accepted 之前,呢個 CH 唔可以進入 `active`。
+⇒ **Chris 2026-07-31 approve,`ADR-0021` 已寫並 Accepted。** 三項拍板見 §6.1。
+
+🔴 **ADR 立咗但仍然要守嘅硬邊界**(實作時 diff 必須為 0,ADR-0021 D2):
+`intake.service.ts` · `dto/n8n-intake.dto.ts` · `intake-key.guard.ts` · 既有兩條 intake route 嘅 guard / DTO / 行為。
 
 ---
 
@@ -51,13 +55,13 @@ Chris 嘅要求(逐字):
 
 所以要做嘅係:**把嗰個 script 嘅能力搬上 UI**,等測試唔使開 terminal、唔使有人幫手跑 npm script。
 
-### 1.1 呢個功能有明確退場條件（唔好當佢係永久 feature）
+### 1.1 定位：長期 admin 補救工具（Chris 2026-07-31 拍板）
 
-n8n 一接通,呢條路就冇人會用 —— 真正嘅 onboarding request 會由 n8n 推入。所以佢係**過渡 + 補救**工具,唔係產品功能。
+**唔係「n8n 通咗就刪」嘅臨時嘢。** 就算 n8n 接通,「一張單 n8n 漏咗 / 推失敗 / 要重推」呢個補救場景仍然長期存在,而今日嘅補救手段係叫人開 terminal 跑 npm script。
 
-**但佢唔會即刻變死 code**:就算 n8n 通咗,「一張單 n8n 漏咗 / 推失敗 / 要重推」呢個補救場景仍然存在(而現時嘅補救手段係叫人跑 npm script)。⇒ 建議定位為 **admin 補救工具**,長期留喺 Settings,而唔係「n8n 通咗就刪」。
+呢個定位係整件事嘅前提:**如果佢係即棄品,理性答案應該係唔做 UI、繼續用 script** —— 唔值得為一個會死嘅功能去改 intake 嘅信任邊界 + 寫一份 ADR。ADR-0021 嘅 Option D(「唔做 UI」)正正係**被定位 reject,而唔係被質素 reject**。
 
-呢個定位要 Chris 拍板,因為佢直接影響值唔值得為佢寫 ADR(見 §6)。
+⇒ 所以呢個 UI **長期留喺 Settings**,唔設退場條件。
 
 ---
 
@@ -114,14 +118,13 @@ n8n 一接通,呢條路就冇人會用 —— 真正嘅 onboarding request 會�
 - ❌ **推 stage / 觸發 assign** —— 導入完就停,之後照行既有 UI 流程
 - ❌ **自動開 sync gate** —— `azureSyncedAt` 維持 null,由 ADR-0015 sweep 或人手 break-glass 處理
 
-### 2.4 未定：角色範圍（要 Chris 揀）
+### 2.4 角色範圍：`ADMIN` only（Chris 2026-07-31 拍板 = 選項 A）
 
-| 選項 | 誰可以用 | 理由 |
-|---|---|---|
-| **A（建議）** | `ADMIN` only | 佢係 ops / 補救工具,會憑一個號碼喺平台生成真 request;而且反查會打真 SN。收窄到 ADMIN 最 fail-safe,日後想放寬易過收窄 |
-| B | `ADMIN` + `OPCO_IT`(限自己 OpCo) | 貼近日常操作者。但 OpCo 由 SN 嘅 Job Function 推導,係**導入之後**先知 —— 即係話「佢有冇權導呢張單」要等反查完先答得到,gate 會複雜好多 |
+兩條 endpoint 都係 `@Roles(ADMIN)`。
 
-⇒ **建議 A**。如果揀 B,§3 acceptance 要加「OPCO_IT 導入一張唔屬自己 OpCo 嘅單 → 403 且零寫入」。
+理由:① 佢係 ops / 補救工具,會憑一個號碼喺平台生成真 request,而且反查會打真 SN ② fail-safe —— 日後放寬易過收窄 ③ **結構理由**:OpCo 係由 SN 個 Job Function 推導,要**反查完先知**,即係「你有冇權導呢張單」要打完 SN 先答得到 —— 呢種「先做外部呼叫先答到授權」嘅 gate 形狀本身就易出錯。
+
+🔴 放寬到 `OPCO_IT` 屬**重開 ADR-0021 D3**,唔可以喺實作裡面順手加。
 
 ---
 
@@ -191,19 +194,19 @@ n8n 一接通,呢條路就冇人會用 —— 真正嘅 onboarding request 會�
 
 ## 6. Dependencies
 
-### 6.1 🔴 Gate ①：H1 approval + ADR（**blocking**）
+### 6.1 ✅ Gate ①：H1 approval + ADR（**已清 2026-07-31**）
 
-要 Chris 明確 approve 以下三點,然後寫 ADR(編號 = **ADR-0021** —— 已 `git fetch --all` 掃晒所有 remote branch 嘅 `docs/adr/`,`0000`–`0020` 已用,`0021` 未被 claim):
+Chris 2026-07-31 三項拍板:
 
-1. **`IntakeService` 可以有第二個 caller**(user-authenticated),而 ADR-0017 OQ-3「一個 caller」呢個前提正式更新
-2. **新增兩條 API surface**(lookup + import)
-3. **角色範圍**(§2.4:A = ADMIN only,建議;定 B)
+| # | 決定 | 落喺邊 |
+|---|---|---|
+| ① | **H1 approved** —— `IntakeService` 可以有第二個 caller(user-authenticated),ADR-0017 D4 OQ-3「一個 caller」前提正式更新;新增兩條 API surface | ADR-0021 D1 / D2 |
+| ② | **定位 = 長期 admin 補救工具**(唔係「n8n 通咗就刪」) | ADR-0021 Context / §1.1 |
+| ③ | **角色 = `ADMIN` only** | ADR-0021 D3 / §2.4 |
 
-### 6.2 Gate ②：定位確認（**blocking**,但一句話搞掂）
+**ADR-0021 已寫並 Accepted**(`docs/adr/0021-user-authenticated-servicenow-request-import.md`;編號經 `git fetch --all` 掃晒所有 remote branch 嘅 `docs/adr/` 確認,`0000`–`0020` 已用)。
 
-呢個係「n8n 通咗就刪」嘅臨時嘢,定係**長期留低嘅 admin 補救工具**?(§1.1)
-
-影響:如果係前者,寫 ADR 就有啲重手,可能反而應該**唔做 UI、繼續用 script**;如果係後者,ADR 值得寫。
+### 6.2 ✅ Gate ②：定位確認（**已清**,見 §1.1）
 
 ### 6.3 非 blocking
 
@@ -217,9 +220,10 @@ n8n 一接通,呢條路就冇人會用 —— 真正嘅 onboarding request 會�
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-07-31 | Initial draft(status: proposed) | Chris 要求把 PR #61 個 script 嘅能力搬上 UI | — |
+| 2026-07-31 | status → **approved**;§0 / §6.1 / §6.2 gate 標記已清;§1.1 定位、§2.4 角色由「待定」改為決定內容;frontmatter 加 `adr: ADR-0021` + `target_completion` | Chris 三項拍板(H1 approved · 定位 = 長期補救工具 · ADMIN only),ADR-0021 已 Accepted | **Chris Lai** |
 
 ---
 
-**Lifecycle reminder**:呢份 spec locked after status=approved。重大 deviation → §7 changelog。
-**Gate reminder**:status 由 AI 標 `proposed`,**用戶 review + approve 先可以 `approved` + 開始 code**(PROCESS R1.change)。
-⚠️ 本 CH **額外**受 §0 / §6.1 約束:即使 spec approved,**ADR 未 Accepted 之前唔可以開始 code**。
+**Lifecycle reminder**:呢份 spec **已 locked**(status=approved)。重大 deviation → §7 changelog,唔可以 silent drift(PROCESS R3)。
+**Gate status**:✅ spec approved · ✅ ADR-0021 Accepted ⇒ **可以開始 code**。
+🔴 實作期間仍受 ADR-0021 D2 硬邊界約束(見 §0 尾):四項檔案 diff 必須為 0。
