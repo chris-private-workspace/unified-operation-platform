@@ -2,7 +2,7 @@
 phase: W41-auth-password-reset
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-last_updated: 2026-07-30
+last_updated: 2026-07-31
 ---
 
 # W41 — Progress
@@ -152,3 +152,56 @@ schema 個 `kind` 註解只列三個值 —— 但 `kind` 係 `String` 冇 enum 
 6. 撳連結 → 應該落 `/reset-password#token=…` → 設新密碼 → 應該自動彈返 `/login`
 7. 用**新**密碼登入 → 成功;第 3 步嗰個無痕窗口 **應該已經失效**(refresh token 全撤)
 8. 再撳一次**同一條**連結 → 應該話 `This reset link is invalid or has expired`(單次性)
+
+---
+
+## Day 3 — 2026-07-31 · Closeout(owner 三個決定)
+
+Chris 一次過答齊:①**F6 已目視**(冇提出問題)②**端到端 🚧 deferred 結案** ③**已自己喺
+`apps/api/.env` 加 `APP_BASE_URL=http://localhost:5173`**。
+
+**第 3 項我冇當佢生效就收貨。** 當時個 api 仲係帶住 shell env 跑緊,所以 `.env` 生唔生效根本
+未驗過 —— 要完整重啟先講得準。重啟之後實測:`POST /api/auth/forgot-password`(`admin@uop.local`)
+→ `204` · 3 分鐘內新 token **1** · audit **`issued`** · 失敗佇列 **0**。🔴 呢個順帶**第二次**驗證
+F8d 個 fix 嘅兩邊行為 —— 未設 → 零 token 零 audit(F8f 實測)· 已設 → 正常建同記錄(今日實測)。
+測試 token 已清(`DELETE 1`)。
+
+### 途中撞到一個新坑,值得單獨記:**stale `.tsbuildinfo` = 無聲假綠燈**
+
+重啟 stack 時 api 一直起唔到,而所有信號都話冇事:`npm run build` **`exit=0`**、
+`nest start --watch` 印 **`Found 0 errors`** —— 但 `apps/api/dist` **根本唔存在**,
+`node dist/main` 報 `MODULE_NOT_FOUND`。**症狀同 BUG-008 一模一樣,根因完全唔同。**
+
+因果鏈:`nest start --watch` 啟動時**清 `dist/`**,但**唔刪 `tsbuildinfo`** ⇒ tsc
+(`"incremental": true`)讀個 cache 判斷「輸出已最新」→ **skip emit** → dist 空。
+
+🔴 **修法有次序要求**:刪 `apps/api/*.tsbuildinfo` **同埋** `dist/`,然後**直接起 stack,中間
+唔可以插一次 `npm run build`** —— 插咗就即刻重新生成 tsbuildinfo,而 watch 一起身又清 dist,
+循環重現。**我實測撞咗三次先睇穿**:頭兩次都係「刪 cache → build → 起」,而嗰個 build 正正
+係令佢重現嘅一步。
+
+⚠️ **點解本機會出而 Docker 唔會**:Dockerfile 有 BUG-008 加嘅 `RUN test -f dist/main.js` gate,
+本機 `nest build` **冇呢道閘** ⇒ 本機可以靜靜漂移到起唔到身而冇任何紅燈。教訓同 BUG-008 同源:
+**`exit=0` 唔等於有輸出**。
+
+### 我今日講錯過兩次,兩次都係同一種錯
+
+1. 見到 verify 失敗,我即刻講「係 build 未完,冷啟慢過 90 秒」—— 重驗之後 api 仍然未起、
+   進程得 9 個(得 web 鏈),證明嗰條 api 鏈**根本已經死咗**,唔係仲喺度 build。
+2. 見到 kill list 有個 `$env...` 前綴,我講「嗰個就係 F8f 帶 `APP_BASE_URL` 起嘅 api」——
+   但 `start-detached.ps1` 自己都係用 `$env:NODE_OPTIONS='--use-system-ca'` 起,單憑前綴
+   **分辨唔到**。
+
+兩次都係**由一個觀察跳到一個講得通嘅解釋,然後當佢係事實**。同 Day 2 嗰個「被還原 vs 被 commit」
+係同一種錯 —— H7 講嘅「結果類陳述必 trace」唔止管 test pass,同樣管「點解會咁」呢類因果陳述。
+
+### Closeout
+
+- **`DD-4` 已登記**(結構性,唔係一次性 🚧)。判斷理由:根因唔係「今次冇時間驗」,而係
+  **功能只服務 local-password user,而現時所有真人都係 SSO** ⇒ go-live 前會再被問。
+  ⚠️ 登記時特別寫清楚**未證範圍**,避免將來有人讀成「呢個功能未驗過」——
+  transport / endpoint / consume 邏輯各自都有真證據,未證嘅只係中間嗰段真人操作。
+- BACKLOG `AUTH-4c-C` → **✅ 完成 · closed**(R7)
+- checklist frontmatter `status: active` → **`closed`**
+
+**W41 完。** 帶住走嘅只有 `DD-4`,而佢有明確恢復條件同判準(**一律以收件人真係收到為準**)。
