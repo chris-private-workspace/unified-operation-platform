@@ -95,7 +95,24 @@ export async function apiGet<T>(path: string): Promise<T> {
     headers: { Accept: 'application/json', ...(await authHeader()) },
   });
   if (!res.ok) {
-    throw new ApiError(res.status, `GET ${path} failed (${res.status})`);
+    /**
+     * Surface the server's own message, exactly like apiPost/apiPatch/apiDelete
+     * already do — this was the odd one out.
+     *
+     * CH-013 is what made it matter: a 404 from /requests/servicenow-lookup says
+     * "a request the integration account cannot see is indistinguishable from
+     * one that does not exist", and swallowing that sends the operator hunting
+     * for a typo that is not there.
+     */
+    let message = `GET ${path} failed (${res.status})`;
+    try {
+      const data = await res.json();
+      const m = (data as { message?: string | string[] }).message;
+      if (m) message = Array.isArray(m) ? m.join(', ') : m;
+    } catch {
+      // non-JSON error body — keep the generic message
+    }
+    throw new ApiError(res.status, message);
   }
   return res.json() as Promise<T>;
 }

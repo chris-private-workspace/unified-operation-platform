@@ -192,9 +192,64 @@ Chris 指定用 **`REQ0044061`**(`RITM0047356` · 1 active task)。
 
 ---
 
-## Day 3 — YYYY-MM-DD
+## Day 3 — 2026-07-31（E 組 + F 組 · 前端）
 
-（E 組:前端 Settings card）
+### Done
+
+- `ServiceNowImportPanel` 落 Settings › Integrations,兩步流程
+- `api-types` / `mutations` 加型別同兩個 hook;`apiGet` 修正(見下)
+- 8 個 component test;web **196 → 204 / 25 files**,`lint exit=0`,`tsc --noEmit` 過
+
+### Decisions
+
+**① lookup 用 `useMutation`,唔用 `useQuery`。**
+
+佢係一個 read,但每次都係打真 ServiceNow(`1 + N` 個 GET,共用企業 instance)。`useQuery` 會 mount / focus / reconnect 各自重跑一次 —— 冇一次係操作員要求嘅。呢個只喺撳掣嗰刻 fire。
+
+**② 順手修咗 `apiGet` —— 呢個唔係「順便 refactor」。**
+
+`apiPost` / `apiPatch` / `apiDelete` 三個都會 surface server 個 `message`,**只有 `apiGet` 唔會**(拋 generic `GET … failed (404)`)。而我特登喺後端寫嘅 404「一張見唔到嘅單同一張唔存在嘅單,Table API 分唔開」正正靠佢傳到 UI —— 唔修就等於後端嗰句白寫。
+
+先 Grep 全 repo 確認**零 test / 零 caller 依賴舊格式**先改。改完四個 helper 行為一致,既有 caller 只會由 generic message 變成更好嘅 message。
+
+**③ blocked 原因用 server 原文,唔喺前端另寫一套。**
+
+`blockedReason` 直接顯示。同一句話寫兩次就係兩個會 drift 嘅地方,而呢句嘢嘅真相喺 ADR-0018 D3,唔喺 UI。
+
+### H6 自檢（DS-1 ~ DS-12）
+
+| | |
+|---|---|
+| DS-1 / DS-2 token-only、唔 eyeball | ✅ 全部既有 class(`text-fg-muted` / `border-border` / `text-danger` / `bg-card` / `text-fg-subtle`),零 hex |
+| DS-3 單一 accent + 一個 primary | ✅ 只有 `Import` 係 primary;`Look up` secondary、`Cancel` ghost |
+| DS-5 數字 / 識別碼 mono | ✅ REQ / RITM / SCTASK / UPN / 日期全部 `font-mono` |
+| DS-6 lucide stroke-only | ✅ `Search` / `Check` / `ArrowRight` / `AlertTriangle`,`strokeWidth={2}` |
+| DS-7 平面美學 | ✅ 深度只靠 1px border + radius,零 blur / gradient / colored-left-border |
+| DS-8 狀態走 Badge + semantic | ✅ importable → `ok`,blocked → `danger` |
+| DS-9 motion | ✅ 冇加任何動畫 |
+| DS-10 voice / casing | ✅ Sentence case、短名詞、chrome 內零 emoji |
+| DS-11 / DS-12 | N/A — 呢個 panel 唔喺 prototype 入面(同 `/audit` 一樣屬 owner-approved 新畫面);冇掂 logo |
+| **DS-4 light + dark** | 🚧 **未行過** — 見下 |
+
+### 兩件冇做足、唔當佢做咗
+
+**① 🚧 E5 「連去 request detail」冇做。** `Toast` primitive 得 `message` + `tone`,冇 action slot。加一個 = 改**共用 primitive**,而 H6 講明新 pattern 要先問 owner —— 唔喺一個 CH 裡面順手改。現時 toast 講明 request number,操作員去 Requests 頁搵得返。
+
+**② 🚧 F4 light / dark 未實際行過。** `claude-in-chrome` 喺呢部機一直連唔上(memory 有記),Playwright MCP 亦唔喺工具清單 ⇒ 開唔到 browser。用嘅全部係既有 token class(其他 panel 一直用緊,兩個 theme 都有定義),所以**大概率冇事** —— 但「大概率」唔係驗證。要 Chris 開 Settings › Integrations 目視一次。
+
+### 順帶記低一個既有張力（唔屬本 CH 引入）
+
+integrations tab 同時 render `AllocationImportPanel` + 本 panel。前者喺「揀咗 CSV 之後」亦會出一個 primary,所以嗰一刻同一個 view 會有**兩個 primary**。本 CH 冇造成佢,但令佢更易撞到。要收就要重新諗呢個 tab 點分頁,屬另一件事。
+
+### Effort
+
+- Planned:0.5(前端)+ 0.25(test);Actual:~0.7 日
+
+### Commits
+
+| Hash | Subject |
+|---|---|
+| _(pending)_ | `feat(web): CH-013 E/F 組 — Settings 匯入 panel(ADMIN only,兩步)` |
 
 ---
 

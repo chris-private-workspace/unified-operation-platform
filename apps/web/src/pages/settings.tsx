@@ -26,6 +26,7 @@ import { UsersPanel } from '@/components/settings/users-panel';
 import { OpcosPanel } from '@/components/settings/opcos-panel';
 import { PermissionsPanel } from '@/components/settings/permissions-panel';
 import { IntegrationsPanel } from '@/components/settings/integrations-panel';
+import { ServiceNowImportPanel } from '@/components/settings/servicenow-import';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
 const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
@@ -237,6 +238,8 @@ export function Settings() {
         {tab === 'integrations' && (
           <>
             <AllocationImportPanel />
+            {/* CH-013 — renders nothing for non-ADMIN (ADR-0021 D3). */}
+            <ServiceNowImportPanel />
             <IntegrationsPanel />
           </>
         )}

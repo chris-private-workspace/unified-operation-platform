@@ -49,20 +49,20 @@ last_updated: 2026-07-31
 
 ## E — 前端（Settings 新 card）
 
-- [ ] E1 步驟一:REQ number input + Look up → RITM 表(number / title / active task 數 / badge)
-- [ ] E2 步驟二:逐張 RITM 揀 SKU(既有 `select`,由 `/license/catalog` 拉)+ target UPN input
-- [ ] E3 `activeTaskCount ≠ 1` 嘅行明確標唔可導入 + 原因
-- [ ] E4 未揀 SKU / 未填 UPN → import 掣 disabled
-- [ ] E5 成功 → toast + 連去 request detail;失敗 → 錯誤原文顯示唔吞
-- [ ] E6 非 ADMIN **完全唔 render**(唔係 disable)
-- [ ] E7 web test 不降
+- [x] E1 步驟一:REQ number input + Look up → RITM 表(number / title / active task 數 / badge)— lookup 走 `useMutation` 而唔係 `useQuery`,因為每次都打真 SN(1+N GET),唔應該 mount / focus / reconnect 自動重跑
+- [x] E2 步驟二:逐張 RITM 揀 SKU(既有 `select`,由 `/license/catalog` 拉)+ target UPN input + **OpCo 下拉**(deviation ②)
+- [x] E3 `activeTaskCount ≠ 1` 嘅行明確標唔可導入 + 原因 — 直接用 server 個 `blockedReason` 原文,**唔另寫一套文案**(免兩處 drift)
+- [x] E4 未揀 SKU / 未填 UPN / 未揀 OpCo → import 掣 disabled
+- [ ] 🚧 E5 成功 → toast + **連去 request detail**;失敗 → 錯誤原文顯示唔吞 —— **toast ✅ · 錯誤原文 ✅**(順帶修咗 `apiGet`:佢係四個 api helper 入面**唯一**唔 surface server `message` 嗰個,而我個 404「可能係 row-level ACL」正正靠佢傳到 UI;零 test 依賴舊格式);**「連去 detail」冇做** —— `Toast` primitive 得 `message` + `tone`,冇 action slot,加 slot = 改共用 primitive = **H6 要先問 owner**,唔喺呢個 CH 順手做。現時 toast 講明 request number,操作員去 Requests 頁搵得返
+- [x] E6 非 ADMIN **完全唔 render**(唔係 disable)— test assert `container` 係 empty DOM
+- [x] E7 web test 不降 — **196 → 204 / 25 files**
 
 ## F — H6 設計自檢
 
-- [ ] F1 跑 `.claude/skills/ui-design`,DS-1 ~ DS-12 逐條答
-- [ ] F2 token-only、零新 primitive(用既有 `dialog`/`select`/`input`/`badge`)
-- [ ] F3 Settings 頁**維持一個 primary action**
-- [ ] F4 light + dark 都**實際行過**
+- [x] F1 跑 `.claude/skills/ui-design`,DS-1 ~ DS-12 逐條答 — DS-1/2/3/5/6/7/8/10 全 ✅(見 progress Day 3);DS-4 見 F4
+- [x] F2 token-only、零新 primitive(用既有 `select`/`input`/`badge`/`card`/`button`/`toast`)— 零 hex、零新 component
+- [x] F3 Settings 頁**維持一個 primary action** — 只有 `Import` 係 primary;`Look up` = secondary、`Cancel` = ghost。⚠️ 順帶記低一個**既有結構性張力**:integrations tab 同時 render `AllocationImportPanel` + 本 panel,而前者喺「揀咗 CSV」之後亦會出一個 primary ⇒ 嗰一刻同一 view 會有兩個。唔屬本 CH 引入,但**本 CH 令佢更易撞到**
+- [ ] 🚧 F4 light + dark 都**實際行過** —— **未做**。`claude-in-chrome` 喺呢部機一直連唔上(memory 有記),Playwright MCP 亦唔喺工具清單 ⇒ 我開唔到 browser。用嘅全部係既有 token class(其他 panel 一直用緊,light/dark 都有定義)所以**大概率冇事**,但「大概率」唔等於驗過 —— 要 Chris 開 Settings › Integrations 目視一次(兩個 theme)
 
 ## G — Live 驗證（真 `ricohapdev`）
 
