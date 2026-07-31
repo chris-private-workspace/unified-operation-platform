@@ -1,8 +1,8 @@
 ---
 phase: W41-auth-password-reset
 plan_ref: ./plan.md
-status: active
-last_updated: 2026-07-29
+status: closed
+last_updated: 2026-07-31
 ---
 
 # W41 — Checklist
@@ -101,8 +101,11 @@ last_updated: 2026-07-29
       抽就要郁既有檔(§1.3 唔順手改)
 - [x] token-only(全部 `bg-bg`/`bg-card`/`border-border`/`text-fg*`/`accent-soft`/`danger-soft`)
       · lucide stroke icon · 一 view 一 primary
-- [ ] ⚠️ **light + dark 真 render** —— 🚧 **已交 Chris 目視(2026-07-30),結果待回報**。
-      原因:`list_connected_browsers` 回 **`[]`**(零 browser instance,同 4 日前 W35 G3 一樣)·
+- [x] ⚠️ **light + dark 真 render** —— ✅ **Chris 目視確認(2026-07-31),冇提出問題**。
+      三條 URL(`/forgot-password` · `/reset-password#token=demo` · `/reset-password` 無 token 分支)
+      light + dark 各行一次。
+      ⚠️ **誠實界定呢項證明咗乜**:owner 目視 = 冇明顯視覺缺陷,**唔等同** pixel-level 對照 handoff。
+      AI 側做唔到嘅原因:`list_connected_browsers` 回 **`[]`**(零 browser instance,同 W35 G3 一樣)·
       Playwright MCP 唔喺本 session · repo 冇 playwright dep(裝 dev dep 唔犯 H2,但 chromium
       binary 下載會撞本機擋 `.dll` 嘅 DLP,兼且動 lockfile ⇒ 唔值)
 - [x] 已做**靜態** token 存在性證明(補償上一項,但**唔取代**佢):`apps/web/src/index.css:4`
@@ -247,11 +250,23 @@ last_updated: 2026-07-29
       唔做任何其他事,本身係正確設計
 - [x] 對 `admin@uop.local` 真發一次 → **204**。個地址係假嘅收唔到信,所以 token 冇人拎得到
       (token 只出現喺郵件裡)⇒ 零安全風險,但 ACS 會真被呼叫
-- [ ] 🔴 **端到端真寄一封 → 真收到 → 真重設 → 舊 session 真失效** —— 🚧 **需 owner 執行**,
-      原因:UAT 冇一個「local-password + 真實可收件 email」嘅帳號(`admin@uop.local` 地址係假嘅;
-      `chris.lai@rapo.com.hk` 係 SSO 無密碼 ⇒ **唔合資格重設**),而建 / 改 user 要 admin 登入,
-      而我唔處理密碼。步驟見 progress Day 2
-- [ ] 🔴 **以收件人真係收到為準**,唔可以以 API 202 為準(ADR-0019 OQ-1 custom domain 風險)
+- [ ] 🚧 **端到端真寄一封 → 真收到 → 真重設 → 舊 session 真失效** —— **Chris 2026-07-31 拍板
+      deferred 結案**,已登記 **DEFERRED_REGISTER `DD-4`**(有恢復條件,唔係靜靜擱置)。
+      根因唔係「今次冇時間」,而係結構性:**呢個功能只服務 local-password user,而現時所有真人
+      都係 SSO** —— `chris.lai@rapo.com.hk` 由設計上唔合資格,`admin@uop.local` 地址係假嘅。
+      要驗就要一個「local-password + 真實 mailbox」嘅組合,而嗰個組合暫時唔存在
+- [ ] 🚧 **以收件人真係收到為準** —— 隨上項 deferred。⚠️ **呢條唔係謹慎修辭,係實測出嚟嘅必要
+      條件**:F8f 用一個唔存在嘅 domain(`w41.e2e@uop.local`)寄,而平台側**所有信號全綠**
+      (204 · token 建咗 · audit `issued` · 失敗佇列空)—— 冇任何一處睇得出嗰封信一定送唔到
+
+> **deferred 之下,實際已經證到幾多**(唔好讀成「乜都冇驗過」):
+> · **transport 真 work** —— CH-011 A11 + **CH-012 A4 都係真寄一封而 Chris 確認收到**
+> · **W41 側 ACS 真被呼叫並接受 202**(F8f:token 建咗 ⇒ `issue()` 返非 null ⇒ controller 一定
+>   行到 `notifications.send()`;而 `send()` 失敗會入佇列,佇列 0 行 ⇒ 冇 throw)
+> · **endpoint 真上線** —— UAT 同一個 endpoint 部署前 404、部署後 204
+> · **consume 半段**由 G2(單次)/ G3(過期)/ G5(副作用同一 transaction)unit test +
+>   UAT 假 token → 400 覆蓋
+> ⇒ **未證嘅精確範圍 = 「真人收到嗰封信、撳嗰條連結、真重設」呢一段**,唔係成個功能
 
 ### F8e — 環境坑(記落嚡,將來部署會再撞)
 
@@ -268,6 +283,18 @@ last_updated: 2026-07-29
       **冇 enum 約束**,而 CH-011 A11 第一次寄失敗(proxy MITM TLS)**真係入咗佇列**。
       🔴 但今次測試 ACS **接受**咗,所以我**冇直接重現**入佇列呢點 —— 只可以講原推論錯,
       唔可以講已證實反面。真正嘅診斷困難係另一回事,見 F8f
+- [x] 🔴 **新坑(2026-07-31,closeout 時撞到):stale `.tsbuildinfo` 令 `nest build` 變成
+      一道無聲假綠燈。** 症狀:`npm run build -w @uop/api` 返 **`exit=0`**、`nest start --watch`
+      印 **`Found 0 errors`**,而 **`apps/api/dist` 根本唔存在** ⇒ api 起唔到,
+      `node dist/main` 報 `MODULE_NOT_FOUND`(**同 BUG-008 一模一樣嘅症狀,但根因完全唔同**)。
+      因果鏈:`nest start --watch` 啟動時**清 `dist/`**,但**唔刪 `tsbuildinfo`** ⇒ tsc
+      (`"incremental": true`)讀個 cache 判斷「輸出已最新」→ **skip emit** → dist 空。
+      🔴 **修法有次序要求**:刪 `apps/api/*.tsbuildinfo` **同埋** `dist/`,然後**直接起 stack,
+      中間唔可以插一次 `npm run build`** —— 插咗就會即刻重新生成 tsbuildinfo,而 watch 一起身
+      又清 dist,循環重現(我實測撞咗三次先睇穿)。
+      ⚠️ **點解本機會出而 Docker 唔會**:Dockerfile 有 BUG-008 加嘅 `RUN test -f dist/main.js`
+      gate,本機 `nest build` **冇呢道閘** ⇒ 本機可以靜靜漂移到起唔到身而冇任何紅燈。
+      教訓同 BUG-008 同源:**`exit=0` 唔等於有輸出,要 assert 產物存在**
 
 ### F8f — 本機真跑 consume 前半段 + audit fix 真環境對照(2026-07-30,owner 選「唔做真寄」)
 
@@ -305,9 +332,13 @@ last_updated: 2026-07-29
       而我哋刻意唔 log(G9),連失敗佇列個 `payload` 都**唔含 `params`**(實測 `leaks_params = f`)。
       呢個係設計正確嘅後果,唔係缺口
 - [x] 清理:測試 user 停用(200)· 測試 token `DELETE 1` · 佇列回 0 baseline
-- [ ] 🚧 **收工還原 shell env**(起返一個唔帶 `APP_BASE_URL` 嘅 api)—— 等 owner 做完 F6 目視先做,
-      避免中斷。**建議 owner 自己喺 `.env` 加一行 `APP_BASE_URL=http://localhost:5173`**
-      (`.env.example` 本身有佢),否則本機 forgot-password 永遠靜默唔 work
+- [x] ✅ **收工還原 shell env,並實測 `.env` 真生效**(2026-07-31)。Chris 已喺
+      `apps/api/.env` 加 `APP_BASE_URL=http://localhost:5173`(**我唔碰 `.env`**,§4.4),
+      之後 stack 完整重啟 ⇒ 而家個 api **零 shell env,純粹讀 `.env`**。
+      實測:`POST /api/auth/forgot-password`(`admin@uop.local`)→ `204` ·
+      3 分鐘內新 token **1** · audit **`issued`** · 失敗佇列 **0**(ACS 接受,冇 throw)。
+      🔴 **呢個同時第二次驗證 F8d 個 fix 嘅兩邊行為**:未設 → 零 token 零 audit(F8f 實測);
+      已設 → 正常建同記錄(本項實測)。測試 token 已清(`DELETE 1`)
 
 ## Closeout
 
@@ -322,5 +353,13 @@ last_updated: 2026-07-29
 - [x] 🔴 **債清嘅範圍講清楚**:清嘅係「零 production caller」,**唔係** D5「唔畀探」嘅代價 ——
       後者仍然成立,所以 F8c 同 CH-011 A11 一樣,判準係**收件人真係收到**
 
-> ⚠️ **Phase 未 closed** —— 尚欠 F6 light+dark 目視 + F8c 端到端真寄真收,兩者都交 owner。
-> 收到結果後補勾,再做最終 closeout commit。
+- [x] **F6 light+dark** —— Chris 目視確認(2026-07-31),冇提出問題
+- [x] **F8c 端到端** —— Chris 拍板 **deferred 結案**,登記 `DD-4`(帶恢復條件)
+- [x] **本機 `APP_BASE_URL`** —— Chris 已加落 `.env`,AI 側完整重啟後**實測生效**
+      (204 + 1 token + audit `issued` + 佇列 0),測試產物已清
+- [x] DEFERRED_REGISTER `DD-4` 加咗(**結構性**,唔係一次性 🚧 —— 根因係「功能只服務
+      local-password user,而現時所有真人都係 SSO」,go-live 前會再被問)
+
+> ✅ **Phase closed(2026-07-31)**。唯一帶住走嘅係 `DD-4`,而佢**唔係「功能未驗」**——
+> 未證嘅精確範圍係「真人收到嗰封信、撳嗰條連結、真重設」呢一段;transport / endpoint /
+> consume 邏輯各自都有真證據(見 F8c 嗰段引文)。
