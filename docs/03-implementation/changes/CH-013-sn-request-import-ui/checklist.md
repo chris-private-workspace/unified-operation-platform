@@ -53,7 +53,7 @@ last_updated: 2026-07-31
 - [x] E2 步驟二:逐張 RITM 揀 SKU(既有 `select`,由 `/license/catalog` 拉)+ target UPN input + **OpCo 下拉**(deviation ②)
 - [x] E3 `activeTaskCount ≠ 1` 嘅行明確標唔可導入 + 原因 — 直接用 server 個 `blockedReason` 原文,**唔另寫一套文案**(免兩處 drift)
 - [x] E4 未揀 SKU / 未填 UPN / 未揀 OpCo → import 掣 disabled
-- [ ] 🚧 E5 成功 → toast + **連去 request detail**;失敗 → 錯誤原文顯示唔吞 —— **toast ✅ · 錯誤原文 ✅**(順帶修咗 `apiGet`:佢係四個 api helper 入面**唯一**唔 surface server `message` 嗰個,而我個 404「可能係 row-level ACL」正正靠佢傳到 UI;零 test 依賴舊格式);**「連去 detail」冇做** —— `Toast` primitive 得 `message` + `tone`,冇 action slot,加 slot = 改共用 primitive = **H6 要先問 owner**,唔喺呢個 CH 順手做。現時 toast 講明 request number,操作員去 Requests 頁搵得返
+- [ ] 🚧 E5 成功 → toast + **連去 request detail**;失敗 → 錯誤原文顯示唔吞 —— **toast ✅ · 錯誤原文 ✅**(順帶修咗 `apiGet`:佢係四個 api helper 入面**唯一**唔 surface server `message` 嗰個,而我個 404「可能係 row-level ACL」正正靠佢傳到 UI;零 test 依賴舊格式);**「連去 detail」冇做** —— `Toast` primitive 得 `message` + `tone`,冇 action slot,加 slot = 改共用 primitive = **H6 要先問 owner**,唔喺呢個 CH 順手做。現時 toast 講明 request number,操作員去 Requests 頁搵得返。<br>⚠️ **toast 本身冇直接影到**:佢 5 秒自動消失,而 MCP 每次 tool round-trip 都追唔切(試咗兩次,`wait_for` 都 timeout)。間接證據充分 —— 表單完全 reset(`reqInput` 清空、結果區消失、Import 掣冇咗)**只可能發生喺 `onSuccess`**(`onError` 只 `setToast` 唔 reset),而 DB 亦證實 request 真係建咗
 - [x] E6 非 ADMIN **完全唔 render**(唔係 disable)— test assert `container` 係 empty DOM
 - [x] E7 web test 不降 — **196 → 204 / 25 files**
 
@@ -62,14 +62,16 @@ last_updated: 2026-07-31
 - [x] F1 跑 `.claude/skills/ui-design`,DS-1 ~ DS-12 逐條答 — DS-1/2/3/5/6/7/8/10 全 ✅(見 progress Day 3);DS-4 見 F4
 - [x] F2 token-only、零新 primitive(用既有 `select`/`input`/`badge`/`card`/`button`/`toast`)— 零 hex、零新 component
 - [x] F3 Settings 頁**維持一個 primary action** — 只有 `Import` 係 primary;`Look up` = secondary、`Cancel` = ghost。⚠️ 順帶記低一個**既有結構性張力**:integrations tab 同時 render `AllocationImportPanel` + 本 panel,而前者喺「揀咗 CSV」之後亦會出一個 primary ⇒ 嗰一刻同一 view 會有兩個。唔屬本 CH 引入,但**本 CH 令佢更易撞到**
-- [ ] 🚧 F4 light + dark 都**實際行過** —— **未做**。`claude-in-chrome` 喺呢部機一直連唔上(memory 有記),Playwright MCP 亦唔喺工具清單 ⇒ 我開唔到 browser。用嘅全部係既有 token class(其他 panel 一直用緊,light/dark 都有定義)所以**大概率冇事**,但「大概率」唔等於驗過 —— 要 Chris 開 Settings › Integrations 目視一次(兩個 theme)
+- [x] F4 light + dark 都**實際行過** — Playwright MCP 重新連上後真跑:**dark** `html.dark` / body `rgb(8,8,10)` / 文字 `rgb(243,243,245)` / badge 綠 `rgb(67,209,127)` on `rgb(16,36,26)` / primary 掣 `rgb(255,51,85)`(accent 嘅 dark token,唔係 hardcode);**light** 白底深字、badge 紅/綠淺底。**兩張全頁截圖都肉眼核過**,結構、對比、mono、icon 全部一致;切 theme 後表單 state 唔會 reset
 
 ## G — Live 驗證（真 `ricohapdev`）
 
-- [ ] G1 用一張**未用過**嘅真 REQ 行完整流程 → 平台真出到 request
+- [x] G1 用一張**未用過**嘅真 REQ 行完整流程 → 平台真出到 request — **`REQ0044059` 全程行 UI**(打字 → Enter 觸發 lookup → 揀 SKU/OpCo/UPN → Import)。DB 證實:request 建咗 · OpCo **RHK** · **`azureSyncedAt` 當刻仍係 null**;line item **只有 `RITM0047352`**,另外兩張 `0 active task` 嘅**冇入** ⇒ UI 過濾邏輯有硬證據
 - [x] G2 同一張再導入一次 → 唔會出第二張 — `REQ0044061` POST 兩次:**request 1 行 · line item 1 行 · audit 1 行**(DB 真查)
-- [ ] G3 UI 顯示嘅 RITM / task 數,同 `npm run intake:from-sn -w @uop/api -- --req=<REQ>`(dry run)**逐個字一致**
-- [ ] G4 DB 抽查 audit row:有 `request.imported_from_servicenow`,而且 **payload 冇 UPN**
+- [x] G3 UI 顯示嘅 RITM / task 數,同 `npm run intake:from-sn -- --req=<REQ>`(dry run)**逐個字一致** — 🔴 **呢條差啲被誤讀成 bug**:UI 顯示 `0/1/0`,但我幾個鐘前跑 `--list` 時三張都係 `1`。**即時**重跑 script → 同樣 `0/1/0` ⇒ 唔一致嘅原因係**期間 SN 嗰邊真係有人 close 咗兩張 task**,唔係平台有問題。呢個亦順帶證明 UI 同 script 真係食同一份 lookup(D6)
+- [x] G4 DB 抽查 audit row:有 `request.imported_from_servicenow`,而且 **payload 冇 UPN** — 兩條(REQ0044059 + REQ0044061)· targetType `Request` · **actor 有記到人**(UI 路徑嘅重點)· metadata `reason`+`source` 完整 · 掃 `metadata`/`before`/`after` 搵 UPN → **0 rows**
+- [x] G5 **UI 層 idempotent** — 同一張 REQ 喺 UI 再導入一次:request 仍 1 行 · line item 仍 1 行 · **audit 仍然 2 行**(冇再寫)
+- [x] G6 **sync gate 由 sweep 接手(非本 CH 行為,但正好反證 D6)** — 第一次查 `azureSyncedAt` = null,約十分鐘後再查已有值。唔係 import 開嘅,係 **ADR-0015 個 `@Cron` sweep** 向 Graph 證實咗 target user 之後自動開 ⇒ 證明 import 確實**冇**設佢
 
 ## H — 文件
 

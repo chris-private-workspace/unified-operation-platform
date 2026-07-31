@@ -249,7 +249,63 @@ integrations tab 同時 render `AllocationImportPanel` + 本 panel。前者喺�
 
 | Hash | Subject |
 |---|---|
-| _(pending)_ | `feat(web): CH-013 E/F 組 — Settings 匯入 panel(ADMIN only,兩步)` |
+| `d1edd78` | `feat(web): CH-013 E/F 組 — Settings 匯入 panel(ADMIN only,兩步)` |
+
+---
+
+## Day 4 — 2026-07-31（G 組 · Playwright 重新連上後補做 UI 驗證）
+
+### 背景
+
+Day 3 收工時 F4 / G1 / G3 標咗 🚧,理由係開唔到 browser。Chris 重新接通 Playwright MCP 之後補做。
+
+### F4 — light + dark 真行過
+
+| | dark | light |
+|---|---|---|
+| root | `html.dark` | (無 class) |
+| body | bg `rgb(8,8,10)` · fg `rgb(243,243,245)` | 白底深字 |
+| badge(1 active task) | 綠 `rgb(67,209,127)` on `rgb(16,36,26)` | 綠字淺綠底 |
+| primary 掣 | `rgb(255,51,85)` — accent 嘅 **dark token**,唔係 hardcode | Ricoh red |
+
+兩張全頁截圖肉眼核過:結構、對比、mono、icon、blocked 行嘅 AlertTriangle 全部一致。切 theme **唔會** reset 表單 state。
+
+### G1 / G3 / G4 — UI 端到端
+
+全程行 UI(打字 → **Enter 觸發 lookup** → 揀 SKU/OpCo/UPN → Import),用一張未用過嘅真單 `REQ0044059`。
+
+**🔴 G3 差啲被我自己誤讀成 bug。** UI 顯示 `0 / 1 / 0` active task,但我幾個鐘前跑 `--list` 時三張都係 `1`。**即時**重跑 script → 一樣 `0 / 1 / 0` ⇒ 唔一致嘅原因係**期間 ServiceNow 嗰邊真係有人 close 咗兩張 task**,唔係平台有問題。
+
+呢個順帶證明兩件事:① UI 同 script 真係食同一份 lookup(D6)② **對照要同一時間點先有意義** —— 攞一個幾鐘前嘅輸出去對,幾乎一定會冤枉自己。
+
+DB 證據:
+
+| | |
+|---|---|
+| request | `REQ0044059` · OpCo **RHK** · **當刻 `azureSyncedAt` = null** |
+| line item | **只有 `RITM0047352`** —— 另外兩張 `0 active task` 嘅冇入 ⇒ UI 過濾邏輯有硬證據 |
+| audit | targetType `Request` · **actor 記到人** · metadata 完整 · 掃 UPN **0 rows** |
+| **UI 層 idempotent** | 同一張再導入:request 1 行 · line item 1 行 · **audit 仍然 2 行**(冇再寫) |
+
+### 🔴 一個非本 CH、但正好反證 D6 嘅觀察
+
+第一次查 `azureSyncedAt` 係 **null**,約十分鐘後再查**已經有值**。
+
+唔係 import 開嘅 —— 係 **ADR-0015 個 `@Cron` sync sweep** 向 Graph 證實咗 `chris.lai@rapo.com.hk` 之後自動開。⇒ 反過來證明 import **確實冇**設佢(D6 寫住「azureSyncedAt is deliberately absent」),留空之後由 sweep 接手,兩者接得返。
+
+### toast 冇直接影到（誠實記低）
+
+toast 5 秒自動消失,而 MCP 每次 tool round-trip 都追唔切 —— 試咗兩次,`wait_for('is now in the platform')` 都 timeout。
+
+**間接證據充分**:表單完全 reset(REQ input 清空、結果區消失、Import 掣消失)**只可能發生喺 `onSuccess`**(`onError` 分支只 `setToast`,唔掂表單),而 DB 亦證實 request 真係建咗。所以「toast 有冇彈」呢一點,我當**未直接目擊**處理,唔寫成已驗。
+
+### 清理
+
+Playwright 把截圖同 `.playwright-mcp/` 寫落 **repo root**(memory 有記呢個污染)。已把兩張圖移去 scratchpad 保留,repo root 清返乾淨(`git status` 空)。
+
+### Blockers
+
+- 冇。剩返嘅只有 E5 「連去 request detail」,而佢係一個**要 owner 拍板**嘅 primitive 改動,唔係做唔到。
 
 ---
 
