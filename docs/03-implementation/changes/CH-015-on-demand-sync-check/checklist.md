@@ -68,7 +68,8 @@ last_updated: 2026-08-01
 - [x] Commit message 標對應 component tag
 - [x] ADR:**唔觸發 H1**(理由見 spec §2.3 + progress Decisions);實作全程冇出現要改 `azureSyncedAt` 語意嘅情況
 - [ ] Open-question status sync — N/A(本 CH 冇掂 open question)
-- [ ] Pending changes synced to `BACKLOG.md`(R7)
+- [x] Pending changes synced to `BACKLOG.md`(R7)— A 段加咗 CH-015 一行,狀態寫明「待 V5 補驗」
+- [x] Push + PR — **PR #66**(`main` ← `feat/fulfilment-on-demand-sync-check`)。兩步都獨立驗過真:`git ls-remote` SHA = local HEAD;`gh pr view 66` = `OPEN` + commit oid 對得上
 - [ ] `CLAUDE.md §0/§9` + `SESSION_SUMMARY.md` 座標掃過(§14 規矩)
 - [ ] `progress.md` closeout summary written
 - [ ] `progress.md` frontmatter status flipped to `done`

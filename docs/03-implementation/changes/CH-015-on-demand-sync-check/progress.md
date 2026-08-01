@@ -59,7 +59,12 @@ status: in-progress     # in-progress | closed
 ### Commits
 | Hash | Subject |
 |---|---|
-| _(待填)_ | feat(fulfilment): CH-015 on-demand Azure sync check |
+| `35b5fe6` | feat(fulfilment): CH-015 request 層 on-demand Azure sync 檢查 |
+| `6088310` | docs(planning): BACKLOG 記低 CH-015 — 實作完成,待 V5 browser 補驗 |
+
+Branch `feat/fulfilment-on-demand-sync-check`(從 `main` 開,唔污染 CH-014 個 PR #64)→ **PR #66**。
+🔴 push / PR 兩步都**獨立驗過真**(memory `git-network-output-unreliable`:兩者都會假報成功):
+`git ls-remote` 返嘅 SHA = local HEAD `6088310858…`;`gh pr view 66` 返 `state: OPEN` · `main ← feat/fulfilment-on-demand-sync-check` · 兩個 commit oid 對得上。
 
 ---
 
