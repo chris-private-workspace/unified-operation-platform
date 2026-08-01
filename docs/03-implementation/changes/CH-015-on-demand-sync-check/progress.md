@@ -2,7 +2,7 @@
 change_id: CH-015
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: in-progress     # in-progress | closed
+status: closed          # in-progress | closed
 ---
 
 # CH-015 — Progress
@@ -68,21 +68,46 @@ Branch `feat/fulfilment-on-demand-sync-check`(從 `main` 開,唔污染 CH-014 �
 
 ---
 
-## Closeout(填於 status=closed)
+## Closeout — 2026-08-01
 
 ### Acceptance verification
-_(待 V5 補驗後填)_
+
+**spec §3 全部 ✅**,但證據來源分兩類,照實分開:
+
+| 條 | 結果 | 證據來源 |
+|---|---|---|
+| OpenAPI 有 endpoint + 三態 schema | ✅ | AI 真跑(`/docs/api-json`) |
+| 真 Graph 命中 → 開 gate + `(on-demand check)` timeline | ✅ | AI 真跑(真憑證真 tenant) |
+| 真 Graph 未命中 → 零寫入 | ✅ | AI 真跑 |
+| 30 秒內第二次 → THROTTLED 且零 Graph 流量 | ✅ | AI 真跑(live)+ test spy |
+| OPCO_IT 跨 OpCo 403 · Graph throw 503 · boundary | ✅ | AI 真跑(test) |
+| api / web 全套 test | ✅ | AI 真跑(700 / 213) |
+| `ui-design` 零 violation | ✅ | AI 跑,DS-5 命中並修正 |
+| **前端三態文案 · cooldown disable · light + dark 實際 render** | ✅ | 🔴 **Chris 人手驗證** —— AI 從來冇 render 過(extension 連唔上 + 冇 Playwright MCP) |
 
 ### Effort summary
 | Day | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
 | 1 | 8 | 3.5 | −4.5 |
 
+估多咗約一倍。主因:抽 `openSyncGate` 之後,on-demand 個 service 冇乜自己嘅邏輯要寫 —— 難嘅嘢(gate 寫入語意)ADR-0015 已經解決咗,本 CH 實質只係加一個觸發器。
+
 ### Lessons
-_(待填)_
+
+**work**
+- **抽共用 helper 之後即刻跑既有 test**(B2 → 18/18)。呢個順序令「有冇改壞 sweep」由推測變成事實,而且只花咗 30 秒。
+- **live 打真 Graph 揭到 test 揭唔到嘅嘢** —— `HttpCode` 201 全部 unit test 都綠(佢哋 assert service 回傳值,唔經 HTTP layer),第一個 curl 就見到。**凡有 HTTP 語意嘅嘢,test 綠 ≠ 對。**
+- **三態 body 而唔係 429**:寫 test 嗰陣先真正見到價值 —— 前端嗰條「throttle 唔可以 render 成未 sync」嘅 test,如果用 429 就要 assert error path,寫出嚟會鬆好多。
+
+**didn't / friction**
+- **PowerShell 傳 JSON 畀 `curl.exe` 嘅 quoting 坑**:`-d '{\"a\":\"b\"}'` 靜靜傳咗字面反斜線,回 400。**唔好同 quoting 鬥** —— 寫 body 落檔案再 `-d "@file"`,一次搞掂。
+- **Browser 驗證仍然係本項目嘅結構性缺口**(memory `ui-verification-route` 記錄咗好耐):`claude-in-chrome` 連唔上,本 session 亦冇 Playwright MCP ⇒ **任何前端 CH 嘅最後一哩路都要人手**。呢次靠 7 條真 render 嘅 component test 補到大部分,但 light/dark 觀感補唔到。
+
+**carry-over**
+- V2 為咗攞一個真存在 Entra 嘅 UPN,把 seed 單 `scope.rhk@rhk.com` 指去真帳號,佢自此永久 synced。dev DB 測試數據,影響僅此,但下次有人數緊「未 gate 嘅單」會少一張。
 
 ### Component design note status updates
-_(待填)_
+- 無 —— 本 CH 冇動任何 component 邊界(新 service 落既有 `FulfilmentModule`,前端改既有畫面)。
 
 ---
 

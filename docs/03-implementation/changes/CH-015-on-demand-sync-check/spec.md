@@ -1,7 +1,7 @@
 ---
 change_id: CH-015
 title: "Request 層 on-demand Azure 帳號 sync 檢查"
-status: approved        # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-08-01
 target_completion: 2026-08-02
 affects_components: [fulfilment, integration/graph, apps/web]

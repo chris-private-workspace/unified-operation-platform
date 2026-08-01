@@ -1,7 +1,7 @@
 ---
 change_id: CH-015
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-08-01
 ---
 
@@ -57,22 +57,21 @@ last_updated: 2026-08-01
 - [x] **V3** Live 真 Graph **未命中**(`@demo.invalid`):`NOT_FOUND` · `azureSyncedAt` **仍 null** · `events: []`
 - [x] **V4** 連打兩次:第二次 `THROTTLED` + `retryAfterSeconds` 30,零寫入
 - [x] **V6**(spec 外)vite proxy 路徑 `:5173/api/…/sync-check` → 200,shape 正確
-- [ ] ❌ **V5 Browser 實際行一次(三態文案 + cooldown disable + light/dark)— 未驗證**
-      `claude-in-chrome` extension 連唔上(同 memory `ui-verification-route` 記錄一致),本 session 亦冇 Playwright MCP。
-      **唔當佢過(H7)。** 已覆蓋嘅替代證據:F7 七條 component test 係真 render + 真 assert;V6 證咗前端實際打嗰條 URL 通。
-      **仍未證嘅係**:實際 light/dark 觀感。→ 交 Chris 人手一眼,或者下個 session 用 Playwright MCP 補。
+- [x] **V5 Browser(三態文案 + cooldown disable + light/dark)— 由 Chris 人手驗證通過**(2026-08-01)
+      🔴 **AI 從來冇 render 過呢個畫面。** `claude-in-chrome` extension 連唔上(同 memory `ui-verification-route` 一致),本 session 亦冇 Playwright MCP ⇒ 呢條 acceptance 嘅**證據來源係 Chris 親自睇**,唔係 AI 驗證。兩者照實分開寫,唔混淆(H7)。
+      AI 側已有嘅替代證據:F7 七條 component test 係真 render + 真 assert;V6 證咗前端實際會打嗰條 vite proxy URL 通。
 
 ## Cross-Cutting
 
 - [x] Each commit references `progress.md` Day-N entry(R2)
 - [x] Commit message 標對應 component tag
 - [x] ADR:**唔觸發 H1**(理由見 spec §2.3 + progress Decisions);實作全程冇出現要改 `azureSyncedAt` 語意嘅情況
-- [ ] Open-question status sync — N/A(本 CH 冇掂 open question)
-- [x] Pending changes synced to `BACKLOG.md`(R7)— A 段加咗 CH-015 一行,狀態寫明「待 V5 補驗」
+- [x] Open-question status sync — N/A(本 CH 冇掂 open question)
+- [x] Pending changes synced to `BACKLOG.md`(R7)— A 段加咗 CH-015 一行(收官後狀態已更新)
 - [x] Push + PR — **PR #66**(`main` ← `feat/fulfilment-on-demand-sync-check`)。兩步都獨立驗過真:`git ls-remote` SHA = local HEAD;`gh pr view 66` = `OPEN` + commit oid 對得上
-- [ ] `CLAUDE.md §0/§9` + `SESSION_SUMMARY.md` 座標掃過(§14 規矩)
-- [ ] `progress.md` closeout summary written
-- [ ] `progress.md` frontmatter status flipped to `done`
+- [x] `CLAUDE.md §0` + `SESSION_SUMMARY.md` 座標掃過(§14 規矩)。**§9 三行狀態描述 Chris 決定刪走** —— 佢哋正正係 §14 警告嗰種會過時嘅內容,真相 SSOT 係 `BACKLOG.md`;同時**恢復咗被刪嘅 Appendix 速查卡**(H1–H8 冇過時風險,純速查價值)
+- [x] `progress.md` closeout summary written
+- [x] `progress.md` frontmatter status flipped to `closed`
 
 ---
 
