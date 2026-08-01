@@ -39,4 +39,5 @@
 - [x] C2 — BUG-010 report 寫好(待 Chris triage severity)
 - [x] C3 — CH-014 spec / checklist / progress
 - [x] C4 — BACKLOG 同步(R7)— A 表加 CH-014 + BUG-010
-- [ ] C5 — commit
+- [x] C5 — commit `2d92881` on `feat/ops-sn-onboarding-fixture`(7 files)
+- [x] C6 — push + PR **#64**(base `main`)— 兩步都用獨立指令驗真(`git ls-remote` 對 HEAD · `gh pr list`),唔信 push/create 自己嘅 output
