@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { EventType, LineItemStage, RequestStatus } from '@prisma/client';
+import { LineItemStage, RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { scrubPii } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
+import { openSyncGate } from './open-sync-gate';
 
 /** What one round did. Returned so tests (and the log line) can assert it. */
 export interface SweepResult {
@@ -163,31 +164,14 @@ export class SyncSweepService {
   }
 
   /**
-   * Exactly `markSynced`'s writes, minus the human. Kept atomic so a request
-   * can never end up past the gate with no timeline entry explaining why.
+   * Exactly `markSynced`'s writes, minus the human.
+   *
+   * CH-015 moved the write itself into the shared `openSyncGate` so the
+   * on-demand check cannot drift from it. What stays here is the sweep's own
+   * choice of timeline message — the only thing the two callers differ on.
    */
   private openGate(request: { id: string; accountCreatedAt: Date | null }) {
-    const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      await tx.request.update({
-        where: { id: request.id },
-        data: {
-          azureSyncedAt: now,
-          // `??` not `=`: if the account creation time is already known, the
-          // sweep must not overwrite it with "whenever the cron happened to
-          // notice" — that would destroy the one figure that shows how long
-          // Entra Connect actually took.
-          accountCreatedAt: request.accountCreatedAt ?? now,
-        },
-      });
-      await tx.requestEvent.create({
-        data: {
-          requestId: request.id,
-          type: EventType.SYNC,
-          message: SYNC_GATE_MESSAGE.VERIFIED,
-        },
-      });
-    });
+    return openSyncGate(this.prisma, request, SYNC_GATE_MESSAGE.VERIFIED);
   }
 
   /**

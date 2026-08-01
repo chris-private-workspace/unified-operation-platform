@@ -29,6 +29,10 @@ describe('license-ops seam boundary (W38 OQ-1 / OQ-2)', () => {
       file: 'fulfilment/sync-sweep.service.ts',
       why: 'ADR-0015 exists to upgrade azureSyncedAt from "n8n claims it" to "the platform verified it". Verifying through n8n would undo exactly that, and the gate would silently go back to trusting the caller.',
     },
+    {
+      file: 'fulfilment/sync-check.service.ts',
+      why: "CH-015 — the on-demand half of the same gate. It writes through the sweep's own openSyncGate, so routing ITS lookup through n8n would reopen the hole ADR-0015 closed, from the side nobody is watching.",
+    },
   ];
 
   describe.each(MUST_STAY_DIRECT)('$file', ({ file, why }) => {

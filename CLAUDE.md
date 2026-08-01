@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **W42 + CH-013 收官(2026-07-31)** — 後端業務層 / 前端 / AUTH / 整合全鏈已落地(詳見 §9);下一個 pending 見 `BACKLOG.md` |
+| Phase | **CH-015 收官(2026-08-01)** — 後端業務層 / 前端 / AUTH / 整合全鏈已落地;下一個 pending 見 `BACKLOG.md`(**真相 SSOT**,呢格只寫最近一個座標) |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -268,9 +268,6 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
 
 > ⚠️ 呢段**只寫粗略座標**。真相 SSOT 係 `BACKLOG.md`(工作狀態)+ `docs/adr/README.md`(架構決定)+ memory `MEMORY.md`(runtime 實況)。**唔好喺呢度累積歷史** —— 佢一過時就會令成個 session 用錯前提開始(2026-07-31 實犯:本段一直寫住「`apps/web` = placeholder、auth 未做」,而嗰陣前端同 AUTH 早就做齊)。
 
-- **後端** `apps/api`(NestJS)—— module C(catalog + 對帳)/ D(request 生命週期 + assign + ledger)、AUTH 全鏈(Entra JWT + 本地密碼 + role scope + session hardening)、audit trail、整合可切換接縫(Graph / ServiceNow / n8n)全部落地。
-- **前端** `apps/web` —— **唔再係 placeholder**,約 10 個實畫面(Overview / Requests + detail + new / Drift / SKU Catalog / License Assets / Settings / Audit log / Delivery failures / Login)。
-- **規模參考**(會變,對數字前先自己跑):**api ~685 test · web ~206 test** · DB seeded 24 OpCos · ADR 到 **0021** · CH 到 **013**。
 - **已上 Azure UAT**(ADR-0012;詳見 memory `azure-uat-deployment`)。
 - **本機 runtime 避坑**:Prisma engine CDN 被公司 proxy 封(RISK R1);port 3000→Langfuse 佔用 ⇒ api 用 **3100**、5432→既有 Postgres 佔用 ⇒ docker **5433**;web **5173**。起 / 重啟一律用 `restart-stack` skill。
 - **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration)。

@@ -607,6 +607,21 @@ export interface RequestDetail extends OnboardingRequest {
   events: RequestEvent[];
 }
 
+/**
+ * POST /fulfilment/requests/:id/sync-check → CH-015. Three states rather than
+ * three HTTP statuses, because "Graph has not got the account yet" and "you just
+ * asked, so we did not ask again" are different facts and only one of them is
+ * about the account. Mirrors apps/api dto/sync-check.dto.ts.
+ */
+export type SyncCheckStatus = 'FOUND' | 'NOT_FOUND' | 'THROTTLED';
+
+export interface SyncCheckResult {
+  status: SyncCheckStatus;
+  /** Seconds before another check is worth making; 0 once the gate is open. */
+  retryAfterSeconds: number;
+  request: RequestDetail;
+}
+
 /** GET /opcos → active OpCos for picker selectors (same shape as AdminOpco). */
 export type OpcoOption = AdminOpco;
 

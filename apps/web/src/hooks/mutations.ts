@@ -21,6 +21,7 @@ import type {
   ResetPasswordBody,
   ServiceNowLookupResult,
   SkuCatalog,
+  SyncCheckResult,
   UpdateCatalogBody,
   UpdateLedgerBody,
   UpdateOpcoBody,
@@ -139,7 +140,30 @@ export function useRemoveLineItem(requestId: string) {
   });
 }
 
-/** PATCH …/:id/sync — open the Azure sync gate (Phase-1 simulation). */
+/**
+ * POST …/:id/sync-check — CH-015. Ask Graph now instead of waiting for the
+ * ten-minute sweep. A miss writes nothing, so invalidating on every outcome is
+ * harmless and keeps the timeline correct on a hit.
+ */
+export function useSyncCheck(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiPost<SyncCheckResult>(`${base}/${requestId}/sync-check`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}
+
+/**
+ * PATCH …/:id/sync — assert the gate open WITHOUT asking Graph.
+ *
+ * CH-015 kept this as the break-glass it always was (ADR-0015 D3): when Graph is
+ * unreachable someone still needs a way through. Prefer useSyncCheck — that one
+ * has evidence behind it.
+ */
 export function useMarkSynced(requestId: string) {
   const qc = useQueryClient();
   return useMutation({
