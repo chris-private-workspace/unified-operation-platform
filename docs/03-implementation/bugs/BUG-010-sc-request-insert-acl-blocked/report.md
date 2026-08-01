@@ -1,8 +1,8 @@
 ---
 bug_id: BUG-010
 title: "sc_request 直接 insert 被 ACL 擋死(403),DirectServiceNowProvider 開單路徑喺 ricohapdev 行唔通"
-severity: Sev2          # Sev1 | Sev2 | Sev3 | Sev4 (per PROCESS.md §4.4) — 待 triage 確認
-status: proposed        # proposed | triaged | investigating | fixing | verifying | done | wont-fix
+severity: Sev3          # Sev1 | Sev2 | Sev3 | Sev4 (per PROCESS.md §4.4)
+status: triaged         # triaged | investigating | fixing | verifying | done | wont-fix
 reported: 2026-08-01
 reporter: "CH-014 造 ServiceNow fixture 時實測撞到"
 affects_components: [fulfilment/direct-servicenow.provider, integration/servicenow]
@@ -13,8 +13,8 @@ spec_refs:
 
 # BUG-010 — `sc_request` 直接 insert 被 ACL 擋死
 
-> **Report version**:1.0(initial)
-> **Triage approver**:**待 Chris Lai 確認**(severity 同 §5 推論邊界)
+> **Report version**:1.1(triaged)
+> **Triage approver**:**Chris Lai(2026-08-01)** —— severity 定 **Sev3**,由初判 Sev2 降級(理由見 §6)
 
 ## 1. Symptom
 
@@ -66,20 +66,52 @@ const req = await this.snow.createRecord({...}, 'sc_request');
 
 ⚠️ 唔好因為「睇落好明顯」就當實測過(memory:由真 output 過度推論因果)。
 
-## 6. Severity 判斷 = Sev2(建議,待確認)
+## 6. Severity = Sev3(Chris,2026-08-01;由初判 Sev2 降級)
 
-- 唔係 Sev1:冇資料損壞、冇洩漏、UAT 未有人靠呢條路做嘢。
-- 建議 Sev2:一個**已 merge、已寫入 ADR、被當成已交付**嘅 feature,真 live 100% 失敗;而且失敗形態係 throw,唔會靜默 —— 但亦**冇任何 test 捉到**(Graph / ServiceNow 一律 mock,H5/§3.4),所以幾時上真環境幾時先爆。
+**初判寫 Sev2,理由係「一個被當成已交付嘅 feature 真 live 100% 失敗」。降級因為嗰個判斷漏咗一件事:D3 本身就有 fallback,而佢已經寫咗。**
 
-## 7. Fix 方向(未實作,未 approve)
+D3 原文:「由 config / per-request-type 揀路;**一個做 primary 一個做 fallback**」。兩個實作都喺 repo:
 
-三條路,互斥:
+| | 位置 |
+|---|---|
+| `N8nWorkflowProvider` | `apps/api/src/fulfilment/n8n-workflow.provider.ts:31` |
+| 選路 | `apps/api/src/fulfilment/fulfilment.module.ts:49` — `if (provider !== 'n8n') return new DirectServiceNowProvider(snow)` |
+| 可改設定 | `apps/api/src/integration/connectors.ts:176` — enum `['direct','n8n']`,Settings › Integrations 或 `REQUEST_SUBMISSION_PROVIDER` |
+
+⇒ 呢個唔係「功能冇得救」,係 **default 揀咗條死路**,而換路係一個既有設定掣。
+
+- **唔係 Sev1**:冇資料損壞、冇洩漏。
+- **唔係 Sev2**:有 ADR 明文預留嘅 fallback,而且 UAT 冇人用緊「IT 喺平台開單」⇒ 冇實際 user impact。
+- **係 Sev3**:一條 documented 路徑實際壞咗,而且**冇任何 test 捉到**(Graph / ServiceNow 一律 mock,H5 / §3.4)—— 上真環境先爆。
+
+⚠️ 但 fallback **未驗證通**:見 §7 路 0。
+
+## 7. Fix 方向(未實作)
+
+> 🔴 **更正**:本報告 1.0 版同當時嘅 BACKLOG 行寫住「三條路全部改到 ADR-0008 D3 ⇒ 全部 H1」。**錯** —— 漏咗下面路 0,而佢正正就係 ADR 預留嘅嗰條,唔觸發 H1。
+
+### 路 0 — 把 provider 由 `direct` 撳去 `n8n`(**唔觸發 H1**)
+
+D3 明文「由 config 揀路」,所以呢個係**配置動作**,唔使 ADR、唔使審批。
+
+⚠️ **但係未驗證嘅假設,唔好當佢係答案**:
+
+| 有利證據 | 未確認 |
+|---|---|
+| 真單 `REQ0044064` 嘅 `sys_created_by` = n8n service account ⇒ **n8n 側確實建到 `sc_request`** | n8n 用**邊個帳號**、**邊個 API**。若佢同平台共用同一組憑證,佢應該一樣 403 —— 而佢冇。⇒ 佢好可能行緊另一條路(例如同 CH-014 最後成功嗰條一樣嘅 Service Catalog API) |
+| `N8nWorkflowProvider` + factory + test 都已經喺 repo | `N8N_OUTBOUND_WEBHOOK_URL` / key **未配**;memory `project_adr-0017-n8n-execution-seams` 記住 n8n 三個接線缺口**仍未通** |
+
+**最抵嘅下一步就係呢條**:問 n8n 側用邊個帳號 / 邊個 API,或者接通 webhook 試一次。通咗的話,呢個 bug 由「路徑壞咗」降成「default 揀錯路」。
+
+### 以下三條先至係 H1(改到 D3 已 lock 嘅內容)
 
 1. **改走 Service Catalog API**(CH-014 已證可行)—— `order_now` / `add_to_cart`+`submit_order`。好處:SN workflow 自己行,catalog task 真起,同真單同形。代價:要決定平台開嘅單對應邊個 catalog item + 點填 mandatory variables(見 CH-014 §3),而呢啲係**業務決定**,唔係實作細節。
 2. **要求 ServiceNow owner 開 `sc_request` insert ACL** —— 保住現有 code。但 SN 標準姿態本身就係唔畀 insert REQ,呢個要求可能唔會過。
 3. **確認呢條路根本唔應該存在** —— 若 ADR-0008 乙嘅真實流程係「平台唔開單,單一律由 SN/n8n 側開」,咁應該刪 provider 而唔係修。
 
-🔴 **1 同 3 都改到 ADR-0008 已 lock 嘅決定(D3),屬 H1** ⇒ 揀邊條之前要 STOP + ADR,唔可以直接改 code。
+🔴 **呢三條都改到 ADR-0008 已 lock 嘅決定(D3),屬 H1。** CLAUDE.md §5.1 要求:①STOP 寫 code → ②講明想改咩 / 點解現 spec 唔啱 / 建議替代 → ③等 approved → ④寫**新** ADR(ADR-0008 本身唔改 —— Accepted 唔改內容,要推翻就寫新一份)。
+
+**而家唔使揀。** UAT 冇人用緊呢個功能,所以合理做法係停喺 triaged,等真要用嗰陣、或者路 0 驗證有結果之後先決定。
 
 ## 8. References
 
