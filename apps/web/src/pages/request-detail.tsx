@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Check,
@@ -32,6 +32,7 @@ import {
   useAdvanceStage,
   useAssignLineItem,
   useMarkSynced,
+  useSyncCheck,
   useRemoveLineItem,
   useUpdateRequest,
 } from '@/hooks/mutations';
@@ -80,6 +81,7 @@ export function RequestDetail() {
   const advance = useAdvanceStage(id ?? '');
   const assign = useAssignLineItem(id ?? '');
   const markSynced = useMarkSynced(id ?? '');
+  const syncCheck = useSyncCheck(id ?? '');
   const update = useUpdateRequest(id ?? '');
   const addLine = useAddLineItem(id ?? '');
   const removeLine = useRemoveLineItem(id ?? '');
@@ -110,12 +112,47 @@ export function RequestDetail() {
     reason: string;
   } | null>(null);
 
+  // CH-015 — seconds left before another sync check is worth making. Seeded
+  // from the server's retryAfterSeconds so the button and the backend cooldown
+  // never disagree; the backend stays the authority either way.
+  const [cooldown, setCooldown] = useState(0);
+
   function flash(message: string, tone: 'ok' | 'danger') {
     setToast({ message, tone });
     window.setTimeout(() => setToast(null), 2600);
   }
   const onError = (e: unknown) =>
     flash(e instanceof ApiError ? e.message : 'Something went wrong', 'danger');
+
+  // One timeout per second rather than a re-armed interval: the effect already
+  // re-runs on every tick, and a stale interval outliving the countdown is the
+  // classic way this pattern leaks.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = window.setTimeout(() => setCooldown((s) => s - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [cooldown]);
+
+  function runSyncCheck() {
+    syncCheck.mutate(undefined, {
+      onSuccess: (res) => {
+        setCooldown(res.retryAfterSeconds);
+        if (res.status === 'FOUND') {
+          flash('Verified in Azure AD — ready to assign', 'ok');
+        } else if (res.status === 'THROTTLED') {
+          // Deliberately NOT phrased as a result about the account: nothing was
+          // asked, so saying "not synced" here would be inventing an answer.
+          flash(`Just checked · retry in ${res.retryAfterSeconds}s`, 'ok');
+        } else {
+          // 'ok', not 'danger' (spec R3). The check succeeded — the answer is
+          // "not yet". A red toast reads as "this account is broken" and sends
+          // an operator chasing AD when Entra Connect just has not run.
+          flash(`Not in Azure AD yet · retry in ${res.retryAfterSeconds}s`, 'ok');
+        }
+      },
+      onError,
+    });
+  }
 
   const baseBySkuId = useMemo(
     () => new Map((catalog.data ?? []).map((s) => [s.skuId, s.isBaseLicense])),
@@ -164,6 +201,7 @@ export function RequestDetail() {
     advance.isPending ||
     assign.isPending ||
     markSynced.isPending ||
+    syncCheck.isPending ||
     update.isPending ||
     addLine.isPending ||
     removeLine.isPending;
@@ -397,25 +435,47 @@ export function RequestDetail() {
             title="Synced to Azure AD"
             sub="directory replication"
           />
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-[8px]">
             {synced ? (
               <span className="text-[12.5px] font-medium text-ok">
                 Ready to assign
               </span>
             ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={pending}
-                onClick={() =>
-                  markSynced.mutate(undefined, {
-                    onSuccess: () => flash('Marked as synced', 'ok'),
-                    onError,
-                  })
-                }
-              >
-                Mark synced
-              </Button>
+              <>
+                {/* CH-015 — the primary action is now the one with evidence
+                    behind it. "Mark synced" is unchanged in what it does; it is
+                    demoted to ghost because asserting the gate open is the
+                    exception (ADR-0015 D3 break-glass), not the default. One
+                    primary per view (H6). */}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={pending || cooldown > 0}
+                  onClick={runSyncCheck}
+                >
+                  {cooldown > 0 ? (
+                    <>
+                      Check now · <span className="font-mono">{cooldown}s</span>
+                    </>
+                  ) : (
+                    'Check now'
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  title="Opens the gate without asking Graph — for when Graph is unreachable"
+                  onClick={() =>
+                    markSynced.mutate(undefined, {
+                      onSuccess: () => flash('Marked as synced', 'ok'),
+                      onError,
+                    })
+                  }
+                >
+                  Mark synced
+                </Button>
+              </>
             )}
           </div>
         </div>

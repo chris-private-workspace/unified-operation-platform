@@ -33,6 +33,7 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
   "PATCH /fulfilment/requests/:id/line-items/:lineItemId/assign → roles [ADMIN,REGIONAL,OPCO_IT]",
   "PATCH /fulfilment/requests/:id/line-items/:lineItemId/stage → roles [ADMIN,REGIONAL,OPCO_IT]",
   "PATCH /fulfilment/requests/:id/sync → roles [ADMIN,REGIONAL,OPCO_IT]",
+  "POST /fulfilment/requests/:id/sync-check → roles [ADMIN,REGIONAL,OPCO_IT]",
   "GET /license/catalog → roles [ADMIN,REGIONAL,OPCO_IT]",
   "PATCH /license/catalog/:id → roles [ADMIN,REGIONAL]",
   "POST /license/catalog/sync → roles [ADMIN,REGIONAL]",

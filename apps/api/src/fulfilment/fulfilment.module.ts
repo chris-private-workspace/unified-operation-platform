@@ -23,6 +23,7 @@ import { OutboundFailureController } from './outbound-failure.controller';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from './activity.service';
 import { SyncSweepService } from './sync-sweep.service';
+import { SyncCheckService } from './sync-check.service';
 import { ServiceNowImportController } from './servicenow-import.controller';
 import { ServiceNowImportService } from './servicenow-import.service';
 
@@ -107,6 +108,11 @@ export async function requestSubmissionProviderFactory(
     // W37 / ADR-0015 — the platform's first @Cron. No controller: it is driven
     // by the scheduler, not by a request.
     SyncSweepService,
+    // CH-015 — the same question the sweep asks, asked on demand. Separate from
+    // AssignService because it owns state (the cooldown map) and because the
+    // boundary rule it lives under (GraphService, never the n8n-switchable
+    // provider — ADR-0017 D0) is easier to guard on a class that has one job.
+    SyncCheckService,
     // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by the connector
     // config resolver (DB-then-env since W34 / ADR-0013) — see
     // requestSubmissionProviderFactory above.
