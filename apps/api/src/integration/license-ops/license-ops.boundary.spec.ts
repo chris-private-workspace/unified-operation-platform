@@ -31,7 +31,7 @@ describe('license-ops seam boundary (W38 OQ-1 / OQ-2)', () => {
     },
     {
       file: 'fulfilment/sync-check.service.ts',
-      why: 'CH-015 — the on-demand half of the same gate. It writes through the sweep\'s own openSyncGate, so routing ITS lookup through n8n would reopen the hole ADR-0015 closed, from the side nobody is watching.',
+      why: "CH-015 — the on-demand half of the same gate. It writes through the sweep's own openSyncGate, so routing ITS lookup through n8n would reopen the hole ADR-0015 closed, from the side nobody is watching.",
     },
   ];
 

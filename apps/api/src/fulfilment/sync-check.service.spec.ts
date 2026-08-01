@@ -1,5 +1,8 @@
 import { Test } from '@nestjs/testing';
-import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SyncCheckService } from './sync-check.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
