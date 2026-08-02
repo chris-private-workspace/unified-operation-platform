@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -19,6 +21,7 @@ import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
+import { AllocationResetService } from './allocation-reset.service';
 import { LedgerReadService } from './ledger-read.service';
 import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
@@ -32,6 +35,10 @@ import {
   LedgerImportRequestDto,
   LedgerImportResultDto,
 } from './dto/ledger-import.dto';
+import {
+  AllocationResetRequestDto,
+  AllocationResetResultDto,
+} from './dto/allocation-reset.dto';
 import { LedgerRowDto, LedgerStatsDto } from './dto/ledger-read.dto';
 import { UpdateLedgerDto } from './dto/ledger-write.dto';
 import { TenantSkuRowDto, TenantSkuStatsDto } from './dto/tenant-owned.dto';
@@ -52,6 +59,7 @@ export class LicenseController {
     private readonly catalog: CatalogService,
     private readonly reconcile: ReconcileService,
     private readonly allocationImport: AllocationImportService,
+    private readonly allocationReset: AllocationResetService,
     private readonly ledgerRead: LedgerReadService,
     private readonly ledgerWrite: LedgerWriteService,
     private readonly tenantOwned: TenantOwnedService,
@@ -110,6 +118,25 @@ export class LicenseController {
     @Body() dto: LedgerImportRequestDto,
   ): Promise<LedgerImportResultDto> {
     return this.allocationImport.import(actor.id, dto);
+  }
+
+  /**
+   * Allocation reset (CH-016) — zero allocatedQuantity so a bad import can be
+   * redone from scratch. Same roles as the import above: it is the same central
+   * all-OpCo operation, in reverse.
+   *
+   * 200, not Nest's default 201: a dry-run creates nothing at all, and a commit
+   * updates existing rows. Nothing here is a new resource.
+   */
+  @Post('ledger/allocation/reset')
+  @Roles(Role.ADMIN, Role.REGIONAL)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: AllocationResetResultDto })
+  resetAllocation(
+    @CurrentUser() actor: AuthUser,
+    @Body() dto: AllocationResetRequestDto,
+  ): Promise<AllocationResetResultDto> {
+    return this.allocationReset.reset(actor.id, dto);
   }
 
   /**

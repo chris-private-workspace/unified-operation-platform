@@ -50,6 +50,13 @@ export const AUDIT_ACTIONS = {
   OPCO_UPDATE: 'opco.update',
   CATALOG_UPDATE: 'catalog.update',
   ALLOCATION_IMPORT: 'allocation.import',
+  /**
+   * CH-016 — zeroing allocatedQuantity is the only ledger operation that
+   * REMOVES budget across many OpCos at once, and it leaves the platform in a
+   * state where assigns are blocked until someone re-imports. That combination
+   * is worth attributing.
+   */
+  ALLOCATION_RESET: 'allocation.reset',
   DRIFT_RESOLVE: 'drift.resolve',
   /**
    * W31 / ADR-0011 Decision 8 — repairing an outbound failure is a human action
@@ -126,6 +133,7 @@ export type AuditTargetType =
   | 'SkuCatalog'
   | 'DriftAlert'
   | 'AllocationImport'
+  | 'AllocationReset'
   | 'OutboundFailure'
   | 'ConnectorConfig'
   | 'RequestLineItem'
@@ -160,6 +168,14 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'changes',
       'committed',
     ],
+    /**
+     * CH-016 — batch summary, same shape as AllocationImport above. `scope` is
+     * an Opco.code (or the literal 'all'), which is already an allowed field on
+     * the Opco target and carries no PII. Deliberately no room for WHICH cells
+     * were zeroed: that is a per-row trail this operation does not keep, by the
+     * same reasoning the import does not (one reset can touch hundreds).
+     */
+    AllocationReset: ['affected', 'scope'],
     /**
      * Event-only, like user.password_change. The row's own payload already
      * lives in OutboundFailure and carries a UPN — copying it into the audit

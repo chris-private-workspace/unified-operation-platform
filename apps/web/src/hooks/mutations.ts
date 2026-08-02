@@ -3,6 +3,8 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import type {
   AddLineItemBody,
   AdminUser,
+  AllocationResetBody,
+  AllocationResetResult,
   ChangePasswordBody,
   ConnectorConfig,
   CreateOpcoBody,
@@ -216,6 +218,26 @@ export function useAllocationImport() {
   return useMutation({
     mutationFn: (vars: { csv: string; dryRun: boolean }) =>
       apiPost<LedgerImportResult>('/license/ledger/import', vars),
+  });
+}
+
+/**
+ * POST /license/ledger/allocation/reset — zero allocatedQuantity so a bad
+ * import can be redone (CH-016). Same hook drives the dry-run preview and the
+ * commit, like the import above.
+ *
+ * Unlike the import it invalidates the ledger, and only on a real commit: a
+ * dry-run changed nothing, so refetching after one would just be noise.
+ */
+export function useAllocationReset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: AllocationResetBody) =>
+      apiPost<AllocationResetResult>('/license/ledger/allocation/reset', vars),
+    onSuccess: (res) => {
+      if (res.dryRun) return;
+      qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
+    },
   });
 }
 
