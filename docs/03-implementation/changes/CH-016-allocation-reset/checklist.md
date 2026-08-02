@@ -1,7 +1,7 @@
 ---
 change_id: CH-016
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-08-02
 ---
 
@@ -56,9 +56,14 @@ last_updated: 2026-08-02
 - [x] **V7** Reset → import 回頭路:**active SKU 全還原;inactive 嗰兩格還原唔到** ⇒ 呢個就係 §2.5 嘅來源
 - [x] **V8**(§2.5 閉環)同一批真數據重驗:`irreversible: 2`,認出嘅正正係 import 救唔返嗰兩格
 - [x] **V9** dev DB 已復原(`allocated_sum` 返 10373;`adjustments` 8→10 = 兩次人手 PATCH,ADR-0007 正常紀錄)
-- [ ] ❌ **V10 Browser 實際行一次(dry-run → Dialog → 真跑 → inactive 標示)+ light/dark — 未驗證**
-      `claude-in-chrome` extension 連唔上(同 CH-015、同 memory `ui-verification-route` 一致),本 session 冇 Playwright MCP。**唔當佢過(H7)。**
-      替代證據:12 條 component test 係真 render + 真 assert;所有 API 行為已用真 DB 前後對比證實。**未證嘅淨係實際 render 觀感。**
+- [x] **V10 Browser — 用 Playwright MCP 真行過**(2026-08-02)。session 中途 extension 重新連上,呢個係本項目**第一次由 AI 自己 render 驗到前端**(memory `ui-verification-route` 記錄嘅結構性缺口)
+      - Settings → Integrations:reset card 喺 import panel **正下方**、ServiceNow import 之上 ✅
+      - 掣 class = `bg-danger-soft text-danger`,**唔含 `bg-accent`** ⇒ H6 一 view 一 primary 成立 ✅
+      - Scope select 25 個 option(All OpCos + 24)✅
+      - 揀 RTW → 撳 Reset → **Dialog 真彈出**:`4 ledger cells in scope RTW will be set to 0` · `2 of them cannot be undone by re-importing` · `VISIO_PLAN1` / `STANDARDPACK` 逐行標 **inactive**(同真 DB 兩個 `active=f` 嘅 SKU 完全對得上)· warning 全文 · footer `Cancel` + `Reset 4 cells`(danger,冇 accent)✅
+      - **light + dark 都截圖睇過,dark 零爆**(warn 橙對比夠、border 清晰、mono 數字可讀)⇒ **DS-4 ✅**
+      - 🔴 **全程零寫入**:browser 完之後 DB 仍係 `150 | 10 | 6049 | 10373` —— 證實「Reset allocation…」只出 dry-run、Cancel 唔會 commit
+      - 收工已清走 browser 留低嘅 repo root 污染(兩張 PNG + `.playwright-mcp/`),`git status` 空
 
 ## Cross-Cutting
 
@@ -67,9 +72,9 @@ last_updated: 2026-08-02
 - [x] ADR:**唔觸發 H1** —— 只寫 `allocatedQuantity` = 遵守 ADR-0004 invariant。實作全程冇出現要掂 `assignedQuantity` 或刪 row 嘅情況
 - [x] 🔴 **`npm run lint`(CI 同一條命令)exit 0** —— 中途紅過一次(兩個 prettier 格式),**喺 push 前捉到並修**,冇再重演 CH-015
 - [x] **R3 deviation 已 log** — §2.5 係 live 驗證揭出,spec §7 changelog 有記,唔係 silent drift
-- [ ] Pending changes synced to `BACKLOG.md`(R7)
-- [ ] `CLAUDE.md §0` + `SESSION_SUMMARY.md` 座標掃過(§14)
-- [ ] `progress.md` closeout summary written + status flipped
+- [x] Pending changes synced to `BACKLOG.md`(R7)
+- [x] `CLAUDE.md §0` + `SESSION_SUMMARY.md` 座標掃過(§14)
+- [x] `progress.md` closeout summary written + status flipped
 
 ---
 

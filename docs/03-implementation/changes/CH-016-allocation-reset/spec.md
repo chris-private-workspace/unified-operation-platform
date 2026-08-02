@@ -1,7 +1,7 @@
 ---
 change_id: CH-016
 title: "Allocation reset — 把 allocatedQuantity 清零重來"
-status: approved        # draft | proposed | approved | active | done | cancelled
+status: done            # draft | proposed | approved | active | done | cancelled
 created: 2026-08-02
 target_completion: 2026-08-03
 affects_components: [license, apps/web]

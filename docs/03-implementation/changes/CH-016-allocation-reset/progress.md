@@ -2,7 +2,7 @@
 change_id: CH-016
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: in-progress     # in-progress | closed
+status: closed          # in-progress | closed
 ---
 
 # CH-016 — Progress
@@ -44,9 +44,21 @@ Spec §2.3 原本寫住「reset 之後嘅復原手段就係重新 import 一份�
 
 ### Blockers
 
-- 🔴 **V10 browser 驗證做唔到,唔當佢過(H7)**。`claude-in-chrome` 連唔上(同 CH-015、同 memory `ui-verification-route` 一致),本 session 冇 Playwright MCP。
-  - 替代證據:12 條 component test 真 render + 真 assert;所有 API 行為已用真 DB 前後對比證實。
-  - **仍未證**:實際 light / dark render 觀感。→ 交 Chris 人手。
+_(無 —— V10 一度卡住,session 中途 Playwright MCP 接上之後解決,見下)_
+
+### 🟢 V10:本項目第一次由 AI 自己 render 驗到前端
+
+Extension 一度連唔上(同 CH-015 一樣),Chris 重新接駁 **Playwright MCP** 之後行到。呢個直接動搖咗 memory `ui-verification-route` 記錄嘅結構性缺口 —— 之前每個前端 CH 嘅最後一哩路都要人手。
+
+驗到嘅嘢(全部真 DOM,唔係推論):
+
+- reset card 位置:import panel **正下方**、ServiceNow import 之上
+- 掣 class `bg-danger-soft text-danger`,**唔含 `bg-accent`** ⇒ H6 成立
+- 揀 RTW → Dialog 真彈:`4 ledger cells in scope RTW` · `2 of them cannot be undone` · `VISIO_PLAN1`/`STANDARDPACK` 逐行標 inactive(**同真 DB 兩個 `active=f` 嘅 SKU 完全對得上**)· footer `Reset 4 cells` danger 冇 accent
+- **light + dark 都截圖睇過,dark 零爆** ⇒ DS-4 首次真正驗到
+- 🔴 **全程零寫入**:browser 完之後 DB 仍係 `150 | 10 | 6049 | 10373`
+
+⚠️ Playwright 會喺 **repo root** 掉低嘢(截圖 + `.playwright-mcp/`)—— memory 早有警告,收工已清,`git status` 空。
 
 ### Live 驗證原始結果
 
@@ -71,20 +83,44 @@ Spec §2.3 原本寫住「reset 之後嘅復原手段就係重新 import 一份�
 
 ---
 
-## Closeout(填於 status=closed)
+## Closeout — 2026-08-02
 
 ### Acceptance verification
-_(填)_
+
+**spec §3 全部 ✅**,而且**冇一條要靠人手代驗**(CH-015 嗰次前端要 Chris 睇,今次 Playwright 行到):
+
+| 條 | 證據 |
+|---|---|
+| OpenAPI endpoint + shape | AI 真跑 |
+| dry-run 零寫入 / commit 歸 0 / opcoCode filter / 未知 code 404 | AI 真跑(live + test) |
+| **`assignedQuantity` 不變 · row 數不變 · `LedgerAdjustment` 不變** | **真 DB 前後對比** |
+| audit 過 allowlist | live 查 `AuditLog` + test 直接 call `pickAuditFields` |
+| §2.5 `irreversible` / 逐行標示 | live 真數據閉環(`irreversible: 2`)+ browser 真 DOM |
+| 前端三態流程 · danger 非 primary · **light + dark** | **Playwright 真 render** |
+| api/web 全套 + `npm run lint` | 719 / 225 / exit 0 |
 
 ### Effort summary
 | Day | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
+| 1 | 8 | ~3.5 | −4.5 |
 
 ### Lessons
-_(填)_
+
+**work**
+- **揀驗證對象時先問「壞咗會唔會變紅」**。RTW 之所以係啱嘅目標,係因為佢四格 `assignedQuantity` 全部非 0(22/20/19/17);揀個 assigned 全 0 嘅 OpCo,「assigned 冇變」就退化成 0→0,壞咗都照綠。呢個決定花咗一句 SQL,但佢係成個 V4 有冇意義嘅分水嶺。
+- **先查再答**。Chris 問「刪咗有冇影響」,直覺答案(冇 FK ⇒ 冇影響)喺 schema 層面係啱嘅,但 `assign.service.ts:264` 一行 `increment: 1` 就推翻咗結論。如果照直覺答,就會做咗一個刪 row 嘅 reset。
+- **`npm run lint` 排入收工清單**(CH-015 教訓)。今次中途紅過一次,**喺 push 前捉到**。
+
+**didn't / friction**
+- **第一版把 reset card 巢喺 import panel 入面**,即刻整爛 5 條既有 import test(佢哋 mock 成個 mutations module)。表面係 test 問題,實際係 import panel 冇理由要知 reset 用咩 hook —— 搬做兄弟之後視覺一樣、耦合消失、test 自然回綠。**test 掛得咁齊整,通常係設計喺度講嘢。**
+- **PowerShell ↔ `curl.exe` / `psql` 嘅 quoting**又中兩次(JSON body、SQL)。修法同 CH-015 一樣:**寫檔案再餵**,唔好同 quoting 鬥。
+- **Playwright 掉嘢喺 repo root**(截圖 + `.playwright-mcp/`),而且 `filename` 唔接受 scratchpad 絕對路徑(allowed roots 只有 repo)。收工要記得清。
+
+**carry-over(已入 BACKLOG,本 CH 冇處理)**
+- Catalog 有 **active/inactive 重複 `skuPartNumber`** 嘅 row ⇒ ledger 同一個 OpCo × 同一 partNumber 出現兩行(例:PFU-HK `SPE_E3` 94 同 108)。影響 ledger 顯示同 import 對映。
 
 ### Component design note status updates
-_(填)_
+- 無 —— 新 service 落既有 `LicenseModule`,前端係 Settings 既有 tab 加一張 card。
 
 ---
 
