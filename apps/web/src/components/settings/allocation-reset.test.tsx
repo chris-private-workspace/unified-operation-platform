@@ -1,18 +1,29 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AllocationResetCard } from './allocation-reset';
-import { useAllocationReset } from '@/hooks/mutations';
+import { useAllocationReset, useLedgerFullReset } from '@/hooks/mutations';
 import { useOpcos } from '@/hooks/queries';
-import type { AdminOpco, AllocationResetResult } from '@/lib/api-types';
+import { useCurrentUser } from '@/lib/auth/use-current-user';
+import type {
+  AdminOpco,
+  AllocationResetResult,
+  LedgerFullResetResult,
+  Role,
+} from '@/lib/api-types';
 
 /**
- * CH-016. What is guarded here is the SEQUENCE, not the styling: this control
- * must never be able to write without having shown a dry-run first, and the
- * consequences text must reach the operator verbatim.
+ * CH-016 + CH-017. What is guarded here is the SEQUENCE, not the styling: this
+ * control must never be able to write without having shown a dry-run first, the
+ * consequences text must reach the operator verbatim, and the full reset must
+ * additionally be impossible to commit without retyping its scope.
  */
 
 vi.mock('@/hooks/queries', () => ({ useOpcos: vi.fn() }));
-vi.mock('@/hooks/mutations', () => ({ useAllocationReset: vi.fn() }));
+vi.mock('@/hooks/mutations', () => ({
+  useAllocationReset: vi.fn(),
+  useLedgerFullReset: vi.fn(),
+}));
+vi.mock('@/lib/auth/use-current-user', () => ({ useCurrentUser: vi.fn() }));
 
 const OPCOS: AdminOpco[] = [
   { id: 'rhk', code: 'RHK', displayName: 'RHK Co' },
@@ -55,7 +66,40 @@ const WITH_INACTIVE = (): AllocationResetResult =>
     ],
   });
 
+const FULL_WARNING =
+  'Until you re-import, every affected OpCo × SKU sits at allocated = 0 and the OpCo budget gate will block assigns for those combinations (an admin can still override per line). No ledger rows are deleted. 2 cells lose their assigned baseline, and NO import can put it back — the allocation import never writes assignedQuantity. Until it is reloaded (the assigned-baseline script, or a per-row correction), drift reconciliation has no baseline to compare against.';
+
+const FULL_RESULT = (
+  over: Partial<LedgerFullResetResult> = {},
+): LedgerFullResetResult => ({
+  dryRun: true,
+  affected: 2,
+  scope: 'all',
+  allocatedCells: 1,
+  assignedCells: 2,
+  irreversibleAllocated: 0,
+  rows: [
+    {
+      opcoCode: 'RHK',
+      skuPartNumber: 'SPE_E3',
+      allocatedBefore: 661,
+      assignedBefore: 500,
+      skuActive: true,
+    },
+    {
+      opcoCode: 'RTH',
+      skuPartNumber: 'STANDARDPACK',
+      allocatedBefore: 0,
+      assignedBefore: 80,
+      skuActive: true,
+    },
+  ],
+  warning: FULL_WARNING,
+  ...over,
+});
+
 let mutate: ReturnType<typeof vi.fn>;
+let fullMutate: ReturnType<typeof vi.fn>;
 
 /** Make the next call resolve with `res`. */
 const respondWith = (res: AllocationResetResult) =>
@@ -63,14 +107,35 @@ const respondWith = (res: AllocationResetResult) =>
     opts?.onSuccess?.(res),
   );
 
+const respondFullWith = (res: LedgerFullResetResult) =>
+  fullMutate.mockImplementation((_vars: unknown, opts: any) =>
+    opts?.onSuccess?.(res),
+  );
+
 const clickReset = () =>
   fireEvent.click(screen.getByText(/^Reset allocation…$/));
 
+/** Two selects now — mode first, scope second. */
+const modeSelect = () => screen.getAllByRole('combobox')[0];
+const scopeSelect = () => screen.getAllByRole('combobox')[1];
+
+const chooseFullMode = () =>
+  fireEvent.change(modeSelect(), { target: { value: 'full' } });
+
+const signedInAs = (role: Role) =>
+  vi.mocked(useCurrentUser).mockReturnValue({ role } as any);
+
 beforeEach(() => {
   vi.mocked(useOpcos).mockReturnValue({ data: OPCOS } as any);
+  signedInAs('ADMIN');
   mutate = vi.fn();
+  fullMutate = vi.fn();
   vi.mocked(useAllocationReset).mockReturnValue({
     mutate,
+    isPending: false,
+  } as any);
+  vi.mocked(useLedgerFullReset).mockReturnValue({
+    mutate: fullMutate,
     isPending: false,
   } as any);
 });
@@ -187,9 +252,7 @@ describe('allocation reset card (CH-016)', () => {
     respondWith(RESULT({ scope: 'RHK' }));
     render(<AllocationResetCard />);
 
-    fireEvent.change(screen.getByRole('combobox'), {
-      target: { value: 'RHK' },
-    });
+    fireEvent.change(scopeSelect(), { target: { value: 'RHK' } });
     clickReset();
 
     expect(mutate.mock.calls[0][0]).toEqual({
@@ -220,5 +283,180 @@ describe('allocation reset card (CH-016)', () => {
     // mid-state (spec §2.4) turns into "why can nobody assign".
     expect(screen.getByText(/import the corrected CSV above/)).toBeTruthy();
     expect(screen.getByText(WARNING)).toBeTruthy();
+  });
+});
+
+/**
+ * CH-017 / ADR-0022. The allocation reset above is recoverable by re-importing;
+ * this one is not, and every test here exists to make that difference visible
+ * BEFORE the commit rather than discoverable after it.
+ */
+describe('full reset mode (CH-017)', () => {
+  it('defaults to allocation-only — the recoverable mode is never the one already selected', () => {
+    render(<AllocationResetCard />);
+
+    expect((modeSelect() as HTMLSelectElement).value).toBe('allocation');
+    expect(screen.getByText(/^Reset allocation…$/)).toBeTruthy();
+  });
+
+  it('offers the full reset to an ADMIN', () => {
+    render(<AllocationResetCard />);
+
+    const option = screen.getByRole('option', {
+      name: /Allocation \+ assigned/,
+    }) as HTMLOptionElement;
+    expect(option.disabled).toBe(false);
+  });
+
+  /**
+   * The backend 403 is the real gate (ADR-0022 D3). This only avoids offering a
+   * control that would refuse them — REGIONAL may reset allocations, not the
+   * assigned baseline.
+   */
+  it('disables it for REGIONAL, who may still use allocation-only', () => {
+    signedInAs('REGIONAL');
+    render(<AllocationResetCard />);
+
+    const option = screen.getByRole('option', {
+      name: /Allocation \+ assigned/,
+    }) as HTMLOptionElement;
+    expect(option.disabled).toBe(true);
+    expect(option.textContent).toContain('admin only');
+  });
+
+  it('flips the reassurance sentence instead of leaving it quietly wrong', () => {
+    render(<AllocationResetCard />);
+    expect(
+      screen.getByText(/is never touched and no ledger rows are deleted/),
+    ).toBeTruthy();
+
+    chooseFullMode();
+
+    expect(
+      screen.queryByText(/is never touched and no ledger rows are deleted/),
+    ).toBeNull();
+    expect(screen.getByText(/no import can restore it/)).toBeTruthy();
+  });
+
+  it('routes to the full-reset endpoint, not the allocation one', () => {
+    respondFullWith(FULL_RESULT());
+    render(<AllocationResetCard />);
+    chooseFullMode();
+
+    fireEvent.click(screen.getByText(/^Full reset…$/));
+
+    expect(fullMutate).toHaveBeenCalledTimes(1);
+    expect(mutate).not.toHaveBeenCalled();
+    expect(fullMutate.mock.calls[0][0]).toEqual({
+      dryRun: true,
+      opcoCode: undefined,
+    });
+  });
+
+  it('shows both before-values, so the assigned column is not a surprise', () => {
+    respondFullWith(FULL_RESULT());
+    render(<AllocationResetCard />);
+    chooseFullMode();
+    fireEvent.click(screen.getByText(/^Full reset…$/));
+
+    expect(screen.getByText('Reset allocation AND assigned to zero?')).toBeTruthy();
+    expect(screen.getByText('661')).toBeTruthy(); // allocated
+    expect(screen.getByText('500')).toBeTruthy(); // assigned
+    expect(screen.getByText(/which re-importing cannot restore/)).toBeTruthy();
+  });
+
+  describe('the typed confirmation (ADR-0022 D6)', () => {
+    const openFullPreview = () => {
+      respondFullWith(FULL_RESULT());
+      render(<AllocationResetCard />);
+      chooseFullMode();
+      fireEvent.click(screen.getByText(/^Full reset…$/));
+    };
+
+    it('blocks the commit until the scope is retyped', () => {
+      openFullPreview();
+
+      const commit = screen.getByText('Reset 2 cells')
+        .closest('button') as HTMLButtonElement;
+      expect(commit.disabled).toBe(true);
+
+      fireEvent.change(screen.getByLabelText('Confirm reset scope'), {
+        target: { value: 'ALL' },
+      });
+
+      expect(commit.disabled).toBe(false);
+    });
+
+    it('rejects a near-miss — the phrase is exact, not fuzzy', () => {
+      openFullPreview();
+
+      fireEvent.change(screen.getByLabelText('Confirm reset scope'), {
+        target: { value: 'all' },
+      });
+
+      expect(
+        (screen.getByText('Reset 2 cells').closest('button') as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+
+    it('sends the confirmation with the commit', () => {
+      openFullPreview();
+      fireEvent.change(screen.getByLabelText('Confirm reset scope'), {
+        target: { value: 'ALL' },
+      });
+
+      respondFullWith(FULL_RESULT({ dryRun: false }));
+      fireEvent.click(screen.getByText('Reset 2 cells'));
+
+      expect(fullMutate.mock.calls[1][0]).toEqual({
+        dryRun: false,
+        opcoCode: undefined,
+        confirm: 'ALL',
+      });
+    });
+
+    /** Scoped resets must be confirmed with the OpCo code, never the habitual ALL. */
+    it('asks for the OpCo code when the reset is scoped', () => {
+      respondFullWith(FULL_RESULT({ scope: 'RHK' }));
+      render(<AllocationResetCard />);
+      chooseFullMode();
+      fireEvent.change(scopeSelect(), { target: { value: 'RHK' } });
+      fireEvent.click(screen.getByText(/^Full reset…$/));
+
+      expect(
+        (screen.getByLabelText('Confirm reset scope') as HTMLInputElement)
+          .placeholder,
+      ).toBe('RHK');
+
+      fireEvent.change(screen.getByLabelText('Confirm reset scope'), {
+        target: { value: 'ALL' },
+      });
+      expect(
+        (screen.getByText('Reset 2 cells').closest('button') as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+
+    it('never asks for it in allocation-only mode', () => {
+      respondWith(RESULT());
+      render(<AllocationResetCard />);
+      clickReset();
+
+      expect(screen.queryByLabelText('Confirm reset scope')).toBeNull();
+      expect(
+        (screen.getByText('Reset 2 cells').closest('button') as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+  });
+
+  it('renders the server warning verbatim, same as allocation-only', () => {
+    respondFullWith(FULL_RESULT());
+    render(<AllocationResetCard />);
+    chooseFullMode();
+    fireEvent.click(screen.getByText(/^Full reset…$/));
+
+    expect(screen.getByText(FULL_WARNING)).toBeTruthy();
   });
 });

@@ -11,6 +11,8 @@ import type {
   CreateRequestBody,
   CreateUserBody,
   ImportFromServiceNowBody,
+  LedgerFullResetBody,
+  LedgerFullResetResult,
   LedgerImportResult,
   LedgerRow,
   LineItemStage,
@@ -234,6 +236,25 @@ export function useAllocationReset() {
   return useMutation({
     mutationFn: (vars: AllocationResetBody) =>
       apiPost<AllocationResetResult>('/license/ledger/allocation/reset', vars),
+    onSuccess: (res) => {
+      if (res.dryRun) return;
+      qc.invalidateQueries({ queryKey: ['license', 'ledger'] });
+    },
+  });
+}
+
+/**
+ * POST /license/ledger/reset — zero BOTH ledger numbers (CH-017 / ADR-0022).
+ *
+ * A separate hook from the one above rather than a flag on it, mirroring the
+ * backend split: the two endpoints do not carry the same risk (this one wipes a
+ * baseline no import can rebuild) or the same roles (ADMIN only).
+ */
+export function useLedgerFullReset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: LedgerFullResetBody) =>
+      apiPost<LedgerFullResetResult>('/license/ledger/reset', vars),
     onSuccess: (res) => {
       if (res.dryRun) return;
       qc.invalidateQueries({ queryKey: ['license', 'ledger'] });

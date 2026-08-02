@@ -116,6 +116,44 @@ export interface AllocationResetResult {
   warning: string;
 }
 
+/**
+ * POST /license/ledger/reset → LedgerFullResetResultDto (CH-017 / ADR-0022).
+ * The stronger sibling of the allocation reset above: it also zeroes
+ * `assignedQuantity`, which no import can rebuild. Rows are never deleted.
+ */
+export interface LedgerFullResetRow {
+  opcoCode: string;
+  skuPartNumber: string;
+  allocatedBefore: number;
+  assignedBefore: number;
+  /** false = the SKU is inactive, so re-importing cannot restore even its allocation */
+  skuActive: boolean;
+}
+
+export interface LedgerFullResetBody {
+  /** omit / true = preview only; false = write zeros */
+  dryRun?: boolean;
+  /** limit to one OpCo by code; omit = every OpCo */
+  opcoCode?: string;
+  /** required on commit — must equal `opcoCode`, or 'ALL' when unscoped */
+  confirm?: string;
+}
+
+export interface LedgerFullResetResult {
+  dryRun: boolean;
+  affected: number;
+  /** the OpCo code it was limited to, or 'all' */
+  scope: string;
+  allocatedCells: number;
+  /** cells losing their assigned baseline — NONE are restorable by re-importing */
+  assignedCells: number;
+  /** subset of allocatedCells whose SKU is inactive */
+  irreversibleAllocated: number;
+  rows: LedgerFullResetRow[];
+  /** server-authored consequences text — render verbatim, do not paraphrase */
+  warning: string;
+}
+
 /** OpCo reference embedded in a ledger row (GET /license/ledger). */
 export interface LedgerOpcoRef {
   code: string;

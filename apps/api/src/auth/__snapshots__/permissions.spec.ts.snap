@@ -42,6 +42,7 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
   "PATCH /license/ledger/:id → roles [ADMIN,REGIONAL,OPCO_IT]",
   "POST /license/ledger/allocation/reset → roles [ADMIN,REGIONAL]",
   "POST /license/ledger/import → roles [ADMIN,REGIONAL]",
+  "POST /license/ledger/reset → roles [ADMIN]",
   "GET /license/ledger/stats → roles [ADMIN,REGIONAL,OPCO_IT]",
   "POST /license/reconcile → roles [ADMIN,REGIONAL]",
   "GET /license/tenant-skus → roles [ADMIN,REGIONAL]",

@@ -22,6 +22,7 @@ import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { AllocationResetService } from './allocation-reset.service';
+import { LedgerFullResetService } from './ledger-full-reset.service';
 import { LedgerReadService } from './ledger-read.service';
 import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
@@ -39,6 +40,10 @@ import {
   AllocationResetRequestDto,
   AllocationResetResultDto,
 } from './dto/allocation-reset.dto';
+import {
+  LedgerFullResetRequestDto,
+  LedgerFullResetResultDto,
+} from './dto/ledger-full-reset.dto';
 import { LedgerRowDto, LedgerStatsDto } from './dto/ledger-read.dto';
 import { UpdateLedgerDto } from './dto/ledger-write.dto';
 import { TenantSkuRowDto, TenantSkuStatsDto } from './dto/tenant-owned.dto';
@@ -60,6 +65,7 @@ export class LicenseController {
     private readonly reconcile: ReconcileService,
     private readonly allocationImport: AllocationImportService,
     private readonly allocationReset: AllocationResetService,
+    private readonly ledgerFullReset: LedgerFullResetService,
     private readonly ledgerRead: LedgerReadService,
     private readonly ledgerWrite: LedgerWriteService,
     private readonly tenantOwned: TenantOwnedService,
@@ -137,6 +143,27 @@ export class LicenseController {
     @Body() dto: AllocationResetRequestDto,
   ): Promise<AllocationResetResultDto> {
     return this.allocationReset.reset(actor.id, dto);
+  }
+
+  /**
+   * Ledger full reset (CH-017 / ADR-0022) — zero BOTH numbers so the ledger can
+   * be repopulated from scratch. Rows are never deleted.
+   *
+   * ADMIN only, unlike the allocation reset directly above, and the difference
+   * is not tidiness: a wiped allocation comes back with an import, a wiped
+   * assigned baseline does not (ADR-0004 #5) — it needs ADR-0014's script. The
+   * two operations do not carry the same risk, so they do not carry the same
+   * roles. `confirm` in the body is the second gate (ADR-0022 D6).
+   */
+  @Post('ledger/reset')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: LedgerFullResetResultDto })
+  resetLedger(
+    @CurrentUser() actor: AuthUser,
+    @Body() dto: LedgerFullResetRequestDto,
+  ): Promise<LedgerFullResetResultDto> {
+    return this.ledgerFullReset.reset(actor.id, dto);
   }
 
   /**
