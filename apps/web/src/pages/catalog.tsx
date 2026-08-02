@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Info, RefreshCw } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Info,
+  RefreshCw,
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +18,7 @@ import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { useCatalog } from '@/hooks/queries';
 import { useUpdateCatalog } from '@/hooks/mutations';
 import { apiPost } from '@/lib/api';
+import { buildCatalogCsv } from '@/lib/catalog-export';
 import type { CatalogSyncResult, SkuCatalog } from '@/lib/api-types';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -190,6 +197,27 @@ export function Catalog() {
     safePage * PAGE_SIZE + PAGE_SIZE,
   );
 
+  // CH-018 — the whole catalog in one file, because the table shows 8 rows at a
+  // time with no search: finding which aliases exist for an allocation import
+  // otherwise means paging through ~12 screens.
+  const downloadCatalog = () => {
+    const { csv, fileName, skuCount } = buildCatalogCsv(rows);
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: 'text/csv;charset=utf-8' }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    // "active" is stated on every export, not just documented once: the read
+    // endpoint filters inactive SKUs out entirely (spec §2.4), so this file is
+    // never the full catalog and nobody should have to remember that.
+    flash(`Exported ${skuCount} active ${skuCount === 1 ? 'SKU' : 'SKUs'} to ${fileName}`, 'ok');
+  };
+
   return (
     <div className="flex flex-col gap-[16px]">
       {/* toolbar */}
@@ -199,21 +227,33 @@ export function Catalog() {
             ? `${rows.length} ${rows.length === 1 ? 'SKU' : 'SKUs'} · synced from tenant ${formatDateTime(lastSynced)}`
             : ' '}
         </span>
-        <Button
-          variant="primary"
-          size="md"
-          disabled={sync.isPending}
-          onClick={() => sync.mutate()}
-          icon={
-            <RefreshCw
-              size={15}
-              strokeWidth={2}
-              className={cn(sync.isPending && 'animate-spin')}
-            />
-          }
-        >
-          Sync catalog from tenant
-        </Button>
+        {/* Export is `secondary`: this view's one primary stays Sync (H6). */}
+        <div className="flex items-center gap-[10px]">
+          <Button
+            variant="secondary"
+            size="md"
+            disabled={rows.length === 0}
+            onClick={downloadCatalog}
+            icon={<Download size={15} strokeWidth={2} />}
+          >
+            Export CSV
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            disabled={sync.isPending}
+            onClick={() => sync.mutate()}
+            icon={
+              <RefreshCw
+                size={15}
+                strokeWidth={2}
+                className={cn(sync.isPending && 'animate-spin')}
+              />
+            }
+          >
+            Sync catalog from tenant
+          </Button>
+        </div>
       </div>
 
       <Card padded={false}>
@@ -346,10 +386,15 @@ export function Catalog() {
         )}
       </Card>
 
-      <p className="flex items-center gap-[7px] text-[11.5px] text-fg-subtle">
-        <Info size={13} strokeWidth={2} />
-        Part number &amp; skuId are system-owned. Only alias, category and
-        base-flag are editable.
+      <p className="flex items-start gap-[7px] text-[11.5px] leading-[1.5] text-fg-subtle">
+        <Info size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
+        <span>
+          Part number &amp; skuId are system-owned. Only alias, category and
+          base-flag are editable. Export CSV gives you every{' '}
+          <span className="font-medium">active</span> SKU — a read-only
+          reference for filling the allocation import template; deactivated SKUs
+          are not listed here at all.
+        </span>
       </p>
 
       {editing && (
