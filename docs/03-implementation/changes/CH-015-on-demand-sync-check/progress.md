@@ -60,11 +60,16 @@ status: closed          # in-progress | closed
 | Hash | Subject |
 |---|---|
 | `35b5fe6` | feat(fulfilment): CH-015 request 層 on-demand Azure sync 檢查 |
-| `6088310` | docs(planning): BACKLOG 記低 CH-015 — 實作完成,待 V5 browser 補驗 |
+| `6088310` | docs(planning): BACKLOG 記低 CH-015 |
+| `888e7bd` | docs(planning): 記低 push + PR #66 |
+| `056c665` | docs(planning): CH-015 收官 — closeout summary + 座標同步 |
+| `94f95d9` | Merge origin/main — 解 `BACKLOG.md` 衝突(PR #64/#65 喺我開 branch 之後 merge 咗,兩邊都喺 A 段表格頂插新行;merge 唔 rebase,因為已 push,冇必要 force push) |
+| `a49e9c2` | style(fulfilment): 修 prettier 格式(CI lint fail,見 Lessons) |
+| **`baffed7`** | **Merge pull request #66 → `main`**(2026-08-01) |
 
-Branch `feat/fulfilment-on-demand-sync-check`(從 `main` 開,唔污染 CH-014 個 PR #64)→ **PR #66**。
-🔴 push / PR 兩步都**獨立驗過真**(memory `git-network-output-unreliable`:兩者都會假報成功):
-`git ls-remote` 返嘅 SHA = local HEAD `6088310858…`;`gh pr view 66` 返 `state: OPEN` · `main ← feat/fulfilment-on-demand-sync-check` · 兩個 commit oid 對得上。
+Branch `feat/fulfilment-on-demand-sync-check`(從 `main` 開,唔污染 CH-014 個 PR #64)→ **PR #66 已 merge,branch 已刪**(本地 + remote)。
+🔴 push / PR / merge **三步都獨立驗過真**(memory `git-network-output-unreliable`:三者都會假報成功):
+`git ls-remote` 返嘅 SHA = local HEAD · `gh pr view 66` 返 `state: OPEN` → 後來 `SUCCESS` + `MERGEABLE` · merge 唔信 `gh` 講,而係查 **`git log main -- sync-check.service.ts`** 真係返 `35b5fe6` ⇒ code 確實喺 main 上。
 
 ---
 
@@ -100,6 +105,9 @@ Branch `feat/fulfilment-on-demand-sync-check`(從 `main` 開,唔污染 CH-014 �
 - **三態 body 而唔係 429**:寫 test 嗰陣先真正見到價值 —— 前端嗰條「throttle 唔可以 render 成未 sync」嘅 test,如果用 429 就要 assert error path,寫出嚟會鬆好多。
 
 **didn't / friction**
+- 🔴 **收工漏跑 lint,PR CI 一開就紅**(closeout 之後先發生,補記於此)。掛嘅係兩個**純 prettier 格式**:`sync-check.service.spec.ts` 個 import 過長冇拆行 · `license-ops.boundary.spec.ts` 用咗單引號 + `\'` escape(prettier 要雙引號)。零邏輯問題,`eslint --fix` 一鍵清,api 700 test 仍綠。
+  **值得記嘅唔係「今次唔記得」** —— `CLAUDE.md §12` 明明列住「Linter / formatter run 過?」。真正嘅教訓係:嗰次 test 700 綠、`tsc --noEmit` 乾淨、live 打真 Graph 驗齊、`ui-design` skill 都跑埋 —— **全部係我自己揀嘅驗證,而 CI 真正會 gate 嗰樣一次都冇跑**。
+  ⇒ **收工前跑 CI 嗰條命令本身(`npm run lint`),唔好跑「我覺得等價」嘅嘢。** 已收入 memory `feedback_local-build-verification-traps` §3(同嗰份 memory 原本兩個陷阱同源:**壞咗都照綠**;呢個變種係「我驗嘅全部綠,但我冇驗會 gate 我嗰樣」)。
 - **PowerShell 傳 JSON 畀 `curl.exe` 嘅 quoting 坑**:`-d '{\"a\":\"b\"}'` 靜靜傳咗字面反斜線,回 400。**唔好同 quoting 鬥** —— 寫 body 落檔案再 `-d "@file"`,一次搞掂。
 - **Browser 驗證仍然係本項目嘅結構性缺口**(memory `ui-verification-route` 記錄咗好耐):`claude-in-chrome` 連唔上,本 session 亦冇 Playwright MCP ⇒ **任何前端 CH 嘅最後一哩路都要人手**。呢次靠 7 條真 render 嘅 component test 補到大部分,但 light/dark 觀感補唔到。
 
