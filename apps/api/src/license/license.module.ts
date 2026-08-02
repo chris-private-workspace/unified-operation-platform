@@ -3,6 +3,7 @@ import { IntegrationModule } from '../integration/integration.module';
 import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
+import { AllocationResetService } from './allocation-reset.service';
 import { LedgerReadService } from './ledger-read.service';
 import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
@@ -21,6 +22,10 @@ import { LicenseController } from './license.controller';
     CatalogService,
     ReconcileService,
     AllocationImportService,
+    // CH-016 — the reverse of the import: zero allocatedQuantity so a bad
+    // upload can be redone. Separate service because the two share nothing but
+    // the column they write, and only one of them is destructive.
+    AllocationResetService,
     LedgerReadService,
     LedgerWriteService,
     TenantOwnedService,
@@ -29,6 +34,10 @@ import { LicenseController } from './license.controller';
     CatalogService,
     ReconcileService,
     AllocationImportService,
+    // CH-016 — the reverse of the import: zero allocatedQuantity so a bad
+    // upload can be redone. Separate service because the two share nothing but
+    // the column they write, and only one of them is destructive.
+    AllocationResetService,
     LedgerReadService,
     LedgerWriteService,
     TenantOwnedService,

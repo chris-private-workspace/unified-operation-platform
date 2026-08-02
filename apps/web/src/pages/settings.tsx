@@ -22,6 +22,7 @@ import { useSignOut } from '@/lib/auth/use-sign-out';
 import { getLocalProfile } from '@/lib/auth/local-profile';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { AllocationImportPanel } from '@/components/settings/allocation-import';
+import { AllocationResetCard } from '@/components/settings/allocation-reset';
 import { UsersPanel } from '@/components/settings/users-panel';
 import { OpcosPanel } from '@/components/settings/opcos-panel';
 import { PermissionsPanel } from '@/components/settings/permissions-panel';
@@ -238,6 +239,11 @@ export function Settings() {
         {tab === 'integrations' && (
           <>
             <AllocationImportPanel />
+            {/* CH-016 — the reverse of the import, so it sits directly under
+                it: the only way anyone arrives here is "I just uploaded the
+                wrong file". Kept a sibling rather than nested inside the import
+                panel so neither has to know about the other's hooks. */}
+            <AllocationResetCard />
             {/* CH-013 — renders nothing for non-ADMIN (ADR-0021 D3). */}
             <ServiceNowImportPanel />
             <IntegrationsPanel />

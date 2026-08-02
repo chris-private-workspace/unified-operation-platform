@@ -84,6 +84,38 @@ export interface LedgerImportResult {
   unknownOpcoHeaders: string[];
 }
 
+/**
+ * POST /license/ledger/allocation/reset → AllocationResetResultDto (CH-016).
+ * The way back out of a bad import: the import is upsert-only, so a cell that
+ * was in the bad CSV but not the corrected one can only be cleared here.
+ */
+export interface AllocationResetRow {
+  opcoCode: string;
+  skuPartNumber: string;
+  before: number;
+  /** false = the SKU is inactive, so re-importing cannot restore this cell */
+  skuActive: boolean;
+}
+
+export interface AllocationResetBody {
+  /** omit / true = preview only; false = write zeros */
+  dryRun?: boolean;
+  /** limit to one OpCo by code; omit = every OpCo */
+  opcoCode?: string;
+}
+
+export interface AllocationResetResult {
+  dryRun: boolean;
+  affected: number;
+  /** the OpCo code it was limited to, or 'all' */
+  scope: string;
+  /** subset of `affected` whose SKU is inactive — re-import cannot restore these */
+  irreversible: number;
+  rows: AllocationResetRow[];
+  /** server-authored consequences text — render verbatim, do not paraphrase */
+  warning: string;
+}
+
 /** OpCo reference embedded in a ledger row (GET /license/ledger). */
 export interface LedgerOpcoRef {
   code: string;
