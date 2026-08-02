@@ -15,6 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "seed": "ts-node prisma/seed.ts",
     "baseline:assigned": "ts-node prisma/init-assigned-baseline.ts",
+    "reset:ledger": "node --env-file-if-exists=.env -r ts-node/register prisma/reset-ledger.ts",
     "email:check": "ts-node scripts/send-connectivity-check.ts",
     "intake:from-sn": "node --use-system-ca -r ts-node/register scripts/intake-from-servicenow.ts",
     "seed:sn-onboarding": "node --use-system-ca -r ts-node/register scripts/seed-servicenow-onboarding.ts",

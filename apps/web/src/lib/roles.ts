@@ -61,3 +61,16 @@ export function canRepairOutbound(role: Role | undefined): boolean {
 export function canOverrideBudget(role: Role | undefined): boolean {
   return role === 'ADMIN';
 }
+
+/**
+ * Wiping the ledger's assigned baseline is ADMIN-only (CH-017 / ADR-0022 D3),
+ * narrower than the allocation reset next to it (ADMIN + REGIONAL). The reason
+ * is asymmetric recoverability, not seniority: a wiped allocation comes back
+ * with an import, a wiped assigned baseline needs the ops script.
+ *
+ * Separate predicate for the same reason as the two above — the backend 403 is
+ * the real authority; this only decides whether the option is offered.
+ */
+export function canFullResetLedger(role: Role | undefined): boolean {
+  return role === 'ADMIN';
+}

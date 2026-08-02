@@ -57,6 +57,17 @@ export const AUDIT_ACTIONS = {
    * is worth attributing.
    */
   ALLOCATION_RESET: 'allocation.reset',
+  /**
+   * CH-017 / ADR-0022 — the same operation as allocation.reset plus the one
+   * column the platform cannot rebuild: `assignedQuantity`.
+   *
+   * Its own action rather than a flag on allocation.reset, for the reason
+   * ASSIGN_BUDGET_OVERRIDE is its own action too — "show me every time somebody
+   * wiped the reconciliation baseline" has to be one query, not a scan for a
+   * boolean inside a busier event. The per-cell trail lives in LedgerAdjustment
+   * (ADR-0022 D4); this row is the batch attribution.
+   */
+  LEDGER_FULL_RESET: 'ledger.full_reset',
   DRIFT_RESOLVE: 'drift.resolve',
   /**
    * W31 / ADR-0011 Decision 8 — repairing an outbound failure is a human action
@@ -134,6 +145,7 @@ export type AuditTargetType =
   | 'DriftAlert'
   | 'AllocationImport'
   | 'AllocationReset'
+  | 'LedgerFullReset'
   | 'OutboundFailure'
   | 'ConnectorConfig'
   | 'RequestLineItem'
@@ -176,6 +188,17 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
      * same reasoning the import does not (one reset can touch hundreds).
      */
     AllocationReset: ['affected', 'scope'],
+    /**
+     * CH-017 / ADR-0022 — same batch-summary shape as AllocationReset, with the
+     * two counts split apart. `assignedCells` is the number worth reading on its
+     * own: those are the cells no re-import can rebuild (ADR-0004 #5), so "how
+     * much of the reconciliation baseline did this wipe" must be answerable from
+     * the audit row without a join to LedgerAdjustment.
+     *
+     * Same deliberate omission as AllocationReset: no room for WHICH cells. That
+     * trail exists per-cell in LedgerAdjustment (D4), under narrower reads.
+     */
+    LedgerFullReset: ['affected', 'scope', 'allocatedCells', 'assignedCells'],
     /**
      * Event-only, like user.password_change. The row's own payload already
      * lives in OutboundFailure and carries a UPN — copying it into the audit

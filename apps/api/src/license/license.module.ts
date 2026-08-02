@@ -4,6 +4,7 @@ import { CatalogService } from './catalog.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { AllocationResetService } from './allocation-reset.service';
+import { LedgerFullResetService } from './ledger-full-reset.service';
 import { LedgerReadService } from './ledger-read.service';
 import { LedgerWriteService } from './ledger-write.service';
 import { TenantOwnedService } from './tenant-owned.service';
@@ -26,6 +27,10 @@ import { LicenseController } from './license.controller';
     // upload can be redone. Separate service because the two share nothing but
     // the column they write, and only one of them is destructive.
     AllocationResetService,
+    // CH-017 / ADR-0022 — zeroes BOTH numbers. Its own service rather than a
+    // flag on the one above, so that service's "assignedQuantity never appears
+    // in my write path" invariant stays true (ADR-0022 D2).
+    LedgerFullResetService,
     LedgerReadService,
     LedgerWriteService,
     TenantOwnedService,
@@ -38,6 +43,10 @@ import { LicenseController } from './license.controller';
     // upload can be redone. Separate service because the two share nothing but
     // the column they write, and only one of them is destructive.
     AllocationResetService,
+    // CH-017 / ADR-0022 — zeroes BOTH numbers. Its own service rather than a
+    // flag on the one above, so that service's "assignedQuantity never appears
+    // in my write path" invariant stays true (ADR-0022 D2).
+    LedgerFullResetService,
     LedgerReadService,
     LedgerWriteService,
     TenantOwnedService,
