@@ -1,6 +1,8 @@
 # 07 — UAT As-Built(實際部署記錄)
 
-> 實際跑緊嘅環境快照。**最後核實 2026-07-30**(首次部署 W33 / 2026-07-22)。**唔含任何 secret**(值喺 running env / gitignored persistent params 檔)。
+> 實際跑緊嘅環境快照。**最後核實 2026-08-02**(首次部署 W33 / 2026-07-22)。**唔含任何 secret**(值喺 running env / gitignored persistent params 檔)。
+>
+> 🔴 **本檔曾經過時而唔自知**:2026-08-02 部署前實測,發現佢寫住現行係 `uat-1bc7cdb`,而真實跑緊嘅係 **`uat-7e1f00b`**(W41 部署完冇更新呢份)。⇒ **每次部署完必須即刻更新呢個 section**,否則下一次部署會由錯誤前提開始(例如以為要重跑 W41 已經做咗嘅嘢)。同 `CLAUDE.md §14` 嗰條座標紀律同源。
 > 部署路徑見 [`04-deploy-runbook.md`](./04-deploy-runbook.md);過程詳錄 `docs/01-planning/W33-deploy-exec/progress.md`。
 
 ## Subscription / 位置
@@ -17,16 +19,16 @@
 | 資源 | 名 | 備註 |
 |---|---|---|
 | ACR | `acruopuat`(`acruopuat.azurecr.io`)| Basic · admin enabled |
-| api image | `uop-api:uat-1bc7cdb` | **BUG-008 修復後**(W35 → CH-011 全部功能,含 ADR-0015 sync sweep)· self-migrate entrypoint · devDeps |
-| web image | `uop-web:uat-1bc7cdb` | 同 tag · nginx Host fix · break-glass(無 VITE_ENTRA)|
+| api image | `uop-api:uat-629d018` | **2026-08-02** · 含 W42(ADR-0020 default SKU)+ CH-013 + CH-016/017(ledger reset 兩支)· self-migrate entrypoint · devDeps |
+| web image | `uop-web:uat-629d018` | 同 tag · 含 CH-018 catalog export · nginx Host fix · break-glass(無 VITE_ENTRA)|
 | PostgreSQL | `psql-uop-uat`(v16 Burstable B1ms)| DB `platform` · public + "Allow Azure services" |
 | Log Analytics | `law-uop-uat` | ACA container log |
 | Key Vault | `kv-uop-uat` | **建咗但未 wire**(data-plane 被 proxy 擋;secret 暫用 ACA native)|
 | ACA env | `cae-uop-uat` | 綁 `law-uop-uat` |
-| api app | `ca-uop-api` | **internal** ingress · targetPort 3000 · `allowInsecure:true` · 1 replica · revision `--0000006` RunningAtMaxScale/Healthy |
-| web app | `ca-uop-web` | **external** ingress · targetPort 8080 · 1-2 replica · revision `--0000005` Running/Healthy |
+| api app | `ca-uop-api` | **internal** ingress · targetPort 3000 · `allowInsecure:true` · 1 replica · revision **`--0000011`** RunningAtMaxScale/Healthy |
+| web app | `ca-uop-web` | **external** ingress · targetPort 8080 · 1-2 replica · revision **`--0000007`** Running/Healthy |
 
-> **api container env(2026-07-30 實測)= 19 個**,含 `ACS_CONNECTION_STRING`(secretRef)· `ACS_SENDER_ADDRESS`(前兩者 2026-07-29 由 owner 直接設落 container)· `APP_BASE_URL`(設之前係 18)。**即 email 配置齊、寄得出。** template 亦已接線(CH-012)。
+> **api container env(2026-08-02 重驗,仍然 19 個)**,含 `ACS_CONNECTION_STRING`(secretRef)· `ACS_SENDER_ADDRESS`(前兩者 2026-07-29 由 owner 直接設落 container)· `APP_BASE_URL`(設之前係 18)。**即 email 配置齊、寄得出。** template 亦已接線(CH-012)。
 >
 > 🔴 **唔好由 template 推論 container** —— 兩本獨立嘅帳:日常部署走 `--image` 唔碰 template,而 env 可以直接設落 container。查一律用 `az containerapp show --query "…env[].{name,secretRef}"`,唔信文件(呢份文件本身曾經寫錯「只有 16 個」)。
 
@@ -68,7 +70,22 @@ PYTHONIOENCODING=utf-8 az containerapp update -g RG-RCITest-RAPO-N8N -n ca-uop-a
 
 > 🔴 **revision `Running/Healthy` 係唯一可接受嘅 pass 標準。** `az acr build` Succeeded 只證明 image build 到,唔證明佢起得身 —— BUG-008 就係 build 綠、626 test 綠、lint 零 output,但每個容器一起身就 CrashLoopBackOff(見 `04 §8.5`)。
 
-**部署歷史**:`uat-mig3` / `uat-web2`(W33)→ `uat-0cf0cf3`(W34,api `--0000003` / web `--0000002`)→ `uat-2b5057a`(**failed**,BUG-008,rollback)→ **`uat-1bc7cdb`**(現行,api `--0000006` / web `--0000005`)。
+**部署歷史**:`uat-mig3` / `uat-web2`(W33)→ `uat-0cf0cf3`(W34,api `--0000003` / web `--0000002`)→ `uat-2b5057a`(**failed**,BUG-008,rollback)→ `uat-1bc7cdb`(api `--0000006` / web `--0000005`)→ `uat-7e1f00b`(W41,api `--0000010` / web `--0000006` —— **當時冇更新本檔**)→ **`uat-629d018`**(現行,2026-08-02,api `--0000011` / web `--0000007`)。
+
+### 2026-08-02 部署(`uat-7e1f00b` → `uat-629d018`,70 個 commit)
+
+走 **image-only** 路(唔碰 secret / 唔走全量 ARM)。部署前 preflight 四項實測:
+
+| 檢查 | 結果 |
+|---|---|
+| 新 migration | **1 個**(`20260731012942_add_default_onboarding_sku`,ADR-0020)→ 隨新 revision **自動跑**(`RUN_MIGRATIONS_ON_START=true`) |
+| 新 required env | **冇** —— 全部 `getOrThrow` key 已設;唯一未設嘅 `N8N_OUTBOUND_WEBHOOK_KEY` 喺上一版已經一直未設而跑得住 |
+| 新 dependency | **冇** —— `apps/api/package.json` 只加咗 npm scripts |
+| `aca.json` 改動 | 有(CH-012 ACS 接線),**但 container 早已有嗰三個 env** ⇒ template 只係追返現況,image-only 唔會漏嘢。走全量 ARM 反而有「params 檔冇 ACS 真值 → 抹走 container 現值」嘅風險 |
+
+**BUG-008 複查**:CH-017 加咗 `apps/api/prisma/reset-ledger.ts`(`src/` 以外嘅 `.ts`,正正係 §04 §8.5 嗰個觸發條件)—— `tsconfig.build.json` 已 `exclude` `prisma`/`scripts`,閘門有效。
+
+**Smoke(逐層 + 對照組)**:SPA `200` · `/api/docs/api` `200` · `POST /api/license/ledger/reset` 無 token → **`401`**(CH-017 endpoint 存在)· 同一形狀嘅**不存在 endpoint → `404`** ⇒ 呢個對照組先令上面嗰個 401 有意義。前端另抽 JS bundle 實搜字串,`Export CSV` / `sku-catalog.csv` / `Base licence`(CH-018)同 `Allocation + assigned` / `Confirm reset scope`(CH-017)全部命中。
 
 ## Deferred → BACKLOG `DEPLOY-harden`
 
