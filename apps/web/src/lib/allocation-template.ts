@@ -1,3 +1,4 @@
+import { BOM, csvField } from './csv';
 import type { AdminOpco, LedgerRow, SkuCatalog } from './api-types';
 
 // Allocation CSV 範本生成(W35 F2)。純函數,唔掂 DOM —— 下載動作留喺 component。
@@ -15,9 +16,6 @@ import type { AdminOpco, LedgerRow, SkuCatalog } from './api-types';
 //
 // `Grand Total` 欄刻意唔生 —— import 會忽略佢(allocation-import.service.ts:60),
 // 生出嚟只會令操作者以為要維護個總數。
-
-/** U+FEFF。用 fromCharCode 而唔係字面字元 —— 隱形字元喺 source 裡係地雷。 */
-const BOM = String.fromCharCode(0xfeff);
 
 export interface TemplateInput {
   opcos: AdminOpco[];
@@ -106,9 +104,4 @@ export function buildAllocationTemplate(input: TemplateInput): TemplateResult {
     skuCount: curated.length,
     uncuratedSkus,
   };
-}
-
-/** RFC 4180 引號規則 —— 只在需要時加引號,`"` double escape(對得住後端 parseCsv)。 */
-function csvField(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
