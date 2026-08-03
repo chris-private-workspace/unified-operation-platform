@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **CH-018 收官(2026-08-02)** — 後端業務層 / 前端 / AUTH / 整合全鏈已落地;下一個 pending 見 `BACKLOG.md`(**真相 SSOT**,呢格只寫最近一個座標) |
+| Phase | **CH-019 收官(2026-08-03)** — 後端業務層 / 前端 / AUTH / 整合全鏈已落地;下一個 pending 見 `BACKLOG.md`(**真相 SSOT**,呢格只寫最近一個座標) |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |

@@ -41,6 +41,67 @@ export interface UpdateCatalogBody {
   isBaseLicense?: boolean;
 }
 
+/**
+ * POST /license/catalog/import → CatalogImportResultDto (CH-019 / ADR-0023).
+ * The SKU Catalog export, edited and uploaded back. SKUs are matched on skuId;
+ * only the three curated columns are writable.
+ */
+export interface CatalogImportBody {
+  csv: string;
+  dryRun?: boolean;
+  /** Required to commit when the file clears any business alias (D6). */
+  confirmClears?: boolean;
+}
+
+export interface CatalogTextChange {
+  before: string | null;
+  after: string | null;
+}
+
+export interface CatalogFlagChange {
+  before: boolean;
+  after: boolean;
+}
+
+export interface CatalogImportChange {
+  skuId: string;
+  skuPartNumber: string;
+  displayName: string;
+  /** Present only when that field changed. */
+  alias?: CatalogTextChange;
+  category?: CatalogTextChange;
+  isBaseLicense?: CatalogFlagChange;
+  /** Alias goes from a value to none — its consequence is invisible on screen. */
+  clearsAlias: boolean;
+}
+
+export interface CatalogImportSummary {
+  rows: number;
+  matched: number;
+  changes: number;
+  aliasClears: number;
+}
+
+export interface CatalogImportResult {
+  dryRun: boolean;
+  committed: number;
+  summary: CatalogImportSummary;
+  changes: CatalogImportChange[];
+  skippedSkuIds: string[];
+  unknownColumns: string[];
+}
+
+/** ApiError.detail shape for a 400 the import panel renders (not just toasts). */
+export interface CatalogImportErrorDetail {
+  code?: string;
+  collisions?: { alias: string; skuPartNumbers: string[] }[];
+  duplicateSkuIds?: string[];
+  duplicateColumns?: string[];
+  invalidBaseValues?: { line: number; value: string }[];
+  foundColumns?: string[];
+  aliasClears?: number;
+}
+
 /** POST /license/catalog/sync → CatalogSyncResultDto */
 export interface CatalogSyncResult {
   created: number;

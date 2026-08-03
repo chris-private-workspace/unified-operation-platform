@@ -6,6 +6,7 @@ import {
   Download,
   Info,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -15,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { Toast } from '@/components/ui/toast';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
+import { CatalogImportPanel } from '@/components/catalog/catalog-import';
 import { useCatalog } from '@/hooks/queries';
 import { useUpdateCatalog } from '@/hooks/mutations';
 import { apiPost } from '@/lib/api';
@@ -157,6 +159,7 @@ export function Catalog() {
   const qc = useQueryClient();
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<SkuCatalog | null>(null);
+  const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     tone: 'ok' | 'danger';
@@ -215,7 +218,10 @@ export function Catalog() {
     // "active" is stated on every export, not just documented once: the read
     // endpoint filters inactive SKUs out entirely (spec §2.4), so this file is
     // never the full catalog and nobody should have to remember that.
-    flash(`Exported ${skuCount} active ${skuCount === 1 ? 'SKU' : 'SKUs'} to ${fileName}`, 'ok');
+    flash(
+      `Exported ${skuCount} active ${skuCount === 1 ? 'SKU' : 'SKUs'} to ${fileName}`,
+      'ok',
+    );
   };
 
   return (
@@ -227,7 +233,7 @@ export function Catalog() {
             ? `${rows.length} ${rows.length === 1 ? 'SKU' : 'SKUs'} · synced from tenant ${formatDateTime(lastSynced)}`
             : ' '}
         </span>
-        {/* Export is `secondary`: this view's one primary stays Sync (H6). */}
+        {/* Export / Import are `secondary`: this view's one primary stays Sync (H6). */}
         <div className="flex items-center gap-[10px]">
           <Button
             variant="secondary"
@@ -238,8 +244,23 @@ export function Catalog() {
           >
             Export CSV
           </Button>
+          {/* CH-019 — the other half of the round trip. Hidden while open so the
+              panel is the only way back out, and so its own Cancel is the single
+              obvious exit. */}
+          {!importing && (
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setImporting(true)}
+              icon={<Upload size={15} strokeWidth={2} />}
+            >
+              Import CSV
+            </Button>
+          )}
+          {/* While the import panel is open it owns the view's single primary
+              (its Preview / Apply); Sync steps down rather than competing (H6). */}
           <Button
-            variant="primary"
+            variant={importing ? 'secondary' : 'primary'}
             size="md"
             disabled={sync.isPending}
             onClick={() => sync.mutate()}
@@ -255,6 +276,15 @@ export function Catalog() {
           </Button>
         </div>
       </div>
+
+      {/* Between toolbar and table: a hundred-row preview should not sit below
+          eight rows of table you have to scroll past to reach it. */}
+      {importing && (
+        <CatalogImportPanel
+          onClose={() => setImporting(false)}
+          onCommitted={(message) => flash(message, 'ok')}
+        />
+      )}
 
       <Card padded={false}>
         {catalog.isLoading ? (
@@ -391,9 +421,10 @@ export function Catalog() {
         <span>
           Part number &amp; skuId are system-owned. Only alias, category and
           base-flag are editable. Export CSV gives you every{' '}
-          <span className="font-medium">active</span> SKU — a read-only
-          reference for filling the allocation import template; deactivated SKUs
-          are not listed here at all.
+          <span className="font-medium">active</span> SKU; edit those three
+          columns and Import CSV applies them in one pass, matching on skuId.
+          Deactivated SKUs are not listed here at all, so they can be neither
+          exported nor imported.
         </span>
       </p>
 

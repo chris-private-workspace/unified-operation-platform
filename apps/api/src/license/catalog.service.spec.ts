@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { CatalogService } from './catalog.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
@@ -222,6 +226,101 @@ describe('CatalogService', () => {
         service.updateEntry('actor-1', 'nope', { category: 'X' }),
       ).rejects.toThrow(NotFoundException);
       expect(audit.logChange).not.toHaveBeenCalled();
+    });
+  });
+
+  // CH-019 / ADR-0023 OQ-1 — the bulk import's collision guard also runs here.
+  // Guarding only the bulk path would leave a back door: one single edit could
+  // create the collision that then blocks every later import.
+  describe('updateEntry — business alias collision guard', () => {
+    const active = { id: 'c1', skuPartNumber: 'SPE_E3', active: true };
+
+    it('rejects an alias already held by another active SKU, and writes nothing', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(active);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c2', skuPartNumber: 'SPE_E5', businessAlias: 'E5 Bundle' },
+      ]);
+
+      await expect(
+        service.updateEntry('actor-1', 'c1', { businessAlias: 'E5 Bundle' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.skuCatalog.update).not.toHaveBeenCalled();
+      expect(audit.logChange).not.toHaveBeenCalled();
+    });
+
+    it('names the SKU already holding it — without listing the row being edited', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(active);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c2', skuPartNumber: 'SPE_E5', businessAlias: 'E5 Bundle' },
+      ]);
+
+      let thrown: BadRequestException | undefined;
+      try {
+        await service.updateEntry('actor-1', 'c1', {
+          businessAlias: 'E5 Bundle',
+        });
+      } catch (err) {
+        thrown = err as BadRequestException;
+      }
+      const response = thrown!.getResponse() as {
+        code: string;
+        message: string;
+      };
+      expect(response.code).toBe('alias-collision');
+      expect(response.message).toContain('SPE_E5');
+      expect(response.message).not.toContain('SPE_E3');
+    });
+
+    it('allows a unique alias through (the guard is not over-broad)', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(active);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c2', skuPartNumber: 'SPE_E5', businessAlias: 'E5 Bundle' },
+      ]);
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('actor-1', 'c1', {
+        businessAlias: 'E3 Bundle',
+      });
+
+      expect(prisma.skuCatalog.update).toHaveBeenCalled();
+    });
+
+    // null is "not curated" — the state most of the catalog is in. Blocking it
+    // would make clearing an alias impossible the moment two SKUs lacked one.
+    it('never blocks clearing an alias', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(active);
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('actor-1', 'c1', { businessAlias: '' });
+
+      expect(prisma.skuCatalog.findMany).not.toHaveBeenCalled();
+      expect(prisma.skuCatalog.update).toHaveBeenCalled();
+    });
+
+    // An inactive SKU's alias takes no part in import matching
+    // (allocation-import.service.ts:42-44), so it cannot collide with anything.
+    it('skips the check for an inactive entry', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue({
+        ...active,
+        active: false,
+      });
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('actor-1', 'c1', {
+        businessAlias: 'E5 Bundle',
+      });
+
+      expect(prisma.skuCatalog.findMany).not.toHaveBeenCalled();
+      expect(prisma.skuCatalog.update).toHaveBeenCalled();
+    });
+
+    it('does not run the check when the alias is not being edited', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue(active);
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('actor-1', 'c1', { category: 'Base' });
+
+      expect(prisma.skuCatalog.findMany).not.toHaveBeenCalled();
     });
   });
 });

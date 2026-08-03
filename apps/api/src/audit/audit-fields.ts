@@ -49,6 +49,15 @@ export const AUDIT_ACTIONS = {
   OPCO_CREATE: 'opco.create',
   OPCO_UPDATE: 'opco.update',
   CATALOG_UPDATE: 'catalog.update',
+  /**
+   * CH-019 / ADR-0023 — batch attribution for a bulk curation upload. The
+   * per-SKU trail is written as ordinary `catalog.update` rows (one upload can
+   * only touch ~100 SKUs, so unlike allocation.import there is no reason to
+   * collapse it), and the alias history of a single SKU must stay answerable in
+   * one query regardless of which path wrote it. This row answers the other
+   * question: was that one upload, and how much of it changed scope.
+   */
+  CATALOG_BULK_CURATE: 'catalog.bulk_curate',
   ALLOCATION_IMPORT: 'allocation.import',
   /**
    * CH-016 — zeroing allocatedQuantity is the only ledger operation that
@@ -144,6 +153,7 @@ export type AuditTargetType =
   | 'SkuCatalog'
   | 'DriftAlert'
   | 'AllocationImport'
+  | 'CatalogImport'
   | 'AllocationReset'
   | 'LedgerFullReset'
   | 'OutboundFailure'
@@ -180,6 +190,15 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'changes',
       'committed',
     ],
+    /**
+     * CH-019 / ADR-0023 — batch summary for a bulk curation upload. Counts
+     * only: WHICH SKUs changed is not summarised here because, unlike the
+     * allocation import, that trail is kept in full as per-SKU SkuCatalog rows.
+     * `aliasClears` earns its own key — those are the SKUs that just left
+     * import scope while keeping their ledger allocation, which is the one
+     * outcome of this operation nothing on screen shows.
+     */
+    CatalogImport: ['rows', 'matched', 'changes', 'aliasClears', 'skipped'],
     /**
      * CH-016 — batch summary, same shape as AllocationImport above. `scope` is
      * an Opco.code (or the literal 'all'), which is already an allowed field on
