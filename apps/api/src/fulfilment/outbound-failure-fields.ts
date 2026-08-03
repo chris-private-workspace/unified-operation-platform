@@ -99,10 +99,15 @@ const PAYLOAD_WHITELIST: Record<OutboundFailureKind, readonly string[]> = {
   ],
   // No requester / UPN: a work note is addressed to a ticket, not a person.
   'servicenow.worknote': ['snTarget', 'note', 'table'],
-  // Same reasoning — a RITM sys_id, the note we wrote, and which transition it
-  // was. No table: seam ④ only ever writes sc_req_item (workflow 2004 has it
-  // baked into its patch URL, so the direct side pins it too).
-  'servicenow.ticket_update': ['snTarget', 'note', 'transition'],
+  // Same reasoning — the ticket's sys_id, the note we wrote, and which
+  // transition it was. No table: seam ④ only ever writes catalog tasks.
+  //
+  // CH-020 — `targetKind` ('ritm' | 'task') joins them. It is not PII and not a
+  // secret; it is the difference between a replay that can succeed and one that
+  // queries `request_item=<task sys_id>` and silently finds nothing. Rows
+  // written before CH-020 have no such key and are read as 'ritm', which is
+  // what they were.
+  'servicenow.ticket_update': ['snTarget', 'targetKind', 'note', 'transition'],
   /**
    * CH-011. PII note, same shape of decision as `request.submit` above: `to` is
    * a personal address and it is stored deliberately, because without it the

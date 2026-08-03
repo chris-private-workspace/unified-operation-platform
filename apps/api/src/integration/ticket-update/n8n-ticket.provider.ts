@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConnectorConfigService } from '../connector-config.service';
 import {
+  TicketTarget,
   TicketUpdateOutcome,
   TicketUpdateProvider,
 } from './ticket-update.provider';
@@ -58,23 +59,43 @@ export class N8nTicketProvider extends TicketUpdateProvider {
   /**
    * The note is deliberately absent from both signatures below: a method may
    * declare fewer parameters than the one it overrides, and nothing here can
-   * use it. `sysId` IS used — it lands in the failure queue, where the first
-   * question is always "which ticket".
+   * use it. The target IS used — its sys_id lands in the failure queue, where
+   * the first question is always "which ticket".
+   *
+   * CH-020 / ADR-0024 D4 — the two target kinds refuse DIFFERENTLY, and the
+   * asymmetry is the honest one rather than an oversight:
+   *
+   *   ritm — throws, exactly as before. Nothing about that path changed, and a
+   *          wrong connector setting should keep looking like the misconfiguration
+   *          it is.
+   *   task — returns an `error` outcome. 2004 cannot address a catalog task at
+   *          all, so this is not "something went wrong reaching n8n", it is the
+   *          provider answering that the ticket did not move — which is exactly
+   *          what `error` means in this seam.
+   *
+   * Either way the caller queues it (ADR-0011 OD4), so neither can turn a
+   * completed assign into a failure.
    */
-  private refuse(action: string, sysId: string): never {
-    throw new Error(
-      `The n8n ticket provider cannot ${action} ${sysId}: workflow 2004 updates ` +
-        'the RITM, but the platform now closes the catalog task instead ' +
-        "(ADR-0018). Switch the n8n-ticket connector back to 'direct' until " +
-        '2004 supports catalog tasks.',
+  private refusal(action: string, target: TicketTarget): string {
+    return (
+      `The n8n ticket provider cannot ${action} ${target.sysId}: workflow 2004 ` +
+      'updates the RITM, but the platform now closes the catalog task instead ' +
+      "(ADR-0018). Switch the n8n-ticket connector back to 'direct' until " +
+      '2004 supports catalog tasks.'
     );
   }
 
-  async markInProgress(sysId: string): Promise<TicketUpdateOutcome> {
-    this.refuse('put a ticket on hold for', sysId);
+  private refuse(action: string, target: TicketTarget): TicketUpdateOutcome {
+    const details = this.refusal(action, target);
+    if (target.kind === 'task') return { status: 'error', details };
+    throw new Error(details);
   }
 
-  async closeComplete(sysId: string): Promise<TicketUpdateOutcome> {
-    this.refuse('close a ticket for', sysId);
+  async markInProgress(target: TicketTarget): Promise<TicketUpdateOutcome> {
+    return this.refuse('put a ticket on hold for', target);
+  }
+
+  async closeComplete(target: TicketTarget): Promise<TicketUpdateOutcome> {
+    return this.refuse('close a ticket for', target);
   }
 }

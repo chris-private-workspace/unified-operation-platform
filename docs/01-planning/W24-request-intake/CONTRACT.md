@@ -103,3 +103,25 @@ class N8nIntakeRequestDto {
 - **D1 完成 + LOCK**(2026-07-15):m2m auth 拍板(static key)+ DTO 合約 + 對映 + **AGENDA 10 條答齊**(§5 已確認)✅。合約 lock,D2 據此落 code。
 - **D2**(下一)据本合約落地:`n8n-intake.dto.ts` + `IntakeKeyGuard` + intake service(resolve opcoCode/skuId → 建 `Request`+lineItems mirror,set sync gate)+ additive migration(line item SN 欄位)+ endpoint `POST /requests/intake`。
 - **D3** H5 test(happy / 401 fail-closed / validation / sync gate / idempotent)。
+
+## 7. Addendum(CH-020 / ADR-0024,2026-08-03)—— 同一條 URL,兩張合約
+
+> 🔴 **本節唔改上面任何 locked 內容。** §3 個 DTO、§4 對映、§5 十條決定,對「唔帶 `mode` 嘅 caller」逐字有效。本節只係記低:呢條 URL 而家仲會接另一張合約。
+
+`POST /requests/intake` 由 CH-020 起靠 **body 有冇 `mode`** 分流:
+
+| body | 綁 | 行為 |
+|---|---|---|
+| 冇 `mode` | `N8nIntakeRequestDto`(**本文件 §3,一個字唔改**) | 同 2026-07-15 lock 完全一樣 |
+| `mode: 1` | `N8nFlatIntakeDto`(`dto/n8n-flat-intake.dto.ts`) | n8n workflow 1001 今日實際送嘅 flat 形狀 |
+| `mode` 其他值 | — | **400,零寫入**(唔估) |
+
+**點解係「加一張」唔係「放寬一張」**:1001 冇送 `serviceNowSysId` 同 `lineItems`。要令佢過到 §3,就要把兩個 required 欄變 optional —— 而 `serviceNowSysId` 正正係 §5.5 嗰個 `@unique` idempotency key,一放寬,**所有** caller 嘅 upsert-or-skip 保護就冇埋。分流做到同樣效果而本文件嘅 caller 零影響。
+
+Flat 路自己有兩件事同 §3 唔同,兩件都唔動本合約:
+
+1. **REQ 用 number 唔用 sysId** —— 平台自己 `getRecordByNumber(..., 'sc_request')` 反查(ADR-0017 D4 OQ-3 先例)。**idempotency key 一個字冇變**,仍然係 `Request.serviceNowSysId`。
+2. **多兩個 line item 欄** `serviceNowTaskSysId` / `serviceNowTaskNumber`(ADR-0024 D1)。⚠️ 佢哋**刻意唔喺 §3 個 DTO 出現** —— 帶住 task sys_id 嘅 line 會行 by-task close,而嗰條路由構造上繞過 ADR-0018 D3 嘅「唯一 active task」保護。唔開放畀 canonical caller = 爆炸半徑細一格。
+
+Auth 不變:同一個 `IntakeKeyGuard` / 同一個 `X-Intake-Key`(§2),兩張合約共用。
+🔴 **部署前提(ADR-0024 OQ-3)**:1001 個 HTTP node 用嘅 credential 叫「n8n Academy API Key」,workflow JSON 睇唔到佢送咩 header。若唔係 `X-Intake-Key`,呢條鏈連 401 都過唔到 —— 要 n8n 側確認。

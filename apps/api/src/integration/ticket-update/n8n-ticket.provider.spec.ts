@@ -1,7 +1,13 @@
 import { ConfigService } from '@nestjs/config';
 import { ConnectorConfigService } from '../connector-config.service';
 import { N8nTicketProvider } from './n8n-ticket.provider';
-import { TicketUpdateProvider } from './ticket-update.provider';
+import {
+  TicketUpdateProvider,
+  type TicketTarget,
+} from './ticket-update.provider';
+
+const RITM: TicketTarget = { kind: 'ritm', sysId: 'RITMSYS1' };
+const TASK: TicketTarget = { kind: 'task', sysId: 'TASKSYS1' };
 
 /**
  * CH-010 — this provider refuses, and the refusal is the behaviour under test.
@@ -45,15 +51,48 @@ describe('N8nTicketProvider (refusal — CH-010 / ADR-0018 D6)', () => {
 
   describe('both transitions refuse', () => {
     it('closeComplete throws rather than returning an outcome', async () => {
-      await expect(provider.closeComplete('RITMSYS1', 'n')).rejects.toThrow(
+      await expect(provider.closeComplete(RITM, 'n')).rejects.toThrow(
         /catalog task/i,
       );
     });
 
     it('markInProgress throws rather than returning an outcome', async () => {
-      await expect(provider.markInProgress('RITMSYS1', 'n')).rejects.toThrow(
+      await expect(provider.markInProgress(RITM, 'n')).rejects.toThrow(
         /catalog task/i,
       );
+    });
+  });
+
+  /**
+   * CH-020 / ADR-0024 D4 — a task target answers instead of throwing.
+   *
+   * Not an inconsistency. Throwing means "the provider could not answer"; 2004
+   * CAN answer about a catalog task, and its answer is that it does not address
+   * them at all. That is the definition of the `error` outcome in this seam. The
+   * caller queues both identically (ADR-0011 OD4), so nothing downstream cares —
+   * but the failure row reads as a capability gap rather than an outage.
+   */
+  describe('a catalog task target answers rather than throwing', () => {
+    it('closeComplete reports an error outcome', async () => {
+      await expect(provider.closeComplete(TASK, 'n')).resolves.toEqual({
+        status: 'error',
+        details: expect.stringMatching(/catalog task/i) as unknown as string,
+      });
+    });
+
+    it('markInProgress reports an error outcome', async () => {
+      const outcome = await provider.markInProgress(TASK, 'n');
+      expect(outcome.status).toBe('error');
+    });
+
+    it('still reaches no HTTP endpoint', async () => {
+      await provider.closeComplete(TASK, 'n');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('never lets the shared secret into the outcome either', async () => {
+      const outcome = await provider.closeComplete(TASK, 'n');
+      expect(JSON.stringify(outcome)).not.toContain('shhh-secret-value');
     });
   });
 
@@ -64,14 +103,14 @@ describe('N8nTicketProvider (refusal — CH-010 / ADR-0018 D6)', () => {
    */
   describe('it does not quietly do something else instead', () => {
     it('never calls workflow 2004', async () => {
-      await expect(provider.closeComplete('RITMSYS1', 'n')).rejects.toThrow();
-      await expect(provider.markInProgress('RITMSYS1', 'n')).rejects.toThrow();
+      await expect(provider.closeComplete(RITM, 'n')).rejects.toThrow();
+      await expect(provider.markInProgress(RITM, 'n')).rejects.toThrow();
 
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('never reaches any HTTP endpoint at all', async () => {
-      await expect(provider.closeComplete('RITMSYS1', 'n')).rejects.toThrow();
+      await expect(provider.closeComplete(RITM, 'n')).rejects.toThrow();
       expect(fetchMock.mock.calls).toHaveLength(0);
     });
   });
@@ -83,13 +122,13 @@ describe('N8nTicketProvider (refusal — CH-010 / ADR-0018 D6)', () => {
    */
   describe('the error explains itself', () => {
     it('names the connector setting to change', async () => {
-      await expect(provider.closeComplete('RITMSYS1', 'n')).rejects.toThrow(
+      await expect(provider.closeComplete(RITM, 'n')).rejects.toThrow(
         /direct/i,
       );
     });
 
     it('names the ADR that decided it', async () => {
-      await expect(provider.markInProgress('RITMSYS1', 'n')).rejects.toThrow(
+      await expect(provider.markInProgress(RITM, 'n')).rejects.toThrow(
         /ADR-0018/,
       );
     });
@@ -99,7 +138,7 @@ describe('N8nTicketProvider (refusal — CH-010 / ADR-0018 D6)', () => {
      * message is the classic place for a secret to escape.
      */
     it('never lets the shared secret into the error', async () => {
-      await expect(provider.closeComplete('RITMSYS1', 'n')).rejects.toThrow(
+      await expect(provider.closeComplete(RITM, 'n')).rejects.toThrow(
         expect.not.stringContaining('shhh-secret-value') as unknown as string,
       );
     });

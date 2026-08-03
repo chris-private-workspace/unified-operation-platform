@@ -7,15 +7,21 @@ import {
 import {
   TASK_STATE,
   TASK_TABLE,
+  TicketTarget,
   TicketUpdateOutcome,
   TicketUpdateProvider,
 } from './ticket-update.provider';
 
+/** Either the task to move, or the reason the platform will not move one. */
+type TaskLookup = { record: ServiceNowRecord } | { error: TicketUpdateOutcome };
+
 /**
  * Default implementation of seam ④ — CH-010 / ADR-0018.
  *
- * Takes a RITM sys_id, finds the catalog task the platform is responsible for,
- * and moves THAT. ServiceNow's own workflow moves the RITM.
+ * Moves a CATALOG TASK and lets ServiceNow's own workflow move the RITM. Which
+ * task depends on what the caller has (CH-020 / ADR-0024 D4): given a RITM it
+ * finds the one active task underneath; given a task it uses that one, after
+ * checking it is still open.
  *
  * Before CH-010 this patched the RITM's state directly. On Ricoh's instance
  * that does not actually close the request — RITM state is driven by its
@@ -35,19 +41,19 @@ export class DirectTicketProvider extends TicketUpdateProvider {
   }
 
   async markInProgress(
-    sysId: string,
+    target: TicketTarget,
     note: string,
   ): Promise<TicketUpdateOutcome> {
-    return this.moveTask(sysId, TASK_STATE.workInProgress, {
+    return this.moveTask(target, TASK_STATE.workInProgress, {
       work_notes: note,
     });
   }
 
   async closeComplete(
-    sysId: string,
+    target: TicketTarget,
     note: string,
   ): Promise<TicketUpdateOutcome> {
-    return this.moveTask(sysId, TASK_STATE.closedComplete, {
+    return this.moveTask(target, TASK_STATE.closedComplete, {
       close_notes: note,
     });
   }
@@ -62,11 +68,18 @@ export class DirectTicketProvider extends TicketUpdateProvider {
    * in this seam.
    */
   private async moveTask(
-    ritmSysId: string,
+    target: TicketTarget,
     state: string,
     notes: ServiceNowUpdate,
   ): Promise<TicketUpdateOutcome> {
-    const task = await this.pickTask(ritmSysId);
+    // The ONLY thing the two targets change is how the task is identified.
+    // Everything below — the assignee rule, the patch, the reported state — is
+    // the same write, which is what keeps the by-task path from becoming a
+    // second, subtly different close.
+    const task =
+      target.kind === 'ritm'
+        ? await this.pickTask(target.sysId)
+        : await this.openTask(target.sysId);
     if ('error' in task) return task.error;
 
     const fields: ServiceNowUpdate = { state, ...notes };
@@ -124,9 +137,7 @@ export class DirectTicketProvider extends TicketUpdateProvider {
    * Request` (exactly the kind this seam is handed), has two. A rule that holds
    * in a sample is not a rule.
    */
-  private async pickTask(
-    ritmSysId: string,
-  ): Promise<{ record: ServiceNowRecord } | { error: TicketUpdateOutcome }> {
+  private async pickTask(ritmSysId: string): Promise<TaskLookup> {
     const tasks = await this.snow.query(
       `request_item=${ritmSysId}^active=true`,
       TASK_TABLE,
@@ -149,6 +160,73 @@ export class DirectTicketProvider extends TicketUpdateProvider {
             : `The request has ${tasks.length} open catalog tasks, so the platform cannot tell which one is its own.`,
       },
     };
+  }
+
+  /**
+   * 🔴 CH-020 / ADR-0024 D5 — the task is already known, so LOOK BEFORE WRITING.
+   *
+   * `pickTask` above never needed this check: its query says `^active=true`, so
+   * a closed task simply is not in the result. A caller-supplied sys_id has no
+   * such filter in front of it, and that difference is the whole reason this
+   * method exists rather than a straight patch.
+   *
+   * It is not a hypothetical either. n8n's own resolver (1001, `Resolve WDA
+   * Task`) queries without an `active` filter and takes the first row, so it can
+   * and does hand over tasks that somebody has since finished — REQ0044049's
+   * SCTASK0071807 was closed and assigned to a real person after intake. Without
+   * this gate the platform would re-close their work and report success.
+   *
+   * `query` rather than `getRecord`: getRecord swallows its errors and returns
+   * null, which would report "ServiceNow is down" as "the task does not exist".
+   * Here a transport failure must throw, per this seam's error contract.
+   */
+  private async openTask(taskSysId: string): Promise<TaskLookup> {
+    const tasks = await this.snow.query(`sys_id=${taskSysId}`, TASK_TABLE, 1);
+    const record = tasks[0];
+    if (!record) {
+      this.logger.warn(
+        `Catalog task ${taskSysId} was not found in ServiceNow — nothing to close`,
+      );
+      return {
+        error: {
+          status: 'error',
+          details:
+            'The catalog task handed over at intake does not exist in ServiceNow, so the platform has nothing to close.',
+        },
+      };
+    }
+
+    if (!this.isActive(record)) {
+      // H4: sys_id + SCTASK number are opaque identifiers, not PII — and they
+      // are what makes this actionable for whoever reads the failure queue.
+      this.logger.warn(
+        `Catalog task ${String(
+          record.number ?? taskSysId,
+        )} is not open — refusing to move it`,
+      );
+      return {
+        error: {
+          status: 'error',
+          details: `ServiceNow does not report catalog task ${String(
+            record.number ?? taskSysId,
+          )} as open, so the platform will not reopen or overwrite it. The licence was still assigned.`,
+        },
+      };
+    }
+    return { record };
+  }
+
+  /**
+   * Fail-closed on anything that is not an explicit yes. The Table API returns
+   * `active` as the string `'true'`/`'false'` by default and as a boolean when
+   * the caller asked for parsed values, so both are accepted — but a missing or
+   * unrecognised value counts as "not open", because the cost of being wrong in
+   * that direction is a queued failure and in the other it is somebody else's
+   * closed ticket being reopened.
+   */
+  private isActive(record: ServiceNowRecord): boolean {
+    const raw: unknown = record.active;
+    return raw === true || raw === 'true';
   }
 
   /**

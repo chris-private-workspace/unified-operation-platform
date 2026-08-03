@@ -238,11 +238,55 @@ describe('AssignService', () => {
       await service.assignLineItem('li1', undefined, ADMIN);
 
       expect(tickets.closeComplete).toHaveBeenCalledWith(
-        'ritm-1',
+        { kind: 'ritm', sysId: 'ritm-1' },
         expect.stringContaining('SPE_E3'),
       );
       // Not both: a close carries the same text in close_notes, so writing the
       // work note as well would PATCH the same ticket twice to say one thing.
+      expect(snow.addWorkNote).not.toHaveBeenCalled();
+    });
+
+    /**
+     * CH-020 / ADR-0024 D6 — a line that carries a catalog task got it from n8n
+     * workflow 1001, which is waiting for THAT task to close.
+     *
+     * 🔴 Both ids present is the case that matters. Falling through to the RITM
+     * would close a different record and still look like it worked, and the
+     * platform would have no way to notice: seam ④ reports `updated` either way.
+     */
+    it('closes the catalog task in preference to this line RITM', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({
+          serviceNowSysId: 'ritm-1',
+          serviceNowTaskSysId: 'task-1',
+          serviceNowTaskNumber: 'SCTASK0071802',
+        }),
+      );
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tickets.closeComplete).toHaveBeenCalledWith(
+        { kind: 'task', sysId: 'task-1' },
+        expect.stringContaining('SPE_E3'),
+      );
+      expect(snow.addWorkNote).not.toHaveBeenCalled();
+    });
+
+    it('closes the catalog task when the line has no RITM at all', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: null, serviceNowTaskSysId: 'task-1' }),
+      );
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tickets.closeComplete).toHaveBeenCalledWith(
+        { kind: 'task', sysId: 'task-1' },
+        expect.any(String),
+      );
+      // The ADR-0020 injected line has no RITM, so without this the work note
+      // fallback would fire and the task would stay open forever.
       expect(snow.addWorkNote).not.toHaveBeenCalled();
     });
 
@@ -871,7 +915,7 @@ describe('AssignService', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(tickets.markInProgress).toHaveBeenCalledWith(
-        'ritm-1',
+        { kind: 'ritm', sysId: 'ritm-1' },
         expect.stringContaining('procurement'),
       );
       // The hold is recorded so the next blocked attempt does not repeat it.
@@ -967,6 +1011,40 @@ describe('AssignService', () => {
 
       expect(failures.record).toHaveBeenCalledWith(
         expect.objectContaining({ kind: 'servicenow.ticket_update' }),
+      );
+    });
+
+    /**
+     * CH-020 — the queued row has to say which record the sys_id is, or the
+     * repair replays it as a RITM and asks ServiceNow which tasks have this task
+     * as their parent. That returns nothing, every time, and the failure would
+     * look unfixable for a reason nobody could see from the row.
+     *
+     * The most likely producer of this row is D5 itself: n8n hands over a task
+     * that has since been closed, the platform declines to reopen it, and the
+     * assign still succeeds.
+     */
+    it('records which kind of ticket a failed task close was against', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1', serviceNowTaskSysId: 'task-1' }),
+      );
+      tickets.closeComplete.mockResolvedValue({
+        status: 'error',
+        details: 'the task is no longer open',
+      });
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).resolves.toBeDefined();
+
+      expect(failures.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            snTarget: 'task-1',
+            targetKind: 'task',
+          }),
+        }),
       );
     });
   });

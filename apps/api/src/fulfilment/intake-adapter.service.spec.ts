@@ -463,6 +463,189 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
       expect(audit.log).toHaveBeenCalledTimes(1); // still one
     });
   });
+
+  // ── CH-020 / ADR-0024: workflow 1001's flat envelope ─────────
+
+  /**
+   * The payload 1001 actually POSTs. Every field here was read off the workflow
+   * JSON (`WF1 - Prepare UOP Intake` + `Attach Task Id`) rather than from prose,
+   * because the last time the two disagreed nobody noticed for a week.
+   */
+  describe('intakeFlat (CH-020)', () => {
+    const flatPayload = () => ({
+      mode: 1,
+      targetUpn: TARGET_EMAIL,
+      targetDisplayName: 'Jane Doe',
+      opcoCode: 'RHK',
+      requesterEmail: 'it.rhk@rapo.com.hk',
+      source: '1001-immediate',
+      requestId: REQ_NUMBER,
+      serviceNowTaskSysId: 'task-sys-1',
+      serviceNowTaskNumber: 'SCTASK0071802',
+    });
+
+    /** 1001 sends no licence line, so the default injection always runs. */
+    const flatMocks = () => {
+      happyMocks();
+      connectorConfig.resolve.mockResolvedValue('guid-e5');
+      prisma.skuCatalog.findUnique.mockResolvedValue({
+        id: 'c-e5',
+        skuId: 'guid-e5',
+        skuPartNumber: 'SPE_E5',
+        active: true,
+      });
+    };
+
+    it('resolves the REQ number to a sysId and keeps it as the idempotency key', async () => {
+      flatMocks();
+
+      await adapter.intakeFlat(flatPayload());
+
+      expect(snow.getRecordByNumber).toHaveBeenCalledWith(
+        REQ_NUMBER,
+        'sc_request',
+      );
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data).toMatchObject({
+        opcoId: 'o-rhk',
+        targetUpn: TARGET_EMAIL,
+        targetDisplayName: 'Jane Doe',
+        requesterEmail: 'it.rhk@rapo.com.hk',
+        // The sysId, not the number — no new key, no new unique constraint.
+        serviceNowSysId: REQ_SYS_ID,
+        serviceNowNumber: REQ_NUMBER,
+      });
+    });
+
+    /**
+     * 🔴 The whole point of the change. Without the task id on the line, the
+     * assign path has nothing to close and falls back to a work note on the
+     * parent REQ — which is what happens today.
+     */
+    it('injects the default SKU and hangs the catalog task off that line', async () => {
+      flatMocks();
+
+      await adapter.intakeFlat(flatPayload());
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create).toHaveLength(1);
+      expect(data.lineItems.create[0]).toMatchObject({
+        skuCatalogId: 'c-e5',
+        quantity: 1,
+        serviceNowTaskSysId: 'task-sys-1',
+        serviceNowTaskNumber: 'SCTASK0071802',
+        // No RITM: nothing in ServiceNow asked for this line (ADR-0020).
+        serviceNowSysId: null,
+      });
+    });
+
+    /** OQ-2 — n8n's own tracking labels are not the platform's business. */
+    it('stores neither mode nor source', async () => {
+      flatMocks();
+
+      await adapter.intakeFlat(flatPayload());
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(JSON.stringify(data)).not.toContain('1001-immediate');
+      expect(data).not.toHaveProperty('mode');
+      expect(data).not.toHaveProperty('source');
+    });
+
+    it('leaves the sync gate shut here too', async () => {
+      flatMocks();
+
+      await adapter.intakeFlat(flatPayload());
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.accountCreatedAt).toBeNull();
+      expect(data.azureSyncedAt).toBeNull();
+    });
+
+    it('is idempotent on the REQ: a repeat push creates nothing', async () => {
+      flatMocks();
+      prisma.request.findUnique.mockResolvedValue({
+        id: 'r1',
+        lineItems: [{ id: 'li-0', skuCatalogId: 'c-e5' }],
+      });
+
+      await adapter.intakeFlat(flatPayload());
+
+      expect(prisma.request.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an OpCo code that is not on this environment', async () => {
+      flatMocks();
+      prisma.opco.findUnique.mockResolvedValue(null);
+
+      await expect(adapter.intakeFlat(flatPayload())).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.request.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an inactive OpCo — the gap the canonical route used to have', async () => {
+      flatMocks();
+      prisma.opco.findUnique.mockResolvedValue({
+        id: 'o-rhk',
+        code: 'RHK',
+        active: false,
+      });
+
+      await expect(adapter.intakeFlat(flatPayload())).rejects.toThrow(
+        /inactive/i,
+      );
+      expect(prisma.request.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a REQ number ServiceNow does not know', async () => {
+      flatMocks();
+      snow.getRecordByNumber.mockResolvedValue(null);
+
+      await expect(adapter.intakeFlat(flatPayload())).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.request.create).not.toHaveBeenCalled();
+    });
+
+    it('treats an unreachable ServiceNow as a 503, not a bad payload', async () => {
+      flatMocks();
+      snow.getRecordByNumber.mockRejectedValue(new Error('ECONNRESET'));
+
+      await expect(adapter.intakeFlat(flatPayload())).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+    });
+
+    /**
+     * A request without a task is still worth creating — 1001's own resolver can
+     * come back empty. It simply falls back to today's close paths.
+     */
+    it('creates the request with no task ref when n8n resolved none', async () => {
+      flatMocks();
+      const dto = flatPayload();
+      delete (dto as Record<string, unknown>).serviceNowTaskSysId;
+      delete (dto as Record<string, unknown>).serviceNowTaskNumber;
+
+      await adapter.intakeFlat(dto);
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create[0]).toMatchObject({
+        serviceNowTaskSysId: null,
+        serviceNowTaskNumber: null,
+      });
+    });
+
+    /** Same treatment the native path gives it: drop, do not fail, do not store raw. */
+    it('drops a malformed requester address instead of failing the onboarding', async () => {
+      flatMocks();
+      const dto = { ...flatPayload(), requesterEmail: 'not an address' };
+
+      await adapter.intakeFlat(dto);
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.requesterEmail).toBeNull();
+    });
+  });
 });
 
 describe('OPCO_BY_JOB_FUNCTION (W36 F1 / MAPPING.md §1)', () => {

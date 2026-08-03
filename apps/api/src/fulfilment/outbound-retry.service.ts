@@ -12,7 +12,10 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
-import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
+import {
+  TicketUpdateProvider,
+  type TicketTarget,
+} from '../integration/ticket-update/ticket-update.provider';
 import { NotificationService } from '../integration/email/notification.service';
 import {
   REPLAYABLE_TEMPLATES,
@@ -211,15 +214,26 @@ export class OutboundRetryService {
     const note = String(payload.note ?? '');
     if (!sysId) {
       throw new BadRequestException(
-        'This ticket failure has no recorded RITM sys_id — nothing to repair.',
+        'This ticket failure has no recorded ticket sys_id — nothing to repair.',
       );
     }
+    /**
+     * CH-020 — a sys_id alone no longer says which record it is. Rows queued
+     * before CH-020 have no `targetKind` and were always RITMs, so the absent
+     * value reads as 'ritm' rather than failing: they are replayable, and the
+     * only alternative would be refusing to repair failures that predate the
+     * change for no reason a reader could act on.
+     */
+    const target: TicketTarget =
+      payload.targetKind === 'task'
+        ? { kind: 'task', sysId }
+        : { kind: 'ritm', sysId };
 
     let outcome;
     if (transition === TICKET_TRANSITIONS.CLOSE) {
-      outcome = await this.tickets.closeComplete(sysId, note);
+      outcome = await this.tickets.closeComplete(target, note);
     } else if (transition === TICKET_TRANSITIONS.HOLD) {
-      outcome = await this.tickets.markInProgress(sysId, note);
+      outcome = await this.tickets.markInProgress(target, note);
     } else {
       throw new BadRequestException(
         `Unknown ticket transition '${String(transition)}' — cannot repair`,
