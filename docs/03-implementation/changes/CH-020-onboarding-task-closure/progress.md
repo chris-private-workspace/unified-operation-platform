@@ -80,15 +80,32 @@ spec §2.3 只講「注入嗰條 line 寫入」冇講點入。加落 canonical l
 
 驗完三行 seed 都刪返(佢哋唔係真 failure,唔應該留喺 queue)。**REQ0044068 個 mirror 留低** —— 佢鏡住一張真 `[UOP TEST]` REQ,而且係 V5a 嘅證據。
 
-### 🔴 V5d 未做 —— 兩半中間嗰下 assign
+### V5d — 真 assign(Chris 2026-08-03 approve「真撳」)
 
-`assignLineItem` 個 target 選擇(task > RITM > work note)**只有 unit test 守住**,冇 live 跑過。要 live 跑就要:真 tenant 一個**真 synced user** + **真派一個 E5**(`findUser` 返 null 就會卡喺 sync gate,乜都試唔到)。
+**原定 target 撳唔落去,而原因唔關 CH-020 事。** REQ0044038 / SPE_E5 打落去返 **400 `No available seats for SKU SPE_E5`** —— `assign.service.ts:211` 嗰個 **tenant seat gate**(唔係 ADR-0016 OpCo budget gate)。查實數:dev tenant SPE_E5 **consumed 4535 / prepaid 4502 = 超支 33 個**,即係一個都派唔到,而呢道閘喺 close 路之前,行唔到落去就驗唔到驗證對象。
 
-**未經 Chris 明確指示唔會撳。** 現成候選仍然係 **REQ0044038**(SPE_E5 / READY / SCTASK0071802 仍 active),但佢個 target user 係真人。
+**代換(已記入 spec §7 changelog)**:改用 `[UOP TEST]` **REQ0044068** 個 mirror + **`POWER_BI_STANDARD`**(Power BI Free,996,928 個空位)+ 仲 active 嘅 **SCTASK0071830**。target 同樣係 Chris 自己個 account(Graph `FOUND`)。close 路 **SKU-agnostic**,換 SKU 唔影響驗嘅嘢;而且新 fixture 有個意外好處 —— **條 line 完全冇 RITM**。
 
-### 🔴 仍然係 code 修唔到嘅前提
+| | |
+|---|---|
+| `PATCH .../line-items/:id/assign` | **200 · stage `ASSIGNED`** |
+| Graph | 真派咗 licence(seat gate 過到,即係 provider 真係郁咗) |
+| Ledger | RHK × POWER_BI_STANDARD **由零建行,`assigned=1`** |
+| **SCTASK0071830** | **state 1 → 3 · active true → false · `assigned_to` 由空補成 integration 帳號** |
+| Delivery failures | 呢張單 **0 行** ⇒ close 真係成功,唔係失敗咗吞咗 |
+| Audit | `assign.budget_override`(RHK×PBI 冇 allocation,用 ADMIN override) |
+| Timeline | `ASSIGN READY → ASSIGNED` |
 
-**OQ-3(R4,High/High)**:1001 個 HTTP node 用 credential「n8n Academy API Key」,workflow JSON 睇唔到佢送咩 header。若唔係 `X-Intake-Key`,n8n 打過嚟連 **401** 都過唔到 —— 上面所有 live 證據都係我自己帶住正確 key 打嘅,**證明唔到 n8n 帶得啱**。要 Chris / Jerry 喺 n8n 側開個 credential 望一眼。
+🔴 **點解「條 line 冇 RITM」係最強嗰個證據**:舊 code 呢種 line 只有一條路 —— 跌落 parent REQ 寫 work note,張 catalog task **永遠唔會閂**。而家佢閂咗,而且冇任何 fallback 可以解釋。
+
+**收返自己整嘅嘢**:REQ0044038 條 line 嘅 task ref 係我為咗嗰個最後冇跑成嘅測試 UPDATE 落去嘅,已 NULL 返;全 DB 而家只剩 REQ0044068 一條 line 帶 task ref(ASSIGNED)。
+
+⚠️ **留低咗、要知**:①Chris 個 account 多咗一個 **Power BI Free** licence(平台冇 un-assign 路徑 —— offboarding 屬 H3 out-of-scope,要收就喺 Entra portal 撳)②dev ledger 多咗一行 RHK × POWER_BI_STANDARD `0/1`(真 assign 嘅真紀錄)③REQ0044068 個 mirror 已經被改到唔似原本(target / SKU 都換咗)—— 佢係 `[UOP TEST]` fixture,唔係真單。
+
+### ✅ OQ-3 / R4 收咗
+
+**Chris 2026-08-03 確認 n8n 側已經送緊 `X-Intake-Key`。** R4 由 🔴 High/High 降為已解。
+⚠️ 但**平台側永遠驗證唔到呢件事**(header 名喺 n8n credential 入面,UOP 睇唔到)—— 若日後 intake 突然全部 401,呢度係第一個要查嘅位。
 
 ### 🚧 延後(唔屬本 CH scope,已喺 spec §2.7 列明)
 

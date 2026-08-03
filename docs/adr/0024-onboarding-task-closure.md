@@ -142,7 +142,7 @@ Chris 2026-08-03 拍板。Patch 之前先 GET 嗰張 task:
 |---|---|---|
 | **OQ-1** | n8n 個 `Resolve WDA Task` query **冇 `^active=true`** 兼 `limit=1`,可以攞到一張已閂嘅 task 送過嚟(REQ0044049 實例)。UOP 側 D5 會擋住,但根源喺 n8n。 | UOP 照擋(D5),**同時**把呢點交返 n8n 側修。唔喺 UOP 補 n8n 嘅漏。 |
 | **OQ-2** | `mode` / `source` 兩個欄 UOP 要唔要保存? | **唔存**。`mode` 係分流用,`source`(`'1001-immediate'`)屬 n8n 內部追蹤。要 trace 有 audit + `serviceNowNumber`。 |
-| **OQ-3** | 個 HTTP node 用 credential「n8n Academy API Key」,睇唔到佢送咩 header。若唔係 `X-Intake-Key`,連 401 都過唔到。 | **部署前要 Chris / Jerry 喺 n8n 側確認一次** —— 呢個唔係 code 問題,但係「打通」嘅硬前提。 |
+| **OQ-3** ✅ **RESOLVED** | 個 HTTP node 用 credential「n8n Academy API Key」,workflow JSON 睇唔到佢送咩 header。若唔係 `X-Intake-Key`,連 401 都過唔到。 | **Chris 2026-08-03 確認 n8n 側已經送緊。** 風險 R4 由 🔴 High/High 降為已解。⚠️ 平台側仍然**驗證唔到**呢件事(header 名喺 n8n credential 入面,UOP 睇唔到)—— 若日後 intake 突然全部 401,呢度係第一個要查嘅位。 |
 
 ## References
 

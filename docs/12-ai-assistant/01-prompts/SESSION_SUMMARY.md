@@ -5,7 +5,7 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-03)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api ~797 test(67 suites)· web ~265 test(29 files)**。ADR 到 **0023** · CH 到 **019**。
+**當前座標(2026-08-03)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api ~837 test(68 suites)· web ~265 test(29 files)**。ADR 到 **0024** · CH 到 **020**。
 > ⚠️ **SKU Catalog 而家有三個 CSV 動作,唔好撈亂**:①`Export CSV`(CH-018)= 攞走成個 **active** catalog;②`Import CSV`(CH-019)= 改完傳返上去**批量 curate**(對帳鍵 = `SkuId` GUID,只寫 alias / category / base,**永不新建 SKU**,dry-run 先行);③`Download template`(Settings → Integrations,W35 F2)= **allocation** 範本,pre-fill curated alias 同現有數字,拎去改 seat 數 —— 佢同 ①② 係**完全唔同嘅檔同唔同嘅 endpoint**。三者都**只有 active SKU**(`catalog.service.ts:112` 硬 filter)。
 > 🔴 **改 `businessAlias` 有一道 fail-closed 閘**(CH-019 / ADR-0023 D5):任何令**兩個 active SKU 撞同一個 alias** 嘅改動 —— 批量 import **同**單筆 `PATCH catalog/:id` —— 一律 **400 整批唔寫**。原因係 `businessAlias` schema 冇 unique constraint,而前端範本 first-wins(`allocation-template.ts:63-67`)、後端 import last-wins 兼冇 `orderBy`(`matrix-csv.ts:86-90`)⇒ 撞咗會**靜靜**把 allocation 寫落錯嘅 SKU。**清空 alias**(→ null)唔算撞、唔會被擋,但批量清要 `confirmClears`(清咗嗰個 SKU 退出 import scope,而佢 ledger 舊數會**凍結**留低)。
 > 🔴 **Ledger 有兩個 reset,名近似而風險唔同級**(CH-016 / CH-017,對照表 → `CH-017-ledger-full-reset/spec.md §2.2`):`POST /license/ledger/allocation/reset`(ADMIN+REGIONAL)只清 `allocatedQuantity`,**重新 import 救得返**;`POST /license/ledger/reset`(**ADMIN only** + 打字確認)連 `assignedQuantity` 一齊清,**任何 import 都救唔返**(ADR-0004 #5),只能重跑 `npm run baseline:assigned`。改任何一個之前先睇清楚係邊個。
@@ -14,6 +14,8 @@
 
 > 🔴 **`apps/api/.env` 喺主 checkout(`C:\Users\CLai03\unified-operation-platform`)係有嘅,而且入面係真憑證**(真 `ricohapdev` ServiceNow + 真 Graph tenant + 真 ACS)。2026-07-31 實證:live 打真 SN / 真 Graph 完全做得到。⚠️ 之前呢度寫住「本 worktree 冇 `.env`」—— 嗰句只對**另一個 worktree** 成立,喺主 checkout 讀會令你以為做唔到 live 驗證。**開工前自己確認一次係邊個 checkout。**
 > 🔴 **port 3100 跑緊嘅唔一定係本 worktree** —— 驗證前**必查 process ancestry**(AP-11,W36 同 W38 各中過一次)。
+> 🔴 **`POST /requests/intake` 而家有兩張合約**(CH-020 / ADR-0024 D2),靠 **body 有冇 `mode`** 分流:冇 `mode` = W24 嗰張 locked canonical(`N8nIntakeRequestDto`,**一個字冇改**);`mode: 1` = n8n 1001 今日實際送嘅 flat 形狀(`N8nFlatIntakeDto`);其他值 **400 fail-closed**。**被共用嘅係 URL 唔係 contract** —— 唔好「順手」把 canonical 兩個 required 欄放寬,`serviceNowSysId` 係 `@unique` idempotency key。Flat 路多兩個 line item 欄 `serviceNowTaskSysId`/`serviceNowTaskNumber`,**刻意唔喺 canonical DTO 出現**(帶 task 嘅 line 會行 by-task close,而嗰條路繞過 ADR-0018 D3 保護)。
+> 🔴 **seam ④ 收 `TicketTarget` union 唔再收 bare sys_id**(`{kind:'ritm'|'task', sysId}`)。`task` 分支 **patch 之前一定要驗 `active=true`**,fail closed —— n8n 會送已閂 task(REQ0044049 實例)。改呢度之前睇 `direct-ticket.provider.ts` 個 `openTask()`。
 > ⚠️ **維護**:呢段同 `CLAUDE.md §0/§9` 每次 closeout 一齊掃 —— 兩份都係無條件注入每個 session,過時 = 下一個 session 用錯前提開工(2026-07-31 實犯)。
 
 **開發路線全鏈完成(詳細歷史 → `BACKLOG.md` + memory `MEMORY.md`,此處唔重複)**:
