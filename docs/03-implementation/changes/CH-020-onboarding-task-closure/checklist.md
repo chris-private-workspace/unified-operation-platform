@@ -77,6 +77,7 @@
 
 ## C — 收官
 
-- [ ] C1 `progress.md` Day-N 寫齊
-- [ ] C2 BACKLOG CH-020 → closed(R7)
-- [ ] C3 CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃一次
+- [x] C1 `progress.md` Day-N 寫齊
+- [x] C2 BACKLOG CH-020 → closed(R7)
+- [x] C3 CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃一次(§0 CH-019→CH-020;SESSION_SUMMARY test 數 797→837 / ADR 0023→0024 / CH 019→020 + 加兩條紅字:`/requests/intake` 兩張合約 · seam ④ 收 union 兼 task 要驗 active)
+- [x] C4 PR **#73** merged(`a71bbdf`;`gh pr view` + `ls-remote origin main` 兩邊對得上)· feature branch 本地 + remote 都刪咗
