@@ -324,10 +324,6 @@ export class AssignService {
        * assigning it is precisely what that RITM asked for, so close it. The
        * close note carries the text the work note used to.
        *
-       * CH-020 / ADR-0024 D6 — or its own catalog task, when n8n handed one over
-       * at intake. `ticketTarget` decides which; everything else here is
-       * unchanged.
-       *
        * No duplicate-close guard needed: the stage gate above rejects anything
        * that is not READY, so a line item can only reach here once.
        *
@@ -392,14 +388,25 @@ export class AssignService {
   // ── seam ④ helpers (W40) ────────────────────────────────────────────────
 
   /**
-   * Which ServiceNow record this line's state change addresses (CH-020 /
-   * ADR-0024 D6). Task first, then RITM, then nothing.
+   * Which ServiceNow record this line's state change addresses: its own RITM,
+   * or nothing.
    *
-   * 🔴 The order is not a preference. A line that carries a task sys_id got it
-   * from n8n workflow 1001, which is waiting for THAT task to close — and the
-   * line's own RITM (when it has one) belongs to a different question. Falling
-   * through to the RITM would close the wrong record while looking like it
-   * worked.
+   * 🔴 ADR-0025 D1 — this used to check `serviceNowTaskSysId` FIRST, on
+   * ADR-0024 D6's premise that n8n workflow 1001 hands over a Windows Domain
+   * Account task and waits for the platform to close it. **That premise was
+   * disproved against the live instance** (2026-08-03): n8n closes that task
+   * itself — `close_notes = 'Closed & Handled by n8n'`, two live examples — and
+   * the note-only branch its own JSON describes has never run once (zero
+   * `Awaiting E5 licence` journal entries instance-wide). The premise came
+   * entirely from comments and sticky notes inside the workflow JSON, which
+   * record intent, not behaviour.
+   *
+   * Keeping the branch meant every assign PATCHed a task n8n had already
+   * closed: the `active=false` guard correctly refused, and filed a Delivery
+   * failure for a non-problem.
+   *
+   * The two columns stay on the model as traceability — which WDA task n8n
+   * handled for this line — and no longer drive anything.
    *
    * One resolver for both transitions on purpose: hold and close must never
    * disagree about which ticket a line item is, or a line could be held on one
@@ -407,11 +414,7 @@ export class AssignService {
    */
   private ticketTarget(item: {
     serviceNowSysId: string | null;
-    serviceNowTaskSysId: string | null;
   }): TicketTarget | null {
-    if (item.serviceNowTaskSysId) {
-      return { kind: 'task', sysId: item.serviceNowTaskSysId };
-    }
     if (item.serviceNowSysId) {
       return { kind: 'ritm', sysId: item.serviceNowSysId };
     }
@@ -436,7 +439,6 @@ export class AssignService {
     item: {
       id: string;
       serviceNowSysId: string | null;
-      serviceNowTaskSysId: string | null;
       ticketHeldAt: Date | null;
       sku: { skuPartNumber: string };
     },
