@@ -76,7 +76,7 @@
 
 ## S — 收官
 
-- [ ] S1 `progress.md` Day-N 寫齊,commit hash 對得返(R2)
+- [x] S1 `progress.md` Day-1 寫齊;commit **`62bc64a`** 對應全部 B/T/F/V 項(R2)
 - [x] S2 ADR-0023 → Accepted;OQ-1 決議(=都做)寫入 ADR D5 + Open Questions
 - [x] S3 BACKLOG 更新(CH-019 closed + 新開 LINT-web)· `SESSION_SUMMARY.md` + `CLAUDE.md` §0 座標掃咗
 

@@ -2,6 +2,8 @@
 
 ## Day 1 — 2026-08-03
 
+**Commit**:`62bc64a` `feat(license): CH-019 SKU catalog 批量 curation(CSV round-trip)` —— 對應 checklist 全部 B1-B16 / T1-T16 / F1-F12 / V1-V9(R2)。
+
 ### 做咗咩
 
 **Gate**:Chris approve ADR-0023(→ Accepted)+ spec(→ approved),並答 OQ-1 =「都做」⇒ 重複 alias 閘門一併落單筆 `PATCH catalog/:id`。ADR README + BACKLOG 同步。
