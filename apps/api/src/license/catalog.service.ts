@@ -1,17 +1,20 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
 import { graphUnavailable } from '../integration/graph/graph-unavailable';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
-
-/** Trim a curation string; empty / whitespace-only → null (clears the field). */
-function normalizeOptional(v: string | null | undefined): string | null {
-  if (v == null) return null;
-  const t = v.trim();
-  return t.length ? t : null;
-}
+import { findAliasCollisions } from './alias-collision';
+// One implementation of the curation-value semantics, shared with the bulk
+// import (CH-019): PATCH's "" and a blank CSV cell must clear a field the same
+// way, or the two write paths would drift apart on the field that decides scope.
+import { normalizeOptional } from './catalog-csv';
 
 /** Outcome of a catalog sync run — surfaced to the trigger endpoint. */
 export interface CatalogSyncResult {
@@ -144,6 +147,38 @@ export class CatalogService {
     }
     if (dto.isBaseLicense !== undefined) {
       data.isBaseLicense = dto.isBaseLicense;
+    }
+
+    // ADR-0023 D5 / OQ-1 — the same collision guard the bulk import runs.
+    // Only the bulk path would leave a back door: one single edit could create
+    // the collision that then blocks every later import, with nothing telling
+    // the operator which edit did it. Skipped when the entry is inactive (its
+    // alias takes no part in import matching) or when the alias is being
+    // cleared (null is never a collision).
+    if (existing.active && typeof data.businessAlias === 'string') {
+      const others = await this.prisma.skuCatalog.findMany({
+        where: { active: true, id: { not: id } },
+        select: { id: true, skuPartNumber: true, businessAlias: true },
+      });
+      const collisions = findAliasCollisions([
+        ...others,
+        {
+          id,
+          skuPartNumber: existing.skuPartNumber,
+          businessAlias: data.businessAlias,
+        },
+      ]);
+      if (collisions.length > 0) {
+        throw new BadRequestException({
+          code: 'alias-collision',
+          message: `Business alias "${data.businessAlias}" is already used by ${collisions[0].skuPartNumbers
+            .filter((p) => p !== existing.skuPartNumber)
+            .join(
+              ', ',
+            )}. Allocation rows match on the alias, so a duplicate would silently send seats to the wrong SKU.`,
+          collisions,
+        });
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {

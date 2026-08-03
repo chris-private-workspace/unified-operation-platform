@@ -19,6 +19,7 @@ import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { CatalogService } from './catalog.service';
+import { CatalogImportService } from './catalog-import.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { AllocationResetService } from './allocation-reset.service';
@@ -31,6 +32,10 @@ import {
   SkuCatalogDto,
   UpdateSkuCatalogDto,
 } from './dto/catalog.dto';
+import {
+  CatalogImportRequestDto,
+  CatalogImportResultDto,
+} from './dto/catalog-import.dto';
 import { DriftAlertDto, ReconcileResultDto } from './dto/reconcile.dto';
 import {
   LedgerImportRequestDto,
@@ -62,6 +67,7 @@ import { TenantSkuRowDto, TenantSkuStatsDto } from './dto/tenant-owned.dto';
 export class LicenseController {
   constructor(
     private readonly catalog: CatalogService,
+    private readonly catalogImport: CatalogImportService,
     private readonly reconcile: ReconcileService,
     private readonly allocationImport: AllocationImportService,
     private readonly allocationReset: AllocationResetService,
@@ -97,6 +103,23 @@ export class LicenseController {
     @Body() dto: UpdateSkuCatalogDto,
   ): Promise<SkuCatalogDto> {
     return this.catalog.updateEntry(actor.id, id, dto);
+  }
+
+  /**
+   * Bulk curation (CH-019 / ADR-0023) — the SKU Catalog export, edited and
+   * uploaded back. Same three columns and same roles as the PATCH above; the
+   * difference is scale, a dry-run preview, and two fail-closed gates (alias
+   * collisions, alias clears). 200 rather than 201: a dry run creates nothing,
+   * and a commit updates existing rows.
+   */
+  @Post('catalog/import')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: CatalogImportResultDto })
+  importCatalog(
+    @CurrentUser() actor: AuthUser,
+    @Body() dto: CatalogImportRequestDto,
+  ): Promise<CatalogImportResultDto> {
+    return this.catalogImport.import(actor.id, dto);
   }
 
   @Post('reconcile')

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { IntegrationModule } from '../integration/integration.module';
 import { CatalogService } from './catalog.service';
+import { CatalogImportService } from './catalog-import.service';
 import { ReconcileService } from './reconcile.service';
 import { AllocationImportService } from './allocation-import.service';
 import { AllocationResetService } from './allocation-reset.service';
@@ -21,6 +22,11 @@ import { LicenseController } from './license.controller';
   controllers: [LicenseController],
   providers: [
     CatalogService,
+    // CH-019 / ADR-0023 — bulk curation of the same three columns CatalogService
+    // writes one at a time. Separate service because it owns a preview /
+    // dry-run protocol and two fail-closed gates the single-entry PATCH has no
+    // use for; they share the guard itself (alias-collision.ts), not the flow.
+    CatalogImportService,
     ReconcileService,
     AllocationImportService,
     // CH-016 — the reverse of the import: zero allocatedQuantity so a bad
@@ -37,6 +43,11 @@ import { LicenseController } from './license.controller';
   ],
   exports: [
     CatalogService,
+    // CH-019 / ADR-0023 — bulk curation of the same three columns CatalogService
+    // writes one at a time. Separate service because it owns a preview /
+    // dry-run protocol and two fail-closed gates the single-entry PATCH has no
+    // use for; they share the guard itself (alias-collision.ts), not the flow.
+    CatalogImportService,
     ReconcileService,
     AllocationImportService,
     // CH-016 — the reverse of the import: zero allocatedQuantity so a bad

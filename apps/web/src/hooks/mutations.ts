@@ -13,6 +13,8 @@ import type {
   ImportFromServiceNowBody,
   LedgerFullResetBody,
   LedgerFullResetResult,
+  CatalogImportBody,
+  CatalogImportResult,
   LedgerImportResult,
   LedgerRow,
   LineItemStage,
@@ -365,6 +367,28 @@ export function useUpdateCatalog() {
     mutationFn: (vars: { id: string; body: UpdateCatalogBody }) =>
       apiPatch<SkuCatalog>(`/license/catalog/${vars.id}`, vars.body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['license', 'catalog'] }),
+  });
+}
+
+/**
+ * POST /license/catalog/import — bulk curation from an edited export
+ * (CH-019 / ADR-0023). Same hook drives the dry-run preview and the commit,
+ * like the allocation import above.
+ *
+ * Invalidates only on a real commit: a dry run wrote nothing, so refetching
+ * after one is noise. The backend owns both gates (alias collisions, alias
+ * clears) — the panel renders what it refuses, it never decides.
+ */
+export function useCatalogImport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: CatalogImportBody) =>
+      apiPost<CatalogImportResult>('/license/catalog/import', vars),
+    onSuccess: (res) => {
+      if (!res.dryRun) {
+        qc.invalidateQueries({ queryKey: ['license', 'catalog'] });
+      }
+    },
   });
 }
 

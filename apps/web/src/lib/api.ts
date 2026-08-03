@@ -44,9 +44,30 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /**
+     * The parsed error body, when there was one. Most failures say everything
+     * they need to in `message`; some carry a list the UI has to render — the
+     * catalog import's alias collisions (CH-019) name which SKUs clash, and
+     * folding that into a sentence stops being readable past the first one.
+     */
+    readonly detail?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+/** Parse a non-2xx body once: the server's `message`, plus the raw body. */
+async function errorFrom(res: Response, fallback: string): Promise<ApiError> {
+  try {
+    const data = (await res.json()) as {
+      message?: string | string[];
+    } & Record<string, unknown>;
+    const m = data.message;
+    const message = m ? (Array.isArray(m) ? m.join(', ') : m) : fallback;
+    return new ApiError(res.status, message, data);
+  } catch {
+    return new ApiError(res.status, fallback); // non-JSON body
   }
 }
 
@@ -133,15 +154,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    let message = `POST ${path} failed (${res.status})`;
-    try {
-      const data = await res.json();
-      const m = (data as { message?: string | string[] }).message;
-      if (m) message = Array.isArray(m) ? m.join(', ') : m;
-    } catch {
-      // non-JSON error body — keep the generic message
-    }
-    throw new ApiError(res.status, message);
+    throw await errorFrom(res, `POST ${path} failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T; // No Content (e.g. logout)
   return res.json() as Promise<T>;
