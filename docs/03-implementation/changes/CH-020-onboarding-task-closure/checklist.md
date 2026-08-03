@@ -67,7 +67,12 @@
 - [x] V2 `npm run lint`(repo root)exit 0
 - [x] V3 tsc 兩邊 0(api + web)
 - [x] V4 Migration apply + rollback 驗過 —— scratch DB `ch020_scratch` 由零跑晒 18 個 migration → 兩欄在 → `DROP COLUMN` → 0 欄、其餘 19 欄完好 → drop DB
-- [ ] V5 **Live**:真 SN request 行完整鏈 —— intake → assign → SCTASK 由 active 變 state 3
+- [x] V5 **Live**:兩半分開驗齊,🔴 **中間嗰下 assign 未撳**(見下)
+  - [x] V5a **intake 半**:`mode:1` + 真 REQ0044068 → **201**,`serviceNowSysId` 由 server 反查(`b27e6dbf…`,唔係 number)· ADR-0020 注入 SPE_E5 · 嗰條 line 帶住 `serviceNowTaskSysId=5f7eadbf…` / `SCTASK0071829` · sync gate 兩欄 null · **再 POST 一次返同一個 request id**
+  - [x] V5b **close 半**(走 Delivery-failures retry,同 CH-010 一樣嘅真 code path):**SCTASK0071829 state 1→3 · active true→false · `assigned_to` 由空補成 integration 帳號**;🔴 **兄弟 task SCTASK0071830 一個字冇郁**(state 1 / active / 無 assignee)= 證實只閂咗一張
+  - [x] V5c **D5 兩個分支 live**:同一張(已閂)task 再閂 → **400 拒絕唔 patch**;唔存在嘅 task sys_id → **400 拒絕**。兩個 failure row 都**維持 `open`** + attemptCount 遞增(I2 守住)
+  - [ ] 🔴 **V5d 未做**:`assignLineItem` 真跑一次把兩半接埋 —— 要真派一個 E5 落真 tenant 一個真 synced user。**要 Chris 明確指示先撳**;target 選擇同影響見 `progress.md`
+- [x] V5-guard 順帶驗:無 key → **401**(兩種 body 都係)· canonical 缺 `serviceNowSysId` / 空 `lineItems` → **400 validation**(locked contract 冇被放寬)· `mode` = `2`/`0`/`"1"`/`true` → **400 fail-closed**
 - [x] V6 CONTRACT.md 記低 `/requests/intake` 兩種形狀(W24 `CONTRACT.md` 新增 §7 addendum,**唔改任何 locked 內容**)
 
 ## C — 收官

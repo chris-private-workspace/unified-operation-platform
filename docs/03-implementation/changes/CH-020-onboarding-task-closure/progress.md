@@ -38,10 +38,57 @@ spec §2.3 只講「注入嗰條 line 寫入」冇講點入。加落 canonical l
 - **Prettier 把 `TicketTarget` 個 union 摺埋一行**。原本寫成兩行對齊比較好讀,但 `--fix` 話事,冇對抗。
 - `apps/web` **一個字冇改** —— 本 CH 純後端。`LINT-web` 嗰 25 個 prettier error 仍然喺度(root `lint` 只 gate api),同本 CH 無關。
 
-### 🔴 V5 卡住嘅嘢(唔喺 code 側)
+## Day 1(續)— V5 live 驗證
 
-1. **OQ-3(R4,High/High)**:1001 個 HTTP node 用 credential「n8n Academy API Key」,workflow JSON 睇唔到佢送咩 header。若唔係 `X-Intake-Key`,成條鏈連 401 都過唔到。**要 Chris / Jerry 喺 n8n 側開個 credential 望一眼。**
-2. **真 assign 會動真 tenant + 真 ticket**。REQ0044038(SPE_E5 / READY / SCTASK0071802 仍 active)係現成完整驗證單,但撳落去 = 真派一個 E5 + 真閂一張 SN task。**未經明確指示唔會撳。**
+**做法**:成條鏈拆兩半分開驗,因為中間嗰下 `assignLineItem` 會**真派一個 E5 落真 tenant**。兩半各自行**真 code path、真 ServiceNow**;唔係 mock。用 CH-014 造嘅 `[UOP TEST]` fixture **REQ0044068**(2 個 RITM,各 1 張 active task)。
+
+### V5a — intake 半(只寫本機 DB;intake 從來唔 patch SN)
+
+`POST /requests/intake`,body = 1001 嘅 flat 形狀 + REQ0044068 + SCTASK0071829 真 sys_id:
+
+| 驗到 | 結果 |
+|---|---|
+| HTTP | **201** |
+| `serviceNowSysId` | `b27e6dbf3b5ac790ed49b9cc73e45aec` —— **server 反查**返嚟,唔係 client 送嘅 number ⇒ D3「唔換 key」成立 |
+| line item | 1 條,SPE_E5(ADR-0020 注入),`serviceNowSysId: null`(冇 RITM) |
+| **task ref** | **`serviceNowTaskSysId=5f7eadbf…` / `serviceNowTaskNumber=SCTASK0071829`** ⇐ 本 CH 個重點 |
+| sync gate | `accountCreatedAt` / `azureSyncedAt` 都係 `null` |
+| idempotency | 再 POST 一次 → **同一個 request id** `cmscv7k4q0001…`,冇建第二張 |
+| OQ-2 | response 全文搵唔到 `mode` / `1001-immediate` |
+
+**Guard / 分流同場驗**:無 key → **401**(canonical 同 flat 兩種 body 都係)· canonical 缺 `serviceNowSysId` → **400 validation**(`serviceNowSysId must be longer than or equal to 1 characters`)· canonical 空 `lineItems` → **400** · canonical 完整 → **400 但係嚟自 `IntakeService`**(`SKU 'guid-does-not-exist' not found or inactive`)⇒ 佢**過晒 validation 去到真 writer**,contract 冇被放寬 · `mode` = `2`/`0`/`"1"`/`true` → 全部 **400 `mode must be one of the following values: 1`** · `mode:1` + 唔存在嘅 REQ → **400 `ServiceNow request 'REQ0000000' was not found`**(即係真係打咗 SN)。
+
+### V5b — close 半(真 SN 寫入)
+
+走 **Delivery-failures retry**(`OutboundRetryService` → seam ④ → `DirectTicketProvider` → 真 SN),即係 CH-010 當日驗自己嗰條路。⚠️ **人工嘅只有個 queue row**(seed 咗一行 `targetKind:'task'`);由 retry endpoint 開始之後每一步都係 production code。
+
+| | 之前 | 之後 |
+|---|---|---|
+| **SCTASK0071829**(target) | state **1** · active **true** · assigned_to 空 | state **3** · active **false** · assigned_to = integration 帳號 |
+| **SCTASK0071830**(兄弟) | state 1 · active true · 空 | **一模一樣,一個字冇郁** |
+
+兄弟嗰行係關鍵 —— 佢證實平台閂咗**指定嗰張**,唔係「REQ 底下搵到嘅第一張」。
+
+### V5c — D5 兩個拒絕分支(真 SN)
+
+| 情境 | 結果 |
+|---|---|
+| 同一張 task(**而家已閂**)再閂 | **400** `ServiceNow does not report catalog task SCTASK0071829 as open, so the platform will not reopen or overwrite it.` — **冇 patch** |
+| 唔存在嘅 task sys_id | **400** `The catalog task handed over at intake does not exist in ServiceNow, so the platform has nothing to close.` |
+
+兩行 failure 都**維持 `open`**、`attemptCount` 由 1 升到 2(ADR-0011 I2:失敗嘅 repair 唔可以扮成功)。第一個情境正正就係 **REQ0044049 嗰個活例**重現。
+
+驗完三行 seed 都刪返(佢哋唔係真 failure,唔應該留喺 queue)。**REQ0044068 個 mirror 留低** —— 佢鏡住一張真 `[UOP TEST]` REQ,而且係 V5a 嘅證據。
+
+### 🔴 V5d 未做 —— 兩半中間嗰下 assign
+
+`assignLineItem` 個 target 選擇(task > RITM > work note)**只有 unit test 守住**,冇 live 跑過。要 live 跑就要:真 tenant 一個**真 synced user** + **真派一個 E5**(`findUser` 返 null 就會卡喺 sync gate,乜都試唔到)。
+
+**未經 Chris 明確指示唔會撳。** 現成候選仍然係 **REQ0044038**(SPE_E5 / READY / SCTASK0071802 仍 active),但佢個 target user 係真人。
+
+### 🔴 仍然係 code 修唔到嘅前提
+
+**OQ-3(R4,High/High)**:1001 個 HTTP node 用 credential「n8n Academy API Key」,workflow JSON 睇唔到佢送咩 header。若唔係 `X-Intake-Key`,n8n 打過嚟連 **401** 都過唔到 —— 上面所有 live 證據都係我自己帶住正確 key 打嘅,**證明唔到 n8n 帶得啱**。要 Chris / Jerry 喺 n8n 側開個 credential 望一眼。
 
 ### 🚧 延後(唔屬本 CH scope,已喺 spec §2.7 列明)
 
