@@ -149,7 +149,7 @@ GET sc_task sys_id=<taskSysId>
 | R1 | 分流搞錯,canonical caller 行為變咗 | Med | **High** | §2.3 明文:canonical 支必須行返同一個 ValidationPipe 設定;acceptance 第一條就守呢樣 |
 | R2 | 閂錯人哋張 task | Med | **High** | §2.5 active 閘 —— 呢個 risk 正正係佢存在嘅原因 |
 | R3 | Seam signature 改動波及既有 close 路徑 | Med | **High** | `kind:'ritm'` 分支逐字保留;既有 provider test 斷言不變,只改 call shape |
-| R4 | n8n credential 唔係送 `X-Intake-Key` ⇒ 401,成條鏈都通唔到 | **High** | **High** | **ADR-0024 OQ-3 —— 部署前要 n8n 側確認,唔係 code 修得到** |
+| R4 | n8n credential 唔係送 `X-Intake-Key` ⇒ 401,成條鏈都通唔到 | ~~High~~ | **High** | ✅ **已解**(Chris 2026-08-03 確認 n8n 側已經送緊)。⚠️ 平台側驗證唔到 —— intake 突然全 401 嘅話呢度係第一個要查嘅位 |
 | R5 | 1001 送過嚟嘅 task 一開始就係閂咗嘅(n8n query 冇 active filter) | **High** | Med | D5 擋住 + 落 Delivery failures 令佢可見;根源交返 n8n(OQ-1) |
 
 ## 5. Effort Estimate
@@ -168,6 +168,8 @@ GET sc_task sys_id=<taskSysId>
 |---|---|---|---|
 | 2026-08-03 | Initial draft(proposed) | Chris 澄清 n8n 送 task sys_id 嘅設計,要求先打通 UOP 直連 | — |
 | 2026-08-03 | 兩項拍板:**n8n 零改動(UOP route 共用)** · **close 前必驗 `active=true`** | 起草前提問,即場定案 | Chris |
+| 2026-08-03 | **R4 / OQ-3 收** —— n8n 側已經送緊 `X-Intake-Key` | Chris 收官後確認 | Chris |
+| 2026-08-03 | **V5d 用 `[UOP TEST]` REQ0044068 + `POWER_BI_STANDARD` 代替 REQ0044038 + `SPE_E5`** —— dev tenant E5 **consumed 4535 / prepaid 4502 = 超支 33**,`assign.service.ts:211` 個 tenant seat gate 喺 close 路之前,所以 E5 一個都派唔到、行唔到落去驗證對象。close 路 SKU-agnostic,換 SKU 唔影響驗嘅嘢;而且新 fixture **完全冇 RITM**,反而係更強嘅證據(舊 code 會跌落 parent REQ work note) | Chris 已 approve「真撳」,代換屬同目標低成本替代 | AI(已報告) |
 
 ---
 

@@ -67,11 +67,12 @@
 - [x] V2 `npm run lint`(repo root)exit 0
 - [x] V3 tsc 兩邊 0(api + web)
 - [x] V4 Migration apply + rollback 驗過 —— scratch DB `ch020_scratch` 由零跑晒 18 個 migration → 兩欄在 → `DROP COLUMN` → 0 欄、其餘 19 欄完好 → drop DB
-- [x] V5 **Live**:兩半分開驗齊,🔴 **中間嗰下 assign 未撳**(見下)
+- [x] V5 **Live**:全鏈驗齊(V5d 2026-08-03 Chris approve 後真撳)
   - [x] V5a **intake 半**:`mode:1` + 真 REQ0044068 → **201**,`serviceNowSysId` 由 server 反查(`b27e6dbf…`,唔係 number)· ADR-0020 注入 SPE_E5 · 嗰條 line 帶住 `serviceNowTaskSysId=5f7eadbf…` / `SCTASK0071829` · sync gate 兩欄 null · **再 POST 一次返同一個 request id**
   - [x] V5b **close 半**(走 Delivery-failures retry,同 CH-010 一樣嘅真 code path):**SCTASK0071829 state 1→3 · active true→false · `assigned_to` 由空補成 integration 帳號**;🔴 **兄弟 task SCTASK0071830 一個字冇郁**(state 1 / active / 無 assignee)= 證實只閂咗一張
   - [x] V5c **D5 兩個分支 live**:同一張(已閂)task 再閂 → **400 拒絕唔 patch**;唔存在嘅 task sys_id → **400 拒絕**。兩個 failure row 都**維持 `open`** + attemptCount 遞增(I2 守住)
-  - [ ] 🔴 **V5d 未做**:`assignLineItem` 真跑一次把兩半接埋 —— 要真派一個 E5 落真 tenant 一個真 synced user。**要 Chris 明確指示先撳**;target 選擇同影響見 `progress.md`
+  - [x] **V5d 真撳咗**(Chris 2026-08-03 approve):`PATCH .../line-items/:id/assign` → **200 · stage ASSIGNED** · 真 Graph 派咗 licence · ledger 由零建行 `assigned=1` · **SCTASK0071830 state 1→3 · active→false · assignee 補咗** · **Delivery failures 呢張單 0 行**(close 真係成功,唔係吞咗)· audit 有 `assign.budget_override` · timeline `READY→ASSIGNED`。🔴 **條 line 完全冇 RITM** ⇒ 舊 code 會跌落 parent REQ work note,張 task 永遠唔會閂 —— 呢個先係新分支最強嘅證據
+  - [x] V5d 代換已記入 spec §7:`[UOP TEST]` REQ0044068 + `POWER_BI_STANDARD`(免費,996,928 空位)代替 REQ0044038 + `SPE_E5` —— dev tenant E5 **超支 33 個**(consumed 4535 / prepaid 4502),`assign.service.ts:211` tenant seat gate 喺 close 路之前,E5 根本行唔到落去
 - [x] V5-guard 順帶驗:無 key → **401**(兩種 body 都係)· canonical 缺 `serviceNowSysId` / 空 `lineItems` → **400 validation**(locked contract 冇被放寬)· `mode` = `2`/`0`/`"1"`/`true` → **400 fail-closed**
 - [x] V6 CONTRACT.md 記低 `/requests/intake` 兩種形狀(W24 `CONTRACT.md` 新增 §7 addendum,**唔改任何 locked 內容**)
 
