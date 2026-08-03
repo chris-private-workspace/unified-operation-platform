@@ -1,8 +1,8 @@
 # 07 — UAT As-Built(實際部署記錄)
 
-> 實際跑緊嘅環境快照。**最後核實 2026-08-02**(首次部署 W33 / 2026-07-22)。**唔含任何 secret**(值喺 running env / gitignored persistent params 檔)。
+> 實際跑緊嘅環境快照。**最後核實 2026-08-03**(首次部署 W33 / 2026-07-22)。**唔含任何 secret**(值喺 running env / gitignored persistent params 檔)。
 >
-> 🔴 **本檔曾經過時而唔自知**:2026-08-02 部署前實測,發現佢寫住現行係 `uat-1bc7cdb`,而真實跑緊嘅係 **`uat-7e1f00b`**(W41 部署完冇更新呢份)。⇒ **每次部署完必須即刻更新呢個 section**,否則下一次部署會由錯誤前提開始(例如以為要重跑 W41 已經做咗嘅嘢)。同 `CLAUDE.md §14` 嗰條座標紀律同源。
+> 🔴 **本檔已經過時咗兩次,而兩次都唔自知**:2026-08-02 發現佢寫住 `uat-1bc7cdb` 而真實係 `uat-7e1f00b`(W41 冇更新);**2026-08-03 再犯** —— 佢寫住 `uat-629d018` / api `--0000011`,而真實係 **`uat-8646f79` / api `--0000012`**(CH-019 部署完又冇更新)。⇒ **每次部署完必須即刻更新呢個 section**,而**開工第一步一律 `az containerapp revision list` 實測,唔信本檔**。同 `CLAUDE.md §14` 嗰條座標紀律同源。
 > 部署路徑見 [`04-deploy-runbook.md`](./04-deploy-runbook.md);過程詳錄 `docs/01-planning/W33-deploy-exec/progress.md`。
 
 ## Subscription / 位置
@@ -19,14 +19,14 @@
 | 資源 | 名 | 備註 |
 |---|---|---|
 | ACR | `acruopuat`(`acruopuat.azurecr.io`)| Basic · admin enabled |
-| api image | `uop-api:uat-629d018` | **2026-08-02** · 含 W42(ADR-0020 default SKU)+ CH-013 + CH-016/017(ledger reset 兩支)· self-migrate entrypoint · devDeps |
-| web image | `uop-web:uat-629d018` | 同 tag · 含 CH-018 catalog export · nginx Host fix · break-glass(無 VITE_ENTRA)|
+| api image | `uop-api:uat-a71bbdf` | **2026-08-03** · 含 **CH-020**(onboarding catalog task closure,ADR-0024)+ CH-019(批量 curation)+ W42/CH-013/CH-016/017 · self-migrate entrypoint · devDeps |
+| web image | `uop-web:uat-a71bbdf` | 同 tag · **CH-020 冇前端改動**,純重 build · 含 CH-019 Import CSV + CH-018 Export CSV · nginx Host fix · break-glass(無 VITE_ENTRA)|
 | PostgreSQL | `psql-uop-uat`(v16 Burstable B1ms)| DB `platform` · public + "Allow Azure services" |
 | Log Analytics | `law-uop-uat` | ACA container log |
 | Key Vault | `kv-uop-uat` | **建咗但未 wire**(data-plane 被 proxy 擋;secret 暫用 ACA native)|
 | ACA env | `cae-uop-uat` | 綁 `law-uop-uat` |
-| api app | `ca-uop-api` | **internal** ingress · targetPort 3000 · `allowInsecure:true` · 1 replica · revision **`--0000011`** RunningAtMaxScale/Healthy |
-| web app | `ca-uop-web` | **external** ingress · targetPort 8080 · 1-2 replica · revision **`--0000007`** Running/Healthy |
+| api app | `ca-uop-api` | **internal** ingress · targetPort 3000 · `allowInsecure:true` · 1 replica · revision **`--0000013`** RunningAtMaxScale/Healthy |
+| web app | `ca-uop-web` | **external** ingress · targetPort 8080 · 1-2 replica · revision **`--0000009`** Running/Healthy |
 
 > **api container env(2026-08-02 重驗,仍然 19 個)**,含 `ACS_CONNECTION_STRING`(secretRef)· `ACS_SENDER_ADDRESS`(前兩者 2026-07-29 由 owner 直接設落 container)· `APP_BASE_URL`(設之前係 18)。**即 email 配置齊、寄得出。** template 亦已接線(CH-012)。
 >
@@ -70,7 +70,25 @@ PYTHONIOENCODING=utf-8 az containerapp update -g RG-RCITest-RAPO-N8N -n ca-uop-a
 
 > 🔴 **revision `Running/Healthy` 係唯一可接受嘅 pass 標準。** `az acr build` Succeeded 只證明 image build 到,唔證明佢起得身 —— BUG-008 就係 build 綠、626 test 綠、lint 零 output,但每個容器一起身就 CrashLoopBackOff(見 `04 §8.5`)。
 
-**部署歷史**:`uat-mig3` / `uat-web2`(W33)→ `uat-0cf0cf3`(W34,api `--0000003` / web `--0000002`)→ `uat-2b5057a`(**failed**,BUG-008,rollback)→ `uat-1bc7cdb`(api `--0000006` / web `--0000005`)→ `uat-7e1f00b`(W41,api `--0000010` / web `--0000006` —— **當時冇更新本檔**)→ **`uat-629d018`**(現行,2026-08-02,api `--0000011` / web `--0000007`)。
+**部署歷史**:`uat-mig3` / `uat-web2`(W33)→ `uat-0cf0cf3`(W34,api `--0000003` / web `--0000002`)→ `uat-2b5057a`(**failed**,BUG-008,rollback)→ `uat-1bc7cdb`(api `--0000006` / web `--0000005`)→ `uat-7e1f00b`(W41,api `--0000010` / web `--0000006` —— **當時冇更新本檔**)→ `uat-629d018`(2026-08-02,api `--0000011` / web `--0000007`)→ `uat-8646f79`(CH-019,2026-08-03,api `--0000012` / web `--0000008` —— **又冇更新本檔**)→ **`uat-a71bbdf`**(現行,2026-08-03,api `--0000013` / web `--0000009`)。
+
+### 2026-08-03 部署(`uat-8646f79` → `uat-a71bbdf`,CH-020)
+
+走 **image-only** 路。⚠️ **開頭第一件事就撞到本檔過時** —— 佢寫住現行 `uat-629d018` / api `--0000011`,實測係 `uat-8646f79` / api `--0000012`(CH-019 部署完冇更新)。preflight 四項:
+
+| 檢查 | 結果 |
+|---|---|
+| 新 migration | **1 個**(`20260803060106_ch020_line_item_task_ref` —— `RequestLineItem` 加兩個 **nullable** 欄,零 backfill)→ 隨新 revision 自動跑 |
+| 新 required env | **冇** —— `git diff 8646f79..a71bbdf` 揾唔到任何新 `getOrThrow` |
+| 新 dependency | **冇** —— `package.json` / `package-lock.json` 零改動 |
+| `deploy/` 改動 | **零** ⇒ image-only 唔會漏嘢,亦冇「params 檔抹走 container 現值」嘅風險 |
+
+**Smoke(逐層 + 對照組)**:SPA `200` · `/api/docs/api` `200` · `POST /api/requests/intake` 無 key → **`401`** · **兩個同形狀但唔存在嘅 route → `404`**(呢個對照組先令上面嗰個 401 有意義)。
+
+**CH-020 實質證據 —— 抽 running OpenAPI 實搜**(唔係靠 tag 推論):`N8nFlatIntakeDto` ×2(schema + `$ref`)· `serviceNowTaskSysId` / `serviceNowTaskNumber` 各 ×1 · `oneOf` ×1(即 `/requests/intake` 兩張合約真係接線咗)· `flat contract discriminator` ×1;對照組一個唔存在嘅字串 ×0。
+
+> 🔴 **一項驗唔到,唔當驗過**:**migration 有冇真係 apply,平台外面證明唔到**。公司網連唔到 UAT DB data-plane,而 entrypoint 個 `prisma migrate deploy` 係**非致命**(失敗都照起身)⇒ revision Healthy **唔等於** migration 成功。冇任何 `@Public` endpoint 會讀 `RequestLineItem`,所以 curl 探唔到。
+> **最平嘅結論性檢查 = owner 開一次 UAT 個 Requests 頁**:migration 若失敗,嗰版所有 `RequestLineItem` query 會 P2022 500。(風險本身低:additive nullable 欄,同一個 migration 喺 dev DB 同 scratch DB 各 apply 過一次。)
 
 ### 2026-08-02 部署(`uat-7e1f00b` → `uat-629d018`,70 個 commit)
 
