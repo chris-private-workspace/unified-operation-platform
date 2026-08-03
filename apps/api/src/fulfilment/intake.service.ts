@@ -13,6 +13,24 @@ type ResolvedLine = {
   quantity: number;
   serviceNowSysId: string | null;
   serviceNowNumber: string | null;
+  serviceNowTaskSysId: string | null;
+  serviceNowTaskNumber: string | null;
+};
+
+/**
+ * CH-020 / ADR-0024 D1 — the catalog task the caller wants closed once these
+ * lines are assigned.
+ *
+ * 🔴 A SECOND PARAMETER rather than two more fields on N8nIntakeRequestDto, and
+ * that is a security decision, not a style one. Only the flat n8n path (which
+ * genuinely receives a task sys_id from workflow 1001) may put the platform on
+ * the by-task close route, because that route bypasses ADR-0018 D3's
+ * "exactly one active task under this RITM" protection by construction. Leaving
+ * it off the public DTO means no external canonical caller can reach it.
+ */
+export type IntakeTaskRef = {
+  sysId: string;
+  number: string | null;
 };
 
 /**
@@ -30,7 +48,15 @@ export class IntakeService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async intake(dto: N8nIntakeRequestDto) {
+  /**
+   * `taskRef` is applied to EVERY line this call creates. Today that is at most
+   * one: the flat path is the only caller that passes it, and 1001 sends no
+   * licence lines, so the single line is always the ADR-0020 injection. If that
+   * ever changes, each line would attempt the same close — the first succeeds
+   * and the rest are refused by the `active` gate (ADR-0024 D5) rather than
+   * double-closing anything, but they would show up as delivery failures.
+   */
+  async intake(dto: N8nIntakeRequestDto, taskRef?: IntakeTaskRef) {
     // ── Idempotency (B5): REQ sysId is @unique — repeat push = skip, no double ──
     const existing = await this.findByReq(dto.serviceNowSysId);
     if (existing) {
@@ -64,6 +90,8 @@ export class IntakeService {
         quantity: line.quantity,
         serviceNowSysId: line.serviceNowRitmSysId ?? null,
         serviceNowNumber: line.serviceNowRitmNumber ?? null,
+        serviceNowTaskSysId: taskRef?.sysId ?? null,
+        serviceNowTaskNumber: taskRef?.number ?? null,
       });
     }
 
@@ -95,6 +123,8 @@ export class IntakeService {
               stage: LineItemStage.REQUESTED,
               serviceNowSysId: r.serviceNowSysId,
               serviceNowNumber: r.serviceNowNumber,
+              serviceNowTaskSysId: r.serviceNowTaskSysId,
+              serviceNowTaskNumber: r.serviceNowTaskNumber,
             })),
           },
         },

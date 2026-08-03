@@ -1,10 +1,20 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Type,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
+  ApiExtraModels,
   ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator';
 import { IntakeKeyGuard, INTAKE_KEY_HEADER } from './intake-key.guard';
@@ -12,6 +22,7 @@ import { IntakeService } from './intake.service';
 import { IntakeAdapterService } from './intake-adapter.service';
 import { N8nIntakeRequestDto } from './dto/n8n-intake.dto';
 import { N8nNativeIntakeDto } from './dto/n8n-native-intake.dto';
+import { N8nFlatIntakeDto } from './dto/n8n-flat-intake.dto';
 
 /**
  * ADR-0008 Phase 甲 — inbound m2m intake for the n8n onboarding workflow.
@@ -21,10 +32,36 @@ import { N8nNativeIntakeDto } from './dto/n8n-native-intake.dto';
  * Two routes, one writer: `intake` takes the canonical (LOCKED) contract;
  * `intake/n8n` takes n8n's native envelope and resolves it down to the same
  * contract (ADR-0017 D4). Both end up in IntakeService.
+ *
+ * ── CH-020 / ADR-0024 D2: `intake` now carries TWO contracts ────────────────
+ * 🔴 Read this before adding a field anywhere near it. `POST /requests/intake`
+ * dispatches on whether the body has a `mode`:
+ *
+ *   no `mode`   → N8nIntakeRequestDto — the canonical LOCKED contract, unchanged
+ *   `mode: 1`   → N8nFlatIntakeDto    — what workflow 1001 actually sends today
+ *   anything else → 400, no write
+ *
+ * What is shared is the URL, not the contract. The alternative — loosening the
+ * canonical DTO so 1001's payload validates against it — would have made
+ * `serviceNowSysId` optional, and that field is the `@unique` idempotency key
+ * every caller's duplicate protection rests on.
  */
 @ApiTags('intake')
 @Controller('requests')
+@ApiExtraModels(N8nIntakeRequestDto, N8nFlatIntakeDto)
 export class IntakeController {
+  /**
+   * The SAME configuration as the global pipe in main.ts, by construction
+   * rather than by comment: dispatching by hand means `@Body()` can no longer
+   * declare a DTO, so the global pipe has nothing to validate against and this
+   * one takes over. Two hand-written rule sets would drift, and the canonical
+   * side is the one that must not move.
+   */
+  private readonly validation = new ValidationPipe({
+    whitelist: true,
+    transform: true,
+  });
+
   constructor(
     private readonly intake: IntakeService,
     private readonly adapter: IntakeAdapterService,
@@ -39,10 +76,30 @@ export class IntakeController {
     required: true,
   })
   @ApiOperation({
-    summary: 'n8n onboarding push → build local Request + line-item mirror',
+    summary:
+      'n8n onboarding push → build local Request + line-item mirror (canonical, or flat when `mode: 1`)',
+  })
+  @ApiBody({
+    description:
+      'canonical contract (no `mode`) or workflow 1001’s flat envelope (`mode: 1`)',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(N8nIntakeRequestDto) },
+        { $ref: getSchemaPath(N8nFlatIntakeDto) },
+      ],
+    },
   })
   @ApiOkResponse({ description: 'the created (or already-existing) request' })
-  push(@Body() dto: N8nIntakeRequestDto) {
+  @ApiBadRequestResponse({
+    description:
+      'the payload matched neither contract, or `mode` was present with an unsupported value — nothing was written',
+  })
+  async push(@Body() body: unknown) {
+    if (this.isFlat(body)) {
+      const dto = await this.validate(body, N8nFlatIntakeDto);
+      return this.adapter.intakeFlat(dto);
+    }
+    const dto = await this.validate(body, N8nIntakeRequestDto);
     return this.intake.intake(dto);
   }
 
@@ -70,5 +127,22 @@ export class IntakeController {
   })
   pushNative(@Body() dto: N8nNativeIntakeDto) {
     return this.adapter.intakeNative(dto);
+  }
+
+  /**
+   * Presence of the key, not its value: a body carrying `mode: 2` must reach
+   * the flat DTO and be REJECTED there, not fall through to the canonical
+   * contract where it would be silently stripped by `whitelist` and then fail
+   * on unrelated missing fields.
+   */
+  private isFlat(body: unknown): boolean {
+    return typeof body === 'object' && body !== null && 'mode' in body;
+  }
+
+  private async validate<T>(body: unknown, metatype: Type<T>): Promise<T> {
+    return (await this.validation.transform(body, {
+      type: 'body',
+      metatype,
+    })) as T;
   }
 }

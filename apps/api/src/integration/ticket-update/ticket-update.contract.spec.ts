@@ -3,7 +3,12 @@ import { ServiceNowService } from '../servicenow/servicenow.service';
 import { ConnectorConfigService } from '../connector-config.service';
 import { DirectTicketProvider } from './direct-ticket.provider';
 import { N8nTicketProvider } from './n8n-ticket.provider';
-import { TicketUpdateProvider } from './ticket-update.provider';
+import {
+  TicketUpdateProvider,
+  type TicketTarget,
+} from './ticket-update.provider';
+
+const RITM: TicketTarget = { kind: 'ritm', sysId: 'RITM1' };
 
 /**
  * Seam ④'s contract — REWRITTEN BY CH-010, and the rewrite is the point.
@@ -64,9 +69,10 @@ describe('ticket-update seam contract (CH-010: a deliberate, contained divergenc
 
   describe('the direct provider carries the decision to the catalog task', () => {
     it('closeComplete moves the task and reports the outcome', async () => {
-      await expect(direct.closeComplete('RITM1', 'fulfilled')).resolves.toEqual(
-        { status: 'updated', newState: '3' },
-      );
+      await expect(direct.closeComplete(RITM, 'fulfilled')).resolves.toEqual({
+        status: 'updated',
+        newState: '3',
+      });
       expect(snow.updateRecord).toHaveBeenCalledWith(
         'TASK1',
         expect.objectContaining({ state: '3' }),
@@ -77,9 +83,9 @@ describe('ticket-update seam contract (CH-010: a deliberate, contained divergenc
     it('markInProgress does the same with state 2', async () => {
       snow.updateRecord.mockResolvedValue({ state: '2' });
 
-      await expect(
-        direct.markInProgress('RITM1', 'procurement'),
-      ).resolves.toEqual({ status: 'updated', newState: '2' });
+      await expect(direct.markInProgress(RITM, 'procurement')).resolves.toEqual(
+        { status: 'updated', newState: '2' },
+      );
       expect(snow.updateRecord).toHaveBeenCalledWith(
         'TASK1',
         expect.objectContaining({ state: '2' }),
@@ -99,25 +105,25 @@ describe('ticket-update seam contract (CH-010: a deliberate, contained divergenc
    */
   describe('the n8n provider refuses instead of doing the old thing', () => {
     it('closeComplete throws rather than returning an outcome', async () => {
-      await expect(n8n.closeComplete('RITM1', 'n')).rejects.toThrow(
+      await expect(n8n.closeComplete(RITM, 'n')).rejects.toThrow(
         /catalog task/i,
       );
     });
 
     it('markInProgress throws too', async () => {
-      await expect(n8n.markInProgress('RITM1', 'n')).rejects.toThrow(
+      await expect(n8n.markInProgress(RITM, 'n')).rejects.toThrow(
         /catalog task/i,
       );
     });
 
     it('never calls workflow 2004', async () => {
-      await expect(n8n.closeComplete('RITM1', 'n')).rejects.toThrow();
-      await expect(n8n.markInProgress('RITM1', 'n')).rejects.toThrow();
+      await expect(n8n.closeComplete(RITM, 'n')).rejects.toThrow();
+      await expect(n8n.markInProgress(RITM, 'n')).rejects.toThrow();
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('never reaches the Table API either — it does not quietly become direct', async () => {
-      await expect(n8n.closeComplete('RITM1', 'n')).rejects.toThrow();
+      await expect(n8n.closeComplete(RITM, 'n')).rejects.toThrow();
       expect(snow.updateRecord).not.toHaveBeenCalled();
       expect(snow.query).not.toHaveBeenCalled();
     });
@@ -127,7 +133,7 @@ describe('ticket-update seam contract (CH-010: a deliberate, contained divergenc
      * switch is the problem, not ServiceNow.
      */
     it('says what to do about it', async () => {
-      await expect(n8n.closeComplete('RITM1', 'n')).rejects.toThrow(/direct/i);
+      await expect(n8n.closeComplete(RITM, 'n')).rejects.toThrow(/direct/i);
     });
   });
 
@@ -138,7 +144,7 @@ describe('ticket-update seam contract (CH-010: a deliberate, contained divergenc
   describe('the vendor is unreachable', () => {
     it('direct lets the failure through instead of reporting an outcome', async () => {
       snow.updateRecord.mockRejectedValue(new Error('ServiceNow down'));
-      await expect(direct.closeComplete('RITM1', 'n')).rejects.toThrow();
+      await expect(direct.closeComplete(RITM, 'n')).rejects.toThrow();
     });
   });
 
@@ -152,6 +158,6 @@ describe('ticket-update seam contract (CH-010: a deliberate, contained divergenc
     snow.updateRecord.mockRejectedValue(
       new Error('ServiceNow request failed (403)'),
     );
-    await expect(direct.closeComplete('RITM1', 'n')).rejects.toThrow();
+    await expect(direct.closeComplete(RITM, 'n')).rejects.toThrow();
   });
 });

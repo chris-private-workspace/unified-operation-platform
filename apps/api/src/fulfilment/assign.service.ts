@@ -13,7 +13,10 @@ import {
   type DirectoryUser,
 } from '../integration/license-ops/license-ops.provider';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
-import { TicketUpdateProvider } from '../integration/ticket-update/ticket-update.provider';
+import {
+  TicketUpdateProvider,
+  type TicketTarget,
+} from '../integration/ticket-update/ticket-update.provider';
 import { assertOpcoScope } from '../auth/opco-scope';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
@@ -314,11 +317,16 @@ export class AssignService {
 
     // ── ServiceNow write-back (mirror only, non-fatal — OD4) ──
     const note = `License ${item.sku.skuPartNumber} assigned via platform.`;
-    if (item.serviceNowSysId) {
+    const ticketTarget = this.ticketTarget(item);
+    if (ticketTarget) {
       /**
        * W40 / OQ-E — this line has its own RITM (ADR-0008 D6 two-level), and
        * assigning it is precisely what that RITM asked for, so close it. The
        * close note carries the text the work note used to.
+       *
+       * CH-020 / ADR-0024 D6 — or its own catalog task, when n8n handed one over
+       * at intake. `ticketTarget` decides which; everything else here is
+       * unchanged.
        *
        * No duplicate-close guard needed: the stage gate above rejects anything
        * that is not READY, so a line item can only reach here once.
@@ -332,7 +340,7 @@ export class AssignService {
        */
       await this.writeTicket(
         TICKET_TRANSITIONS.CLOSE,
-        item.serviceNowSysId,
+        ticketTarget,
         note,
         request.id,
       );
@@ -384,6 +392,33 @@ export class AssignService {
   // ── seam ④ helpers (W40) ────────────────────────────────────────────────
 
   /**
+   * Which ServiceNow record this line's state change addresses (CH-020 /
+   * ADR-0024 D6). Task first, then RITM, then nothing.
+   *
+   * 🔴 The order is not a preference. A line that carries a task sys_id got it
+   * from n8n workflow 1001, which is waiting for THAT task to close — and the
+   * line's own RITM (when it has one) belongs to a different question. Falling
+   * through to the RITM would close the wrong record while looking like it
+   * worked.
+   *
+   * One resolver for both transitions on purpose: hold and close must never
+   * disagree about which ticket a line item is, or a line could be held on one
+   * record and closed on another.
+   */
+  private ticketTarget(item: {
+    serviceNowSysId: string | null;
+    serviceNowTaskSysId: string | null;
+  }): TicketTarget | null {
+    if (item.serviceNowTaskSysId) {
+      return { kind: 'task', sysId: item.serviceNowTaskSysId };
+    }
+    if (item.serviceNowSysId) {
+      return { kind: 'ritm', sysId: item.serviceNowSysId };
+    }
+    return null;
+  }
+
+  /**
    * Tell ServiceNow this line is waiting on procurement — AT MOST ONCE.
    *
    * The guard is the whole point. A blocked assign throws, and an operator can
@@ -401,20 +436,22 @@ export class AssignService {
     item: {
       id: string;
       serviceNowSysId: string | null;
+      serviceNowTaskSysId: string | null;
       ticketHeldAt: Date | null;
       sku: { skuPartNumber: string };
     },
     requestId: string,
   ): Promise<void> {
-    // No per-line RITM → nothing this seam may write (see the close path).
-    if (!item.serviceNowSysId || item.ticketHeldAt) return;
+    // No per-line RITM or task → nothing this seam may write (see the close path).
+    const target = this.ticketTarget(item);
+    if (!target || item.ticketHeldAt) return;
 
     const note =
       `License unavailable for ${item.sku.skuPartNumber} — procurement in progress. ` +
       'Item on hold.';
     const held = await this.writeTicket(
       TICKET_TRANSITIONS.HOLD,
-      item.serviceNowSysId,
+      target,
       note,
       requestId,
     );
@@ -437,35 +474,35 @@ export class AssignService {
    */
   private async writeTicket(
     transition: TicketTransition,
-    snTarget: string,
+    target: TicketTarget,
     note: string,
     requestId: string,
   ): Promise<boolean> {
     try {
       const outcome =
         transition === TICKET_TRANSITIONS.CLOSE
-          ? await this.tickets.closeComplete(snTarget, note)
-          : await this.tickets.markInProgress(snTarget, note);
+          ? await this.tickets.closeComplete(target, note)
+          : await this.tickets.markInProgress(target, note);
       if (outcome.status === 'updated') return true;
       // H4: `details` is the provider's own operator-facing text — both
       // implementations are required to strip the vendor's message, so this is
       // safe to record. Never the raw workflow/vendor body.
       await this.queueTicketFailure(
         transition,
-        snTarget,
+        target,
         note,
         requestId,
         new Error(outcome.details),
       );
     } catch (err) {
-      await this.queueTicketFailure(transition, snTarget, note, requestId, err);
+      await this.queueTicketFailure(transition, target, note, requestId, err);
     }
     return false;
   }
 
   private async queueTicketFailure(
     transition: TicketTransition,
-    snTarget: string,
+    target: TicketTarget,
     note: string,
     requestId: string,
     error: unknown,
@@ -477,7 +514,17 @@ export class AssignService {
     );
     await this.failures.record({
       kind: OUTBOUND_FAILURE_KINDS.SERVICENOW_TICKET_UPDATE,
-      payload: { snTarget, note, transition },
+      // CH-020 — `targetKind` travels with the sys_id because a replay has to
+      // know which one it is holding. Without it the retry would default to
+      // RITM and query `request_item=<task sys_id>`, which finds nothing: the
+      // repair could never succeed, and the reason would not be visible
+      // anywhere in the row.
+      payload: {
+        snTarget: target.sysId,
+        targetKind: target.kind,
+        note,
+        transition,
+      },
       error,
       requestId,
     });

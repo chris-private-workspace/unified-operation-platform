@@ -445,7 +445,7 @@ describe('OutboundRetryService', () => {
       await service.retry('f-close', ADMIN);
 
       expect(tickets.closeComplete).toHaveBeenCalledWith(
-        'ritm-sys-1',
+        { kind: 'ritm', sysId: 'ritm-sys-1' },
         'License E3 assigned via platform.',
       );
       expect(tickets.markInProgress).not.toHaveBeenCalled();
@@ -459,10 +459,38 @@ describe('OutboundRetryService', () => {
       await service.retry('f-hold', ADMIN);
 
       expect(tickets.markInProgress).toHaveBeenCalledWith(
-        'ritm-sys-1',
+        { kind: 'ritm', sysId: 'ritm-sys-1' },
         expect.any(String),
       );
       expect(tickets.closeComplete).not.toHaveBeenCalled();
+    });
+
+    /**
+     * CH-020 — the payload now says WHICH record the sys_id is, because a replay
+     * that guesses wrong queries `request_item=<task sys_id>` and can never
+     * succeed.
+     *
+     * The two cases above have no `targetKind` at all, which is exactly the
+     * shape of every row queued before CH-020: they must keep replaying as
+     * RITMs, and they do (asserted there).
+     */
+    it('replays a task failure as a task, not as a RITM', async () => {
+      failures.findById.mockResolvedValue({
+        ...TICKET_CLOSE_FAILURE,
+        id: 'f-task',
+        payload: {
+          ...TICKET_CLOSE_FAILURE.payload,
+          snTarget: 'task-sys-9',
+          targetKind: 'task',
+        },
+      });
+
+      await service.retry('f-task', ADMIN);
+
+      expect(tickets.closeComplete).toHaveBeenCalledWith(
+        { kind: 'task', sysId: 'task-sys-9' },
+        expect.any(String),
+      );
     });
 
     it('a work-note repair still goes direct and never touches the seam', async () => {

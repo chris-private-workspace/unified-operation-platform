@@ -276,6 +276,19 @@ model RequestLineItem {
   serviceNowSysId     String?
   serviceNowNumber    String?
 
+  // CH-020 / ADR-0024 D1 — the sc_task the platform must close once THIS line is
+  // assigned, handed over by n8n workflow 1001 (the Windows Domain Account
+  // catalog task). Distinct from the two fields above: those are the RITM, and
+  // the close path derives its task from them by querying `request_item=<RITM>`.
+  // Feeding a task sys_id into that query returns nothing, which is why these
+  // could not simply reuse serviceNowSysId.
+  //
+  // On the line item rather than the request (D1): the close happens after ONE
+  // line is assigned, so this makes "which line closes which task" explicit and
+  // stops two lines from closing the same task twice.
+  serviceNowTaskSysId String?
+  serviceNowTaskNumber String?
+
   // procurement references (recorded during manual stage tracking)
   quoteRef            String? // vendor quotation reference
   poRef               String? // purchase order reference

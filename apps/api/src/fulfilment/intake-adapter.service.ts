@@ -9,9 +9,10 @@ import { ServiceNowService } from '../integration/servicenow/servicenow.service'
 import { ConnectorConfigService } from '../integration/connector-config.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
-import { IntakeService } from './intake.service';
+import { IntakeService, type IntakeTaskRef } from './intake.service';
 import { N8nNativeIntakeDto } from './dto/n8n-native-intake.dto';
 import { N8nIntakeRequestDto } from './dto/n8n-intake.dto';
+import { N8nFlatIntakeDto } from './dto/n8n-flat-intake.dto';
 import { opcoCodeForJobFunction } from './opco-department-map';
 
 /** The catalogue row a default injection resolved to. */
@@ -99,6 +100,92 @@ export class IntakeAdapterService {
       await this.auditInjection(created, injected);
     }
     return created;
+  }
+
+  /**
+   * CH-020 / ADR-0024 D3 — workflow 1001's FLAT envelope.
+   *
+   * Deliberately thin. Everything it needs already exists on this service and
+   * is reached by calling it, not by copying it: `resolveReqSysId` keeps the
+   * idempotency key exactly what it has always been (`Request.serviceNowSysId`,
+   * `@unique`), and `applyDefaultSku` is ADR-0020 untouched. The only genuinely
+   * new thing here is the catalog task ref riding along to the line item.
+   *
+   * No Job Function mapping: this payload resolves the OpCo on the n8n side and
+   * sends the code. It is still checked for existence + active, because that is
+   * the gap N8N-INTAKE-HANDOFF §7 #5 flagged on the canonical route.
+   */
+  async intakeFlat(dto: N8nFlatIntakeDto) {
+    const opcoCode = dto.opcoCode.trim();
+    const opco = await this.prisma.opco.findUnique({
+      where: { code: opcoCode },
+    });
+    if (!opco || !opco.active) {
+      throw new BadRequestException(
+        `OpCo '${opcoCode}' is ${
+          opco ? 'inactive' : 'not present'
+        } on this environment`,
+      );
+    }
+
+    // 1001 carries no licence line at all, so this is always the ADR-0020
+    // injection — but it is asked rather than assumed, so a future payload that
+    // does carry one is not silently given a second licence.
+    const { lineItems, injected } = await this.applyDefaultSku(
+      [],
+      dto.requestId,
+    );
+    const serviceNowSysId = await this.resolveReqSysId(dto.requestId);
+
+    const canonical: N8nIntakeRequestDto = {
+      targetUpn: dto.targetUpn.trim(),
+      targetDisplayName: dto.targetDisplayName?.trim() || undefined,
+      opcoCode,
+      // Same sanitising as the native path: optional metadata off an Outlook
+      // trigger must not fail an onboarding, but must not be persisted raw
+      // either (the canonical DTO declares it an email and no pipe runs here).
+      requesterEmail: this.emailOrUndefined(dto.requesterEmail),
+      serviceNowSysId,
+      serviceNowNumber: dto.requestId.trim(),
+      // accountCreatedAt / azureSyncedAt stay null for the same reason as the
+      // native path: n8n does not send them, and the assign gate must not open
+      // on an inference.
+      lineItems,
+    };
+
+    const taskRef = this.taskRef(dto);
+
+    // H4: REQ number / OpCo / task number are safe; the target UPN is not.
+    this.logger.log(
+      `n8n flat intake: REQ ${canonical.serviceNowNumber} → opco ${opcoCode}, ${
+        lineItems.length
+      } line item(s), task ${taskRef?.number ?? taskRef?.sysId ?? 'none'}`,
+    );
+
+    // Same reasoning as intakeNative: checked BEFORE the write so a repeat push
+    // does not audit an injection that did not happen this time round.
+    const preExisting = injected
+      ? await this.prisma.request.findUnique({
+          where: { serviceNowSysId },
+          select: { id: true },
+        })
+      : null;
+
+    const created = await this.intake.intake(canonical, taskRef);
+    if (injected && !preExisting) {
+      await this.auditInjection(created, injected);
+    }
+    return created;
+  }
+
+  /**
+   * A task NUMBER without a sysId is not addressable, so the ref is keyed on
+   * the sysId alone — 1001's own resolver returns both or neither.
+   */
+  private taskRef(dto: N8nFlatIntakeDto): IntakeTaskRef | undefined {
+    const sysId = dto.serviceNowTaskSysId?.trim();
+    if (!sysId) return undefined;
+    return { sysId, number: dto.serviceNowTaskNumber?.trim() || null };
   }
 
   // ── default SKU injection (ADR-0020) ─────────────────────────
@@ -358,8 +445,18 @@ export class IntakeAdapterService {
    * address; it is optional metadata and not worth failing an onboarding over.
    */
   private requesterEmail(dto: N8nNativeIntakeDto): string | undefined {
-    const sender = dto.request.source?.sender?.trim();
-    if (!sender || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)) return undefined;
-    return sender;
+    return this.emailOrUndefined(dto.request.source?.sender);
+  }
+
+  /**
+   * Shared with the flat path (CH-020), which declares `requesterEmail` as a
+   * plain string for the same reason: failing a whole onboarding over an
+   * optional courtesy field would be the wrong trade. One copy of the rule —
+   * two would drift, and only one of them would be visible from the other.
+   */
+  private emailOrUndefined(raw: string | undefined): string | undefined {
+    const value = raw?.trim();
+    if (!value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return undefined;
+    return value;
   }
 }

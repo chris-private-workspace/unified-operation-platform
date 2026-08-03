@@ -11,9 +11,10 @@
  *   - N8nTicketProvider    (W40 F2)    — n8n workflow 2004
  *
  * ── CH-010 / ADR-0018: what these methods write to ──────────────────────────
- * The interface did not change: both methods still take the RITM sys_id and
- * still mean "this request is fulfilled" / "this request is stuck". What
- * changed is WHICH RECORD carries that decision into ServiceNow.
+ * Both methods still mean "this request is fulfilled" / "this request is
+ * stuck". What CH-010 changed is WHICH RECORD carries that decision into
+ * ServiceNow. (CH-020 later changed what they are HANDED — see TicketTarget
+ * below — but not what they mean.)
  *
  * Patching the RITM's own state does not close it here. Ricoh's instance drives
  * RITM state from its catalog tasks, so the platform closes the task and lets
@@ -88,12 +89,33 @@ export type TicketUpdateOutcome =
   | { status: 'error'; details: string };
 
 /**
+ * WHICH ServiceNow record the platform is being asked to move (CH-020 /
+ * ADR-0024 D4).
+ *
+ * This used to be a bare sys_id, which only worked while there was exactly one
+ * possible interpretation of it. There are now two, and they are NOT
+ * interchangeable — `pickTask` queries `request_item=<id>`, so handing it a
+ * task sys_id asks "which tasks have this task as their parent" and always
+ * finds nothing. A union makes that impossible to get wrong silently: the
+ * caller has to say which it has.
+ *
+ *   ritm — the platform finds the one active catalog task underneath (today's
+ *          behaviour, ADR-0018 D3, unchanged)
+ *   task — the caller already knows the task, because n8n workflow 1001 handed
+ *          it over at intake. 🔴 This bypasses the "exactly one active task"
+ *          protection by construction, which is why the direct implementation
+ *          verifies the task is still open before touching it (D5).
+ */
+export type TicketTarget =
+  { kind: 'ritm'; sysId: string } | { kind: 'task'; sysId: string };
+
+/**
  * Abstract class rather than interface + string token, so Nest uses the class
  * itself as the DI token (same reasoning as LicenseOperationsProvider).
  *
- * Both methods take the RITM sys_id. Never the parent REQ: 2004 is RITM-only by
- * design, so accepting a REQ here would be an interface the n8n implementation
- * could not honour.
+ * Both methods take a RITM or a catalog task. Never the parent REQ: 2004 is
+ * RITM-only by design, so accepting a REQ here would be an interface the n8n
+ * implementation could not honour.
  *
  * 🔴 RITM division of labour (ADR-0017 D3, hard rule — both sides must hold it):
  *   n8n 1007  closes AD-type RITMs only.
@@ -125,13 +147,13 @@ export abstract class TicketUpdateProvider {
    * Progress with a work note.
    */
   abstract markInProgress(
-    sysId: string,
+    target: TicketTarget,
     note: string,
   ): Promise<TicketUpdateOutcome>;
 
   /** "Fulfilled." Ticket goes to Closed Complete with a close note. */
   abstract closeComplete(
-    sysId: string,
+    target: TicketTarget,
     note: string,
   ): Promise<TicketUpdateOutcome>;
 }
