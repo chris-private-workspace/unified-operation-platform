@@ -115,8 +115,15 @@ last_updated: 2026-08-03
     - `RITM0047331`（`O365 User License Maintenance Request` · Open）：`target_user` **有**呢個 variable，但值係**另一位同事**，唔係 gate ② 記低嗰個 sys_id ⇒ **回填冇寫入**
     - `RITM0047333`（`New Hire Windows Domain Account` · **Closed Complete**）：`target_user` **吉**
     - 🔴 **好彩冇寫到** —— dev fixture 把「target = requester 本人」嘅平台 request 駁咗落一張**真人真事、關另一位同事事**嘅 RITM。真寫落去 = 改咗人哋張飛
-  - 🚧 **未判到因由**，三個候選分唔開：(a) `sc_item_option` **冇寫權**（BUG-010 已示範 insert/update 兩套 ACL）(b) 03:40 sweep 跑嗰刻回填 code 未完整（`bea936b` 03:59 先 commit）(c) 行過但 return false / throw 畀 non-fatal 食咗
-  - **要分開三者只有一條路 = 真 PATCH 一次**（live 寫入,需 Chris 明示批准）。唯一安全對象 = **RITM0047366**（G6 嗰張 `[UOP TEST]`,本來就等緊人手 cancel）。🔴 **絕不可以攞 RITM0047331 做實驗** —— 佢係真人張飛
+  - 🔴 **因由已判實 = (a) 冇寫權。** Chris 2026-08-04 批准打一次真 PATCH（限 **RITM0047366**,G6 嗰張 `[UOP TEST]`）。行 production class,寫**同一個值**（唔改張飛任何事實,證據係 HTTP status 唔係新值):
+    ```
+    PATCH /api/now/table/sc_item_option/f11e6ba4… -> 403
+    {"error":{"message":"Operation Failed",
+              "detail":"ACL Exception Update Failed due to security constraints"}}
+    ```
+    獨立 read 覆核:`value` 冇變、`sys_mod_count` **0 → 0** ⇒ **ServiceNow 零副作用**
+  - ⇒ **`updateCatalogVariable` 對呢個帳號係永遠 work 唔到**,`target_user` 回填等同死 code（每次靜靜 403,gate 照開）。**ADR-0025 D3 個 placeholder 策略要重諗 —— H1,等 Chris 拍板,未拍板前唔改 code**
+  - **G7 本身個驗收準則要改**：「`target_user` 真係由 requester 變新用戶」呢半**已證實做唔到**,唔係未驗
 - [ ] G8 — **live** close 成功 + 兄弟 task 冇郁
 - [ ] G9 — 前端 light + dark + `ui-design` 跑過
 - [ ] G10 — UAT 部署後抽 running OpenAPI **實搜**新契約（唔靠 tag 推論）

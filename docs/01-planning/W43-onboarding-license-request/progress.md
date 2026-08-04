@@ -276,6 +276,41 @@ cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in Ser
 
 ⚠️ **順帶一個我自己嘅失誤**：probe 特登只攞 `user_name` 唔攞 email / displayName 去避開 H4，但呢個 instance 個 `user_name` **本身就係 email address**，所以照樣印咗兩個地址落 terminal。冇造成實際外洩（本機 + private repo），但下次要**先確認個欄實際載住咩**先當佢安全。
 
+### 🔴 G7 write 半 — **403 ACL,因由判實**（Chris 2026-08-04 批准打一次）
+
+批准範圍：**只准打 RITM0047366**（G6 嗰張 `[UOP TEST]`，本來就等緊人手 cancel）。Script hard-code 咗一個 number，另外兩張真人張飛入咗 `FORBIDDEN` list 兼 assert 兩次。
+
+**做法**：行 **production class**（`ServiceNowService` + stub `ConfigService`/`ConnectorConfigService`），寫**同一個值**（`target_user` 本來就係 requester 個 sys_id）—— 唔改張飛任何事實，證據係 **HTTP status** 唔係新值。覆核走**獨立 read 路**，唔畀寫嗰個 object 做自己成功嘅證人。Dry-run 先行，`--write` 至寫。
+
+```
+BEFORE  option=f11e6ba4… value=f9c5785f… updated=2026-08-04 02:26:28 mod_count=0
+WRITE   THREW: ServiceNow request failed (403)
+        PATCH /api/now/table/sc_item_option/f11e6ba4… -> 403
+        {"error":{"message":"Operation Failed",
+                  "detail":"ACL Exception Update Failed due to security constraints"}}
+AFTER   option=f11e6ba4… value=f9c5785f… updated=2026-08-04 02:26:28 mod_count=0
+```
+
+⇒ **候選 (a) 證實，(b)/(c) 唔使再查** —— 就算 03:40 嗰次 code 完整、就算行過，結果都一定係 403。
+
+⇒ 🔴 **`updateCatalogVariable` 對 `n8napiservice1` 係永遠 work 唔到。** `target_user` 回填等同死 code：每次靜靜 403（non-fatal 食咗），gate 照開，而張單**永遠繼續指住 requester 做自己個 target**。
+
+**ServiceNow 零副作用**：`value` 冇變、`sys_mod_count` **0 → 0**。RITM0047366 仍然係嗰四張等人手 cancel 嘅其中一張，狀態同做呢個實驗之前一模一樣。
+
+**呢個推翻 ADR-0025 D3 嘅後半段（H1 —— 未拍板前唔改 code）。** 三條路畀 Chris 揀：
+
+| | 路 | 代價 / 好處 |
+|---|---|---|
+| **(i)** | 同 SN admin 攞 `sc_item_option` 寫權 | 唯一保住 D3 原設計嘅方法;但要外部批,時間唔喺我哋手 |
+| **(ii)** | **拆走回填**（call + `updateCatalogVariable` 一併刪） | 最誠實 —— 唔留一段永遠 403 嘅 code。`target_user` 永遠 = requester，真 target 靠 `target_users_email`（已經有） |
+| **(iii)** | 改用 **work note** 講返真 target | `sc_req_item` 嘅 PATCH **已證實寫得**（CH-010 close task 就係走呢條路），O365 Support 睇得到;但 `target_user` 欄本身仍然錯 |
+
+**我 recommend (iii) + (ii) 一齊做**：拆走一段永遠失敗嘅 code，改用一條**已經證實寫得到**嘅路去交付同一個資訊。(i) 可以平行去追，追到再回來加返。
+
+⚠️ **gate ② 本身唔受影響** —— 佢開閘靠嘅係「SN 搵唔搵到呢個人」，同寫唔寫得到 variable 無關。assign 雙閘照 work。
+
+一次性 script **跑完即刪**（hardcode 咗 RITM number，係 gate 驗證唔係持續工具）。
+
 ### Commits
 
 | Hash | Subject | Checklist |
