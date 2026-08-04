@@ -273,7 +273,26 @@ provider 對 RITM 嘅形狀 **agnostic** ⇒「新建嗰張 O365 RITM」唔係�
 
 （誠實講:正面兩句（`via platform` / SKU）先係有牙嗰啲 —— 反面兩句係 drift guard，平時唔會紅。）
 
-**F6-3 / F6-4 live 未做，需要 Chris 明示批准**（要真派一隻 licence 落真 tenant 一個真 synced user;memory `V5d` 明文「未經明確指示唔撳」）。⚠️ 兩件前置:①gate ② 而家係硬 gate ⇒ 要一張**兩個 gate 都通**嘅單 ②G6 嗰張 RITM0047366 **剛好只有 1 張 active task**，所以佢**證唔到 F6-4**（兄弟 task 冇郁）—— 要一張有 ≥2 task 嘅單，或者用 CH-014 造 fixture。
+**F6-3 / F6-4 live** —— Chris 2026-08-04 揀 **(b)**:先造一張有兩張 RITM 嘅 fixture，target = 佢自己，真派嘅 SKU 原定 Power BI Free。
+
+#### 已完成嘅步驟（含**唔可逆**嘅）
+
+| # | 動作 | 結果 |
+|---|---|---|
+| 1 | 🔴 **唔可逆** — `seed:sn-onboarding --shape=multi --post --target=<Chris>` | **REQ0044072** → **RITM0047367**（SCTASK0071832）+ **RITM0047368**（SCTASK0071833），各**剛好 1 張 active task**，兩張都標咗 `[UOP TEST]`。⚠️ 待人手 cancel 嘅測試單由 4 張變 **5 張** |
+| 2 | 重啟 stack | 🔴 撞到 skill 寫低嗰個 **build-cache 假綠燈**（`dist/main.js` 唔存在 + `tsbuildinfo` 仲喺度 ⇒ verify 90s 之後 port 3100 FREE 而 leak watch 得 9 個）。按 skill 修:刪 cache + `dist/` **然後直接起**（中間唔插 `npm run build`）—— 一次過起返，~30s |
+| 3 | `intake:from-sn --post` 導入平台 | request `cmsedl8jz…`，2 條 line 各自帶住自己嘅 RITM sys_id |
+| 4 | 等 sweep | **08:10:03 兩個 gate 一齊開** —— gate ① Graph 搵到、gate ② SN 搵到（sys_id `f9c5785f…`）。⇒ **W43 gate ② 全鏈 live 通過** |
+
+#### 🔴 步驟 4 之後撞到一件事，令「派 Power BI Free」呢個決定要重問
+
+Graph read-only probe（唔寫嘢）查到 **target 本身已經持有 `POWER_BI_STANDARD`** —— 正正係 CH-020 **V5d** 嗰次驗證派落去嘅殘留。再派一次:**成功就係 no-op、失敗就係一個同 close 路徑完全無關嘅錯**，兩種都會令 F6 個結論唔乾淨（「睇落成功但證明唔到嘢」）。
+
+順帶第二個限制:**ADR-0016 預算 gate** 要求 `assigned + 1 ≤ allocated`，而 RHK 每一行 ledger 嘅 `allocated` 都係 **0** ⇒ 任何 SKU 都要先加 allocation（呢個正正係 override dialog 自己叫人做嗰件事）。而 **DD-3**:冇 ledger row 嘅 SKU **憑空建唔到 row** ⇒ 只可以喺 RHK **已有 row** 嗰 7 個入面揀。
+
+七行入面同時滿足「真 tenant SKU」「target 未持有」「tenant 有 free seat」嘅**只有一個**:`POWERAUTOMATE_ATTENDED_RPA`（tenant free=41 ⇒ 用嘅係**已買嘅 seat，冇新開支**）。其餘:`POWER_BI_STANDARD`/`Microsoft_365_Copilot` 已持有 · `SPE_E3`/`STANDARDPACK` 個 `skuId` 係 `test-e3`/`test-e1` **假 GUID** · `DESKLESSPACK`/`VISIO_PLAN1` tenant 冇 free seat。
+
+⇒ **停低問返 Chris**，因為佢批嘅係「Power BI Free」，而換 SKU 係改一個唔可逆動作嘅內容。
 
 ### G7 read 半 — 回填**冇** landed（2026-08-04，PR #75 merge 之後）
 
