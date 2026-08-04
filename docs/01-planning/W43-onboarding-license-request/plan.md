@@ -195,3 +195,5 @@ ADR-0024 status 標註部分 superseded · ADR README 加 0025 · BUG-010 report
 | 日期 | 版本 | 改動 |
 |---|---|---|
 | 2026-08-03 | 1.0 | 初稿（draft）。等 ADR-0025 Accepted + Chris approve plan。 |
+| 2026-08-04 | 1.1 | Chris Accept ADR-0025 + plan 轉 active + **分批做由批 A 開始**。**R3 deviation log**：F1 加兩個 checklist item —— **F1-8** `findUserSysIdByEmail()`（ADR-0025 D3 requester 解析同 D4 gate ② 問嘅係同一件事，做一個共用 helper 好過兩份）、**F1-9** catalog item 分流 + 三個 env key（D2 只講「走 catalog API」，冇講落邊張單）。兩者都係既有 Decision 嘅必然實作，冇擴 scope。 |
+| 2026-08-04 | 1.1 | **實作揭到三件 ADR 冇覆蓋嘅嘢**（詳見 progress Day 1）：① catalog API 只返 REQ number，落單後必須反查先攞到 RITM ② RITM 順序唔保證 ⇒ 按 `sys_created_on` 讀 + **count 唔等 fail-closed** ③ 🔴 **D365 分流冇可靠數據源** —— `SkuCatalog.category` 實測係 licence 角色分類（`Base`/`Add-on`/…）而唔係產品家族，30 個 Dynamics SKU 全部冇 category，所以只能靠 part number 前綴（env 可改，混合 line fail-closed）。 |

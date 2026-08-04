@@ -26,13 +26,15 @@ last_updated: 2026-08-03
 
 ## F1 — BUG-010：`DirectServiceNowProvider` 改行 Service Catalog API
 
-- [ ] F1-1 `ServiceNowService` 加 `order_now` 落單能力（單行）
-- [ ] F1-2 `ServiceNowService` 加 cart 路徑（`add_to_cart` + `submit_order`，多行用）
-- [ ] F1-3 `DirectServiceNowProvider` 改用 catalog API，**唔再 insert `sc_request`**
-- [ ] F1-4 unit test（SN mock）：order_now / cart / 400 mandatory / 5xx 各一
-- [ ] F1-5 boundary test：專項斷言「**冇任何 `sc_request` insert**」
-- [ ] F1-6 CH-014 script **保留唔刪**，確認同 production path 各行各路
-- [ ] F1-7 BUG-010 report 標 fixed + 指返 ADR-0025 D2
+- [x] F1-1 `ServiceNowService` 加 `orderNow()`（單行）+ `readRequestNumber()`（`request_number` / `number` 兩個都讀，冇就 throw）
+- [x] F1-2 `ServiceNowService` 加 cart 路徑：`cartItemCount()` / `addToCart()` / `submitCartOrder()`
+- [x] F1-3 `DirectServiceNowProvider` 重寫走 catalog API，**冇任何 `sc_request` insert**
+- [x] F1-4 unit test（SN mock）：order_now / `number` fallback / 冇 request number / cart count / 空 cart / add_to_cart / **400 mandatory** / **5xx** — 11 個
+- [x] F1-5 boundary test：`never inserts into sc_request`（專項斷言 `createRecord` 零呼叫）
+- [x] F1-6 CH-014 script **一個字冇改**；production 行 `ServiceNowService`，script 行自己嘅 `fetch`，兩條路
+- [x] F1-7 BUG-010 report → **`verifying`**（唔係 `done`）+ 指返 ADR-0025 D2。🔴 轉 `done` 要等 **G6 真 POST**
+- [x] F1-8 *(新增，plan §7 changelog)* `findUserSysIdByEmail()` — 兩個 caller 共用（F2 requester / F3 gate ②），**≥2 命中 fail-closed**（OQ-4），H4 log path redact
+- [x] F1-9 *(新增)* catalog item 分流 + 三個 env key 落 `.env.example`
 
 ## F2 — Onboarding intake → 建 O365 單
 

@@ -14,6 +14,40 @@ export type ServiceNowUpdate = Record<string, string>;
 // values / reference sysIds. ServiceNow Table API accepts either (ADR-0008 D3).
 export type ServiceNowCreate = Record<string, string | number>;
 
+/**
+ * Service Catalog variable values. Always strings — a reference variable takes a
+ * sys_id, a choice variable takes the choice VALUE, and an e-mail variable takes
+ * the address; ServiceNow rejects numbers here even for numeric-looking choices.
+ */
+export type CatalogVariables = Record<string, string>;
+
+/**
+ * What the Service Catalog returns when an order is placed.
+ *
+ * 🔴 REQ-level only, and that is not an omission on our side: `order_now` and
+ * `submit_order` answer with the request number and NOTHING about the items
+ * underneath. Anything needing RITM sys_ids has to look them up afterwards
+ * (ServiceNowLookupService), because the catalog workflow — not the caller —
+ * decides what items get created.
+ */
+export interface CatalogOrderResult {
+  requestNumber: string;
+}
+
+/**
+ * `order_now` answers with `request_number`; `submit_order` has been observed to
+ * use `number`. Neither field is guaranteed by anything we control, so both are
+ * read — and a missing answer throws here rather than returning '' that would
+ * fail two steps later inside a lookup, where the cause would be invisible.
+ */
+function readRequestNumber(result: ServiceNowRecord | undefined): string {
+  const raw = result?.request_number ?? result?.number;
+  if (typeof raw !== 'string' || !raw) {
+    throw new Error('ServiceNow catalog order returned no request number');
+  }
+  return raw;
+}
+
 @Injectable()
 export class ServiceNowService implements OnModuleInit {
   private readonly logger = new Logger(ServiceNowService.name);
@@ -163,6 +197,108 @@ export class ServiceNowService implements OnModuleInit {
       fields,
     );
     return data.result;
+  }
+
+  // ── Service Catalog API (BUG-010 / ADR-0025 D2) ─────────────────────────
+  //
+  // 🔴 Why these exist at all: `createRecord` CANNOT open a request on this
+  // instance. `POST /api/now/table/sc_request` returns 403 for the integration
+  // account even with a single-field payload — table-level ACL, not field-level
+  // (BUG-010 §2 #2), while a PATCH on sc_req_item from the same account
+  // succeeds. Insert and update are separate ACLs.
+  //
+  // The catalog route is strictly better anyway, not merely the one that works:
+  // ServiceNow runs the catalog workflow itself, so REQ / RITM / catalog task
+  // come out in exactly the shape a human-raised request has — including the one
+  // active task per RITM that ADR-0018 D3 depends on. Hand-built inserts never
+  // produced that.
+
+  /** Order one catalog item immediately (one REQ, one RITM). */
+  async orderNow(
+    itemSysId: string,
+    variables: CatalogVariables,
+    quantity = 1,
+  ): Promise<CatalogOrderResult> {
+    const data = await this.request<{ result: ServiceNowRecord }>(
+      'POST',
+      `/api/sn_sc/servicecatalog/items/${itemSysId}/order_now`,
+      { sysparm_quantity: String(quantity), variables },
+    );
+    return { requestNumber: readRequestNumber(data.result) };
+  }
+
+  /**
+   * How many items the integration account's cart already holds.
+   *
+   * 🔴 The cart belongs to the ACCOUNT, not to one submission, and
+   * `submit_order` submits ALL of it. Anything another process left behind would
+   * be ordered under our REQ and billed to whoever we named as requester.
+   * Callers must check this before adding and must REFUSE rather than clear:
+   * deleting someone else's pending order is not the platform's call to make.
+   * (Same rule CH-014's ops script follows, for the same reason.)
+   */
+  async cartItemCount(): Promise<number> {
+    const data = await this.request<{ result?: { items?: unknown[] } }>(
+      'GET',
+      '/api/sn_sc/servicecatalog/cart',
+    );
+    return data.result?.items?.length ?? 0;
+  }
+
+  /** Add one catalog item to the cart — used when a request has several lines. */
+  async addToCart(
+    itemSysId: string,
+    variables: CatalogVariables,
+    quantity = 1,
+  ): Promise<void> {
+    await this.request(
+      'POST',
+      `/api/sn_sc/servicecatalog/items/${itemSysId}/add_to_cart`,
+      { sysparm_quantity: String(quantity), variables },
+    );
+  }
+
+  /** Submit everything in the cart as ONE request. */
+  async submitCartOrder(): Promise<CatalogOrderResult> {
+    const data = await this.request<{ result: ServiceNowRecord }>(
+      'POST',
+      '/api/sn_sc/servicecatalog/cart/submit_order',
+    );
+    return { requestNumber: readRequestNumber(data.result) };
+  }
+
+  /**
+   * sys_user sys_id by e-mail address.
+   *
+   * Two callers want exactly this (ADR-0025): the outbound submit needs somebody
+   * real to put in the mandatory `requester_name` / `target_user` reference
+   * variables, and gate ② needs to know whether the new joiner has reached
+   * ServiceNow yet.
+   *
+   * 🔴 Fail-closed on ≥2 matches (OQ-4). `email` is not unique on `sys_user`,
+   * and taking "the first one" would attach a real licence request to the wrong
+   * person with nothing in the record to show it happened.
+   *
+   * H4: the address travels in the query string, so the logged path is redacted
+   * the same way `getIntegrationUserSysId` redacts the service account name.
+   */
+  async findUserSysIdByEmail(email: string): Promise<string | null> {
+    const data = await this.request<{ result: ServiceNowRecord[] }>(
+      'GET',
+      `/api/now/table/sys_user?sysparm_query=email=${encodeURIComponent(
+        email,
+      )}&sysparm_fields=sys_id&sysparm_limit=2`,
+      undefined,
+      '/api/now/table/sys_user?sysparm_query=email=<redacted>',
+    );
+    const rows = data.result ?? [];
+    if (rows.length > 1) {
+      throw new Error(
+        'ServiceNow has more than one user with that e-mail address',
+      );
+    }
+    const sysId = rows[0]?.sys_id;
+    return typeof sysId === 'string' && sysId ? sysId : null;
   }
 
   /** Update fields on a record — used to write fulfilment status back. */

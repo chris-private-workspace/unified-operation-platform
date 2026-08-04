@@ -2,7 +2,7 @@
 bug_id: BUG-010
 title: "sc_request 直接 insert 被 ACL 擋死(403),DirectServiceNowProvider 開單路徑喺 ricohapdev 行唔通"
 severity: Sev3          # Sev1 | Sev2 | Sev3 | Sev4 (per PROCESS.md §4.4)
-status: triaged         # triaged | investigating | fixing | verifying | done | wont-fix
+status: verifying       # triaged | investigating | fixing | verifying | done | wont-fix
 reported: 2026-08-01
 reporter: "CH-014 造 ServiceNow fixture 時實測撞到"
 affects_components: [fulfilment/direct-servicenow.provider, integration/servicenow]
@@ -13,8 +13,11 @@ spec_refs:
 
 # BUG-010 — `sc_request` 直接 insert 被 ACL 擋死
 
-> **Report version**:1.1(triaged)
+> **Report version**:1.2(**verifying**)
 > **Triage approver**:**Chris Lai(2026-08-01)** —— severity 定 **Sev3**,由初判 Sev2 降級(理由見 §6)
+>
+> ✅ **Fix 已落 code(W43 F1,2026-08-04,ADR-0025 D2)**:`DirectServiceNowProvider` 由 Table API insert 改行 **Service Catalog API**(`order_now` 單行 / `add_to_cart`+`submit_order` 多行),即係 §2 #5 實測 200 嗰條路。順帶得着:catalog workflow 由 SN 自己行,所以 REQ/RITM/**catalog task** 同真單同一形狀 —— 手砌 insert 永遠做唔到,而 ADR-0018 D3「唯一 active task」正正靠呢個形狀。
+> 🔴 **仲係 `verifying` 唔係 `done`**:unit test(SN mock)全綠,但**未真 POST 過**。轉 `done` 嘅條件 = W43 **G6**(真建一張單,需 Chris 明示批准,因為 SN 刪唔到單)。
 
 ## 1. Symptom
 

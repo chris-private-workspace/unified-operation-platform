@@ -92,9 +92,23 @@ status: in-progress    # in-progress | closed
 |---|---|---|---|
 | F0 止血 | ~1 | ~0.7 | — |
 
+- **F1 完成**（BUG-010，F1-1 ~ F1-9）：`DirectServiceNowProvider` 由 Table API insert 重寫成 **Service Catalog API**。api **837 → 861**（+24），68 suites。
+
+### 🔴 F1 途中揭到三件 ADR-0025 冇覆蓋嘅嘢
+
+1. **`order_now` / `submit_order` 只返 REQ number，唔返 RITM** —— 而 `SubmittedRequest` 要每條 line 嘅 RITM sys_id。所以落單後一定要**反查**。用 `getRecordByNumber` + `query(...^ORDERBYsys_created_on)`，**冇用** `ServiceNowLookupService`（佢會順帶查每個 RITM 嘅 active task，對建單嚟講係多餘 GET）。
+2. **RITM 順序唔保證等於 payload 順序** ⇒ index zip 會**靜默配錯**。兩道閘頂住：讀返嚟按 `sys_created_on` 排（= 入 cart 次序），而且 **count 唔等就 fail-closed**。副作用：若 `sysparm_quantity > 1` 令 SN 建多張 RITM，會 fail-closed 而唔係靜靜錯 —— 未實測，live 先知。
+3. 🔴 **D365 分流冇可靠數據源**（Chris 揀「兩個 item 都接」之後先發現）：`SkuCatalog.category` 實測係 `Base`/`Add-on`/`Power Platform`/`Voice` —— **licence 角色分類，唔係產品家族**，而 30 個 Dynamics SKU **全部** `category = null`。⇒ 只可以睇 part number 前綴。實測 99 個 active SKU 分得乾淨（30 個 Dynamics 全部 `D365`/`DYN365`/`Dynamics` 開頭，其餘冇一個係），但**佢係 heuristic，失效模式係開錯一張真單**，所以做成 `SERVICENOW_D365_SKU_PREFIXES` env 可改而唔使 deploy。**混合 O365+D365 line 一律 fail-closed**（一個 request 得一個 `serviceNowSysId`，split 冇處可記）。
+
+### 仲未做、已 flag
+
+- **`license_type` 一個字冇送**（D7：`mandatory=false`，48 choice 冇 mapping，送個估好過唔送 —— 錯）。後果係 **O365 Support 收到張單唔知要邊隻 licence**。可以落單後 PATCH 一個 work note 講明 SKU（一行 code），但 ADR 冇要求，**唔自己擴 scope** → 交 Chris 判斷。
+- 有個 `O365 User License Maintenance Request (New)` catalog item 都係 active，但最近 40 張 licence RITM **冇一張**用佢 ⇒ 暫時唔轉，記低。
+
 ### Commits
 
-- `<hash>` — `refactor(fulfilment): W43 F0 — 停用 by-task close，兩個 task 欄改做 traceability`（hash 喺下一個 commit 補返）
+- `f6ec471` — `chore(planning): kickoff W43 + ADR-0025 onboarding licence request creation`
+- `9afc5c3` — `refactor(fulfilment): W43 F0 — 停用 by-task close，兩個 task 欄改做 traceability`（F0-1..F0-5）
 
 ---
 
