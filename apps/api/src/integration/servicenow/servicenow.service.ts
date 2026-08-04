@@ -48,14 +48,6 @@ export interface CatalogOrderResult {
  * on — treating it as "ServiceNow is down" would stall every other onboarding
  * behind one person's duplicated account.
  */
-/** Reference fields come back as `{value, link}` or as a bare string. */
-function refValue(raw: unknown): string {
-  if (!raw) return '';
-  if (typeof raw === 'string') return raw;
-  const value = (raw as { value?: unknown }).value;
-  return typeof value === 'string' ? value : '';
-}
-
 export class AmbiguousServiceNowUserError extends Error {
   constructor() {
     super('ServiceNow has more than one user with that e-mail address');
@@ -323,47 +315,26 @@ export class ServiceNowService implements OnModuleInit {
   }
 
   /**
-   * Set one catalog variable on an existing RITM. Returns false if the RITM has
-   * no such variable (nothing was written).
+   * ── There is deliberately no `updateCatalogVariable` here (ADR-0026 D1) ──
    *
-   * ADR-0025 D3 — this exists for exactly one job: when gate ② opens, replace
-   * the `target_user` placeholder (the requester) with the joiner who now has a
-   * `sys_user` record. Until that happens the request names the wrong person as
-   * its target, and only `target_users_email` is telling the truth.
+   * W43 shipped one, to swap a submitted RITM's `target_user` from the requester
+   * placeholder to the real joiner once gate ② opened (ADR-0025 D3). G7 put it
+   * against a real ticket and got:
    *
-   * Costs 1 + 2N reads because variable values are reached through a join table
-   * (`sc_item_option_mtom` → `sc_item_option` → `item_option_new`) and only the
-   * definition carries the NAME. Acceptable: this runs once per onboarding, at
-   * the moment a gate opens — not on any hot path.
+   *   PATCH /api/now/table/sc_item_option/… -> 403
+   *   "ACL Exception Update Failed due to security constraints"
    *
-   * ⚠️ Whether the integration account may WRITE `sc_item_option` is not proven
-   * (BUG-010 showed insert and update are separate ACLs on this instance). The
-   * caller must treat failure as non-fatal — the gate is about what ServiceNow
-   * knows, not about whether we managed to tidy the ticket.
+   * This instance grants write per table, and the grants do not follow from one
+   * another: `sc_request` insert is refused (BUG-010), `sc_item_option` update is
+   * refused (above), while `sc_req_item` and `sc_task` updates work (CH-010) and
+   * catalog `order_now` works (W43 G6). The method was deleted rather than kept
+   * as best-effort — a 0% path that is KNOWN to be 0% reads as a repair
+   * mechanism to whoever finds it next.
+   *
+   * The information now travels as a work note instead (SyncSweepService).
+   * If `sc_item_option` write access is ever granted, ADR-0026 D5 requires a new
+   * ADR before this comes back — so that its absence stays a decision.
    */
-  async updateCatalogVariable(
-    ritmSysId: string,
-    variableName: string,
-    value: string,
-  ): Promise<boolean> {
-    const links = await this.query(
-      `request_item=${ritmSysId}`,
-      'sc_item_option_mtom',
-      60,
-    );
-    for (const link of links) {
-      const optionId = refValue(link.sc_item_option);
-      if (!optionId) continue;
-      const option = await this.getRecord(optionId, 'sc_item_option');
-      const definitionId = refValue(option?.item_option_new);
-      if (!definitionId) continue;
-      const definition = await this.getRecord(definitionId, 'item_option_new');
-      if (definition?.name !== variableName) continue;
-      await this.updateRecord(optionId, { value }, 'sc_item_option');
-      return true;
-    }
-    return false;
-  }
 
   /** Update fields on a record — used to write fulfilment status back. */
   async updateRecord(

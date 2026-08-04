@@ -1,8 +1,8 @@
 # ADR-0026: `target_user` 回填改行 work note —— `sc_item_option` 寫入被 ACL 封死（supersede ADR-0025 D3 後半）
 
 **Date**: 2026-08-04
-**Status**: **Proposed**
-**Approver**: Chris Lai（待拍板）
+**Status**: **Accepted**
+**Approver**: **Chris Lai（2026-08-04）** —— 揀 (ii)+(iii) 一齊做（拆走回填 + 改行 work note）· **唔卡 OQ-1**（`sn_sc` API 未驗,但 ServiceNow ACL 綁 table 唔綁 API surface,而且估錯代價低:拆走嘅係一個 function,git history 攞得返,D5 本來就要求另寫 ADR 先恢復）· **OQ-2 按 default**（照寫所有 RITM）
 
 ## Context
 
@@ -90,10 +90,18 @@ ADR-0025 D3 嗰句紅字由「回填之前」升級成「永遠」:
 - **Negative**:🔴 **`target_user` 欄永遠指錯人** —— 任何 SN 側靠佢嘅 report / assignment rule / notification 都會指向 requester,只可以靠 work note + `target_users_email` 補。呢個係真代價,而且 UOP 呢邊補唔到。
 - **Neutral**:**gate ② 行為一個字唔變** —— 開閘靠「SN 搵唔搵到呢個人」,同寫唔寫得到 variable 完全無關;assign 雙閘、`budgetOverrideReason` 唔 override 得 sync gate,全部維持。零 schema、零新 dep。
 
+### 🔴 2026-08-04 post-Accept 附註 —— 校正一句話（**唔改 D1–D5**）
+
+實作期間對返 **RISK R6** 揭到本 ADR 一句話講得太實:上文（同 D2）講 work note 路徑「**已證實寫得到**」。**精確講法**:CH-010 證實嘅係**個 PATCH 唔會被 403 拒絕**（對比 `sc_item_option` 一定 403），**唔係**「note 一定 land」。R6 記錄咗 `work_notes` 係 journal input field，Table API GET **永遠返空**，而 integration account 讀唔到 `sys_journal_field` ⇒ ServiceNow 完全做得到**收 `state` 而靜靜 drop `work_notes`**（field-level ACL），喺平台睇嚟同成功一模一樣。
+
+**呢個唔改變決定**:一條**可能**寫得到嘅路，好過一條**已證實一定唔得**嘅路。但佢改變咗我哋可以聲稱幾多 —— D2 應該讀成「改行一條**冇被證實封死**嘅路」而唔係「改行一條保證送達嘅路」。ADR-0026 交付嘅係**唔再假裝有自我修正機制**，唔係**保證 fulfiller 一定睇到**。
+
+⇒ R6 已加咗 gate ② note 做第二個 consumer。要真證實 note land，同 R6 一樣要**人手開 SN 望**。
+
 ## Open Questions
 
-- **OQ-1** — Service Catalog API（`/api/sn_sc/...`）改 variable 寫唔寫得到?未驗。驗到寫得 ⇒ 值得重開 Option D。**唔驗都唔影響本 ADR 落地**。
-- **OQ-2** — work note 逐張 RITM 寫,定係只寫平台自己建嗰張?W43 G7 揭到**回填/work note 冇限制只寫平台建嘅 RITM** —— ADR-0021 import-from-SN 嗰條路,line item 指住嘅係已存在嘅 SN RITM。default 取態 = **照寫所有**（work note 係 append,唔覆蓋任何嘢,風險遠低過改 variable),但值得 Chris 確認。
+- **OQ-1（open,唔阻落地）** — Service Catalog API（`/api/sn_sc/...`）改 variable 寫唔寫得到?未驗。**Chris 2026-08-04 拍板唔卡喺呢度。** 我方睇法係**推理唔係實測**:ServiceNow ACL 綁 **table** 唔綁 API surface,任何寫 `sc_item_option` 嘅路都會行同一套 record-level 評估;而且 stock `sn_sc` surface 係 cart / order / item 定義嗰邊,**冇文檔化嘅「改已提交 RITM variable」路** ⇒ 驗佢係開放式探索,唔係一個平價檢查。若日後有人**實測**到寫得,重開 Option D 要行 D5（另寫 ADR）。
+- **OQ-2 — resolved（Chris 2026-08-04,按 default）**:work note **照寫所有** RITM,唔限平台自己建嗰張。理由:work note 係 **append,唔覆蓋任何嘢** —— 最壞後果係人哋張飛多咗一條無關 note,同「個 target 被改走」唔同級。W43 G7 實測嗰個「平台 request 駁咗落另一位同事張 RITM」嘅情況,正正係呢個分別最重要嘅場景。
 
 ## References
 

@@ -84,6 +84,18 @@ last_updated: 2026-08-03
 - [x] F5-5 web test：**265 → 281**（31 files）；tsc web 0 error
 - [x] F5-6 *(新增，非計劃內)* `deriveStatus` 加 gate ② —— 唔加嘅話**同一個版面自相矛盾**：header badge 講「Ready to assign」而下面 assign 掣講「Blocked · sync」。兩個 gate **共用一個 label**（list column 度「邊個 vendor」唔 actionable，「而家 assign 唔到」先係），順帶令 `matchesFilter('blocked')` **零改動**就接住 gate ② 阻塞嘅 request——分開 label 就要同步改個 filter，漏咗會**靜靜**令佢喺 Blocked tab 消失
 
+## F8 — ADR-0026 落地：拆走回填，改行 work note *(新增，批 C；ADR-0026 Accepted 2026-08-04)*
+
+- [x] F8-1 `ServiceNowService.updateCatalogVariable()` **刪走**；順帶刪自己改動製造嘅 orphan `refValue()`（刪咗之後全 repo 零 caller，已 grep 證）
+- [x] F8-2 原位留一段註釋寫低**點解冇**（403 實測 + 逐 table 開權嘅事實表）—— 唔留就會有人再寫一次
+- [x] F8-3 `SyncSweepService.openServiceNowGate()` 改 `addWorkNote()`；**OQ-2 按 default 照寫所有 RITM**（note 係 append，最壞後果 = 人哋張飛多一條無關 note，同「target 被改走」唔同級）
+- [x] F8-4 note 內容三件缺一不可：verified sys_id + 「`target_user` 係 REQUESTER」+ 「真 target 喺 `target_users_email`」。有專項 test 逐句釘，兼斷言 note **唔含 `@`**（H4）
+- [x] F8-5 失敗維持 non-fatal（test 保留），但**理由改咗**：以前係遮住一道權限牆，而家係真 outage
+- [x] F8-6 **boundary test**：`ServiceNowService.prototype.updateCatalogVariable` 必須 `undefined` + 反面半（`addWorkNote` 仍在）⇒ 令 ADR-0026 **D5**「恢復回填要另寫 ADR」有機制執行，唔止係一句話
+- [x] F8-7 `DEFERRED_REGISTER` **DD-5**（`sc_item_option` 寫權）+ `RISK_REGISTER` **R7**（UOP/n8n 共用 SN 帳號）
+- [x] F8-8 🔴 **post-Accept 附註校正 ADR-0026 一句話** —— 對返 R6 發現「work note 已證實寫得到」講得太實：CH-010 證實嘅係**個 PATCH 唔會 403**，唔係「note 一定 land」（`work_notes` 係 journal input，GET 永遠空，SN 做得到收 `state` 而靜靜 drop note）。決定不變，但可以聲稱嘅嘢要收窄。R6 已加 gate ② note 做第二個 consumer
+- [x] F8-9 verify：api **874 → 877**（68 suites）· root `npm run lint` exit 0
+
 ## F6 — Close 路徑驗證（零新 code）
 
 - [ ] F6-1 test：新建 RITM → `pickTask` → close 成功

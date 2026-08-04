@@ -250,19 +250,25 @@ export class SyncSweepService {
   }
 
   /**
-   * Gate ② — record that ServiceNow knows the target, then put the real person
-   * into the licence request (ADR-0025 D3 back-fill).
+   * Gate ② — record that ServiceNow knows the target, then say so on the ticket.
    *
-   * The back-fill is why the sys_id is worth storing at all: until it runs,
-   * `target_user` on the RITM names the REQUESTER, and only
-   * `target_users_email` says who the request is actually for.
+   * ADR-0026 D1/D2 — this used to PATCH the RITM's `target_user` variable so the
+   * item stopped naming the requester. It cannot: writing `sc_item_option` is
+   * refused outright on this instance (`403 ACL Exception Update Failed due to
+   * security constraints`, proven against RITM0047366 in W43 G7). That code was
+   * removed rather than left as best-effort — a 0% path that is KNOWN to be 0%
+   * reads to the next person as "the ticket repairs itself", which it never did.
    *
-   * 🔴 Back-fill failure is NON-FATAL and must stay that way. The gate records
-   * what ServiceNow KNOWS; tidying the ticket is a separate concern. Letting a
-   * refused PATCH re-shut the gate would stall an assignment that is genuinely
-   * ready — and whether the integration account may even write
-   * `sc_item_option` is unproven (BUG-010 showed insert and update are
-   * separate ACLs on this instance).
+   * A work note carries the same information down a path CH-010 already proved
+   * writable (`sc_req_item`), and it is an append: the worst case on a ticket we
+   * turn out not to own is one irrelevant note, not somebody else's target being
+   * overwritten. That asymmetry is why ADR-0026 OQ-2 writes to every RITM the
+   * request owns rather than only the platform-created one.
+   *
+   * 🔴 Still NON-FATAL, but for a different reason than before: the path is now
+   * one that works, so a failure here means a real outage rather than a
+   * permission wall being papered over. Either way the gate records what
+   * ServiceNow KNOWS, and tidying the ticket must never re-shut it.
    */
   private async openServiceNowGate(requestId: string, userSysId: string) {
     await openServiceNowUserGate(
@@ -276,17 +282,18 @@ export class SyncSweepService {
       where: { requestId, serviceNowSysId: { not: null } },
       select: { serviceNowSysId: true },
     });
+    // H4: the sys_id is ServiceNow's own identifier, not an address. The UPN is
+    // deliberately absent — `target_users_email` already carries it on the item.
+    const note =
+      `Target user verified in ServiceNow (sys_user ${userSysId}). ` +
+      'Note that the `target_user` variable on this item is the REQUESTER, not ' +
+      'the target — the target is the address in `target_users_email`.';
     for (const line of lines) {
       try {
-        await this.snow.updateCatalogVariable(
-          line.serviceNowSysId as string,
-          'target_user',
-          userSysId,
-        );
+        await this.snow.addWorkNote(line.serviceNowSysId as string, note);
       } catch (err) {
-        // H4: no UPN, no address — the id is ours and safe to name.
         this.logger.warn(
-          `Sync sweep: gate ② opened for ${requestId} but the target_user back-fill failed: ${scrubPii(
+          `Sync sweep: gate ② opened for ${requestId} but the work note failed: ${scrubPii(
             (err as Error)?.message,
           )}`,
         );

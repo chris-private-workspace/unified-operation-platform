@@ -311,6 +311,25 @@ AFTER   option=f11e6ba4… value=f9c5785f… updated=2026-08-04 02:26:28 mod_cou
 
 一次性 script **跑完即刪**（hardcode 咗 RITM number，係 gate 驗證唔係持續工具）。
 
+### 批 C（F8）— ADR-0026 落地：拆走回填，改行 work note
+
+Chris 2026-08-04 **Accept ADR-0026**（揀 (ii)+(iii) 一齊做 · 唔卡 OQ-1 · OQ-2 按 default）。api **874 → 877**（68 suites）· root lint exit 0 · 零 schema 零新 dep。
+
+**做咗**：刪 `updateCatalogVariable()`（+ orphan `refValue()`，刪前 grep 證全 repo 零 caller）· sweep 改 `addWorkNote()` · note 內容三件缺一不可（verified sys_id + 「`target_user` 係 REQUESTER」+ 「真 target 喺 `target_users_email`」）並斷言 note **唔含 `@``**（H4）。
+
+**兩個決定值得單獨講**：
+
+1. **喺 `updateCatalogVariable` 原位留一段註釋寫低「點解冇」**，唔係靜靜刪走。冇咗嗰段字，下一個要改 variable 嘅人會照原樣再寫一次三層 walk，再一次擺喺 non-fatal catch 後面，再一次永遠靜靜失敗 —— 而佢唔會知道呢個問題三個月前已經有答案。
+2. **加 boundary test 釘住「唔可以有 `updateCatalogVariable`」**（+ 反面半:`addWorkNote` 仍在，證個 test 有能力紅）。ADR-0026 D5 講「恢復回填要另寫 ADR」—— 冇呢個 test，D5 就只係一句話。
+
+🔴 **F8-8：我自己校正咗 ADR-0026 一句話（post-Accept 附註，唔改 D1–D5）。**
+
+實作時對返 **RISK R6** 先發現：ADR 講 work note 路徑「**已證實寫得到**」係講得太實。CH-010 證實嘅係**個 PATCH 唔會被 403 拒絕**（對比 `sc_item_option` 一定 403），**唔係**「note 一定 land」—— R6 早就記低 `work_notes` 係 journal input field、Table API GET **永遠返空**、integration account 讀唔到 `sys_journal_field` ⇒ ServiceNow 完全做得到**收 `state` 而靜靜 drop `work_notes`**，喺平台睇嚟同成功一模一樣。
+
+**呢個唔改變決定**（一條可能寫得到嘅路 > 一條已證實一定唔得嘅路），但**改變咗可以聲稱幾多**：ADR-0026 交付嘅係「**唔再假裝有自我修正機制**」，唔係「**保證 fulfiller 一定睇到**」。R6 已加 gate ② note 做第二個 consumer。
+
+⚠️ 呢個提醒法都幾值得記：**我啱啱先為咗「唔留一段永遠失敗嘅 code」而寫咗成份 ADR，然後差啲喺同一份文件裡面對替代路徑講咗一句一樣冇根據嘅話。** 攔住佢嘅唔係我記性，係 risk register 本身。
+
 ### Commits
 
 | Hash | Subject | Checklist |
