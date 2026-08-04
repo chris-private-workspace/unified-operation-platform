@@ -216,6 +216,15 @@ web **265 → 281** test（31 files），tsc web 0 error。改 4 個檔 + 加 2 
 
 ### Commits
 
+| Hash | Subject | Checklist |
+|---|---|---|
+| `9afc5c3` | `refactor(fulfilment)` W43 F0 — 停用 by-task close | F0-1 ~ F0-5 |
+| `1a29240` | `feat(integration)` W43 F1 — 平台開單改行 Service Catalog API（修 BUG-010） | F1-1 ~ F1-9 |
+| `7484fa4` | `feat(fulfilment)` W43 F2 — onboarding intake 之後即刻建 O365 licence 單 | F2-1 ~ F2-13 |
+| `1d8997c` | `docs(planning)` W43 G6 live 驗證通過 — BUG-010 轉 done | G6 |
+| `bea936b` | `feat(fulfilment)` W43 F3+F4 — gate ② + assign 雙閘 | F3-1,3~8,10~12 / F4-1 ~ F4-5 |
+| `29ee6d3` | `feat(web)` W43 F5 — request detail 顯示兩個 sync gate 狀態 | F5-1,2,4,5,6 |
+
 ---
 
 ## Retro（填於 phase 結束）
