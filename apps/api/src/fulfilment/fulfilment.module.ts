@@ -47,7 +47,9 @@ export async function requestSubmissionProviderFactory(
       'n8n-outbound',
       'requestSubmissionProvider',
     )) ?? 'direct';
-  if (provider !== 'n8n') return new DirectServiceNowProvider(snow);
+  // ADR-0025 D2 — the direct provider now reads catalog item ids + the D365
+  // prefix list from env, so it needs ConfigService (already injected here).
+  if (provider !== 'n8n') return new DirectServiceNowProvider(snow, config);
 
   // n8n selected: the webhook URL is non-secret (DB-then-env); the key stays in
   // env (getOrThrow inside the provider). A missing URL fails the boot.

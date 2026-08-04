@@ -3,6 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { SyncSweepService } from './sync-sweep.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import {
+  AmbiguousServiceNowUserError,
+  ServiceNowService,
+} from '../integration/servicenow/servicenow.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS, pickAuditFields } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
@@ -24,6 +28,7 @@ describe('SyncSweepService (ADR-0015)', () => {
   let prisma: any;
   let tx: any;
   let graph: any;
+  let snow: any;
   let audit: any;
   let env: Record<string, string | undefined>;
 
@@ -31,6 +36,13 @@ describe('SyncSweepService (ADR-0015)', () => {
     id: 'r1',
     targetUpn: 'new.user@rhk.com',
     accountCreatedAt: null,
+    azureSyncedAt: null,
+    /**
+     * ADR-0025 D4 — gate ② defaults ALREADY OPEN, so every test written before
+     * W43 keeps exercising gate ① alone and nothing else. The gate-② tests set
+     * this to null explicitly, which also makes them self-documenting.
+     */
+    serviceNowUserSyncedAt: new Date(),
     ...over,
   });
 
@@ -41,6 +53,7 @@ describe('SyncSweepService (ADR-0015)', () => {
         SyncSweepService,
         { provide: PrismaService, useValue: prisma },
         { provide: GraphService, useValue: graph },
+        { provide: ServiceNowService, useValue: snow },
         { provide: AuditService, useValue: audit },
         { provide: ConfigService, useValue: { get: (k: string) => env[k] } },
       ],
@@ -56,9 +69,14 @@ describe('SyncSweepService (ADR-0015)', () => {
     };
     prisma = {
       request: { findMany: jest.fn().mockResolvedValue([]) },
+      requestLineItem: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     };
     graph = { findUser: jest.fn() };
+    snow = {
+      findUserSysIdByEmail: jest.fn(),
+      updateCatalogVariable: jest.fn().mockResolvedValue(true),
+    };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
     service = await build();
   });
@@ -68,7 +86,12 @@ describe('SyncSweepService (ADR-0015)', () => {
       await service.sweep();
 
       const args = prisma.request.findMany.mock.calls[0][0];
-      expect(args.where.azureSyncedAt).toBeNull();
+      // ADR-0025 D4 — no longer "gate ① shut" but "EITHER gate shut", so a
+      // request that cleared Azure but not ServiceNow is still swept.
+      expect(args.where.OR).toEqual([
+        { azureSyncedAt: null },
+        { serviceNowUserSyncedAt: null },
+      ]);
       expect(args.where.status).toEqual({ in: ['OPEN', 'IN_PROGRESS'] });
       // "at least one line item still waiting" — a request whose lines are all
       // assigned/cancelled has nothing left for the gate to unblock.
@@ -119,7 +142,7 @@ describe('SyncSweepService (ADR-0015)', () => {
       const result = await service.sweep();
 
       expect(graph.findUser).not.toHaveBeenCalled();
-      expect(result).toEqual({ scanned: 0, opened: 0 });
+      expect(result).toEqual({ scanned: 0, opened: 0, snOpened: 0 });
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(audit.log).not.toHaveBeenCalled();
     });
@@ -132,7 +155,7 @@ describe('SyncSweepService (ADR-0015)', () => {
 
       expect(prisma.request.findMany).not.toHaveBeenCalled();
       expect(graph.findUser).not.toHaveBeenCalled();
-      expect(result).toEqual({ scanned: 0, opened: 0 });
+      expect(result).toEqual({ scanned: 0, opened: 0, snOpened: 0 });
     });
 
     // Default-on: an unset (or misspelled) flag must leave the sweep running.
@@ -173,7 +196,7 @@ describe('SyncSweepService (ADR-0015)', () => {
           message: SYNC_GATE_MESSAGE.VERIFIED,
         },
       });
-      expect(result).toEqual({ scanned: 1, opened: 1 });
+      expect(result).toEqual({ scanned: 1, opened: 1, snOpened: 0 });
     });
 
     /**
@@ -204,7 +227,7 @@ describe('SyncSweepService (ADR-0015)', () => {
       const result = await service.sweep();
 
       expect(graph.findUser).toHaveBeenCalledTimes(3);
-      expect(result).toEqual({ scanned: 3, opened: 3 });
+      expect(result).toEqual({ scanned: 3, opened: 3, snOpened: 0 });
     });
   });
 
@@ -217,7 +240,7 @@ describe('SyncSweepService (ADR-0015)', () => {
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(audit.log).not.toHaveBeenCalled();
-      expect(result).toEqual({ scanned: 1, opened: 0 });
+      expect(result).toEqual({ scanned: 1, opened: 0, snOpened: 0 });
     });
 
     it('a miss does not stop the rest of the batch', async () => {
@@ -231,7 +254,7 @@ describe('SyncSweepService (ADR-0015)', () => {
 
       const result = await service.sweep();
 
-      expect(result).toEqual({ scanned: 2, opened: 1 });
+      expect(result).toEqual({ scanned: 2, opened: 1, snOpened: 0 });
     });
   });
 
@@ -246,7 +269,11 @@ describe('SyncSweepService (ADR-0015)', () => {
       prisma.request.findMany.mockResolvedValue([candidate()]);
       graph.findUser.mockRejectedValue(new Error('AADSTS500011: throttled'));
 
-      await expect(service.sweep()).resolves.toEqual({ scanned: 0, opened: 0 });
+      await expect(service.sweep()).resolves.toEqual({
+        scanned: 0,
+        opened: 0,
+        snOpened: 0,
+      });
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -280,7 +307,7 @@ describe('SyncSweepService (ADR-0015)', () => {
 
       const result = await service.sweep();
 
-      expect(result).toEqual({ scanned: 1, opened: 1 });
+      expect(result).toEqual({ scanned: 1, opened: 1, snOpened: 0 });
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     });
 
@@ -329,6 +356,10 @@ describe('SyncSweepService (ADR-0015)', () => {
       expect(pickAuditFields('SyncSweep', entry.after)).toEqual({
         scanned: 1,
         opened: 1,
+        // ADR-0025 D4 — the gate ② count has to survive the same whitelist.
+        // An unlisted key is dropped silently, so this assertion is what stops
+        // the round under-reporting for ever.
+        snOpened: 0,
       });
       expect(entry.metadata).toEqual({ source: 'sync-sweep' });
     });
@@ -341,6 +372,149 @@ describe('SyncSweepService (ADR-0015)', () => {
       await service.sweep();
 
       expect(audit.log).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * ADR-0025 D4 — gate ②. `serviceNowUserSyncedAt: null` on the candidate is
+   * what opts a test into this half; the default fixture leaves it open.
+   */
+  describe('gate ② — ServiceNow (ADR-0025 D4)', () => {
+    /** Gate ① already open, so only the ServiceNow half is under test. */
+    const snOnly = (over: Record<string, any> = {}) =>
+      candidate({
+        azureSyncedAt: new Date(),
+        serviceNowUserSyncedAt: null,
+        ...over,
+      });
+
+    it('records the sys_id and writes a SYNC event when ServiceNow has the user', async () => {
+      prisma.request.findMany.mockResolvedValue([snOnly()]);
+      snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
+
+      const result = await service.sweep();
+
+      expect(result).toEqual({ scanned: 1, opened: 0, snOpened: 1 });
+      expect(tx.request.update).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: {
+          serviceNowUserSyncedAt: expect.any(Date),
+          serviceNowUserSysId: 'sn-user-1',
+        },
+      });
+      expect(tx.requestEvent.create).toHaveBeenCalledWith({
+        data: {
+          requestId: 'r1',
+          type: 'SYNC',
+          message: SYNC_GATE_MESSAGE.SN_VERIFIED,
+        },
+      });
+      // Gate ① was already open — asking Graph again would be a wasted call.
+      expect(graph.findUser).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 ADR-0025 D3 — until this runs, `target_user` on the RITM names the
+     * REQUESTER. The back-fill is the entire reason the sys_id is stored.
+     */
+    it('back-fills target_user on every RITM the request owns', async () => {
+      prisma.request.findMany.mockResolvedValue([snOnly()]);
+      snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
+      prisma.requestLineItem.findMany.mockResolvedValue([
+        { serviceNowSysId: 'ritm-a' },
+        { serviceNowSysId: 'ritm-b' },
+      ]);
+
+      await service.sweep();
+
+      expect(snow.updateCatalogVariable).toHaveBeenCalledWith(
+        'ritm-a',
+        'target_user',
+        'sn-user-1',
+      );
+      expect(snow.updateCatalogVariable).toHaveBeenCalledWith(
+        'ritm-b',
+        'target_user',
+        'sn-user-1',
+      );
+    });
+
+    /**
+     * 🔴 The gate records what ServiceNow KNOWS; tidying the ticket is separate.
+     * Re-shutting it because a PATCH was refused would stall an assignment that
+     * is genuinely ready — and the account's write access to sc_item_option is
+     * unproven (BUG-010: insert and update are separate ACLs here).
+     */
+    it('keeps the gate open when the back-fill is refused', async () => {
+      prisma.request.findMany.mockResolvedValue([snOnly()]);
+      snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
+      prisma.requestLineItem.findMany.mockResolvedValue([
+        { serviceNowSysId: 'ritm-a' },
+      ]);
+      snow.updateCatalogVariable.mockRejectedValue(new Error('403'));
+
+      await expect(service.sweep()).resolves.toEqual({
+        scanned: 1,
+        opened: 0,
+        snOpened: 1,
+      });
+      expect(tx.request.update).toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 OQ-4 — two people share an address. That is THIS request's problem, so
+     * the gate stays shut, but it must NOT abort the vendor: doing so would
+     * stall every other onboarding behind one duplicated directory entry.
+     */
+    it('skips a request with duplicate ServiceNow users without stalling the rest', async () => {
+      prisma.request.findMany.mockResolvedValue([
+        snOnly({ id: 'r1' }),
+        snOnly({ id: 'r2' }),
+      ]);
+      snow.findUserSysIdByEmail
+        .mockRejectedValueOnce(new AmbiguousServiceNowUserError())
+        .mockResolvedValueOnce('sn-user-2');
+
+      const result = await service.sweep();
+
+      expect(snow.findUserSysIdByEmail).toHaveBeenCalledTimes(2);
+      expect(result.snOpened).toBe(1);
+    });
+
+    /**
+     * 🔴 D4's whole point: one vendor being down must not stall the other. If
+     * these two shared an abort flag, a ServiceNow outage would silently stop
+     * every Azure gate from opening — and the round would still look fine.
+     */
+    it('keeps opening gate ① while ServiceNow is down', async () => {
+      prisma.request.findMany.mockResolvedValue([
+        candidate({ id: 'r1', serviceNowUserSyncedAt: null }),
+        candidate({ id: 'r2', serviceNowUserSyncedAt: null }),
+      ]);
+      graph.findUser.mockResolvedValue(GRAPH_USER);
+      snow.findUserSysIdByEmail.mockRejectedValue(new Error('SN 503'));
+
+      const result = await service.sweep();
+
+      expect(result.opened).toBe(2); // Graph kept working
+      expect(result.snOpened).toBe(0);
+      // Asked ServiceNow once, then stopped asking for the rest of the round.
+      expect(snow.findUserSysIdByEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps opening gate ② while Graph is down', async () => {
+      prisma.request.findMany.mockResolvedValue([
+        candidate({ id: 'r1', serviceNowUserSyncedAt: null }),
+        candidate({ id: 'r2', serviceNowUserSyncedAt: null }),
+      ]);
+      graph.findUser.mockRejectedValue(new Error('AADSTS500011: throttled'));
+      snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
+
+      const result = await service.sweep();
+
+      expect(result.opened).toBe(0);
+      expect(result.snOpened).toBe(2); // ServiceNow kept working
+      expect(graph.findUser).toHaveBeenCalledTimes(1);
     });
   });
 });

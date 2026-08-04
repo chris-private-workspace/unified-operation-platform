@@ -2,7 +2,7 @@
 bug_id: BUG-010
 title: "sc_request 直接 insert 被 ACL 擋死(403),DirectServiceNowProvider 開單路徑喺 ricohapdev 行唔通"
 severity: Sev3          # Sev1 | Sev2 | Sev3 | Sev4 (per PROCESS.md §4.4)
-status: triaged         # triaged | investigating | fixing | verifying | done | wont-fix
+status: done            # triaged | investigating | fixing | verifying | done | wont-fix
 reported: 2026-08-01
 reporter: "CH-014 造 ServiceNow fixture 時實測撞到"
 affects_components: [fulfilment/direct-servicenow.provider, integration/servicenow]
@@ -13,8 +13,14 @@ spec_refs:
 
 # BUG-010 — `sc_request` 直接 insert 被 ACL 擋死
 
-> **Report version**:1.1(triaged)
+> **Report version**:1.3(**done**)
 > **Triage approver**:**Chris Lai(2026-08-01)** —— severity 定 **Sev3**,由初判 Sev2 降級(理由見 §6)
+>
+> ✅ **Fix 已落 code(W43 F1,2026-08-04,ADR-0025 D2)**:`DirectServiceNowProvider` 由 Table API insert 改行 **Service Catalog API**(`order_now` 單行 / `add_to_cart`+`submit_order` 多行),即係 §2 #5 實測 200 嗰條路。順帶得着:catalog workflow 由 SN 自己行,所以 REQ/RITM/**catalog task** 同真單同一形狀 —— 手砌 insert 永遠做唔到,而 ADR-0018 D3「唯一 active task」正正靠呢個形狀。
+> ✅ **G6 通過 ⇒ `done`(2026-08-04)**。Chris 批准後行 **production class**(唔係另寫一段 SN 呼叫 —— 嗰樣只會再證一次 §2 #5 已知嘅嘢)真 POST 一張:
+> **REQ0044071** / **RITM0047366** / **SCTASK0071831**(`Execution Step` · `O365 Support` · **剛好一張 active**,即 ADR-0018 D3 要求嗰個形狀)。
+> 獨立 read 覆核(唔用 script 自己嘅 output):`cat_item = O365 User License Maintenance Request`(唔係 D365)· `requested_for = Chris Lai` · `target_user` = requester sys_id(ADR-0025 D3 placeholder 生效)· `target_users_email` = 新人地址 · `license_type` **留空**(D7)· `opcos`/`target_user_opcos` = `rapo` 小寫。
+> ⚠️ **張單要人手 cancel** —— SN 刪唔到,已標 `[UOP TEST]` + work note。同 CH-014 OQ-2 嗰 3 張一齊處理。
 
 ## 1. Symptom
 

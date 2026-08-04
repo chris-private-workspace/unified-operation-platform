@@ -60,16 +60,27 @@ describe('AssignService', () => {
     id: 'li1',
     stage: 'READY',
     requestId: 'r1',
+    sku: { id: 'c1', skuId: 'guid-1', skuPartNumber: 'SPE_E3' },
+    ...over,
+    /**
+     * 🔴 AFTER `...over`, deliberately. `request` used to sit before it, which
+     * meant `over.request` REPLACED the defaults instead of merging into them —
+     * a test that shut one gate silently dropped every other request field too.
+     * Harmless while there was one gate to shut; actively misleading now that
+     * there are two, because shutting gate ② also blanked gate ① and the test
+     * then passed for the wrong reason.
+     */
     request: {
       id: 'r1',
       targetUpn: 'new.user@rhk.com',
       opcoId: 'o1',
       azureSyncedAt: new Date(),
+      // ADR-0025 D5 — gate ② defaults OPEN so every test written before W43
+      // still exercises the thing it was written for, not the new gate.
+      serviceNowUserSyncedAt: new Date(),
       serviceNowSysId: 'sys1',
       ...(over.request ?? {}),
     },
-    sku: { id: 'c1', skuId: 'guid-1', skuPartNumber: 'SPE_E3' },
-    ...over,
   });
 
   /** Ledger row for the OpCo budget gate; default has plenty of headroom. */
@@ -247,14 +258,17 @@ describe('AssignService', () => {
     });
 
     /**
-     * CH-020 / ADR-0024 D6 — a line that carries a catalog task got it from n8n
-     * workflow 1001, which is waiting for THAT task to close.
+     * 🔴 ADR-0025 D1 — this used to assert the OPPOSITE (task in preference to
+     * RITM), on ADR-0024 D6's premise that n8n waits for the platform to close
+     * the handed-over Windows Domain Account task. Disproved live on
+     * 2026-08-03: n8n closes that task itself. Acting on the id would PATCH a
+     * task that is already closed, which the `active` guard refuses — so every
+     * assign filed a Delivery failure for a non-problem.
      *
-     * 🔴 Both ids present is the case that matters. Falling through to the RITM
-     * would close a different record and still look like it worked, and the
-     * platform would have no way to notice: seam ④ reports `updated` either way.
+     * Both ids present is still the case that matters, just with the answer
+     * reversed: the line's own RITM is the only record this seam may close.
      */
-    it('closes the catalog task in preference to this line RITM', async () => {
+    it('ignores a handed-over catalog task and closes this line RITM', async () => {
       arrangeHappy();
       prisma.requestLineItem.findUnique.mockResolvedValue(
         readyItem({
@@ -267,13 +281,18 @@ describe('AssignService', () => {
       await service.assignLineItem('li1', undefined, ADMIN);
 
       expect(tickets.closeComplete).toHaveBeenCalledWith(
-        { kind: 'task', sysId: 'task-1' },
+        { kind: 'ritm', sysId: 'ritm-1' },
         expect.stringContaining('SPE_E3'),
       );
       expect(snow.addWorkNote).not.toHaveBeenCalled();
     });
 
-    it('closes the catalog task when the line has no RITM at all', async () => {
+    /**
+     * The task id alone must not become a close target either. Until F2 gives
+     * the injected line a RITM of its own, a line with no RITM falls back to the
+     * parent REQ work note — the behaviour that predates CH-020.
+     */
+    it('does not close a handed-over catalog task when the line has no RITM', async () => {
       arrangeHappy();
       prisma.requestLineItem.findUnique.mockResolvedValue(
         readyItem({ serviceNowSysId: null, serviceNowTaskSysId: 'task-1' }),
@@ -281,13 +300,12 @@ describe('AssignService', () => {
 
       await service.assignLineItem('li1', undefined, ADMIN);
 
-      expect(tickets.closeComplete).toHaveBeenCalledWith(
-        { kind: 'task', sysId: 'task-1' },
+      expect(tickets.closeComplete).not.toHaveBeenCalled();
+      expect(snow.addWorkNote).toHaveBeenCalledWith(
+        'sys1',
         expect.any(String),
+        'sc_request',
       );
-      // The ADR-0020 injected line has no RITM, so without this the work note
-      // fallback would fire and the task would stay open forever.
-      expect(snow.addWorkNote).not.toHaveBeenCalled();
     });
 
     /**
@@ -411,6 +429,39 @@ describe('AssignService', () => {
       await expect(
         service.assignLineItem('li1', undefined, ADMIN),
       ).rejects.toThrow(BadRequestException);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    /**
+     * ADR-0025 D5 — gate ②, and the message is asserted because it is the whole
+     * reason there are two: the operator has to know WHICH side they are waiting
+     * on, since the two are chased differently.
+     */
+    it('rejects when the ServiceNow sync gate is closed', async () => {
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { serviceNowUserSyncedAt: null } }),
+      );
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(/not in ServiceNow yet/);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 An override exists so a human can own a BUDGET decision. A sync gate is
+     * not a decision — it states whether the person exists yet, and there is no
+     * such thing as knowingly assigning a licence to someone who does not.
+     */
+    it('does not let a budget override bypass the ServiceNow gate', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { serviceNowUserSyncedAt: null } }),
+      );
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN, 'urgent joiner'),
+      ).rejects.toThrow(/not in ServiceNow yet/);
       expect(graph.assignLicense).not.toHaveBeenCalled();
     });
 
@@ -1015,23 +1066,20 @@ describe('AssignService', () => {
     });
 
     /**
-     * CH-020 — the queued row has to say which record the sys_id is, or the
-     * repair replays it as a RITM and asks ServiceNow which tasks have this task
-     * as their parent. That returns nothing, every time, and the failure would
-     * look unfixable for a reason nobody could see from the row.
-     *
-     * The most likely producer of this row is D5 itself: n8n hands over a task
-     * that has since been closed, the platform declines to reopen it, and the
-     * assign still succeeds.
+     * CH-020 — the queued row has to say which record the sys_id is, so the
+     * repair addresses the same table the original write did. ADR-0025 D1
+     * removed the only producer of `targetKind: 'task'` from this path, but the
+     * field stays: `outbound-retry` still reads it, older queued rows may still
+     * carry it, and dropping it would make those unreplayable.
      */
-    it('records which kind of ticket a failed task close was against', async () => {
+    it('records which kind of ticket a failed close was against', async () => {
       arrangeHappy();
       prisma.requestLineItem.findUnique.mockResolvedValue(
-        readyItem({ serviceNowSysId: 'ritm-1', serviceNowTaskSysId: 'task-1' }),
+        readyItem({ serviceNowSysId: 'ritm-1' }),
       );
       tickets.closeComplete.mockResolvedValue({
         status: 'error',
-        details: 'the task is no longer open',
+        details: 'the RITM is no longer open',
       });
 
       await expect(
@@ -1041,8 +1089,8 @@ describe('AssignService', () => {
       expect(failures.record).toHaveBeenCalledWith(
         expect.objectContaining({
           payload: expect.objectContaining({
-            snTarget: 'task-1',
-            targetKind: 'task',
+            snTarget: 'ritm-1',
+            targetKind: 'ritm',
           }),
         }),
       );

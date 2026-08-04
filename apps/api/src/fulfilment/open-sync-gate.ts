@@ -13,6 +13,38 @@ import { PrismaService } from '../prisma/prisma.service';
  * 🔴 The caller must have already confirmed the user exists in Graph. This
  * function is the recording of that fact, not the checking of it.
  */
+/**
+ * ADR-0025 D4 — the gate ② counterpart: record that ServiceNow now knows the
+ * target user, and keep the sys_id that proves it.
+ *
+ * Deliberately in the same file as `openSyncGate`. The two gates are easy to
+ * confuse precisely because they look alike, and having both writes side by side
+ * makes the difference visible when either is edited: gate ① records what GRAPH
+ * saw and opens assignment; gate ② records what SERVICENOW has and is what makes
+ * the licence request operable.
+ *
+ * 🔴 The caller must have already found the user. This records the fact.
+ */
+export function openServiceNowUserGate(
+  prisma: PrismaService,
+  requestId: string,
+  userSysId: string,
+  message: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    await tx.request.update({
+      where: { id: requestId },
+      data: {
+        serviceNowUserSyncedAt: new Date(),
+        serviceNowUserSysId: userSysId,
+      },
+    });
+    await tx.requestEvent.create({
+      data: { requestId, type: EventType.SYNC, message },
+    });
+  });
+}
+
 export function openSyncGate(
   prisma: PrismaService,
   request: { id: string; accountCreatedAt: Date | null },

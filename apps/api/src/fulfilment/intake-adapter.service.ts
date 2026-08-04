@@ -14,6 +14,12 @@ import { N8nNativeIntakeDto } from './dto/n8n-native-intake.dto';
 import { N8nIntakeRequestDto } from './dto/n8n-intake.dto';
 import { N8nFlatIntakeDto } from './dto/n8n-flat-intake.dto';
 import { opcoCodeForJobFunction } from './opco-department-map';
+import {
+  RequestSubmissionProvider,
+  SubmitLineItem,
+} from './request-submission.provider';
+import { OutboundFailureService } from './outbound-failure.service';
+import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
 
 /** The catalogue row a default injection resolved to. */
 type DefaultSku = { id: string; skuId: string; skuPartNumber: string };
@@ -47,6 +53,10 @@ export class IntakeAdapterService {
     private readonly intake: IntakeService,
     private readonly connectorConfig: ConnectorConfigService,
     private readonly audit: AuditService,
+    // ADR-0025 D2 — the platform now raises its own licence request in
+    // ServiceNow after taking an onboarding in.
+    private readonly submission: RequestSubmissionProvider,
+    private readonly failures: OutboundFailureService,
   ) {}
 
   async intakeNative(dto: N8nNativeIntakeDto) {
@@ -175,7 +185,133 @@ export class IntakeAdapterService {
     if (injected && !preExisting) {
       await this.auditInjection(created, injected);
     }
+    // ADR-0025 D2 — the licence request the platform owns, raised immediately
+    // (Chris 2026-08-04). Fail-soft and once-only; see the method.
+    await this.raiseLicenceRequest(created.id, canonical);
     return created;
+  }
+
+  /**
+   * ADR-0025 D2 — open the `O365 User License Maintenance Request` this
+   * onboarding needs, and record its RITM on the line it belongs to.
+   *
+   * 🔴 ONCE per request, and the guard matters more than it looks. `intakeFlat`
+   * is idempotent BY DESIGN — a repeat push from n8n returns the existing
+   * Request rather than creating a second one — so without a guard here every
+   * re-push would open another REAL ticket for the same joiner. The guard is the
+   * line items' own RITM: on this route they always arrive null (1001 sends no
+   * RITM), and this method is the only thing that ever fills them.
+   *
+   * 🔴 FAIL-SOFT, deliberately. By the time we get here the Request is written
+   * and an operator can see it. Throwing would turn "ServiceNow was briefly
+   * unavailable" into "the onboarding vanished", which is strictly worse — the
+   * ticket is recoverable from the failure queue, a lost intake is not. Same
+   * reasoning as ADR-0020 D6.
+   *
+   * The two failure kinds are NOT interchangeable (ADR-0011 D3): a refused
+   * submit changed nothing outside, so its repair re-submits; a submit that
+   * succeeded but could not be recorded means a real ticket EXISTS, and
+   * `request.mirror` must never re-submit or it opens a second one.
+   */
+  private async raiseLicenceRequest(
+    requestId: string,
+    canonical: N8nIntakeRequestDto,
+  ): Promise<void> {
+    const lines = await this.prisma.requestLineItem.findMany({
+      where: { requestId },
+      select: {
+        id: true,
+        quantity: true,
+        serviceNowSysId: true,
+        sku: { select: { skuId: true, skuPartNumber: true } },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    // No lines at all: ADR-0020's default SKU is unconfigured, so there is
+    // nothing to ask ServiceNow for. Not an error — D6 keeps that fail-soft.
+    if (lines.length === 0) return;
+
+    // Already raised. This is the repeat-push path and it must stay silent:
+    // logging a warning here would make a correct no-op look like a problem.
+    if (lines.some((l) => l.serviceNowSysId)) return;
+
+    const submitLines: SubmitLineItem[] = lines.map((l) => ({
+      skuId: l.sku.skuId,
+      skuPartNumber: l.sku.skuPartNumber,
+      quantity: l.quantity,
+    }));
+    const payload = {
+      targetUpn: canonical.targetUpn,
+      targetDisplayName: canonical.targetDisplayName,
+      opcoCode: canonical.opcoCode,
+      requesterEmail: canonical.requesterEmail,
+      lineItems: submitLines,
+    };
+
+    let submitted;
+    try {
+      submitted = await this.submission.submit(payload);
+    } catch (err) {
+      // H4: the action and the message, never the target UPN.
+      this.logger.warn(
+        `Could not raise the ServiceNow licence request for ${requestId}: ${
+          (err as Error)?.message
+        }`,
+      );
+      await this.failures.record({
+        kind: OUTBOUND_FAILURE_KINDS.REQUEST_SUBMIT,
+        payload,
+        error: err,
+        requestId,
+      });
+      return;
+    }
+
+    try {
+      // Zipped by index: the provider returns one entry per line in the order it
+      // was given, and fails closed rather than returning a different count.
+      await this.prisma.$transaction(
+        submitted.lineItems.map((item, i) =>
+          this.prisma.requestLineItem.update({
+            where: { id: lines[i].id },
+            data: {
+              serviceNowSysId: item.serviceNowSysId,
+              serviceNowNumber: item.serviceNowNumber ?? null,
+            },
+          }),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `ServiceNow request ${
+          submitted.serviceNowNumber ?? submitted.serviceNowSysId
+        } was raised but could not be recorded on ${requestId}: ${
+          (err as Error)?.message
+        }`,
+      );
+      // 🔴 externalRef carries the ids so the repair writes the local rows
+      // WITHOUT calling ServiceNow again (ADR-0011 D3).
+      await this.failures.record({
+        kind: OUTBOUND_FAILURE_KINDS.REQUEST_MIRROR,
+        payload,
+        externalRef: {
+          serviceNowSysId: submitted.serviceNowSysId,
+          serviceNowNumber: submitted.serviceNowNumber,
+          lineItems: submitted.lineItems,
+        },
+        error: err,
+        requestId,
+      });
+      return;
+    }
+
+    // H4: REQ number + count only.
+    this.logger.log(
+      `Raised ServiceNow licence request ${
+        submitted.serviceNowNumber ?? submitted.serviceNowSysId
+      } for ${requestId} (${submitted.lineItems.length} RITM)`,
+    );
   }
 
   /**

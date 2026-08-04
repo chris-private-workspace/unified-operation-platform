@@ -235,6 +235,19 @@ model Request {
   accountCreatedAt  DateTime?
   azureSyncedAt     DateTime?
 
+  // ── ADR-0025 D4: gate ② — the SERVICENOW half of "is this person real yet" ──
+  //
+  // Two gates, not one, because they answer different questions and open at
+  // different times: Azure says the licence CAN be assigned (Graph can find the
+  // user); ServiceNow says the licence request is OPERABLE (the RITM's
+  // target_user can point at a real person instead of the requester placeholder).
+  //
+  // `serviceNowUserSysId` is not bookkeeping — it is what the sweep backfills
+  // into the RITM's `target_user` variable the moment the gate opens (D3), so
+  // the request stops naming the requester as its own target.
+  serviceNowUserSyncedAt DateTime?
+  serviceNowUserSysId    String? // sys_user sys_id of the target, once SN has them
+
   lineItems         RequestLineItem[]
   events            RequestEvent[]
   outboundFailures  OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
@@ -272,20 +285,34 @@ model RequestLineItem {
 
   // ServiceNow sc_req_item (RITM) — two-level linkage (ADR-0008 D6 / CONTRACT §4).
   // Request.serviceNow* = parent REQ (sc_request); these = THIS line's RITM.
+  //
+  // 🔴 ADR-0025 OQ-2 — on an onboarding these two now point at DIFFERENT
+  // ServiceNow requests, and mixing them up is the easiest mistake to make here:
+  //   Request.serviceNow*  = the ONBOARDING REQ n8n raised (and the @unique
+  //                          idempotency key — it must never change)
+  //   these fields         = the O365 User License Maintenance Request the
+  //                          PLATFORM raised for this line, and the one it
+  //                          closes after assigning.
+  // The platform's own REQ deliberately has nowhere on `Request` to live: giving
+  // it one would mean two candidate idempotency keys for the same row.
   // Nullable: legacy rows + user-facing intake without a per-line RITM.
   serviceNowSysId     String?
   serviceNowNumber    String?
 
-  // CH-020 / ADR-0024 D1 — the sc_task the platform must close once THIS line is
-  // assigned, handed over by n8n workflow 1001 (the Windows Domain Account
-  // catalog task). Distinct from the two fields above: those are the RITM, and
-  // the close path derives its task from them by querying `request_item=<RITM>`.
-  // Feeding a task sys_id into that query returns nothing, which is why these
-  // could not simply reuse serviceNowSysId.
+  // TRACEABILITY ONLY (ADR-0025 D1) — the Windows Domain Account sc_task that
+  // n8n workflow 1001 handled for this line, handed over at intake.
   //
-  // On the line item rather than the request (D1): the close happens after ONE
-  // line is assigned, so this makes "which line closes which task" explicit and
-  // stops two lines from closing the same task twice.
+  // 🔴 These do NOT drive the close path, despite what CH-020 / ADR-0024 D1
+  // originally said. That design rested on the workflow JSON's own comments
+  // ("Phase 2 closes ONLY the WDA task, and only once the E5 licence is
+  // assigned"), which were disproved against the live instance on 2026-08-03:
+  // n8n closes that task itself (close_notes = 'Closed & Handled by n8n'), and
+  // the note-only branch the JSON describes has never run. Acting on these
+  // columns meant PATCHing an already-closed task on every assign.
+  //
+  // Kept rather than dropped: a nullable column costs nothing, a drop migration
+  // against a deployed UAT does not, and knowing which task n8n handled is
+  // genuinely useful when reconciling an onboarding by hand.
   serviceNowTaskSysId String?
   serviceNowTaskNumber String?
 

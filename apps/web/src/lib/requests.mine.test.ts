@@ -18,6 +18,8 @@ function req(overrides: Partial<OnboardingRequest>): OnboardingRequest {
     handledById: null,
     accountCreatedAt: null,
     azureSyncedAt: null,
+    serviceNowUserSyncedAt: null,
+    serviceNowUserSysId: null,
     createdAt: '2026-01-01',
     updatedAt: '2026-01-01',
     lineItems: [],

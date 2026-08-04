@@ -71,12 +71,23 @@ export class N8nFlatIntakeDto {
   requestId!: string;
 
   /**
-   * The Windows Domain Account catalog task 1001 wants closed once the licence
-   * is assigned. Optional: 1001's own resolver can come back empty, and a
-   * request that arrives without it is still a request worth creating — it just
-   * falls back to today's close paths (ADR-0024 D6).
+   * The Windows Domain Account catalog task 1001 handled for this request.
+   *
+   * 🔴 TRACEABILITY ONLY (ADR-0025 D1) — the platform does NOT close it. n8n
+   * closes that task itself; CH-020 / ADR-0024 D6 assumed otherwise on the
+   * strength of the workflow JSON's own comments, which the live instance
+   * disproved on 2026-08-03.
+   *
+   * Still accepted rather than dropped from the contract: n8n sends it today,
+   * `whitelist: true` would strip it silently, and knowing which task n8n
+   * handled is genuinely useful when reconciling an onboarding by hand.
+   *
+   * Optional: 1001's own resolver can come back empty, and a request that
+   * arrives without it is still a request worth creating.
    */
-  @ApiPropertyOptional({ description: 'sc_task sysId to close after assign' })
+  @ApiPropertyOptional({
+    description: 'sc_task sysId n8n handled for this request (traceability)',
+  })
   @IsOptional()
   @IsString()
   serviceNowTaskSysId?: string;

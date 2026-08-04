@@ -4,16 +4,23 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { LineItemStage, RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GraphService } from '../integration/graph/graph.service';
+import {
+  AmbiguousServiceNowUserError,
+  ServiceNowService,
+} from '../integration/servicenow/servicenow.service';
 import { scrubPii } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
-import { openSyncGate } from './open-sync-gate';
+import { openServiceNowUserGate, openSyncGate } from './open-sync-gate';
 
 /** What one round did. Returned so tests (and the log line) can assert it. */
 export interface SweepResult {
   scanned: number;
+  /** Gate ① — Graph could find the user, so assignment is now possible. */
   opened: number;
+  /** Gate ② — ServiceNow now has the user (ADR-0025 D4). */
+  snOpened: number;
 }
 
 /**
@@ -41,6 +48,9 @@ export class SyncSweepService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly graph: GraphService,
+    // ADR-0025 D4 — the sweep now asks TWO vendors the same question about the
+    // same person. See `sweep()` for why each gets its own failure handling.
+    private readonly snow: ServiceNowService,
     private readonly audit: AuditService,
     config: ConfigService,
   ) {
@@ -88,47 +98,102 @@ export class SyncSweepService {
    * can die (D6).
    */
   async sweep(): Promise<SweepResult> {
-    if (!this.enabled) return { scanned: 0, opened: 0 };
+    const empty: SweepResult = { scanned: 0, opened: 0, snOpened: 0 };
+    if (!this.enabled) return empty;
 
     const candidates = await this.findCandidates();
-    // D7: no candidates ⇒ not a single Graph call. The sweep's vendor traffic is
+    // D7: no candidates ⇒ not a single vendor call. The sweep's traffic is
     // proportional to real onboarding volume, which is what makes it a
     // domain-driven job rather than the liveness polling ADR-0010 D5 forbids.
-    if (candidates.length === 0) return { scanned: 0, opened: 0 };
+    if (candidates.length === 0) return empty;
 
     let scanned = 0;
     let opened = 0;
+    let snOpened = 0;
+    /**
+     * 🔴 ADR-0025 D4 — ONE FLAG PER VENDOR, not one for the round.
+     *
+     * Both gates ask about the same person, but a Graph outage says nothing
+     * about ServiceNow and the reverse is equally true. A shared abort flag
+     * would let one vendor throttling us stall every onboarding that was only
+     * ever waiting on the other — and it would do it silently, because the
+     * round still returns and still looks like it worked.
+     */
+    let graphDown = false;
+    let snowDown = false;
 
     for (const request of candidates) {
-      let found: boolean;
-      try {
-        found = (await this.graph.findUser(request.targetUpn)) !== null;
-      } catch (err) {
-        // D6: abort the ROUND, do not carry on to the next request. If Graph is
-        // throttling or refusing us, the remaining lookups would fail too and
-        // hammering it makes the throttle worse. Next round tries again.
-        // BUG-004: the failing call IS a findUser, so this message is the most
-        // likely place in the whole codebase for a UPN to arrive from Graph.
-        this.logger.warn(
-          `Sync sweep aborted after ${scanned} of ${
-            candidates.length
-          } lookup(s): ${scrubPii((err as Error)?.message)}`,
-        );
-        break;
+      if (graphDown && snowDown) break;
+      let looked = false;
+
+      // ── gate ① — Azure / Graph ──
+      if (!request.azureSyncedAt && !graphDown) {
+        try {
+          const found = (await this.graph.findUser(request.targetUpn)) !== null;
+          looked = true;
+          if (found) {
+            await this.openGate(request);
+            opened++;
+          }
+        } catch (err) {
+          // D6: stop asking THIS vendor for the rest of the round. If Graph is
+          // throttling or refusing us the remaining lookups fail too, and
+          // hammering it makes the throttle worse.
+          // BUG-004: the failing call IS a findUser, so this is the likeliest
+          // place in the codebase for a UPN to come back from a vendor.
+          graphDown = true;
+          this.logger.warn(
+            `Sync sweep: Graph lookups abandoned for this round after ${scanned}: ${scrubPii(
+              (err as Error)?.message,
+            )}`,
+          );
+        }
       }
-      scanned++;
-      if (!found) continue; // not synced yet — nothing to write, try next round
 
-      await this.openGate(request);
-      opened++;
+      // ── gate ② — ServiceNow (ADR-0025 D4) ──
+      if (!request.serviceNowUserSyncedAt && !snowDown) {
+        try {
+          const sysId = await this.snow.findUserSysIdByEmail(request.targetUpn);
+          looked = true;
+          if (sysId) {
+            await this.openServiceNowGate(request.id, sysId);
+            snOpened++;
+          }
+        } catch (err) {
+          if (err instanceof AmbiguousServiceNowUserError) {
+            /**
+             * 🔴 This request's problem, not ServiceNow's — so it must NOT
+             * abort the vendor. Two people share an address in the directory;
+             * every other onboarding is unaffected and stalling them behind it
+             * would be the wrong trade. This one gate stays shut until somebody
+             * fixes the directory, which is exactly what OQ-4 asked for.
+             * H4: no address in the message.
+             */
+            this.logger.warn(
+              'Sync sweep: ServiceNow holds duplicate users for a request — gate ② stays shut',
+            );
+          } else {
+            snowDown = true;
+            this.logger.warn(
+              `Sync sweep: ServiceNow lookups abandoned for this round after ${scanned}: ${scrubPii(
+                (err as Error)?.message,
+              )}`,
+            );
+          }
+        }
+      }
+
+      if (looked) scanned++;
     }
 
-    if (opened > 0) {
-      await this.recordRound(scanned, opened);
+    if (opened > 0 || snOpened > 0) {
+      await this.recordRound(scanned, opened, snOpened);
       // H4: counts and nothing else — never the UPNs that were opened.
-      this.logger.log(`Sync sweep: scanned ${scanned}, opened ${opened}`);
+      this.logger.log(
+        `Sync sweep: scanned ${scanned}, azure ${opened}, servicenow ${snOpened}`,
+      );
     }
-    return { scanned, opened };
+    return { scanned, opened, snOpened };
   }
 
   /**
@@ -140,7 +205,9 @@ export class SyncSweepService {
     const cutoff = new Date(Date.now() - this.maxAgeDays * 24 * 60 * 60 * 1000);
     return this.prisma.request.findMany({
       where: {
-        azureSyncedAt: null, // already through the gate → nothing to verify
+        // ADR-0025 D4 — either gate still shut. A request past BOTH has nothing
+        // left for the sweep to verify; one that is past only one still does.
+        OR: [{ azureSyncedAt: null }, { serviceNowUserSyncedAt: null }],
         status: { in: [RequestStatus.OPEN, RequestStatus.IN_PROGRESS] },
         // A request whose lines are all assigned or cancelled has nothing left
         // waiting on the gate, even if the timestamp was never set.
@@ -159,7 +226,15 @@ export class SyncSweepService {
       },
       orderBy: { createdAt: 'asc' },
       take: this.batch,
-      select: { id: true, targetUpn: true, accountCreatedAt: true },
+      select: {
+        id: true,
+        targetUpn: true,
+        accountCreatedAt: true,
+        // Which gates are still shut — the loop asks a vendor only about the
+        // gate that needs it, so a request half-way through costs one call.
+        azureSyncedAt: true,
+        serviceNowUserSyncedAt: true,
+      },
     });
   }
 
@@ -175,6 +250,51 @@ export class SyncSweepService {
   }
 
   /**
+   * Gate ② — record that ServiceNow knows the target, then put the real person
+   * into the licence request (ADR-0025 D3 back-fill).
+   *
+   * The back-fill is why the sys_id is worth storing at all: until it runs,
+   * `target_user` on the RITM names the REQUESTER, and only
+   * `target_users_email` says who the request is actually for.
+   *
+   * 🔴 Back-fill failure is NON-FATAL and must stay that way. The gate records
+   * what ServiceNow KNOWS; tidying the ticket is a separate concern. Letting a
+   * refused PATCH re-shut the gate would stall an assignment that is genuinely
+   * ready — and whether the integration account may even write
+   * `sc_item_option` is unproven (BUG-010 showed insert and update are
+   * separate ACLs on this instance).
+   */
+  private async openServiceNowGate(requestId: string, userSysId: string) {
+    await openServiceNowUserGate(
+      this.prisma,
+      requestId,
+      userSysId,
+      SYNC_GATE_MESSAGE.SN_VERIFIED,
+    );
+
+    const lines = await this.prisma.requestLineItem.findMany({
+      where: { requestId, serviceNowSysId: { not: null } },
+      select: { serviceNowSysId: true },
+    });
+    for (const line of lines) {
+      try {
+        await this.snow.updateCatalogVariable(
+          line.serviceNowSysId as string,
+          'target_user',
+          userSysId,
+        );
+      } catch (err) {
+        // H4: no UPN, no address — the id is ours and safe to name.
+        this.logger.warn(
+          `Sync sweep: gate ② opened for ${requestId} but the target_user back-fill failed: ${scrubPii(
+            (err as Error)?.message,
+          )}`,
+        );
+      }
+    }
+  }
+
+  /**
    * One row per round that changed something (D4), following the
    * allocation.import precedent: batch totals in `after`, `targetId: 'bulk'`.
    *
@@ -186,14 +306,17 @@ export class SyncSweepService {
    * the update. What could be lost is the round total — a reporting figure, not
    * the record of the act.
    */
-  private recordRound(scanned: number, opened: number) {
+  private recordRound(scanned: number, opened: number, snOpened: number) {
     return this.audit.log(this.prisma, {
       action: AUDIT_ACTIONS.SYNC_SWEEP,
       targetType: 'SyncSweep',
       targetId: 'bulk',
       actorId: null, // nobody pressed anything
       actorType: 'system',
-      after: { scanned, opened },
+      // 🔴 `snOpened` only survives because it was added to the SyncSweep
+      // allow-list in audit-fields (ADR-0009 D4) — an unlisted key is dropped
+      // silently, and the round would under-report gate ② forever.
+      after: { scanned, opened, snOpened },
       metadata: { source: 'sync-sweep' },
     });
   }
