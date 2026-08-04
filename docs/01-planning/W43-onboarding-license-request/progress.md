@@ -203,6 +203,41 @@ web **265 → 281** test（31 files），tsc web 0 error。改 4 個檔 + 加 2 
 
 ⚠️ **順帶發現（唔喺本次 scope，冇修）**：`npm run lint -w @uop/web` **本身已經紅**（17 條 prettier，全部喺 `allocation-reset*` + 兩條喺我冇掂過嘅行）。CI 真正 gate 嗰條 root `npm run lint` **只 lint `@uop/api`**，所以 CI 唔會見到。我兩個新檔零 error。建議另開一個 `chore(web): prettier` 清，唔混入本 phase diff。
 
+### 批 B 收尾 — F3-2 / G5：migration scratch DB apply + rollback ✅
+
+scratch DB `platform_w43_gate2`（建→驗→drop），**全程冇掂 dev DB**。每一步都有真 `psql` / `prisma` 輸出。
+
+| 步 | 做咗 | 真輸出 |
+|---|---|---|
+| 1 | `CREATE DATABASE platform_w43_gate2` | `CREATE DATABASE` |
+| 2 | `DATABASE_URL` 指去 scratch → `prisma migrate deploy` | `Datasource "db": … "platform_w43_gate2"`（**確認 shell env 蓋過 `.env`**）· 19 條全 apply · exit 0 |
+| 3 | `npm run seed` | `Seeded 24 OpCos + admin + RHK OPCO_IT user.` exit 0 |
+| 4 | 插 2 行 fixture：`g5-row-1` gate ② **有值**、`g5-row-2` **冇值** | `INSERT 0 2` |
+| 5 | **手寫 rollback**：`ALTER TABLE "Request" DROP COLUMN ×2; DELETE FROM "_prisma_migrations" WHERE migration_name='20260804032725_w43_gate2_sn_user_sync';`（**同一個 `-c` ⇒ psql 當一個 transaction**，要就一齊成功要就一齊唔郁） | `ALTER TABLE` / `DELETE 1` |
+| 6 | 驗 rollback | 兩個欄 **0 rows**（真係冇咗）· 兩行 fixture **其餘每一格逐格不變** · migration ledger **19 → 18** |
+| 7 | 重 apply（🔴 **呢次係打落一個已經有 row 嘅 DB** —— 即 UAT 真實情境，唔係空 DB） | 只 apply 返嗰一條 · exit 0 |
+| 8 | 驗 forward | `is_nullable = YES`、**`column_default` 空**、type `timestamp without time zone` / `text` · **`rows_with_gate2_set = 0`** |
+| 9 | `DROP DATABASE` + 查 dev DB | scratch 冇咗 · dev `Request` **15 → 15**（同 baseline 一樣）· dev 入面 `id LIKE 'g5-row-%'` = **0 行**（零污染，唔係靠「我應該冇寫過去」推論） |
+
+**結論兩句，包括唔好聽嗰句**：
+- forward 安全 —— additive、nullable、**冇 default**，打落有 row 嘅 DB 之後舊 row 兩個新欄全部 NULL（**零 backfill 喺真 row 上證到**，唔係讀 `migration.sql` 推論）。
+- 🔴 **rollback 對呢兩個欄係有損** —— `DROP COLUMN` 必然。`g5-row-1` 原本有 gate ② 值，rollback 之後冇咗，重 apply 都返唔到。對其餘一切無損。要 rollback 而唔想蝕數，就要事前 dump 嗰兩個欄。
+
+### 🔎 G5 順帶查到（非計劃內，但影響 G7）
+
+查 dev DB 有冇被污染嗰陣見到 **2 張單 gate ② 已經開咗**，而且係 **`scheduled sweep` 真開嘅**，唔係我 update 落去：
+
+```
+cms8ne17c… | SYNC | ServiceNow sync verified — the target user exists in ServiceNow (scheduled sweep) | 2026-08-04 03:40:08
+cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in ServiceNow (scheduled sweep) | 2026-08-04 03:40:12
+```
+
+⇒ **`findUserSysIdByEmail` + `openServiceNowUserGate` 打真 SN 已經行得通**（G7 前半有實證）。
+
+**兩行 `serviceNowUserSysId` 一模一樣（`f9c5785f…`），睇落好似撞名 bug** —— 查落 `count(DISTINCT "targetUpn") = 1`：**同一個人兩張單**，所以同一個 sys_id 係**啱嘅**。（查 distinct count 而唔係 print 個 UPN = H4。）
+
+🔴 **G7 後半仍然未驗，唔可以順手當做完**：`target_user` 回填走 `updateCatalogVariable`（寫 `sc_item_option`），而佢**刻意 non-fatal** ⇒ 寫唔到都唔會喺 DB 留低任何痕跡。DB 呢邊睇幾耐都證唔到。要證只有一條路：**去 SN 讀返嗰兩張 RITM 個 `target_user`**（read-only）。
+
 ### Actual vs Planned Effort
 
 | Deliverable | Planned (h) | Actual (h) | Variance |
@@ -213,6 +248,7 @@ web **265 → 281** test（31 files），tsc web 0 error。改 4 個檔 + 加 2 
 | F3 gate ② | ~4 | ~2.5 | — |
 | F4 雙閘 | ~1 | ~0.8 | 含順帶修 fixture 陷阱 |
 | F5 前端 | ~2 | ~1.5 | 含 F5-6 非計劃內；light+dark 未驗 |
+| F3-2 / G5 scratch DB | ~1 | ~0.5 | 順帶揭到 G7 前半已有實證 |
 
 ### Commits
 
@@ -224,6 +260,8 @@ web **265 → 281** test（31 files），tsc web 0 error。改 4 個檔 + 加 2 
 | `1d8997c` | `docs(planning)` W43 G6 live 驗證通過 — BUG-010 轉 done | G6 |
 | `bea936b` | `feat(fulfilment)` W43 F3+F4 — gate ② + assign 雙閘 | F3-1,3~8,10~12 / F4-1 ~ F4-5 |
 | `29ee6d3` | `feat(web)` W43 F5 — request detail 顯示兩個 sync gate 狀態 | F5-1,2,4,5,6 |
+| `00033bd` | `docs(planning)` progress 補回 commit ↔ checklist 對照 | R2 |
+| `b649637` | `docs(planning)` W43 F3-2 / G5 scratch DB apply + rollback 驗證通過 | F3-2 / G5 |
 
 ---
 

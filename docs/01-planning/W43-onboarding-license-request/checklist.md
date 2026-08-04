@@ -55,7 +55,7 @@ last_updated: 2026-08-03
 ## F3 — Gate ②：schema + sweep + 回填
 
 - [x] F3-1 migration `20260804032725_w43_gate2_sn_user_sync`（additive、兩個 nullable、零 backfill）
-- [ ] 🚧 F3-2 scratch DB apply + rollback —— **未做**，同 **G5** 一齊喺批 B 收尾做
+- [x] F3-2 scratch DB apply + rollback ✅（見 G5）
 - [x] F3-3 `findCandidates()` → `OR: [{azureSyncedAt: null}, {serviceNowUserSyncedAt: null}]`，select 帶埋兩個 gate 狀態（一個半開嘅 request 只花一個 vendor call）
 - [x] F3-4 🔴 **一個 vendor 一個 abort flag**（`graphDown` / `snowDown`）—— 共用一個 flag 會令一邊 outage 靜靜停低另一邊，而 round 仍然「成功」
 - [x] F3-5 Gate ② = `findUserSysIdByEmail`；**≥2 命中**用新 `AmbiguousServiceNowUserError` 分辨 —— 呢個係**單一 request 嘅問題唔係 SN 掛咗**，所以 gate 關住但**唔 abort vendor**（OQ-4）
@@ -107,9 +107,11 @@ last_updated: 2026-08-03
 - [ ] G2 — api test 全綠且**數目上升**（基線 837 / 68 suites）
 - [ ] G3 — root `npm run lint` exit 0（CI 真正 gate 嗰條）
 - [ ] G4 — tsc api + web 各 0 error
-- [ ] G5 — migration scratch DB apply + rollback
+- [x] G5 — migration scratch DB apply + rollback ✅（`platform_w43_gate2`，建→驗→drop，dev DB 零污染）：19 條 apply exit 0 → 插 2 行 fixture（一行 gate ② 有值、一行冇）→ **手寫 rollback**（`DROP COLUMN` ×2 + 刪 `_prisma_migrations` 一行，同一個 `-c` ⇒ 一個 transaction）→ 欄消失但兩行其他欄**逐格不變**、ledger 19→18 → 重 apply（**呢次係打落一個已經有 row 嘅 DB**，即真實 UAT 情境）→ 欄返嚟 `is_nullable=YES` / **冇 default**、`rows_with_gate2_set = 0` ⇒ **零 backfill 喺真 row 上得到證明**。🔴 誠實講：rollback 對呢兩個欄係**有損**（`DROP COLUMN` 必然），對其餘一切無損
 - [x] G6 — **live 真建一張 O365 單** ✅（Chris 2026-08-04 批准）：**REQ0044071 / RITM0047366 / SCTASK0071831**（`Execution Step` · `O365 Support` · 剛好 1 張 active）。行 production class 唔另寫 SN 呼叫；獨立 read 覆核 variables（`target_user` = requester · `license_type` 空 · `rapo` 小寫）。⚠️ **張單要人手 cancel**
 - [ ] G7 — **live** gate ② 由未通 → 通，`target_user` 真係由 requester 變新用戶
+  - **前半已有實證**（G5 順帶查到，非計劃內）：dev DB 兩張單 2026-08-04 03:40 由 **scheduled sweep** 真開咗 gate ②（`RequestEvent` 有 `ServiceNow sync verified …(scheduled sweep)` + `serviceNowUserSysId` 有真 sys_id）⇒ `findUserSysIdByEmail` + `openServiceNowUserGate` 打真 SN 行得通
+  - **後半仍然未驗**：`target_user` 回填走 `updateCatalogVariable`（寫 `sc_item_option`），而佢**刻意 non-fatal** ⇒ 失敗唔會喺 DB 留低任何痕跡。要證就要**去 SN 讀返嗰兩張 RITM 個 `target_user`**（read-only）
 - [ ] G8 — **live** close 成功 + 兄弟 task 冇郁
 - [ ] G9 — 前端 light + dark + `ui-design` 跑過
 - [ ] G10 — UAT 部署後抽 running OpenAPI **實搜**新契約（唔靠 tag 推論）
