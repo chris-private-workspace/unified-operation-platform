@@ -1,8 +1,8 @@
 ---
 phase: W43-onboarding-license-request
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
-last_updated: 2026-08-03
+status: complete    # in-progress | complete
+last_updated: 2026-08-04
 ---
 
 # Phase W43 — Checklist
@@ -105,14 +105,14 @@ last_updated: 2026-08-03
 
 ## F7 — Doc sync + closeout
 
-- [ ] F7-1 ADR-0024 status 標註「D1 改用途 / D6① superseded by ADR-0025」
-- [ ] F7-2 `docs/adr/README.md` 加 0025 一行
-- [ ] F7-3 CLAUDE.md §0 + §9 phase 座標
-- [ ] F7-4 `docs/12-ai-assistant/01-prompts/SESSION_SUMMARY.md`
-- [ ] F7-5 `docs/13-deployment/07-uat-as-built.md`（🔴 **先 `az containerapp revision list` 實測**，唔信文件）
-- [ ] F7-6 `RISK_REGISTER.md`：加「UOP 同 n8n 共用 SN 帳號」（R5）
-- [ ] F7-7 `BACKLOG.md` 同步（R7）+ `license_type` 48-choice 對照表入 backlog
-- [ ] F7-8 memory 更新（ADR-0025 決定 + 共用帳號指紋）
+- [x] F7-1 ADR-0024 status 標註 —— 加咗一整段 blockquote 逐條講**邊部分仲有效**（D2/D3 原封 · D1 改用途唔 drop · D4/D5 保留但 rationale 要換 · **D6① 停用**），連**錯誤成因**（結論唯一來源係 workflow JSON 註釋，冇打過真 SN）都寫低
+- [x] F7-2 `docs/adr/README.md` —— 加 **0026** 一行 + 🔴 順帶修正 **0025 個 status 一直錯寫 `Proposed`**（實際 2026-08-04 已 Accepted）+ 0025 標「D3 後半 + D4 尾條 superseded by 0026」
+- [x] F7-3 CLAUDE.md §0 + §9 —— phase 座標 CH-020 → **W43**；§9 加 SN 逐 table 開權 + 共用帳號兩條紅字 + **W43 未上 UAT**
+- [x] F7-4 `SESSION_SUMMARY.md` —— 座標 + 三條 W43 紅字（自建單/雙閘/`target_user` 永遠 placeholder）；🔴 順帶**修正一個會誤導下一手嘅講法**：原文寫「Playwright MCP 行得通、前端驗證唔再係死結」，但**2026-08-04 實測同一個 repo 冇咗** ⇒ 改成「開工先確認，唔好假設；真係冇就照寫『未 render 驗』」
+- [x] F7-5 `07-uat-as-built.md` —— 🔴 **數字一個都冇改，而且明文寫低點解**：① **W43 根本未部署**（running image 仍係 `uat-a71bbdf`）② `az containerapp revision list` 撞 **`AuthorizationFailed`**（本 session 個 principal 唔係部署嗰個 SP）⇒ 改成一個證唔到嘅數字，同本檔上面警告嗰兩次犯錯**係同一種錯**。另加 W43 部署前須知（1 個 additive migration · 零新 required env · 🔴 gate ② 一上即刻擋 assign）
+- [x] F7-6 `RISK_REGISTER.md` —— 加 **R7**（UOP/n8n 共用 SN 帳號）；順帶**擴 R6**（work note write-only）加 gate ② note 做第二個 consumer
+- [x] F7-7 `BACKLOG.md` —— W43 收官 blockquote（含 🚧 遺留 + 5 張待 cancel 單 + 部署當日須知）+ 新 backlog item **SN-LICENSE-TYPE**（`license_type` 48-choice 對照）
+- [x] F7-8 memory —— 更新 `adr-0024-onboarding-task-closure`（W43 全交付 + ADR-0026 + gate ② live + 遺留同恢復前提）· `servicenow-write-path`（**新開 §0 總原則:逐 table 開權唔可以互相推論** + work note 寫得入 ≠ 睇得返）· MEMORY.md 兩行 hook
 
 ## 驗收 Gate（plan §4）
 
@@ -146,13 +146,13 @@ last_updated: 2026-08-03
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker（R4）
-- [ ] All architectural-adjacent decisions documented as ADR（per CLAUDE.md §5）
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`（R7）
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro
+- [x] All deliverables committed to git（**PR #75 merged** `92247fe` · **PR #76** `feat/w43b-closeout`）
+- [x] All open-question status changes reflected in decision tracker（R4）—— ADR-0025 OQ-1~4 按 default 執行；**ADR-0026 OQ-2 resolved**（照寫所有 RITM）· **OQ-1 open 但唔阻落地**（Chris 拍板唔卡）
+- [x] All architectural-adjacent decisions documented as ADR —— **ADR-0025**（Accepted）+ **ADR-0026**（Accepted，supersede 0025 D3 後半 + D4 尾條）
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`（R7）
+- [x] `progress.md` retro section written
+- [x] `progress.md` frontmatter status flipped to `closed`
+- [x] Phase N+1 kickoff trigger noted in retro
 
 ---
 

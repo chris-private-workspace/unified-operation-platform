@@ -1,8 +1,25 @@
 # ADR-0024: Onboarding catalog task closure（UOP 存 n8n 畀嘅 task sys_id,assign 後直接 close）
 
 **Date**: 2026-08-03
-**Status**: Accepted
+**Status**: Accepted — **部分 superseded by [ADR-0025](./0025-onboarding-license-request-creation.md)（2026-08-04）**
 **Approver**: Chris Lai（2026-08-03）
+
+> ### 🔴 2026-08-04 —— 本 ADR 一個**前提**被實測推翻,逐條講清楚邊部分仲有效
+>
+> **錯咗嘅前提**:以為 n8n 1001 把 WDA task 交畀 UOP 閂。實情係 **n8n 自己閂埋**(`close_notes = 'Closed & Handled by n8n'`,兩個 live 實例),而本 ADR 引用嘅 note-only 分支(1007)**由頭到尾冇跑過一次**(全 instance `Awaiting E5 licence` journal **0 行**)。
+>
+> **成因值得記低**:嗰個結論**唯一來源係 workflow JSON 嘅註釋同 sticky note**,由頭到尾冇打過真 SN 去對。**註釋係意圖,唔係行為證據。**
+>
+> | 本 ADR 嘅部分 | 之後點 |
+> |---|---|
+> | **D1** 兩個 task 欄(`serviceNowTaskSysId` / `serviceNowTaskNumber`) | **改用途做 traceability**(記低 n8n 幫呢條 line 處理過邊張 WDA task),**唔 drop column** —— nullable 欄成本零,對已部署嘅 UAT 做 drop migration 有風險冇收益 |
+> | **D2** `mode` 分流 · **D3** adapter 重用 | **原封保留,一個字唔改** |
+> | **D4** `TicketTarget` union · **D5** close 前必驗 `active=true` | **保留**,但 D5 個 rationale 要換 —— SCTASK0071807 唔係「被人手閂」,係 **UOP 自己喺 CH-020 驗證期間閂嘅**(見下) |
+> | **D6 第一條** by-task close(task 優先於 RITM) | 🔴 **停用**(ADR-0025 D1)。留住佢會令每次 assign 都 PATCH 一張 n8n 已經閂咗嘅 task,被 `active` 閘正確拒絕,然後為一個唔存在嘅問題開一條 Delivery failure |
+>
+> 🔴 **D5 個 rationale 點解會記錯**:`SERVICENOW_USER === 'n8napiservice1'` —— **UOP 同 n8n 共用同一個 SN 帳號** ⇒ `sys_updated_by` / `assigned_to` 永遠分唔到邊個系統做,唯一指紋係 `close_notes`。呢個已入 `RISK_REGISTER` **R7**。
+>
+> 替代方案見 **ADR-0025**:UOP 自己建 + 閂一張 `O365 User License Maintenance Request`。
 
 ## Context
 

@@ -2,7 +2,7 @@
 phase: W43-onboarding-license-request
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | closed
+status: closed    # in-progress | closed
 ---
 
 # Phase W43 — Progress
@@ -388,19 +388,55 @@ Chris 2026-08-04 **Accept ADR-0026**（揀 (ii)+(iii) 一齊做 · 唔卡 OQ-1 �
 
 ---
 
-## Retro（填於 phase 結束）
+## Retro（2026-08-04 收官）
 
 ### What worked
 
+- **分批交付**（Chris 拍板 A/B/C）—— 批 A 一落地就有價值（建到單），而唔使等 gate 做齊。批 A 單獨上線嘅缺口（有單冇 gate）喺 plan §1.2 事前寫明咗，冇扮睇唔見。
+- **live 驗證一律行 production class + 獨立 read 覆核。** G6 用 `ServiceNowService`/`DirectServiceNowProvider` 唔另寫 SN 呼叫（另寫只會再證一次已知嘅嘢，證唔到出貨嘅 code），再用獨立 probe 查 variables。G7 反過嚟：**寫**用 production class、**驗**用獨立 read 路 —— 唔畀寫嗰個 object 做自己成功嘅證人。
+- **唔可逆動作全部先 dry-run + 先問。** G6 / G7 / F6 fixture 三次真寫入，每次都係 dry-run → 貼出將會送咩 → 等 Chris 一句 → 先做。F6 更加喺「換 SKU」呢個細節上再停多一次。
+- **測試釘住嘅係「點解」唔係「點做」。** 一個 vendor 一個 abort flag、`≥2` 唔 abort vendor、`close_notes` 唔可以撞 n8n、`prototype` 唔可以有 `updateCatalogVariable` —— 每個都係「呢度出事會靜靜出事」嘅位。
+
 ### What didn't work / unexpected friction
+
+- 🔴 **我一度由 workflow JSON 註釋推論實際行為，仲兩次同 Chris 講「你記錯」。** 實測證明 Chris 啱。**註釋係意圖唔係證據** —— 呢個係 W43 最貴嗰堂課，已入 ADR-0024 附註 + memory。
+- 🔴 **`readyItem` fixture 個 `...over` 排喺 `request` 之後**，所以 `over.request` 係**整個取代**而唔係 merge。以前得一個 gate 所以無害；加咗第二個之後「關 gate ②」會連 gate ① 一齊抹走 —— 我兩個新 test **因為錯嘅原因而紅**，先揭到。
+- 🔴 **G7 個 confound 係我自己整出嚟嘅**：sweep 03:40 跑，而 F3 commit 係 03:59 ⇒ 「當時行緊咩 code」講唔死。**下次 live gate 驗證要喺 commit 之後先跑。**
+- **我自己個 F6-2 test 一開始紅咗，係我寫錯唔係 code 錯**：`getByText('Blocked · sync')` 撞到兩個 node —— 正因為 header badge 同 assign 掣**講緊同一句嘢**（即係設計啱）。改用 `getByRole`，並把「兩個位講同一句」由 bug 變成斷言。
+- **`.bg-accent` 數到 3** —— stepper 啲行過嘅點都係 accent。改成數 `button.bg-accent`，因為 H6 講嘅係**幾多個 action 喺度爭**，唔係幾多粒 accent 像素。
+- **重啟 stack 撞到 skill 寫低嗰個 build-cache 假綠燈**（`dist/main.js` 唔存在 + `tsbuildinfo` 仲喺度 ⇒ verify 90s 後 port 3100 FREE）。skill 有寫，跟住做一次過解決 —— 呢個係 skill 真係救到人嘅一次。
+- **H4 一個實際失誤**：probe 特登只攞 `user_name` 避開 email，但**呢個 instance 個 `user_name` 本身就係 email**。⇒ **先確認個欄實際載住咩，先當佢安全。**
 
 ### Surprises / discoveries
 
+- 🔴 **`sc_item_option` update 403** —— 逼出 ADR-0026，順帶把「**逐個 table 分開開權，唔可以互相推論**」由三次個別經驗升格成明文原則。
+- 🔴 **回填/work note 冇限制只寫平台自己建嘅 RITM。** dev fixture 把一張「target = requester 本人」嘅平台 request 駁咗落一張**真人真事、關另一位同事事**嘅 RITM —— 回填若果 work，就會靜靜改咗人哋張飛。**好彩佢冇寫到。**
+- **我啱啱先為咗「唔留一段永遠失敗嘅 code」寫咗成份 ADR，然後差啲喺同一份文件對替代路徑講咗一句一樣冇根據嘅話**（「work note 已證實寫得到」）。攔住佢嘅唔係我記性，係 **risk register R6**。
+- **SN integration account 冇 email address** ⇒ 佢做唔到 requester（R2 兌現）。
+- **`SkuCatalog.category` 唔係產品家族分類** ⇒ D365 分流只能靠 part-number 前綴，係 heuristic。
+- **Playwright MCP 唔一定喺度** —— 2026-08-02 有、08-04 冇。SESSION_SUMMARY 原文寫「前端驗證唔再係死結」會令下一手以為一定得。已改。
+
 ### Carry-overs to W44
+
+| | |
+|---|---|
+| 🚧 **F6-3/F6-4/G8** live close | Chris 叫停。fixture **REQ0044072** 已 ready，差最後一撳。🔴 恢復時**唔可以用 Power BI Free**（已持有），唯一合資格 = `POWERAUTOMATE_ATTENDED_RPA` + 先加 `allocated` |
+| 🚧 **F5-3 / G9** 前端 light+dark | 等有 browser 嘅 session |
+| 🚧 **F3-9** on-demand gate ② | 純 UX |
+| 🚧 **G10** UAT 實搜 OpenAPI | **W43 未上 UAT**，呢個係前置 |
+| 🆕 **SN-LICENSE-TYPE** | `license_type` 48-choice 對照（已入 BACKLOG A） |
+| 🆕 **DD-5** | `sc_item_option` 寫權 —— 同 **R7**（專屬帳號）、ADR-0018 OQ-2（least-privilege）**三件一齊向 SN admin 要** |
+| ⚠️ **5 張 SN 測試單要人手 cancel** | CH-014 嗰 3 張 + REQ0044071 + REQ0044072 |
+| ⚠️ **`npm run lint -w @uop/web` 本身紅** | 17 條 prettier，全部喺 W43 冇掂過嘅行；CI 只 lint api 所以見唔到。建議另開 `chore(web): prettier` |
 
 ### ADR triggers
 
+- **ADR-0025**（Accepted 2026-08-04）—— 部分 supersede ADR-0024。
+- **ADR-0026**（Accepted 2026-08-04）—— supersede ADR-0025 **D3 後半 + D4 尾條**。**喺實作途中由一個實測結論觸發**，唔係事前規劃 ⇒ R1 仍然守住（Accept 之後先改 code）。
+
 ### Phase Gate result
+
+**PASS（有條件）** —— G1/G1b/G2/G3/G4/G5/G6/G7 ✅；**G8/G9/G10 🚧 明文未做**，理由同 target 全部寫入 checklist + carry-over。冇任何未勾項被刪。
 
 ### Phase status
 
