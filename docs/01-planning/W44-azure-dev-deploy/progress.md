@@ -135,7 +135,9 @@ Chris 喺我交完 ADR draft 之後更正:**W32/W33 部署嗰個環境唔係企�
 
 ### Commits
 
-- `<pending>` — `docs(adr): ADR-0027 draft — Azure DEV 部署拓撲 + DEV as-built`
+- `5b33fb4` — `docs(adr): ADR-0027 draft — Azure DEV 部署拓撲 + DEV as-built`
+- `b5ec5d8` — `docs: 正名「Azure UAT」= 自建測試環境 + B3 升格成本環境成敗關鍵`
+- `<pending>` — `docs(planning): W44 kickoff 同步落 BACKLOG(R7)`
 
 ---
 

@@ -90,6 +90,25 @@
 > ⚠️ **現實世界手尾:5 張 SN 測試單要人手 cancel** —— CH-014 嗰 3 張 + REQ0044071 + REQ0044072(RITM0047367/0047368 + SCTASK0071832/0071833)。SN 刪唔到,只可以 cancel。
 > 🔴 **部署 W43 當日要同 operator 講**:gate ② 一上就即刻生效,所有既有 request `serviceNowUserSyncedAt` 都係 null ⇒ **assign 會被擋到 sweep 開閘為止**(每 10 分鐘一次)。預期行為,唔係 bug。
 
+> ## 🚧 **W44 kickoff(2026-08-04,進行中,branch `feat/w44-azure-dev-deploy`)—— 部署上真企業 Azure 環境**
+>
+> 起因:infra team 交出 **`RG-RAPO-UOP-DEV`**,目的係令 UOP **同 n8n 接得通**。
+>
+> 🔴 **同日 Chris 更正一件影響好深遠嘅事:之前部署嗰個「Azure UAT」唔係企業 UAT,只係一個自建測試環境** —— 自建 RG(`RG-RCITest-RAPO-N8N`)/ ACR / ACA env(**冇 VNet 整合**)+ PG public,住喺 Azure 公網,同企業網絡零連繫 ⇒ **同 n8n 兩個方向都接唔通**(inbound 冇企業 domain 入口;outbound 打唔入內網,n8n 住 on-prem)。
+> ⇒ **呢個就係 W36 / W39 / W40 / W42 一路 carry 嗰句「n8n 側從未真接通,三個 seam 零 live 驗證」嘅根本原因 —— 唔係漏做,係環境上做唔到。四個 phase 都寫過呢句而冇一次寫低過原因。**
+> 命名處理:**保留檔名 / ADR 標題**,靠 blockquote 更正(改名會令 git history 永久對唔上,**W36 同一判斷**)。已加註 `ADR-0012` + `07-uat-as-built.md` 頂 + CLAUDE.md §9 + `SESSION_SUMMARY`。
+>
+> **F1 discovery 已做**(SP 真登入):兩個 container app **infra 已建好但係空殼**(跑 Azure quickstart image)· 共用 ACA env `acaen-rapo-dev`(**SP 連 read 都冇**)· PG **v18** admin `rcitadmin` public **Disabled** · Redis TLS-only public **Disabled** · PE 落 hub `vNet-RCITest-HKG` 而 **`dnsZoneGroup=null`** · web custom domain **`rapo-uop-web-dev.rci-t.com`** + SNI cert · KV data-plane **一樣被 SSL-MITM 擋** · **RG 內冇 ACR**。詳表 → `docs/13-deployment/09-dev-as-built.md`。
+>
+> 🔴 **三個 blocker 全部要 infra team**(問題清單 = `W44-azure-dev-deploy/plan.md` 附錄 C,5 條):
+> **B1 企業中央 ACR** —— 畀嘅值係 GUID,而 ACR 名只准 5–50 純字母數字 ⇒ 唔可能係 ACR 名;三個獨立實測(RG 內冇 · `az acr list` 返 `[]` · 該 GUID 唔係 subscription)。理解更新後,問題由「registry 去咗邊」變成「**企業中央嗰個叫咩 + SP 點攞 AcrPush**」。
+> **B2 PG credential** —— server admin 實測 `rcitadmin`,唔係畀嘅 `rapoaiuopdev`;UOP database 建咗未 / 叫咩名未知。
+> **B3 ACA env VNet 整合** —— 🔴 **本環境成敗嘅關鍵**,唔止管「連唔連到 private PG/Redis」:**UOP → n8n outbound(ADR-0017 三個接縫)一樣繫於佢**。**ADR-0027 D1 揀 A 定 B 都改變唔到**(ingress 係 inbound 概念)。
+>
+> **ADR-0027(Proposed,待拍板 D1)** — **擴充 ADR-0012 唔推翻**。infra 開咗 api **external**(同 ADR-0012 D1 嘅 internal 相反)⇒ H1 + H4。**Option A 收返 internal(推薦)**:`nginx.conf.template` 個 `API_UPSTREAM` **已經** proxy `/api` ⇒ n8n 打 web hostname 就到得到,即 external 係**多出嚟嘅暴露唔係需求**(暴露嘅係成個 API 連 `/docs/api`)· **Option B 保持 external** 要同時做 D2 三項收窄 · **D3 唔議**:browser 流量永遠行 web 同源 proxy,cookie/CORS/前端**一個字唔變**。**OQ-1 resolved**(n8n 住企業內網 ⇒ A 走得通,但係推論唔係實測 ⇒ 降級做 F7-1)。
+>
+> **兩個方法論教訓**:①🔴 **infra team 配咗乜 ≠ 平台需要乜** —— 差啲就把「api external」當既定前提寫入 plan,而答案一直喺 repo(`nginx.conf.template`)②**「接通」好易驗一半當全部** —— F7 acceptance 原本只寫 inbound,而 outbound 唔通係**靜態失敗**(provider fail 但 app 照起得身、smoke 照綠)。已補 F7-9/10/11。
+
 ---
 
 ## A — 可立即開工
