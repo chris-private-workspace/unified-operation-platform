@@ -48,6 +48,8 @@ last_updated: 2026-08-04
 - [x] F2-8 verify:**`az deployment group validate` → `provisioningState: Succeeded`**,`error` 全 null
 - [ ] F2-9 🚧 **擴 `check-template.py` 覆蓋 `aca-dev.json`**(佢而家硬編碼 `aca.json`)—— **defer**:validate 今日跑得到而且係更強嘅 gate;佢唯一唔覆蓋而 check-template 覆蓋嘅係 **secretRef 懸空**(已手動逐個對過,兩個 app 都齊)。真正需要佢係「validate 又跑唔到」嗰日
 - [x] F2-10 ⚠️ 順帶實測推翻 `check-template.py` docstring 一句「`az deployment group validate` 喺公司網跑唔到(`az account show` 直接 hang)」—— **今日全程通**(list / db create / validate 都成功)
+- [x] F2-11 ✅ **`az deployment group what-if` —— R6 由「部署後對數」提前變成「部署前證明」**。結果:**零 resource 被 Delete** · 只有兩個 container app `Modify`,其餘 **9 個資源全部 `Ignore`**(Redis / PG / App Insights / KV / 2 NIC / 2 PE / alert rule)· **`customDomains` 同 `workloadProfileName` 唔喺 delta ⇒ 保留** · web `external` 唔喺 delta ⇒ 保持 true · `registries` + `secrets` `Create`(what-if 自己 mask 咗值)。api delta 只有預期嗰四樣:`allowInsecure` false→true · `external` true→false · `targetPort` 80→3000 · 三個 default unset
+- [x] F2-12 ⚠️ **三個 property 會被 ARM unset,評估為無害,刻意唔寫返**:`exposedPort`(只對 TCP transport 有意義)· `traffic`(`activeRevisionsMode: Single` 下 ACA 自動全部去 latest)· `maxInactiveRevisions`(unset 即用預設 100)。理由唔係「應該冇事」而係**UAT `aca.json` 同樣三個都冇寫,而 UAT 三次部署都成功** —— 有實證先當佢無害
 
 ## F3 — params 檔 + secret 策略(**B2 已解封**)
 

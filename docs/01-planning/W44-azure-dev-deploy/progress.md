@@ -195,6 +195,18 @@ F2-1 存底見到 web app 有 150+ 個 `outboundIpAddresses`,我由此推論「*
 
 真正可行:①SP 攞 `Contributor` + firewall 放行 ⇒ `az acr build`(base image Azure 側 pull)②infra 代 build + push。
 
+### ✅ `what-if` —— 等 infra 期間做嘅,而且把 R6 由「部署後補救」變成「部署前證明」
+
+等緊 infra 回第三輪嗰陣,想到一個**而家做得到**嘅嘢:`az deployment group what-if`。佢喺**唔部署**嘅情況下顯示呢次 ARM 會改 / 刪咩,零副作用,而且**唔需要 image 存在**(所以唔受 B1 影響)。
+
+呢個直接答咗 R6 最大嗰條問題 ——「ARM 全量 PUT 會唔會刪走 infra 配好嘅 custom domain?」
+
+**結果**:零 resource 被 Delete · 只有兩個 container app `Modify` · **其餘 9 個資源全部 `Ignore`**(Redis / PG / App Insights / KV / 2 NIC / 2 PE / alert rule)· **`customDomains` 同 `workloadProfileName` 唔喺 delta ⇒ 保留** · web `external` 保持 true · `registries` + `secrets` `Create`(what-if 自己 mask 咗值)。api 個 delta 只有 ADR-0027 Option A 預期嗰三樣(`allowInsecure` false→true · `external` true→false · `targetPort` 80→3000)。
+
+⚠️ **三個 property 會被 unset,判斷為無害**:`exposedPort` · `traffic` · `maxInactiveRevisions`。**判斷依據唔係「睇落應該冇事」,而係 UAT 個 `aca.json` 同樣三個都冇寫、而 UAT 三次部署都成功** —— 有實證先當佢無害,冇實證就唔會咁講。
+
+🔴 **值得帶返去 UAT runbook**(留 F8-3):runbook §5 只有 `validate`,而 **`validate` 唔會話你會刪咩**。`what-if` 應該做標準步驟 —— 尤其當 template 打落一個**唔係我哋建**嘅環境。
+
 ### Blockers(Day 1 收工狀態)
 
 **🔴 B1 = 唯一硬 blocker,而且卡死晒下游。** 二選一要 infra 揀。冇 image ⇒ F5/F6/F7 全部做唔到,連 F4-4(渲染 nginx.conf 逐行睇)都做唔到 —— 因為起唔到 web container。

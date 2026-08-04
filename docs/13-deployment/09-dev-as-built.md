@@ -137,9 +137,28 @@ ERROR: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
 | 5 | **Registry** | 自建 ACR(RG 內) | **冇** | 🔴 **B1** |
 | 6 | **額外資源** | — | **Redis + App Insights + custom domain/SNI cert** | Redis **唔接**(`apps/api/src` 實測零 BullMQ 用法,ADR-0012 §D4 不預批)· App Insights 未接線 · custom domain ⇒ `appBaseUrl` 用 https |
 
+## ✅ 部署前已用 `what-if` 證明唔會刪嘢(2026-08-04)
+
+`az deployment group what-if -g RG-RAPO-UOP-DEV --template-file deploy/azure/aca-dev.json --parameters @deploy/azure/aca.params.dev.json`
+
+| 檢查 | 結果 |
+|---|---|
+| 有冇 resource 被 **Delete** | **零** |
+| 邊啲 resource 被改 | **只有兩個 container app**(`Modify`) |
+| 其餘 9 個資源 | **全部 `Ignore`** —— Redis · PG · App Insights · KV · 2 NIC · 2 PE · alert rule,ARM 完全唔會掂 |
+| `customDomains`(對外唯一入口) | **唔喺 delta ⇒ 保留** ✅ |
+| `workloadProfileName` | **唔喺 delta ⇒ 保留** ✅ |
+| web `external` | 唔喺 delta ⇒ 保持 `true` ✅ |
+| `registries` / `secrets` | `Create`(what-if 自己 mask 咗值) |
+| api ingress | `allowInsecure` false→**true** · `external` true→**false** · `targetPort` 80→**3000**(全部係 ADR-0027 Option A 預期) |
+
+⚠️ **三個 property 會被 ARM unset,判斷為無害**:`exposedPort`(只對 TCP transport 有意義)· `traffic`(`activeRevisionsMode: Single` 下 ACA 自動全部去 latest revision)· `maxInactiveRevisions`(unset 即用預設 100)。**判斷依據唔係「睇落應該冇事」,而係 UAT 個 `aca.json` 同樣三個都冇寫,而 UAT 三次部署都成功。**
+
+> 🔴 **`what-if` 值得寫入 runbook 做標準步驟。** 佢把 R6(「ARM 會唔會刪走 infra 配好嘅嘢」)由**部署後補救**變成**部署前證明**,而且唔需要 image 存在、零副作用。UAT runbook §5 只有 `validate`,而 `validate` **唔會**話你會刪咩。
+
 ## ⚠️ 部署時要特別小心
 
-1. **ARM 係宣告式,會刪走冇寫嘅嘢。** infra team 已配好嘅 **web custom domain + SNI cert binding** 若冇寫入 template,一次部署就會消失。⇒ 部署前先 `az resource show` 存底,部署後逐項對返(W44 F2-1 / F6-9)。
+1. **ARM 係宣告式,會刪走冇寫嘅嘢。** infra team 已配好嘅 **web custom domain + SNI cert binding** 若冇寫入 template,一次部署就會消失。⇒ 部署前先 `az resource show` 存底 + 跑 `what-if`,部署後逐項對返(W44 F2-1 / F2-11 / F6-9)。
 2. **`az acr build` Succeeded ≠ 容器起得身。** BUG-008 實證:626 test 綠 + build 成功 + lint 零 output + ACR build Succeeded,**四道 gate 全部攔唔到** `dist/main.js` 唔存在。真 pass 標準 = revision **Running/Healthy** + smoke 過。
 3. **`az` CLI 印 Unicode `✔` 會 charmap crash(exit 1 假象)** —— 真結果查 management plane(`az acr task list-runs` / `az deployment group show`)。
 4. **`az` 一律 sequential** —— 多個並發會互鎖 hang。
