@@ -60,6 +60,8 @@ const REQUEST = (over: Partial<RequestDetailType> = {}): RequestDetailType =>
     handledById: null,
     accountCreatedAt: null,
     azureSyncedAt: null,
+    serviceNowUserSyncedAt: null,
+    serviceNowUserSysId: null,
     createdAt: '2026-08-01T00:00:00Z',
     updatedAt: '2026-08-01T00:00:00Z',
     opco: { code: 'RHK', displayName: 'RHK Co' },
@@ -195,7 +197,13 @@ describe('request detail — sync check (CH-015)', () => {
 
   it('shows neither button once the gate is open', () => {
     vi.mocked(useRequest).mockReturnValue({
-      data: REQUEST({ azureSyncedAt: '2026-08-01T01:00:00Z' }),
+      // Both gates: "Ready to assign" is a statement about assigning, and W43
+      // gave assign a second gate. Opening only this one here would have made
+      // the assertion below pass while the request was still unassignable.
+      data: REQUEST({
+        azureSyncedAt: '2026-08-01T01:00:00Z',
+        serviceNowUserSyncedAt: '2026-08-01T01:05:00Z',
+      }),
       isLoading: false,
       isError: false,
     } as any);

@@ -77,11 +77,12 @@ last_updated: 2026-08-03
 
 ## F5 — 前端：兩個 gate 狀態可見
 
-- [ ] F5-1 Request detail 顯示兩個 check point 狀態
-- [ ] F5-2 token-only，**唔加新 pattern / 新色**（用既有 Badge + semantic tone）
-- [ ] F5-3 light + dark 都驗
-- [ ] F5-4 跑 `.claude/skills/ui-design` 自檢，逐條答
-- [ ] F5-5 web test
+- [x] F5-1 Request detail 顯示兩個 check point 狀態 —— 第三個 `SyncStep`「Known to ServiceNow」；gate ① 開 gate ② 未開 = 「Waiting on ServiceNow · checked automatically」（**純文字冇掣**：`Check now` 問嘅係 Graph，喺呢個狀態出佢等於叫人去查已經冇事嗰邊；`Mark synced` 更加唔可以有——冇人可以「宣稱」一條 SN 記錄存在）
+- [x] F5-2 token-only，**唔加新 pattern / 新色**（第三個 step 用返同一個 `SyncStep` primitive；新色只有 `text-warn`，已存在 token）
+- [ ] 🚧 F5-3 light + dark 都驗 —— **未做**：本 session 冇 browser（`claude-in-chrome` 零連接、無 Playwright MCP）。已做**結構**驗證：新用嘅 `--warn` 喺 `design-system/tokens/colors.css` `:root`(L29) 同 dark(L56) 兩邊都有定義，改動檔案零 hex / rgb / hsl。**target：同 G9 一齊做**
+- [x] F5-4 跑 `.claude/skills/ui-design` 自檢，逐條答（見 progress Day-2；DS-4 / DS-11 標 ⚠️ 未 render 驗）
+- [x] F5-5 web test：**265 → 281**（31 files）；tsc web 0 error
+- [x] F5-6 *(新增，非計劃內)* `deriveStatus` 加 gate ② —— 唔加嘅話**同一個版面自相矛盾**：header badge 講「Ready to assign」而下面 assign 掣講「Blocked · sync」。兩個 gate **共用一個 label**（list column 度「邊個 vendor」唔 actionable，「而家 assign 唔到」先係），順帶令 `matchesFilter('blocked')` **零改動**就接住 gate ② 阻塞嘅 request——分開 label 就要同步改個 filter，漏咗會**靜靜**令佢喺 Blocked tab 消失
 
 ## F6 — Close 路徑驗證（零新 code）
 

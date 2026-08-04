@@ -197,6 +197,12 @@ export function RequestDetail() {
   const req = detail.data;
   const status = deriveStatus(req);
   const synced = Boolean(req.azureSyncedAt);
+  // W43 / ADR-0025 D5 — the second gate. Kept as its own flag rather than folded
+  // into `synced`: the two are chased differently (Entra Connect vs the
+  // ServiceNow user import), so every place that reacts to a shut gate has to be
+  // able to say WHICH one.
+  const snSynced = Boolean(req.serviceNowUserSyncedAt);
+  const assignable = synced && snSynced;
   const pending =
     advance.isPending ||
     assign.isPending ||
@@ -423,7 +429,7 @@ export function RequestDetail() {
           </div>
         )}
 
-        <div className="mt-[16px] flex items-center gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
+        <div className="mt-[16px] flex flex-wrap items-center gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
           <SyncStep
             done={Boolean(req.accountCreatedAt)}
             title="Account created"
@@ -435,10 +441,34 @@ export function RequestDetail() {
             title="Synced to Azure AD"
             sub="directory replication"
           />
+          <div className="h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
+          {/* ADR-0025 D4 — gate ②, shown as a third check point rather than as a
+              separate panel: it is the same kind of fact as the two beside it
+              (does this person exist over there yet), and assigning needs all
+              three. A panel of its own would read as optional. */}
+          <SyncStep
+            done={snSynced}
+            title="Known to ServiceNow"
+            sub="target user record"
+          />
           <div className="ml-auto flex items-center gap-[8px]">
-            {synced ? (
+            {assignable ? (
               <span className="text-[12.5px] font-medium text-ok">
                 Ready to assign
+              </span>
+            ) : synced ? (
+              // Gate ① is open, gate ② is not. Deliberately text and no button:
+              // "Check now" asks GRAPH, and offering it here would send the
+              // operator to re-check the side that is already fine. There is no
+              // break-glass either — nobody can assert a ServiceNow record into
+              // existence. The sweep opens this one on evidence or not at all.
+              <span className="flex flex-col items-end leading-[1.25]">
+                <span className="text-[12.5px] font-medium text-warn">
+                  Waiting on ServiceNow
+                </span>
+                <span className="text-[11px] text-fg-subtle">
+                  checked automatically
+                </span>
               </span>
             ) : (
               <>
@@ -587,7 +617,7 @@ export function RequestDetail() {
                 const next = nextStage(item);
                 const cancelled = item.stage === 'CANCELLED';
                 const isReady = item.stage === 'READY';
-                const canAssign = isReady && synced;
+                const canAssign = isReady && assignable;
                 const isBase = item.sku
                   ? baseBySkuId.get(item.sku.skuId)
                   : false;
@@ -721,10 +751,14 @@ export function RequestDetail() {
                               variant="primary"
                               size="sm"
                               disabled={!canAssign || pending}
+                              // Which gate, not just that one is shut: the two
+                              // are resolved by different people (ADR-0025 D5).
                               title={
                                 !synced
                                   ? 'Blocked — account not synced to Azure AD'
-                                  : undefined
+                                  : !snSynced
+                                    ? 'Blocked — the target user is not in ServiceNow yet'
+                                    : undefined
                               }
                               onClick={() =>
                                 assign.mutate(
@@ -737,7 +771,7 @@ export function RequestDetail() {
                                 )
                               }
                             >
-                              {synced ? 'Assign now' : 'Blocked · sync'}
+                              {assignable ? 'Assign now' : 'Blocked · sync'}
                             </Button>
                           )}
                           {/* W36 / ADR-0016 D3 — the exceptional path, offered

@@ -166,6 +166,43 @@ api **866 → 874**，68 suites，lint exit 0。migration `20260804032725_w43_ga
 
 ⚠️ **未證實嘅假設**：`updateCatalogVariable` 要寫 `sc_item_option`，而**呢個帳號有冇寫權未驗過** —— BUG-010 已經示範咗 insert 同 update 喺呢個 instance 係兩套 ACL。所以回填做成 non-fatal，gate 唔會因為佢失敗而重新關上。要驗就要真 PATCH 一張單（G7）。
 
+### 批 B — F5 前端：兩個 gate 狀態可見
+
+web **265 → 281** test（31 files），tsc web 0 error。改 4 個檔 + 加 2 個 test 檔，**零新 dep、零新 pattern、零新色**。
+
+**做咗啲乜**：Request detail 個 check-point row 由兩個變三個（`Account created → Synced to Azure AD → Known to ServiceNow`，同一個 `SyncStep` primitive）。Assign 掣、掣上面個 title、header badge 三樣一齊跟兩個 gate 走。
+
+**三個決定，每個都有反例**：
+
+1. 🔴 **gate ② 未通嗰陣，右邊刻意得文字冇掣**（`Waiting on ServiceNow · checked automatically`）。`Check now` 問嘅係 **Graph** —— 喺呢個狀態出佢，等於叫 operator 去 re-check 已經冇事嗰邊。`Mark synced` 更加唔可以有：break-glass 之所以合理，係因為「Graph 連唔到但個人真係喺度」呢個情況存在；而**冇人可以宣稱一條 ServiceNow 記錄存在**——gate ② 唯一開法就係 sweep 見到佢。
+2. 🔴 **`deriveStatus` 一定要加 gate ②（F5-6，非計劃內）**。唔加就會**同一個版面自相矛盾**：header badge 講「Ready to assign」，下面 assign 掣同時講「Blocked · sync」。而 `deriveStatus` 係共用嘅 ⇒ Requests 列表本來會為一張 backend 一定 400 嘅單寫住「Ready to assign」。
+3. **兩個 gate 共用一個 label**（都係 `Blocked · sync`）。分開 label 睇落更清楚，但 list column 度「等緊邊個 vendor」唔 actionable，而「而家 assign 唔到」先係;更硬嘅理由:`matchesFilter('blocked')` 係 `status === 'Blocked · sync'` 字串比對 —— 加第二個 label 就**必須**同步改個 filter，漏咗會令 gate ② 阻塞嘅 request **靜靜**喺 Blocked tab 消失。共用一個 label ⇒ 個 filter 一個字唔使改就自動接住。有 test 釘住兩邊都搵得返。
+
+**順帶**:migration 零 backfill ⇒ 所有舊 request `serviceNowUserSyncedAt` 都係 null。`deriveStatus` 個 `every ASSIGNED → Completed` 喺 gate 檢查之前,所以**歷史單唔會集體變紅**——已寫 test 釘死（唔係靠讀 code 推論）。
+
+**我自己個 test 一開始紅咗 4 條,而且係我寫錯唔係 code 錯**：`getByText('Blocked · sync')` 撞到兩個 node。原因就係決定 2 生效咗——header badge 同 assign 掣**講緊同一句嘢**。改用 `getByRole('button')`，並且把「兩個位講同一句」由 bug 變成**斷言**（`getAllByText('Ready to assign')` 長度 = 2）。另一條 `.bg-accent` 數到 3：line-item stepper 啲已行過嘅點都係 accent 色 —— 改成數 `button.bg-accent`，因為 H6 講嘅係**幾多個 action 喺度爭**，唔係幾多粒 accent 色像素。
+
+#### `ui-design` skill 自檢（F5-4，逐條）
+
+| # | 結果 | 依據 |
+|---|---|---|
+| DS-1 token-only | ✅ | 改動檔 grep `#hex` / `rgb(` / `hsl(` = **零命中**；色只用 `text-warn` / `text-ok` / `text-fg-subtle` / `bg-border-strong` |
+| DS-2 唔 eyeball | ✅ | 新 step 同新文字每個數值都由**同一行嘅兄弟元素**照抄（`text-[12.5px]` / `text-[11px]` / `w-[60px]` / `h-[2px]`），冇調過一個數 |
+| DS-3 單一 accent + 一 primary | ✅ | 有 test：`button.bg-accent` 數目 = **1** |
+| DS-4 light + dark | ⚠️ **未 render 驗** | 結構上企得住：`--warn` 喺 `colors.css` `:root`(L29) 同 dark(L56) 都有定義，全部經 CSS var。但**冇真喺瀏覽器行過** → F5-3 / G9 |
+| DS-5 數字 mono | N/A | 冇加任何數字 / 識別碼 |
+| DS-6 lucide stroke | ✅ | 冇加 icon；第三個 step 用返 `SyncStep` 入面同一個 `Check` |
+| DS-7 平面美學 | ✅ | 冇加 shadow / gradient / blur；深度仍然係 1px border + `bg-hover` |
+| DS-8 狀態走 semantic | ✅ | badge 照走 `deriveStatus` → danger；「等緊」用 `warn`，同 `STAGE_TONE` 入面 awaiting → warn 一致 |
+| DS-9 motion 克制 | N/A | 冇加動畫 |
+| DS-10 voice / casing | ✅ | `Known to ServiceNow` / `target user record` / `Waiting on ServiceNow` / `checked automatically` —— 短、Sentence case、冇 emoji |
+| DS-11 對住 prototype | ⚠️ **未對** | 同 DS-4 一樣冇 browser。但呢個 row 本身係 CH-015 期嘅 project pattern，今次只係**複製多一個一模一樣嘅 step**，冇引入新 pattern |
+| DS-12 唔捏造 logo | N/A | — |
+
+⇒ **兩條 ⚠️ 都係同一個原因：本 session 冇 browser**（`claude-in-chrome` 返 `[]`、無 Playwright MCP）。F5-3 同 G9 照留 `[ ]`，唔當做完。
+
+⚠️ **順帶發現（唔喺本次 scope，冇修）**：`npm run lint -w @uop/web` **本身已經紅**（17 條 prettier，全部喺 `allocation-reset*` + 兩條喺我冇掂過嘅行）。CI 真正 gate 嗰條 root `npm run lint` **只 lint `@uop/api`**，所以 CI 唔會見到。我兩個新檔零 error。建議另開一個 `chore(web): prettier` 清，唔混入本 phase diff。
+
 ### Actual vs Planned Effort
 
 | Deliverable | Planned (h) | Actual (h) | Variance |
@@ -175,6 +212,7 @@ api **866 → 874**，68 suites，lint exit 0。migration `20260804032725_w43_ga
 | G6 live | ~1 | ~0.7 | — |
 | F3 gate ② | ~4 | ~2.5 | — |
 | F4 雙閘 | ~1 | ~0.8 | 含順帶修 fixture 陷阱 |
+| F5 前端 | ~2 | ~1.5 | 含 F5-6 非計劃內；light+dark 未驗 |
 
 ### Commits
 

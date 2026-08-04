@@ -97,7 +97,14 @@ export function deriveStatus(req: OnboardingRequest): DerivedStatus {
   if (active.some((i) => PROCUREMENT_STAGES.includes(i.stage)))
     return { label: 'In procurement', tone: 'warn' };
   // remaining items are REQUESTED / READY (± some ASSIGNED)
-  if (!req.azureSyncedAt) return { label: 'Blocked · sync', tone: 'danger' };
+  // ADR-0025 D5 — assign now needs BOTH gates, so both must be able to produce
+  // "blocked" here. One label for the two on purpose: in a list column "which
+  // vendor" is not actionable, "cannot be assigned yet" is — and the request
+  // detail's check-point row is where the operator sees which side is waiting.
+  // Leaving gate ② out would let this column read "Ready to assign" for a
+  // request the backend will refuse (W43 F4).
+  if (!req.azureSyncedAt || !req.serviceNowUserSyncedAt)
+    return { label: 'Blocked · sync', tone: 'danger' };
   if (active.some((i) => i.stage === 'READY'))
     return { label: 'Ready to assign', tone: 'info' };
   return { label: 'Triage', tone: 'info' };

@@ -726,6 +726,13 @@ export interface OnboardingRequest {
   handledById: string | null;
   accountCreatedAt: string | null;
   azureSyncedAt: string | null;
+  // ADR-0025 D4 — gate ②: ServiceNow has the target user as a sys_user record.
+  // Opened by the sync sweep, never by a caller's claim (same rule as gate ①).
+  // Required, not optional: the backend returns the whole Request row, so a
+  // missing field here would mean the payload changed — not that a request is
+  // exempt from the gate.
+  serviceNowUserSyncedAt: string | null;
+  serviceNowUserSysId: string | null;
   createdAt: string;
   updatedAt: string;
   opco?: OpcoRef;
