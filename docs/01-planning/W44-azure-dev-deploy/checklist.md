@@ -12,13 +12,14 @@ last_updated: 2026-08-04
 
 ## F0 — ADR:DEV 部署拓撲(api external ingress)
 
-- [ ] F0-1 起草 ADR:Context — infra team 已開 api external ingress + 畀咗 `azure_url_for_api_call`,意圖係令 n8n UAT 打得到
-- [ ] F0-2 Decision — api 保持 external;web 仍行自己 nginx proxy `/api` 保 browser 同源
-- [ ] F0-3 明寫代價 — 平台第一次把 API 直接暴露互聯網;唯一防線 = `IntakeKeyGuard` fail-closed + JWT guard
-- [ ] F0-4 Alternatives — ①保持 internal 用 web relay ②只開 intake path ③ACA IP restriction,逐個寫低點解唔採用
-- [ ] F0-5 明寫 **cookie 邊界不變**(AUTH-4c-B `SameSite=Strict` httpOnly 唔受影響,因為 browser 仍走同源)
-- [ ] F0-6 🔴 **等 Chris 改 Status = Accepted**(未 Accept 唔可以開 F2)
-- [ ] F0-7 `docs/adr/README.md` index 加一行
+- [x] F0-1 起草 ADR:Context — infra team 已開 api external ingress + 畀咗 `azure_url_for_api_call`,意圖係令 n8n UAT 打得到
+- [x] F0-2 Decision — **兩個選項並列待拍板**(⚠️ **相對 plan 有調整**,見 progress Day 1:寫 ADR 時發現 `nginx.conf.template` 已經 proxy `/api` ⇒ **收返 internal 亦完全滿足 n8n**,所以唔應該把 external 當成唯一路)
+- [x] F0-3 明寫代價 — 平台第一次把整個 API(含 `/docs/api`)直接暴露互聯網;防線只剩 `IntakeKeyGuard` fail-closed + JWT guard
+- [x] F0-4 Alternatives — Option A 收返 internal / Option B 保持 external + D2 三項收窄 / Option C per-path(ACA 做唔到)/ Option D 前端直打 api(明確 reject)
+- [x] F0-5 明寫 **cookie 邊界不變**(AUTH-4c-B `SameSite=Strict` httpOnly 唔受影響 —— 兩個選項嘅分別**只在 machine-to-machine**,唔涉及瀏覽器)
+- [ ] F0-6 🔴 **等 Chris 拍板 D1 + 改 Status = Accepted**(未 Accept 唔可以開 F2)
+- [ ] F0-6b 🔴 查 **OQ-1**:n8n UAT 解析唔解析到 `rapo-uop-web-dev.rci-t.com`(決定 A 走唔走得通)
+- [x] F0-7 `docs/adr/README.md` index 加一行(順帶修正 **ADR-0026 index status** `Proposed` → `Accepted`,檔本身一直係 Accepted,W43 收官漏改)
 
 ## F1 — 環境 discovery + 差異登記
 
@@ -30,7 +31,7 @@ last_updated: 2026-08-04
 - [x] F1-6 確認 Key Vault data-plane 可用性
 - [x] F1-7 確認 RG 內無 ACR + 嗰個 GUID 唔係 subscription
 - [x] F1-8 確認 `apps/api/src` 零 BullMQ/Redis 用法
-- [ ] F1-9 寫 `docs/13-deployment/09-dev-as-built.md`(座標 + 六處差異 + 四條 infra 問題)
+- [x] F1-9 寫 `docs/13-deployment/09-dev-as-built.md`(座標 + 六處差異 + 四條 infra 問題)
 - [ ] F1-10 把四條問題交畀 Chris → infra team
 
 ## F2 — DEV 專用 ARM template(**前置 F0-6**)
