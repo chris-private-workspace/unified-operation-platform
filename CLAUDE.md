@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **CH-020 收官(2026-08-03)** — 後端業務層 / 前端 / AUTH / 整合全鏈已落地;下一個 pending 見 `BACKLOG.md`(**真相 SSOT**,呢格只寫最近一個座標) |
+| Phase | **W43 收官(2026-08-04)** — UOP 自建 + 閂 O365 licence 單、ServiceNow 同步 gate ②(ADR-0025 / 0026);下一個 pending 見 `BACKLOG.md`(**真相 SSOT**,呢格只寫最近一個座標) |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -264,13 +264,15 @@ output(見 `docs/03-implementation/incidents/INC-001`)。bypass permissions mode
 
 Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 folder,見 `BACKLOG.md`。唔清楚而家喺邊個 phase → **ask user**。
 
-**當前狀態(2026-07-31,W42 + CH-013 收官後)**:
+**當前狀態(2026-08-04,W43 收官後)**:
 
 > ⚠️ 呢段**只寫粗略座標**。真相 SSOT 係 `BACKLOG.md`(工作狀態)+ `docs/adr/README.md`(架構決定)+ memory `MEMORY.md`(runtime 實況)。**唔好喺呢度累積歷史** —— 佢一過時就會令成個 session 用錯前提開始(2026-07-31 實犯:本段一直寫住「`apps/web` = placeholder、auth 未做」,而嗰陣前端同 AUTH 早就做齊)。
 
-- **已上 Azure UAT**(ADR-0012;詳見 memory `azure-uat-deployment`)。
+- **已上 Azure UAT**(ADR-0012;詳見 memory `azure-uat-deployment`)。⚠️ **W43 未部署上 UAT**。
 - **本機 runtime 避坑**:Prisma engine CDN 被公司 proxy 封(RISK R1);port 3000→Langfuse 佔用 ⇒ api 用 **3100**、5432→既有 Postgres 佔用 ⇒ docker **5433**;web **5173**。起 / 重啟一律用 `restart-stack` skill。
-- **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration)。
+- 🔴 **ServiceNow 寫入係逐個 table 分開開權,唔可以由「某張表寫得」推論「另一張寫得」**:`sc_request` insert **403**(BUG-010)· `sc_item_option` update **403**(ADR-0026)· `sc_req_item` / `sc_task` update ✅ · catalog `order_now` ✅。⇒ `target_user` **永遠**指住 requester,真 target 睇 `target_users_email`(DD-5)。
+- 🔴 **UOP 同 n8n 共用 SN 帳號 `n8napiservice1`** ⇒ `sys_updated_by` 分唔到邊個系統做,唯一指紋係 `close_notes`(RISK **R7**)。查 SN 側「邊個做過乜」一律唔可以信 `sys_updated_by`。
+- **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration;W43 遺留 = live close 未驗 / 前端 light+dark 未 render 驗)。
 
 ---
 

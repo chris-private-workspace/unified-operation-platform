@@ -309,6 +309,41 @@ describe('AssignService', () => {
     });
 
     /**
+     * W43 F6-2 / RISK R7 — `close_notes` is the ONLY way to tell a UOP close
+     * from an n8n close.
+     *
+     * UOP and n8n authenticate to ServiceNow as the same account
+     * (`n8napiservice1`), so `sys_updated_by` and `assigned_to` say the same
+     * thing whichever system acted. That is not a hypothetical: ADR-0024 D5's
+     * rationale was written on a mis-attribution this exact ambiguity produced
+     * (SCTASK0071807 was read as "closed by hand" when UOP had closed it during
+     * CH-020 verification), and that reading became a premise of a whole ADR.
+     *
+     * So the note text is not cosmetic — it is the discriminator. Pinned here
+     * because nothing else would notice it drifting into something n8n also
+     * says, and the cost of that is future evidence quietly becoming unreadable.
+     */
+    it('closes with the UOP fingerprint, never wording n8n also uses', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1' }),
+      );
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      const [, note] = tickets.closeComplete.mock.calls[0] as [unknown, string];
+      // The fingerprint itself: "via platform" is what a query for UOP's closes
+      // matches on, and the SKU is what makes one close distinguishable from
+      // the next.
+      expect(note).toContain('via platform');
+      expect(note).toContain('SPE_E3');
+      // n8n's own fingerprint, observed live: `Closed & Handled by n8n`. Sharing
+      // any of it would make both systems' closes match the same query.
+      expect(note).not.toMatch(/n8n/i);
+      expect(note).not.toMatch(/handled by/i);
+    });
+
+    /**
      * 🔴 The parent REQ is sc_request, while seam ④ only ever writes
      * sc_req_item (2004 has the table baked into its patch URL). Closing a REQ
      * is also a different statement — the other lines may still be open.

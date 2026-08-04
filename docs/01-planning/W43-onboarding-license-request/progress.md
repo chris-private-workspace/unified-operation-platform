@@ -2,7 +2,7 @@
 phase: W43-onboarding-license-request
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | closed
+status: closed    # in-progress | closed
 ---
 
 # Phase W43 — Progress
@@ -249,6 +249,129 @@ cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in Ser
 | F4 雙閘 | ~1 | ~0.8 | 含順帶修 fixture 陷阱 |
 | F5 前端 | ~2 | ~1.5 | 含 F5-6 非計劃內；light+dark 未驗 |
 | F3-2 / G5 scratch DB | ~1 | ~0.5 | 順帶揭到 G7 前半已有實證 |
+| G7 read 半 | ~0.5 | ~0.5 | 答案 = 回填冇 landed;寫入實驗等批准 |
+| G7 write 半 + ADR-0026 + F8 | ~2 | ~1.5 | 403 判實 → ADR → 拆走回填改 work note |
+| F6 test 半 | ~1 | ~0.4 | F6-1 已有覆蓋唔重複寫;live 半等批准 |
+
+### F6 — close 路徑：test 半做完，live 半等批准
+
+api **877 → 878**（68 suites）· **零 production code 改動**（F6 本來就係「零新 code」嘅驗證項）。
+
+**F6-1 我冇加 test，因為條鏈已經有釘，加多個係做樣。** 三段各自覆蓋咗:
+
+| 段 | 釘喺邊 |
+|---|---|
+| F2 把新 RITM 寫落 `RequestLineItem.serviceNowSysId` | `intake-adapter.service.spec.ts:718` |
+| assign 讀**同一個欄**去 close | `assign.service.spec.ts:243` |
+| provider `pickTask` 查 `request_item=<id>^active=true` on `sc_task` → PATCH `state=3` | `direct-ticket.provider.spec.ts:59` |
+
+provider 對 RITM 嘅形狀 **agnostic** ⇒「新建嗰張 O365 RITM」唔係一個新 code path。寫多一個 test 行多次同一條鏈，只會令 test 數字好睇啲。
+
+**F6-2 就係真空隙，加咗。** 斷言 close note **有** `via platform` + SKU，**且** `not.toMatch(/n8n/i)` / `/handled by/i`。
+
+🔴 **點解呢個唔係文案潔癖**:**RISK R7** 之下，`close_notes` 係**唯一**分得出「UOP 閂嘅」同「n8n 閂嘅」嘅嘢 —— 兩邊用同一個 `n8napiservice1`，`sys_updated_by` 講唔到嘢。而呢個歧義**已經咬過一次**:ADR-0024 D5 個 rationale 就係喺佢上面寫錯（以為 SCTASK0071807 被人手閂，實情係 UOP 自己閂）。個 note 一旦飄到同 n8n 撞，以後所有「邊個做過乜」嘅查證都會靜靜失效。
+
+（誠實講:正面兩句（`via platform` / SKU）先係有牙嗰啲 —— 反面兩句係 drift guard，平時唔會紅。）
+
+**F6-3 / F6-4 live** —— Chris 2026-08-04 揀 **(b)**:先造一張有兩張 RITM 嘅 fixture，target = 佢自己，真派嘅 SKU 原定 Power BI Free。
+
+#### 已完成嘅步驟（含**唔可逆**嘅）
+
+| # | 動作 | 結果 |
+|---|---|---|
+| 1 | 🔴 **唔可逆** — `seed:sn-onboarding --shape=multi --post --target=<Chris>` | **REQ0044072** → **RITM0047367**（SCTASK0071832）+ **RITM0047368**（SCTASK0071833），各**剛好 1 張 active task**，兩張都標咗 `[UOP TEST]`。⚠️ 待人手 cancel 嘅測試單由 4 張變 **5 張** |
+| 2 | 重啟 stack | 🔴 撞到 skill 寫低嗰個 **build-cache 假綠燈**（`dist/main.js` 唔存在 + `tsbuildinfo` 仲喺度 ⇒ verify 90s 之後 port 3100 FREE 而 leak watch 得 9 個）。按 skill 修:刪 cache + `dist/` **然後直接起**（中間唔插 `npm run build`）—— 一次過起返，~30s |
+| 3 | `intake:from-sn --post` 導入平台 | request `cmsedl8jz…`，2 條 line 各自帶住自己嘅 RITM sys_id |
+| 4 | 等 sweep | **08:10:03 兩個 gate 一齊開** —— gate ① Graph 搵到、gate ② SN 搵到（sys_id `f9c5785f…`）。⇒ **W43 gate ② 全鏈 live 通過** |
+
+#### 🔴 步驟 4 之後撞到一件事，令「派 Power BI Free」呢個決定要重問
+
+Graph read-only probe（唔寫嘢）查到 **target 本身已經持有 `POWER_BI_STANDARD`** —— 正正係 CH-020 **V5d** 嗰次驗證派落去嘅殘留。再派一次:**成功就係 no-op、失敗就係一個同 close 路徑完全無關嘅錯**，兩種都會令 F6 個結論唔乾淨（「睇落成功但證明唔到嘢」）。
+
+順帶第二個限制:**ADR-0016 預算 gate** 要求 `assigned + 1 ≤ allocated`，而 RHK 每一行 ledger 嘅 `allocated` 都係 **0** ⇒ 任何 SKU 都要先加 allocation（呢個正正係 override dialog 自己叫人做嗰件事）。而 **DD-3**:冇 ledger row 嘅 SKU **憑空建唔到 row** ⇒ 只可以喺 RHK **已有 row** 嗰 7 個入面揀。
+
+七行入面同時滿足「真 tenant SKU」「target 未持有」「tenant 有 free seat」嘅**只有一個**:`POWERAUTOMATE_ATTENDED_RPA`（tenant free=41 ⇒ 用嘅係**已買嘅 seat，冇新開支**）。其餘:`POWER_BI_STANDARD`/`Microsoft_365_Copilot` 已持有 · `SPE_E3`/`STANDARDPACK` 個 `skuId` 係 `test-e3`/`test-e1` **假 GUID** · `DESKLESSPACK`/`VISIO_PLAN1` tenant 冇 free seat。
+
+⇒ **停低問返 Chris**，因為佢批嘅係「Power BI Free」，而換 SKU 係改一個唔可逆動作嘅內容。
+
+### G7 read 半 — 回填**冇** landed（2026-08-04，PR #75 merge 之後）
+
+獨立 read probe（plain `fetch`，同 `updateCatalogVariable` 一模一樣嘅三層 walk，**零寫入**）。用獨立 read 路而唔用 production class，係因為呢度問嘅係「ServiceNow 而家係咩狀態」—— 攞寫嗰個 object 去問佢自己寫成點，證據力弱。
+
+| RITM | cat_item / state | `target_user` | 判斷 |
+|---|---|---|---|
+| **RITM0047331** | `O365 User License Maintenance Request` · Open | **有**呢個 variable，但值 = **另一位同事** | ❌ 回填**冇**寫入 |
+| **RITM0047333** | `New Hire Windows Domain Account` · **Closed Complete** | **吉** | ❌ 冇寫入 |
+
+🔴 **最值得記低嗰件事:好彩佢冇寫到。** dev fixture 把一張「target = requester 本人」嘅平台 request，駁咗落一張**真人真事、關另一位同事事**嘅 RITM。若果回填 work，佢就會靜靜把人哋張飛個 `target_user` 改成我哋嘅 target。⇒ **回填並冇限制只寫平台自己建嘅 RITM** —— production 上 F2 建嘅單無問題（platform 自己開嘅），但 **ADR-0021 import-from-SN 嗰條路**嘅 line item 指住嘅係已存在嘅 SN RITM，值得 Chris 判斷要唔要收窄。
+
+**三個候選因由，而家分唔開**：
+
+| | 候選 | 點解未排除 |
+|---|---|---|
+| (a) | `sc_item_option` **冇寫權** | BUG-010 已示範呢個 instance insert / update 係兩套 ACL |
+| (b) | sweep 03:40 跑嗰刻回填 code 未完整 | `bea936b` 係 **03:59** 先 commit —— 但 watch mode 可能早就 load 咗，分唔到 |
+| (c) | 行過，return `false` / throw，畀 non-fatal 食咗 | 回填**刻意**唔留痕（F3-8）⇒ DB 呢邊點查都查唔到 |
+
+⚠️ **(b) 呢個 confound 係我自己整出嚟嘅** —— 驗證跑喺 commit 之前，所以「當時行緊咩 code」講唔死。下次 live gate 驗證應該喺 commit 之後先跑。
+
+**要分開三者只有一條路 = 真 PATCH 一次。** 唯一安全對象 = **RITM0047366**（G6 嗰張 `[UOP TEST]`，本來就等緊人手 cancel）。🔴 **絕不可以攞 RITM0047331** —— 佢係真人張飛。**等 Chris 明示批准先做**（同 G6 一樣）。
+
+⚠️ **順帶一個我自己嘅失誤**：probe 特登只攞 `user_name` 唔攞 email / displayName 去避開 H4，但呢個 instance 個 `user_name` **本身就係 email address**，所以照樣印咗兩個地址落 terminal。冇造成實際外洩（本機 + private repo），但下次要**先確認個欄實際載住咩**先當佢安全。
+
+### 🔴 G7 write 半 — **403 ACL,因由判實**（Chris 2026-08-04 批准打一次）
+
+批准範圍：**只准打 RITM0047366**（G6 嗰張 `[UOP TEST]`，本來就等緊人手 cancel）。Script hard-code 咗一個 number，另外兩張真人張飛入咗 `FORBIDDEN` list 兼 assert 兩次。
+
+**做法**：行 **production class**（`ServiceNowService` + stub `ConfigService`/`ConnectorConfigService`），寫**同一個值**（`target_user` 本來就係 requester 個 sys_id）—— 唔改張飛任何事實，證據係 **HTTP status** 唔係新值。覆核走**獨立 read 路**，唔畀寫嗰個 object 做自己成功嘅證人。Dry-run 先行，`--write` 至寫。
+
+```
+BEFORE  option=f11e6ba4… value=f9c5785f… updated=2026-08-04 02:26:28 mod_count=0
+WRITE   THREW: ServiceNow request failed (403)
+        PATCH /api/now/table/sc_item_option/f11e6ba4… -> 403
+        {"error":{"message":"Operation Failed",
+                  "detail":"ACL Exception Update Failed due to security constraints"}}
+AFTER   option=f11e6ba4… value=f9c5785f… updated=2026-08-04 02:26:28 mod_count=0
+```
+
+⇒ **候選 (a) 證實，(b)/(c) 唔使再查** —— 就算 03:40 嗰次 code 完整、就算行過，結果都一定係 403。
+
+⇒ 🔴 **`updateCatalogVariable` 對 `n8napiservice1` 係永遠 work 唔到。** `target_user` 回填等同死 code：每次靜靜 403（non-fatal 食咗），gate 照開，而張單**永遠繼續指住 requester 做自己個 target**。
+
+**ServiceNow 零副作用**：`value` 冇變、`sys_mod_count` **0 → 0**。RITM0047366 仍然係嗰四張等人手 cancel 嘅其中一張，狀態同做呢個實驗之前一模一樣。
+
+**呢個推翻 ADR-0025 D3 嘅後半段（H1 —— 未拍板前唔改 code）。** 三條路畀 Chris 揀：
+
+| | 路 | 代價 / 好處 |
+|---|---|---|
+| **(i)** | 同 SN admin 攞 `sc_item_option` 寫權 | 唯一保住 D3 原設計嘅方法;但要外部批,時間唔喺我哋手 |
+| **(ii)** | **拆走回填**（call + `updateCatalogVariable` 一併刪） | 最誠實 —— 唔留一段永遠 403 嘅 code。`target_user` 永遠 = requester，真 target 靠 `target_users_email`（已經有） |
+| **(iii)** | 改用 **work note** 講返真 target | `sc_req_item` 嘅 PATCH **已證實寫得**（CH-010 close task 就係走呢條路），O365 Support 睇得到;但 `target_user` 欄本身仍然錯 |
+
+**我 recommend (iii) + (ii) 一齊做**：拆走一段永遠失敗嘅 code，改用一條**已經證實寫得到**嘅路去交付同一個資訊。(i) 可以平行去追，追到再回來加返。
+
+⚠️ **gate ② 本身唔受影響** —— 佢開閘靠嘅係「SN 搵唔搵到呢個人」，同寫唔寫得到 variable 無關。assign 雙閘照 work。
+
+一次性 script **跑完即刪**（hardcode 咗 RITM number，係 gate 驗證唔係持續工具）。
+
+### 批 C（F8）— ADR-0026 落地：拆走回填，改行 work note
+
+Chris 2026-08-04 **Accept ADR-0026**（揀 (ii)+(iii) 一齊做 · 唔卡 OQ-1 · OQ-2 按 default）。api **874 → 877**（68 suites）· root lint exit 0 · 零 schema 零新 dep。
+
+**做咗**：刪 `updateCatalogVariable()`（+ orphan `refValue()`，刪前 grep 證全 repo 零 caller）· sweep 改 `addWorkNote()` · note 內容三件缺一不可（verified sys_id + 「`target_user` 係 REQUESTER」+ 「真 target 喺 `target_users_email`」）並斷言 note **唔含 `@``**（H4）。
+
+**兩個決定值得單獨講**：
+
+1. **喺 `updateCatalogVariable` 原位留一段註釋寫低「點解冇」**，唔係靜靜刪走。冇咗嗰段字，下一個要改 variable 嘅人會照原樣再寫一次三層 walk，再一次擺喺 non-fatal catch 後面，再一次永遠靜靜失敗 —— 而佢唔會知道呢個問題三個月前已經有答案。
+2. **加 boundary test 釘住「唔可以有 `updateCatalogVariable`」**（+ 反面半:`addWorkNote` 仍在，證個 test 有能力紅）。ADR-0026 D5 講「恢復回填要另寫 ADR」—— 冇呢個 test，D5 就只係一句話。
+
+🔴 **F8-8：我自己校正咗 ADR-0026 一句話（post-Accept 附註，唔改 D1–D5）。**
+
+實作時對返 **RISK R6** 先發現：ADR 講 work note 路徑「**已證實寫得到**」係講得太實。CH-010 證實嘅係**個 PATCH 唔會被 403 拒絕**（對比 `sc_item_option` 一定 403），**唔係**「note 一定 land」—— R6 早就記低 `work_notes` 係 journal input field、Table API GET **永遠返空**、integration account 讀唔到 `sys_journal_field` ⇒ ServiceNow 完全做得到**收 `state` 而靜靜 drop `work_notes`**，喺平台睇嚟同成功一模一樣。
+
+**呢個唔改變決定**（一條可能寫得到嘅路 > 一條已證實一定唔得嘅路），但**改變咗可以聲稱幾多**：ADR-0026 交付嘅係「**唔再假裝有自我修正機制**」，唔係「**保證 fulfiller 一定睇到**」。R6 已加 gate ② note 做第二個 consumer。
+
+⚠️ 呢個提醒法都幾值得記：**我啱啱先為咗「唔留一段永遠失敗嘅 code」而寫咗成份 ADR，然後差啲喺同一份文件裡面對替代路徑講咗一句一樣冇根據嘅話。** 攔住佢嘅唔係我記性，係 risk register 本身。
 
 ### Commits
 
@@ -265,19 +388,55 @@ cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in Ser
 
 ---
 
-## Retro（填於 phase 結束）
+## Retro（2026-08-04 收官）
 
 ### What worked
 
+- **分批交付**（Chris 拍板 A/B/C）—— 批 A 一落地就有價值（建到單），而唔使等 gate 做齊。批 A 單獨上線嘅缺口（有單冇 gate）喺 plan §1.2 事前寫明咗，冇扮睇唔見。
+- **live 驗證一律行 production class + 獨立 read 覆核。** G6 用 `ServiceNowService`/`DirectServiceNowProvider` 唔另寫 SN 呼叫（另寫只會再證一次已知嘅嘢，證唔到出貨嘅 code），再用獨立 probe 查 variables。G7 反過嚟：**寫**用 production class、**驗**用獨立 read 路 —— 唔畀寫嗰個 object 做自己成功嘅證人。
+- **唔可逆動作全部先 dry-run + 先問。** G6 / G7 / F6 fixture 三次真寫入，每次都係 dry-run → 貼出將會送咩 → 等 Chris 一句 → 先做。F6 更加喺「換 SKU」呢個細節上再停多一次。
+- **測試釘住嘅係「點解」唔係「點做」。** 一個 vendor 一個 abort flag、`≥2` 唔 abort vendor、`close_notes` 唔可以撞 n8n、`prototype` 唔可以有 `updateCatalogVariable` —— 每個都係「呢度出事會靜靜出事」嘅位。
+
 ### What didn't work / unexpected friction
+
+- 🔴 **我一度由 workflow JSON 註釋推論實際行為，仲兩次同 Chris 講「你記錯」。** 實測證明 Chris 啱。**註釋係意圖唔係證據** —— 呢個係 W43 最貴嗰堂課，已入 ADR-0024 附註 + memory。
+- 🔴 **`readyItem` fixture 個 `...over` 排喺 `request` 之後**，所以 `over.request` 係**整個取代**而唔係 merge。以前得一個 gate 所以無害；加咗第二個之後「關 gate ②」會連 gate ① 一齊抹走 —— 我兩個新 test **因為錯嘅原因而紅**，先揭到。
+- 🔴 **G7 個 confound 係我自己整出嚟嘅**：sweep 03:40 跑，而 F3 commit 係 03:59 ⇒ 「當時行緊咩 code」講唔死。**下次 live gate 驗證要喺 commit 之後先跑。**
+- **我自己個 F6-2 test 一開始紅咗，係我寫錯唔係 code 錯**：`getByText('Blocked · sync')` 撞到兩個 node —— 正因為 header badge 同 assign 掣**講緊同一句嘢**（即係設計啱）。改用 `getByRole`，並把「兩個位講同一句」由 bug 變成斷言。
+- **`.bg-accent` 數到 3** —— stepper 啲行過嘅點都係 accent。改成數 `button.bg-accent`，因為 H6 講嘅係**幾多個 action 喺度爭**，唔係幾多粒 accent 像素。
+- **重啟 stack 撞到 skill 寫低嗰個 build-cache 假綠燈**（`dist/main.js` 唔存在 + `tsbuildinfo` 仲喺度 ⇒ verify 90s 後 port 3100 FREE）。skill 有寫，跟住做一次過解決 —— 呢個係 skill 真係救到人嘅一次。
+- **H4 一個實際失誤**：probe 特登只攞 `user_name` 避開 email，但**呢個 instance 個 `user_name` 本身就係 email**。⇒ **先確認個欄實際載住咩，先當佢安全。**
 
 ### Surprises / discoveries
 
+- 🔴 **`sc_item_option` update 403** —— 逼出 ADR-0026，順帶把「**逐個 table 分開開權，唔可以互相推論**」由三次個別經驗升格成明文原則。
+- 🔴 **回填/work note 冇限制只寫平台自己建嘅 RITM。** dev fixture 把一張「target = requester 本人」嘅平台 request 駁咗落一張**真人真事、關另一位同事事**嘅 RITM —— 回填若果 work，就會靜靜改咗人哋張飛。**好彩佢冇寫到。**
+- **我啱啱先為咗「唔留一段永遠失敗嘅 code」寫咗成份 ADR，然後差啲喺同一份文件對替代路徑講咗一句一樣冇根據嘅話**（「work note 已證實寫得到」）。攔住佢嘅唔係我記性，係 **risk register R6**。
+- **SN integration account 冇 email address** ⇒ 佢做唔到 requester（R2 兌現）。
+- **`SkuCatalog.category` 唔係產品家族分類** ⇒ D365 分流只能靠 part-number 前綴，係 heuristic。
+- **Playwright MCP 唔一定喺度** —— 2026-08-02 有、08-04 冇。SESSION_SUMMARY 原文寫「前端驗證唔再係死結」會令下一手以為一定得。已改。
+
 ### Carry-overs to W44
+
+| | |
+|---|---|
+| 🚧 **F6-3/F6-4/G8** live close | Chris 叫停。fixture **REQ0044072** 已 ready，差最後一撳。🔴 恢復時**唔可以用 Power BI Free**（已持有），唯一合資格 = `POWERAUTOMATE_ATTENDED_RPA` + 先加 `allocated` |
+| 🚧 **F5-3 / G9** 前端 light+dark | 等有 browser 嘅 session |
+| 🚧 **F3-9** on-demand gate ② | 純 UX |
+| 🚧 **G10** UAT 實搜 OpenAPI | **W43 未上 UAT**，呢個係前置 |
+| 🆕 **SN-LICENSE-TYPE** | `license_type` 48-choice 對照（已入 BACKLOG A） |
+| 🆕 **DD-5** | `sc_item_option` 寫權 —— 同 **R7**（專屬帳號）、ADR-0018 OQ-2（least-privilege）**三件一齊向 SN admin 要** |
+| ⚠️ **5 張 SN 測試單要人手 cancel** | CH-014 嗰 3 張 + REQ0044071 + REQ0044072 |
+| ⚠️ **`npm run lint -w @uop/web` 本身紅** | 17 條 prettier，全部喺 W43 冇掂過嘅行；CI 只 lint api 所以見唔到。建議另開 `chore(web): prettier` |
 
 ### ADR triggers
 
+- **ADR-0025**（Accepted 2026-08-04）—— 部分 supersede ADR-0024。
+- **ADR-0026**（Accepted 2026-08-04）—— supersede ADR-0025 **D3 後半 + D4 尾條**。**喺實作途中由一個實測結論觸發**，唔係事前規劃 ⇒ R1 仍然守住（Accept 之後先改 code）。
+
 ### Phase Gate result
+
+**PASS（有條件）** —— G1/G1b/G2/G3/G4/G5/G6/G7 ✅；**G8/G9/G10 🚧 明文未做**，理由同 target 全部寫入 checklist + carry-over。冇任何未勾項被刪。
 
 ### Phase status
 

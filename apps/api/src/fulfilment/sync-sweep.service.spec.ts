@@ -75,7 +75,7 @@ describe('SyncSweepService (ADR-0015)', () => {
     graph = { findUser: jest.fn() };
     snow = {
       findUserSysIdByEmail: jest.fn(),
-      updateCatalogVariable: jest.fn().mockResolvedValue(true),
+      addWorkNote: jest.fn().mockResolvedValue(undefined),
     };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
     service = await build();
@@ -414,10 +414,15 @@ describe('SyncSweepService (ADR-0015)', () => {
     });
 
     /**
-     * 🔴 ADR-0025 D3 — until this runs, `target_user` on the RITM names the
-     * REQUESTER. The back-fill is the entire reason the sys_id is stored.
+     * ADR-0026 D2 — the RITM's `target_user` cannot be corrected (403 ACL on
+     * `sc_item_option`, W43 G7), so the correction travels as a work note down
+     * the path CH-010 proved writable.
+     *
+     * OQ-2: every RITM the request owns, not only a platform-created one. A note
+     * is an append — on a ticket we turn out not to own, the worst case is one
+     * irrelevant note, where the old PATCH would have overwritten a real target.
      */
-    it('back-fills target_user on every RITM the request owns', async () => {
+    it('writes a work note on every RITM the request owns', async () => {
       prisma.request.findMany.mockResolvedValue([snOnly()]);
       snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
       prisma.requestLineItem.findMany.mockResolvedValue([
@@ -427,31 +432,54 @@ describe('SyncSweepService (ADR-0015)', () => {
 
       await service.sweep();
 
-      expect(snow.updateCatalogVariable).toHaveBeenCalledWith(
-        'ritm-a',
-        'target_user',
-        'sn-user-1',
-      );
-      expect(snow.updateCatalogVariable).toHaveBeenCalledWith(
-        'ritm-b',
-        'target_user',
-        'sn-user-1',
-      );
+      expect(snow.addWorkNote).toHaveBeenCalledTimes(2);
+      for (const ritm of ['ritm-a', 'ritm-b']) {
+        expect(snow.addWorkNote).toHaveBeenCalledWith(
+          ritm,
+          expect.stringContaining('sn-user-1'),
+        );
+      }
     });
 
     /**
-     * 🔴 The gate records what ServiceNow KNOWS; tidying the ticket is separate.
-     * Re-shutting it because a PATCH was refused would stall an assignment that
-     * is genuinely ready — and the account's write access to sc_item_option is
-     * unproven (BUG-010: insert and update are separate ACLs here).
+     * The note is the whole deliverable, so its content is pinned: a fulfiller
+     * reading it has to learn BOTH the verified sys_id and that `target_user` is
+     * still the requester. A note saying only "verified" would leave them
+     * trusting the wrong field.
      */
-    it('keeps the gate open when the back-fill is refused', async () => {
+    it('the note names the verified sys_id AND warns that target_user is the requester', async () => {
       prisma.request.findMany.mockResolvedValue([snOnly()]);
       snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
       prisma.requestLineItem.findMany.mockResolvedValue([
         { serviceNowSysId: 'ritm-a' },
       ]);
-      snow.updateCatalogVariable.mockRejectedValue(new Error('403'));
+
+      await service.sweep();
+
+      const note = snow.addWorkNote.mock.calls[0][1] as string;
+      expect(note).toContain('sn-user-1');
+      expect(note).toContain('target_user');
+      expect(note).toContain('REQUESTER');
+      expect(note).toContain('target_users_email');
+      // H4 — the note goes onto a ticket, but the UPN still has no business in
+      // a string this service builds; `target_users_email` already carries it.
+      expect(note).not.toContain('@');
+    });
+
+    /**
+     * 🔴 The gate records what ServiceNow KNOWS; tidying the ticket is separate.
+     * Re-shutting it because the note was refused would stall an assignment that
+     * is genuinely ready. Unchanged from the back-fill era on purpose — what
+     * changed (ADR-0026) is that a failure here now means a real outage rather
+     * than a permission wall we were papering over.
+     */
+    it('keeps the gate open when the work note is refused', async () => {
+      prisma.request.findMany.mockResolvedValue([snOnly()]);
+      snow.findUserSysIdByEmail.mockResolvedValue('sn-user-1');
+      prisma.requestLineItem.findMany.mockResolvedValue([
+        { serviceNowSysId: 'ritm-a' },
+      ]);
+      snow.addWorkNote.mockRejectedValue(new Error('503'));
 
       await expect(service.sweep()).resolves.toEqual({
         scanned: 1,

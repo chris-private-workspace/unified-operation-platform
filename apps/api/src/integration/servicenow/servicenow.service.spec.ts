@@ -417,3 +417,28 @@ describe('ServiceNowService.findUserSysIdByEmail', () => {
     expect(logged).toContain('<redacted>');
   });
 });
+
+/**
+ * ADR-0026 D1/D5 — the absence of a catalog-variable writer is a DECISION, and
+ * this is what keeps it one.
+ *
+ * W43 shipped `updateCatalogVariable`; G7 proved `sc_item_option` update is
+ * refused outright on this instance (403 ACL). The obvious way for it to come
+ * back is somebody needing to set a variable, writing the three-table walk
+ * again, watching it fail silently behind a non-fatal catch, and never learning
+ * that the answer was settled. D5 says restoring it takes a new ADR — this test
+ * is where that requirement is actually enforced.
+ */
+describe('ServiceNowService — no catalog-variable writer (ADR-0026)', () => {
+  it('does not expose updateCatalogVariable', () => {
+    expect(
+      (ServiceNowService.prototype as unknown as Record<string, unknown>)
+        .updateCatalogVariable,
+    ).toBeUndefined();
+  });
+
+  /** Negative half: prove the check can fail — a writer we DO keep is found. */
+  it('still exposes addWorkNote, the path the information travels instead', () => {
+    expect(typeof ServiceNowService.prototype.addWorkNote).toBe('function');
+  });
+});

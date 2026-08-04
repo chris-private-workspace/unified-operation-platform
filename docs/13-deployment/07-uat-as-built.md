@@ -4,6 +4,13 @@
 >
 > 🔴 **本檔已經過時咗兩次,而兩次都唔自知**:2026-08-02 發現佢寫住 `uat-1bc7cdb` 而真實係 `uat-7e1f00b`(W41 冇更新);**2026-08-03 再犯** —— 佢寫住 `uat-629d018` / api `--0000011`,而真實係 **`uat-8646f79` / api `--0000012`**(CH-019 部署完又冇更新)。⇒ **每次部署完必須即刻更新呢個 section**,而**開工第一步一律 `az containerapp revision list` 實測,唔信本檔**。同 `CLAUDE.md §14` 嗰條座標紀律同源。
 > 部署路徑見 [`04-deploy-runbook.md`](./04-deploy-runbook.md);過程詳錄 `docs/01-planning/W33-deploy-exec/progress.md`。
+>
+> ### 2026-08-04(W43 收官)—— 本檔**冇更新任何數字**,原因有兩個
+>
+> 1. 🔴 **W43 根本未部署**(ADR-0025 建單 + 雙 sync gate、ADR-0026 work note)。running image 仍然係 **`uat-a71bbdf`**,即 CH-020 嗰次。⇒ 下面所有「as deployed」內容**唔關 W43 事**,唔好讀成「W43 已上」。
+> 2. ⚠️ **今日核實唔到,所以下面啲 revision 號碼由今日起當「未核實」**:跑 `az containerapp revision list -n ca-uop-api -g RG-RCITest-RAPO-N8N` 撞到 **`AuthorizationFailed`**(client `d2f094a3…` 冇 `Microsoft.App/containerApps/revisions/read`)—— 即係本 session 登入嗰個 principal **唔係**部署嗰個 SP。⇒ 我**冇**改 `--0000013` / `--0000009`,因為改成一個我證唔到嘅數字,同本檔上面警告嗰兩次犯錯**係同一種錯**。
+>
+> **W43 部署前要知**:新 migration **1 個**(`20260804032725_w43_gate2_sn_user_sync` —— `Request` 加兩個 **nullable** 欄,零 backfill,已喺 scratch DB 驗過 apply + rollback)· 新 required env **冇**(三個 `SERVICENOW_*` catalog key 全部 optional,冇 `getOrThrow`)· 新 dependency **冇**。🔴 **但 gate ② 一上就即刻生效**:所有既有 request `serviceNowUserSyncedAt` 都係 null ⇒ **assign 會被擋到 sweep 開閘為止**(每 10 分鐘一次)。呢個係預期行為,唔係 bug,但部署當日要同 operator 講。
 
 ## Subscription / 位置
 
