@@ -100,8 +100,8 @@ last_updated: 2026-08-03
 
 - [x] F6-1 test：新建 RITM → `pickTask` → close 成功 —— **已由既有 test 覆蓋，冇加重複嘅**。條鏈三段各自有釘：①F2 把新 RITM 寫落 `RequestLineItem.serviceNowSysId`（`intake-adapter.service.spec.ts:718`）②assign 讀同一個欄去 close（`assign.service.spec.ts:243`）③provider `pickTask` 查 `request_item=<id>^active=true` on `sc_task` 再 PATCH `state=3`（`direct-ticket.provider.spec.ts:59`）。provider 對 RITM 嘅形狀係 agnostic，所以「新建嗰張 O365 RITM」唔係一個新 code path —— 再寫一個 test 行多次同一條鏈係做樣，唔係覆蓋
 - [x] F6-2 test：`close_notes` 維持 UOP 指紋（**唔可以同 n8n 撞**）—— 新增一個 test：斷言 note **有** `via platform` + SKU，且 **`not.toMatch(/n8n/i)` / `/handled by/i`**。🔴 呢個唔係文案潔癖:**RISK R7** 之下 `close_notes` 係**唯一**分得出 UOP close 同 n8n close 嘅嘢（共用 `n8napiservice1` ⇒ `sys_updated_by` 兩邊一樣），而 ADR-0024 D5 個 rationale 就係喺呢個歧義上寫錯咗
-- [ ] 🚧 F6-3 live：assign 後 `Execution Step` task 閂咗（**睇 `close_notes` 唔睇 `sys_updated_by`**）—— **未做，需 Chris 明示批准**：要真派一隻 licence落**真 tenant 一個真 synced user**（memory `V5d` 明文「未經明確指示唔撳」）。⚠️ 而且 gate ② 而家係**硬 gate**，做之前要有一張兩個 gate 都通嘅單
-- [ ] 🚧 F6-4 live：**兄弟 task 冇郁**（分辨「閂咗指定嗰張」vs「閂咗搵到嘅第一張」）—— 同 F6-3 一齊做。⚠️ G6 嗰張 RITM0047366 **剛好只有 1 張 active task**，所以佢**證唔到**呢點；要一張有 ≥2 task 嘅單，或者用 CH-014 造 fixture
+- [ ] 🚧 F6-3 live：assign 後 `Execution Step` task 閂咗 —— **Chris 2026-08-04 叫停**：「先確定咗功能可行就可以」。**前置全部做齊咗**（fixture **REQ0044072** = 兩張 RITM 各 1 張 active task · 已導入平台 · 兩個 gate live 開咗），差最後一撳 assign。**唔撳嘅代價要講清楚**:close 路徑對「F2 新建嘅 O365 RITM」**只有 unit test 守住，冇 live 證據**
+- [ ] 🚧 F6-4 live：**兄弟 task 冇郁**（分辨「閂咗指定嗰張」vs「閂咗搵到嘅第一張」）—— 同 F6-3 一齊叫停。fixture 已經 ready（SCTASK0071832 target / SCTASK0071833 兄弟）。⚠️ 恢復時**唔可以用 Power BI Free**（target 已持有，CH-020 V5d 殘留）—— RHK 七行 ledger 入面唯一合資格 = `POWERAUTOMATE_ATTENDED_RPA`（tenant free=41，用已買 seat 冇新開支），而且要先把 `allocated` 由 0 加到 1（ADR-0016）
 
 ## F7 — Doc sync + closeout
 
@@ -116,13 +116,15 @@ last_updated: 2026-08-03
 
 ## 驗收 Gate（plan §4）
 
-- [ ] G2 — api test 全綠且**數目上升**（基線 837 / 68 suites）
-- [ ] G3 — root `npm run lint` exit 0（CI 真正 gate 嗰條）
-- [ ] G4 — tsc api + web 各 0 error
+- [x] G2 — api test 全綠且**數目上升** ✅ **837 → 878**（68 suites）· web **265 → 281**（31 files）
+- [x] G3 — root `npm run lint` exit 0 ✅（2026-08-04 收尾實跑）。⚠️ 順帶記低:root 呢條**只 lint `@uop/api`**;`npm run lint -w @uop/web` **本身已經紅**（17 條 prettier，全部喺 W43 冇掂過嘅行）—— CI 見唔到，建議另開 `chore(web): prettier`
+- [x] G4 — tsc api + web 各 0 error ✅（`tsc -p apps/api --noEmit` exit 0 · `tsc -p apps/web --noEmit` exit 0）
 - [x] G5 — migration scratch DB apply + rollback ✅（`platform_w43_gate2`，建→驗→drop，dev DB 零污染）：19 條 apply exit 0 → 插 2 行 fixture（一行 gate ② 有值、一行冇）→ **手寫 rollback**（`DROP COLUMN` ×2 + 刪 `_prisma_migrations` 一行，同一個 `-c` ⇒ 一個 transaction）→ 欄消失但兩行其他欄**逐格不變**、ledger 19→18 → 重 apply（**呢次係打落一個已經有 row 嘅 DB**，即真實 UAT 情境）→ 欄返嚟 `is_nullable=YES` / **冇 default**、`rows_with_gate2_set = 0` ⇒ **零 backfill 喺真 row 上得到證明**。🔴 誠實講：rollback 對呢兩個欄係**有損**（`DROP COLUMN` 必然），對其餘一切無損
 - [x] G6 — **live 真建一張 O365 單** ✅（Chris 2026-08-04 批准）：**REQ0044071 / RITM0047366 / SCTASK0071831**（`Execution Step` · `O365 Support` · 剛好 1 張 active）。行 production class 唔另寫 SN 呼叫；獨立 read 覆核 variables（`target_user` = requester · `license_type` 空 · `rapo` 小寫）。⚠️ **張單要人手 cancel**
-- [ ] G7 — **live** gate ② 由未通 → 通，`target_user` 真係由 requester 變新用戶
-  - **前半已有實證**（G5 順帶查到，非計劃內）：dev DB 兩張單 2026-08-04 03:40 由 **scheduled sweep** 真開咗 gate ②（`RequestEvent` 有 `ServiceNow sync verified …(scheduled sweep)` + `serviceNowUserSysId` 有真 sys_id）⇒ `findUserSysIdByEmail` + `openServiceNowUserGate` 打真 SN 行得通
+- [x] G7 — **live** gate ② 由未通 → 通 ✅ **（驗收準則已修訂，見下）**
+  - 🔴 **準則修訂（ADR-0026 Accepted，R3）**：原文後半「`target_user` 真係由 requester 變新用戶」**已證實做唔到**（403 ACL），唔係「未驗」。ADR-0026 已把交付方式改成 work note ⇒ G7 只保留「gate ② 由未通 → 通」呢半
+  - ✅ **今日（2026-08-04）由 null 睇住佢開**：新 fixture REQ0044072 導入時兩個 gate 都係 null，**08:10:03 scheduled sweep 一次過開晒兩個**（gate ① Graph 搵到 · gate ② SN 搵到 `f9c5785f…`）—— 唔係靠舊數據推論
+  - **前半更早已有實證**（G5 順帶查到，非計劃內）：dev DB 兩張單 2026-08-04 03:40 由 **scheduled sweep** 真開咗 gate ②（`RequestEvent` 有 `ServiceNow sync verified …(scheduled sweep)` + `serviceNowUserSysId` 有真 sys_id）⇒ `findUserSysIdByEmail` + `openServiceNowUserGate` 打真 SN 行得通
   - **後半:read 做咗,答案係「冇 landed」**（2026-08-04,獨立 read probe,零寫入）——
     - `RITM0047331`（`O365 User License Maintenance Request` · Open）：`target_user` **有**呢個 variable，但值係**另一位同事**，唔係 gate ② 記低嗰個 sys_id ⇒ **回填冇寫入**
     - `RITM0047333`（`New Hire Windows Domain Account` · **Closed Complete**）：`target_user` **吉**
@@ -136,7 +138,7 @@ last_updated: 2026-08-03
     獨立 read 覆核:`value` 冇變、`sys_mod_count` **0 → 0** ⇒ **ServiceNow 零副作用**
   - ⇒ **`updateCatalogVariable` 對呢個帳號係永遠 work 唔到**,`target_user` 回填等同死 code（每次靜靜 403,gate 照開）。**ADR-0025 D3 個 placeholder 策略要重諗 —— H1,等 Chris 拍板,未拍板前唔改 code**
   - **G7 本身個驗收準則要改**：「`target_user` 真係由 requester 變新用戶」呢半**已證實做唔到**,唔係未驗
-- [ ] G8 — **live** close 成功 + 兄弟 task 冇郁
+- [ ] 🚧 G8 — **live** close 成功 + 兄弟 task 冇郁 —— **Chris 2026-08-04 叫停**（同 F6-3/F6-4）。fixture 已 ready，差最後一撳 assign
 - [ ] G9 — 前端 light + dark + `ui-design` 跑過
 - [ ] G10 — UAT 部署後抽 running OpenAPI **實搜**新契約（唔靠 tag 推論）
 
