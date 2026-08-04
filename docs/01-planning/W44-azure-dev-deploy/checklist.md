@@ -17,7 +17,7 @@ last_updated: 2026-08-04
 - [x] F0-3 明寫代價 — 平台第一次把整個 API(含 `/docs/api`)直接暴露互聯網;防線只剩 `IntakeKeyGuard` fail-closed + JWT guard
 - [x] F0-4 Alternatives — Option A 收返 internal / Option B 保持 external + D2 三項收窄 / Option C per-path(ACA 做唔到)/ Option D 前端直打 api(明確 reject)
 - [x] F0-5 明寫 **cookie 邊界不變**(AUTH-4c-B `SameSite=Strict` httpOnly 唔受影響 —— 兩個選項嘅分別**只在 machine-to-machine**,唔涉及瀏覽器)
-- [ ] F0-6 🔴 **等 Chris 拍板 D1 + 改 Status = Accepted**(未 Accept 唔可以開 F2)
+- [x] F0-6 ✅ **Chris 2026-08-04 拍板 Option A(api 收返 internal)+ ADR Status = Accepted** ⇒ F2 解封;plan 同批由 `draft` 轉 `active`
 - [x] F0-6b **OQ-1 resolved**(Chris 2026-08-04):n8n UAT 住喺**企業內網**(on-prem / 內部 VM)⇒ 解析得到企業 domain,**Option A 走得通**。⚠️ 仍係推論唔係實測 ⇒ 實測降級做 **F7-1**,唔再 block D1
 - [x] F0-7 `docs/adr/README.md` index 加一行(順帶修正 **ADR-0026 index status** `Proposed` → `Accepted`,檔本身一直係 Accepted,W43 收官漏改)
 
@@ -35,25 +35,28 @@ last_updated: 2026-08-04
 - [x] F1-10 把四條問題交畀 Chris → infra team(**2026-08-04 已答**;Q3 網絡 ✅ / Q4 join ✅ / Q2 部分 / **Q1 答咗但實測用唔到**)
 - [ ] F1-11 🔴 **第二輪問題**(plan 附錄 C,含**精簡版**):**Q1** image 兩條路都斷,三個解法揀一個 · **Q3** container 打唔打得入內網 n8n + 用邊個 base URL · Q4(minor)http 定 https。~~Q2 database~~ **已自己解決,拎走咗**
 
-## F2 — DEV 專用 ARM template(**前置 F0-6**)
+## F2 — DEV 專用 ARM template(**F0-6 已解封**)✅
 
-- [ ] F2-1 部署前 `az resource show` 兩個 app 完整 JSON 存底(R6 — 防 ARM 覆蓋刪走 infra 已配好嘅嘢)
-- [ ] F2-2 新建 `deploy/azure/aca-dev.json` — 只 update 既有 app,**唔建 ACA env**
-- [ ] F2-3 `managedEnvironmentId` 用既有 `acaen-rapo-dev` 完整 resource id(cross-RG)
-- [ ] F2-4 **保住 web custom domain + SNI cert binding**(ARM 宣告式,漏寫即刪)
-- [ ] F2-5 api ingress 按 F0 拍板結果設定
-- [ ] F2-6 `RUN_MIGRATIONS_ON_START` / `RUN_SEED_ON_START` = true(operator 連唔到 private DB)
-- [ ] F2-7 UAT 個 `aca.json` **一個字唔改** — 用 `git diff` 證
-- [ ] F2-8 verify:`az deployment group validate` 返 `Succeeded`
+- [x] F2-1 存底 —— `az resource show` 兩個 app 完整 JSON 落 scratchpad(api 7184B / web 7511B)。**存底即刻有回報**:揭到兩樣一定要寫入 template 嘅嘢(`workloadProfileName: Consumption` · web 個 `customDomains` 完整結構),同一個新風險(web 有 **150+ 個 `outboundIpAddresses`** ⇒ ACA pull image 一樣會撞 ACR firewall,逐個放行唔實際)
+- [x] F2-2 新建 `deploy/azure/aca-dev.json` — 只 update 既有 app,**唔建 ACA env**
+- [x] F2-3 `environmentId` 用既有 `acaen-rapo-dev` 完整 resource id(cross-RG,做 parameter 令 subscription id 唔入 git)
+- [x] F2-4 **保住 web custom domain + SNI cert binding**(`webCustomDomain` + `webCustomDomainCertificateId` 兩個 parameter)
+- [x] F2-5 api ingress 按 ADR-0027 D1 **Option A**:`external:false` + `allowInsecure:true` + targetPort 3000
+- [x] F2-6 `RUN_MIGRATIONS_ON_START` / `RUN_SEED_ON_START` = true
+- [x] F2-7 UAT 個 `aca.json` **一個字唔改** — `git status deploy/azure/` 只顯示 `?? aca-dev.json`
+- [x] F2-8 verify:**`az deployment group validate` → `provisioningState: Succeeded`**,`error` 全 null
+- [ ] F2-9 🚧 **擴 `check-template.py` 覆蓋 `aca-dev.json`**(佢而家硬編碼 `aca.json`)—— **defer**:validate 今日跑得到而且係更強嘅 gate;佢唯一唔覆蓋而 check-template 覆蓋嘅係 **secretRef 懸空**(已手動逐個對過,兩個 app 都齊)。真正需要佢係「validate 又跑唔到」嗰日
+- [x] F2-10 ⚠️ 順帶實測推翻 `check-template.py` docstring 一句「`az deployment group validate` 喺公司網跑唔到(`az account show` 直接 hang)」—— **今日全程通**(list / db create / validate 都成功)
 
 ## F3 — params 檔 + secret 策略(**B2 已解封**)
 
 - [x] F3-0 建 UOP 嘅 database —— `az postgres flexible-server db create -s pgsql-rapo-uop-dev -g RG-RAPO-UOP-DEV -d platform`;verify `db list` 由 3 個系統 db 變 4 個(**management plane,唔需要連到 PG data-plane**)
-- [ ] F3-1 `deploy/azure/aca.params.dev.json`(由 `aca.params.example.json` 起)
-- [ ] F3-2 `databaseUrl` = `postgresql://rapoaiuopdev:<pw>@pgsql-rapo-uop-dev.postgres.database.azure.com:5432/platform?sslmode=require`
-- [ ] F3-3 `appBaseUrl` = `https://rapo-uop-web-dev.rci-t.com`(**唔係** `.env` 寫嘅 http)
-- [ ] F3-4 其餘 secret 沿用 runbook §4 生成規則
-- [ ] F3-5 verify:`git check-ignore -v deploy/azure/aca.params.dev.json` 有 output(H4 硬要求)
+- [x] F3-1 `deploy/azure/aca.params.dev.json` 生成完(script 寫檔,**secret 值從未印出**,只出 masked summary)
+- [x] F3-2 `databaseUrl` 砌好 —— 🔴 **PG 密碼含 `$` 同 `?`,一定要 percent-encode**(`[System.Uri]::EscapeDataString`),否則個 `?` 會被當成 query string 開始而**靜靜截斷 credential**
+- [x] F3-3 `appBaseUrl` = `https://rapo-uop-web-dev.rci-t.com`(**唔係** infra 寫嘅 http —— custom domain 綁咗 SNI cert;待 Q4 確認)
+- [x] F3-4 其餘 secret 用 `RandomNumberGenerator` 生成(intakeApiKey hex-32B · authJwtSecret base64-48B · break-glass 密碼 19 字元 ≥3 類,符合 AUTH-4c-A policy)
+- [x] F3-5 verify:`git check-ignore -v` → **`.gitignore:7:deploy/azure/*.params.*.json`**(H4 硬要求)
+- [ ] F3-6 🔴 **待 Chris 決定**:DEV 要唔要接**真** Graph / ServiceNow?而家全部係非空 placeholder(constructor `getOrThrow` 只需非空就 boot)。接真 = 端到端驗得到,但 **assign 會真派 licence、建單會真開 SN 單**
 
 ## F4 — web 建構調整
 

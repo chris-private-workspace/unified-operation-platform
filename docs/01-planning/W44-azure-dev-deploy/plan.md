@@ -4,7 +4,7 @@ name: "Azure DEV 環境部署(n8n UAT 可達)"
 sprint_week: W44
 start_date: 2026-08-04
 end_date: 2026-08-08          # planned, may slip with changelog log
-status: draft                 # draft | active | closed
+status: active                # draft | active | closed
 spec_refs:
   - docs/13-deployment/04-deploy-runbook.md
   - docs/13-deployment/01-topology.md
@@ -16,7 +16,7 @@ prior_phase: W43-onboarding-license-request
 
 > **Plan version**:1.0(initial)
 > **Owner**:Chris Lai
-> **Approved by**:_(status flips draft → active 時填)_
+> **Approved by**:**Chris Lai(2026-08-04)** —— 同批 Accept **ADR-0027 Option A**(api ingress 收返 internal)
 
 ## 1. Scope
 

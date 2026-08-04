@@ -1,6 +1,7 @@
 # ADR-0027 — Azure DEV 部署拓撲:api ingress 對外定收返 internal(擴 ADR-0012 至第二個雲環境)
 
-- **Status**:**Proposed** —— 🔴 **待 Chris 拍板 D1**(**OQ-1 已 resolved 2026-08-04 ⇒ 推薦嘅 Option A 走得通**,見下)
+- **Status**:**Accepted**
+- **Approver**:**Chris Lai(2026-08-04)** —— 揀 **Option A:api ingress 收返 internal**。OQ-1 已 resolved(n8n 住企業內網 ⇒ 解析得到企業 domain),Option A 冇已知障礙。
 - **Date**:2026-08-04
 - **Owner**:Chris Lai
 - **觸發**:CLAUDE.md §5 **H1**(部署 topology = 架構決定,同 ADR-0012 同源)+ **H4**(把 API 直接暴露互聯網 = 安全邊界改變)
@@ -61,7 +62,13 @@ Infra team 交付咗 `RG-RAPO-UOP-DEV`,目的係令 UOP **同 n8n UAT 接得通*
 
 ## Decision
 
-### D1 — api ingress:🔴 **待拍板**
+### D1 — api ingress:✅ **Option A —— 收返 internal**(Chris 2026-08-04 拍板)
+
+**落地形態**:`aca-dev.json` 把 `aca-rapo-uop-api-dev` 個 ingress 由 `external: true` 改為 **`external: false` + `allowInsecure: true`**(後者係 UAT 實戰得出嘅必要條件,runbook §8.3 —— 否則 http upstream 被 301 去 https);web 保持 external 並經 nginx `/api` proxy 落 api 嘅 **internal FQDN**。⇒ 對外**只有** `rapo-uop-web-dev.rci-t.com` 一個 hostname,同 ADR-0012 完全同一形狀。
+
+⚠️ **要同 infra team 講**:佢哋開咗嘅 `azure_url_for_api_call`(`aca-rapo-uop-api-dev.…azurecontainerapps.io`)**收窄之後就唔再可達**。若有其他系統打算打佢(OQ-2),要重新評估。
+
+**兩個選項嘅原始比較保留如下**(唔刪 —— 若日後 OQ-2 揭到有其他 consumer,或者 F7 實測 n8n 打唔到 web hostname,要轉 B 就照呢個表行,並執行 D2)。
 
 | | **Option A — 收返 internal(推薦)** | **Option B — 保持 external** |
 |---|---|---|

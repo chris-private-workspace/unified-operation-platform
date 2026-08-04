@@ -174,12 +174,37 @@ Chris 反問:「我們不能夠自行建立 DB 的嗎?即使有帳號?」
 - ⚠️ **B3 outbound 半邊未答**(Q3)—— 呢個係本環境存在嘅意義。
 - ~~B2~~ 🟢 **已自己解決**(見上)。
 
+### ✅ F0 Accepted → F2 + F3 一次過交付
+
+**Chris 2026-08-04 拍板 ADR-0027 D1 = Option A(api 收返 internal)** ⇒ ADR Status `Accepted`,plan 由 `draft` 轉 `active`,F2 解封。
+
+**F2 — `deploy/azure/aca-dev.json`**(唔改 UAT 個 `aca.json` 一個字,`git status` 證)
+- 唔建 ACA env,用既有 `acaen-rapo-dev` 完整 resource id 做 parameter(cross-RG;做 parameter 而唔係寫死,令 **subscription id 唔入 git**)
+- api ingress `external:false` + `allowInsecure:true` + port 3000(後者係 UAT 血淚 —— 冇佢 http upstream 會被 301 去 https,runbook §8.3)
+- web ingress external + port 8080 + **完整 `customDomains`**
+- ✅ **`az deployment group validate` → `Succeeded`**,`error` 全 null
+
+🔴 **F2-1 存底即刻有回報 —— 呢個唔係走過場。** `az resource show` 兩個 app 之後揭到**兩樣唔存底就一定會刪走**嘅嘢:
+1. **`workloadProfileName: "Consumption"`** —— 我原本冇諗過要寫
+2. **web 個 `customDomains` 完整結構**(含指向 shared env 嘅 `certificateId`)—— 呢個係對外唯一入口,刪咗即係成個站冇咗 domain
+
+同時揭到一個**新風險**:web app 有 **150+ 個 `outboundIpAddresses`**(Consumption 共用池)⇒ **ACA pull image 一樣會撞 ACR firewall**,而逐個放行唔實際。呢個令 B1 個 Q1 更有意思 —— 就算 infra 放行咗我哋公司 IP,**pull 側仲有第二道**。已寫入 as-built。
+
+**F3 — `deploy/azure/aca.params.dev.json`**(gitignored,`git check-ignore` 證 `.gitignore:7`)
+- Script 生成 + 直接寫檔,**secret 值由頭到尾冇印過**,只出 masked summary(key 名 + 長度)
+- 🔴 **一個差啲踩中嘅坑**:PG 密碼含 **`$` 同 `?`**。`?` 唔 percent-encode 嘅話會被當成 **query string 開始**,connection string 靜靜截斷 —— 而症狀會係「連唔到 DB」,冇人會諗到係密碼被切爛。用 `[System.Uri]::EscapeDataString` 解決。
+- `appBaseUrl` 用 **https**(infra 寫 http,但 custom domain 綁咗 SNI cert)—— 已列做 infra Q4
+
+**⚠️ 順帶推翻 `check-template.py` docstring 一句**:佢寫「`az deployment group validate` 喺公司網跑唔到(`az account show` 直接 hang 到 timeout)」。**今日全程通** —— `az account show` / `resource list` / `db create` / `validate` 全部成功。呢句可能係當時嘅 proxy 狀態或者當時未 login,但佢而家會令人**唔去試一個其實跑得到嘅 gate**。已標入 checklist F2-10。
+
 ### Actual vs Planned Effort
 
 | Deliverable | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
 | F0 ADR draft | 2 | ~1.5 | −0.5 |
 | F1-9 as-built | (F1 3h 內) | ~1 | — |
+| F2 template | 6 | ~1.5 | **−4.5** —— 因為唔使建 env、又有 UAT `aca.json` 做藍本,實際工作係「刪走 env resource + 換名 + 加 customDomains」 |
+| F3 params | 2 | ~0.75 | −1.25 |
 
 ### Commits
 
