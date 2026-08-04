@@ -120,11 +120,43 @@ Chris 喺我交完 ADR draft 之後更正:**W32/W33 部署嗰個環境唔係企�
 - **OQ-2(新增,唔阻)**:infra team 除咗 n8n,仲有冇其他系統打算直接打 `azure_url_for_api_call`?
 - **OQ-3(新增 —— 唔阻 D1,但阻成個環境)**:🔴 UOP 由 ACA 打唔打得入企業內網嘅 n8n?即 **B3**。已加做交畀 infra 嘅第 5 條問題。
 
+### infra team 第一輪回覆 + 實測(F1-10 ✅ 交出並收到回覆)
+
+四條問題全部有答,但**實測之後,最要緊嗰條答咗等於冇答**:
+
+| # | infra 回覆 | 實測結果 |
+|---|---|---|
+| 1 ACR | `acrrci3ailanding1.azurecr.io`;cross-tenant SP `4a6e1474-…` 有 **AcrPush** | 🔴 **兩條 build 路都斷**(見下) |
+| 2 PG | `rapoaiuopdev` 係 **DB admin**(唔係 db 名) | 🟡 credential 有齊,**但 database 名仍未答** |
+| 3 網絡 | `acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web/api/PG/Redis | 🟢 DB 半邊解封。⚠️ **四個目標入面冇 n8n** |
+| 4 join | 「used contributor to replace」 | 🟢 接受,未實測 |
+
+#### 🔴 B1 實測:image 兩條路都斷(呢個係本 phase 至今最硬嘅嘢)
+
+**路一 `az acr build`(UAT 一直行嗰條)** —— SP login **成功**,而且見到 `30dac177-…` subscription。但:
+- `az acr show -n acrrci3ailanding1` → **`could not be found in subscription`**
+- `az role assignment list --assignee 4a6e1474-…` → 佢喺我哋 sub **只有 `Reader`**(scope `RG-RAPO-UOP-DEV`)
+
+⇒ registry 喺**另一個 subscription/tenant**,我哋**冇 management plane 存取**,開唔到 ACR task run。而 **`AcrPush` 係 data-plane role,唔包 `scheduleRun/action`** —— infra 畀嘅權限岩岩好唔覆蓋 `az acr build` 需要嗰樣。
+
+**路二 本地 `docker build` + push** —— 兩重失敗:
+- `docker pull node:20-slim` → Docker Hub CDN `production.cloudfront.docker.com` **503**(runbook §0 嗰條規律仍然成立)
+- `docker login acrrci3ailanding1.azurecr.io` → **`DENIED: client with IP '165.85.7.2' is not allowed access`**
+
+**⚠️ 順帶更正咗 runbook §0 一句**:§0 寫「ACR `/v2/` 被公司 proxy 擋」。實測**呢個 registry 唔係咁** —— `/v2/` **通得過 proxy**,我哋收到嘅係 **ACR 自己嘅 firewall 拒絕**(真回應,有 CorrelationId,唔係 MITM/503)。⇒ 「Docker Hub CDN 被 proxy 503」同「ACR 被 registry firewall 擋」係**兩件唔同嘅事**,之前混埋一齊講。呢個分辨好重要,因為**解法完全唔同**:前者要 base image 來源,後者要 firewall 放行。
+
+⇒ 已整理成**三個解法**畀 infra 揀(plan 附錄 C **Q1**),推薦第一個(SP 攞 `Contributor` + firewall 放行 `165.85.7.2`)—— 因為佢令 base image 喺 **Azure 側** pull,**一次過繞開公司 proxy 同 registry firewall 兩個問題**。
+
+#### 🆕 B5(新登)—— web portal scheme 對唔上
+
+infra 寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 綁咗 **SNI cert**。⇒ 兩個 scheme 部署後都要實測。呢個唔 blocking,但**填錯係最靜嘅錯法**(密碼重設信條 link 錯,API 照返 204),同 CH-011 R1 同族。
+
 ### Blockers
 
 - **F0-6** — 等 Chris 拍板 ADR-0027 D1 + 改 Status。**未 Accept 唔開 F2**(PROCESS R5)。
-- **B1 / B2 / B3** 維持(Day 0 已記)—— 等 infra team。
-- **F1-10** — 四條問題未交出。
+- 🔴 **B1 仍然係硬 blocker** —— 三個解法要 infra 揀(Q1)。**冇 image 就乜都部署唔到**,F5/F6/F7 全部卡死。
+- 🟡 **B2** — 要 infra 建 database(Q2)。
+- ⚠️ **B3 outbound 半邊未答**(Q3)—— 呢個係本環境存在嘅意義。
 
 ### Actual vs Planned Effort
 

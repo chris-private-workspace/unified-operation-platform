@@ -169,10 +169,11 @@ Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的�
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| **B1** | 🔴 **冇任何可達嘅 container registry** —— `azure_container_registry` 個值係 GUID(`4a6e1474-…`),而 ACR 名只准 5–50 純字母數字 ⇒ **唔可能係 ACR 名**;實測 RG 內冇 ACR、`az acr list` 返空、嗰個 GUID 亦唔係 subscription id | **確定** | **致命** —— build/push/pull 全部做唔到 | 問 infra team 攞 registry 全名 + login server + 憑證;SP 需要 **AcrPush** |
-| **B2** | 🔴 **PG credential 對唔上** —— server admin 係 `rcitadmin`,但 `.env` 畀嘅係 `rapoaiuopdev`;UOP 用嘅 database 建咗未、叫咩名,未知 | **確定** | **致命** —— `databaseUrl` 砌唔到 | 問 infra team:`rapoaiuopdev` 係 db 名定 user?pw 對應邊個?database 名? |
-| **B3** | 🔴🔴 **ACA env 有冇 VNet 整合,無法確認** —— PG/Redis 兩者 `publicNetworkAccess=Disabled`,PE 落 `vNet-RCITest-HKG/Subnet-RCITest-D-DB`,但 SP **讀唔到** `acaen-rapo-dev`(AuthorizationFailed),而且 PE **`dnsZoneGroup=null`**。**2026-08-04 升級**:呢個唔止管 DB —— **UOP → n8n outbound(ADR-0017 三個接縫)一樣繫於佢**,因為 n8n 住喺企業內網,ACA 冇 VNet 整合就打唔入去(呢個正正係舊環境接唔到 n8n 嘅原因) | **中** | **致命 ×2** —— container 起得身但①連唔到 DB ②打唔到 n8n ⇒ **本環境嘅存在意義冇咗** | 問 infra team 確認 VNet 整合 + DNS 解析路徑 + 有冇路由到 on-prem;否則只能部署後由 container 側實試 |
-| **B4** | SP 對 `acaen-rapo-dev` 連 read 都冇 ⇒ 部署 container app 若需要 `managedEnvironments/join/action` 會 403 | 中 | 高 | 實測(要先過 B1);必要時問 infra 補權 |
+| **B1** | 🔴 **仍未解(2026-08-04 深化)** —— registry 知道咗係 **`acrrci3ailanding1.azurecr.io`**(cross-tenant SP `4a6e1474-…` 有 AcrPush),但**兩條 build 路實測都斷**:①`az acr build` —— SP 對該 registry **冇 management plane 存取**(`could not be found in subscription`;佢喺我哋 sub 只有 `Reader`)⇒ 開唔到 task run ②本地 `docker build`+push —— Docker Hub CDN **503**(pull 唔到 `node:20-slim`)**兼** ACR firewall **`DENIED: client with IP '165.85.7.2' is not allowed access`** | **確定** | **致命** —— 冇 image 就乜都部署唔到 | **三選一**(詳見 `09-dev-as-built.md` B1 深化):①🥇 SP 攞 `Contributor`(或 AcrPush + `scheduleRun/action`,因為 **AcrPush 唔包 scheduleRun**)+ firewall 放行 `165.85.7.2` ②只放行 firewall + 提供 base image 來源(否則仍斷喺 Docker Hub)③infra 代 build + push |
+| **B2** | 🟡 **部分解** —— infra 答咗 `rapoaiuopdev` 係 **DB admin**(唔係 db 名),credential 有齊。**但 UOP 用嘅 database 叫咩、建咗未,仍未知** —— Prisma `migrate deploy` **唔會建 database**,而我哋喺公司網連唔到 private PG,自己建唔到 | **確定** | 高 —— `databaseUrl` 尾嗰個 db 名填唔到 | 問 infra 建一個(UAT 慣例叫 `platform`)或者講返現有邊個可以用 |
+| **B3** | 🟢 **DB/Redis 半邊已答** —— infra 2026-08-04 確認 `acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis(「landing zone design…network level already configurated」)。⚠️ **但佢列嗰四個目標入面冇 n8n** ⇒ **outbound 半邊仍未答** | 低(DB)/ **中(n8n)** | **致命(n8n 半邊)** —— 打唔到 n8n = 本環境嘅存在意義冇咗 | 追問第 5 條:container app 打唔打得入企業內網嘅 n8n?UOP 用邊個 n8n base URL? |
+| **B4** | 🟢 **infra 已答**(「used contributor to replace」)—— 用 contributor 處理 `managedEnvironments/join/action` | 低 | 中 | **未實測**;部署時若 403 再追 |
+| **B5** | 🆕 **web portal scheme 對唔上** —— infra 寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 綁咗 **SNI cert**(`acaen-rapo-dev/certificates/rcit`)⇒ ACA 側支援 https | 中 | 中 —— **`appBaseUrl` 填錯 scheme 係最靜嘅錯法**(密碼重設信條 link 錯,API 照返 204) | 部署後兩個 scheme 都實測,以實測為準 |
 | R5 | **PG v18**(UAT 係 v16)—— Prisma migration 未喺 v18 跑過 | 中 | 中 | F6 G8 明確驗;失敗即回報,唔靜靜兜 |
 | R6 | ARM 宣告式覆蓋會**刪走 infra team 已配好嘅嘢**(尤其 web custom domain + SNI cert binding) | 中 | 高 | F2 明確保留;部署前先 `az resource show` 存底,部署後逐項對返 |
 | R7 | api external ingress = **平台第一次把 API 直接暴露到互聯網** | 確定(若 F0 通過) | 高 | F0 ADR 明寫代價;`IntakeKeyGuard` fail-closed 已有;考慮 IP restriction |
@@ -241,11 +242,34 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 
 ## 附錄 C — 交畀 infra team 嘅問題
 
-1. UOP DEV 要 push/pull container image,用**企業中央嘅邊個 ACR**?請畀 **registry 全名 + login server + 憑證**(或確認 `4a6e1474-a105-4ea4-b273-3c6ae7f1923a` 呢個 GUID 代表咩)。SP `d2f094a3-…` 需要對該 registry 有 **AcrPush**(佢而家只係 `RG-RAPO-UOP-DEV` Contributor,睇唔到任何 registry)。
-2. `pgsql-rapo-uop-dev`:`rapoaiuopdev` 係 database 名定 DB user?配嘅 password 對應邊個?UOP 用嘅 database 建咗未、叫咩名?(server admin 實測係 `rcitadmin`)
-3. `acaen-rapo-dev` 有冇整合 `vNet-RCITest-HKG`?兩個 PE 冇 private DNS zone group,container app 內部點解析 `pgsql-rapo-uop-dev.postgres.database.azure.com` / `redis-rapo-uop-dev.redis.cache.windows.net` 到私有 IP?
-4. SP 有冇 `Microsoft.App/managedEnvironments/join/action` 落 `acaen-rapo-dev`?
-5. 🔴 **container app 打唔打得入企業內網嘅 n8n?**(n8n 住 on-prem / 內部 VM)呢個係本環境存在嘅意義 —— 舊環境接唔到 n8n 就係因為自建 ACA env 冇 VNet 整合。請確認 `acaen-rapo-dev` 出得去嘅路由範圍,同埋 UOP 應該用邊個 n8n base URL。
+### 第一輪(2026-08-04 已答)
+
+| # | 問題 | 回覆 | 狀態 |
+|---|---|---|---|
+| 1 | 用邊個 ACR + 憑證 | `acrrci3ailanding1.azurecr.io`;cross-tenant SP `4a6e1474-…` 有 **AcrPush**;`d2f094a3-…` = RG contributor | 🔴 **答咗但用唔到** → Q1 |
+| 2 | PG credential / database | `rapoaiuopdev` 係 **DB admin**,對 server 內所有 DB 有權 | 🟡 **database 名未答** → Q2 |
+| 3 | ACA env VNet 整合 | **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis(landing zone design) | 🟢 ✅ **但冇提 n8n** → Q3 |
+| 4 | `managedEnvironments/join/action` | 「used contributor to replace」 | 🟢 ✅(未實測) |
+
+### 🔴 第二輪(三條,全部 blocking)
+
+**Q1 — image 推唔上去,兩條路都斷,要你哋揀一個解法。**
+> 實測結果:①**`az acr build` 做唔到** —— SP `4a6e1474-…` 對 `acrrci3ailanding1` **冇 management plane 存取**(`az acr show` → `could not be found in subscription`;`az role assignment list` 顯示佢喺 `30dac177-…` 只有 `Reader`),開唔到 ACR task run。②**本地 `docker build` + push 亦唔得** —— `docker pull node:20-slim` 撞 Docker Hub CDN **503**(公司 proxy),而 `docker login acrrci3ailanding1.azurecr.io` 返 **`DENIED: client with IP '165.85.7.2' is not allowed access`**(ACR firewall)。
+>
+> **三個解法揀一個**:
+> 1. 🥇 **畀 SP `Contributor` 落 `acrrci3ailanding1` + firewall 放行 `165.85.7.2`** —— 注意 **`AcrPush` 唔包 `Microsoft.ContainerRegistry/registries/scheduleRun/action`**,所以淨係 AcrPush 開唔到 build task。呢條路最乾淨:base image 喺 **Azure 側** pull,完全繞開公司 proxy。
+> 2. **只放行 firewall** —— 咁 push 得,但本地 `docker build` 仍然要 `node:20-slim` / `nginx:1.27-alpine`。除非 registry 內已有 mirror(我哋可改 Dockerfile 指去 `acrrci3ailanding1.azurecr.io/node:20-slim`),否則仍斷。
+> 3. **你哋代 build + push** —— 由 repo build 兩個 image 推上去。最少改權限,但每次部署都要人手。
+>
+> 另外:`aca-rapo-uop-api-dev` / `-web-dev` 個 `registries` 而家係空,**pull 側都要配 credential**,而 ACR 喺 VNet 內嘅可達性未確認。
+
+**Q2 — UOP 用嘅 database 叫咩?建咗未?**
+> `rapoaiuopdev` 有 admin 權冇問題,但 **Prisma `migrate deploy` 唔會建 database**,佢要 database 已存在。而 PG 係 private-only,我哋喺公司網連唔到,自己建唔到。⇒ 請建一個(UAT 慣例叫 **`platform`**),或者話返我哋現有邊個可以用。
+
+**Q3 — container app 打唔打得入企業內網嘅 n8n?**
+> 你哋列嘅四個 DNS 目標(web / api / PG / Redis)**全部係 UOP 自己嘅資源** —— 入面冇 n8n。而**呢個環境開嚟就係為咗接 n8n**,而且係雙向:UOP 除咗要收 n8n 打入嚟,仲要**主動打出去**(webhook / license 操作 / ticket 更新)。舊環境接唔到 n8n 正正就係因為自建 ACA env 冇 VNet 整合、打唔入內網。⇒ 請確認 `acaen-rapo-dev` 出得去嘅路由範圍,同埋 **UOP 應該用邊個 n8n base URL**。
+
+**Q4(順帶,唔 blocking)** — web portal 你寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 已綁 SNI 證書 ⇒ ACA 側支援 https。應該用邊個?(影響 `appBaseUrl`,填錯會令密碼重設信條 link 錯而**冇任何錯誤訊號**)
 
 ---
 

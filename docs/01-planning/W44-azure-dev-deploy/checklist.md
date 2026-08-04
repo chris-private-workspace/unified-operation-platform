@@ -32,7 +32,8 @@ last_updated: 2026-08-04
 - [x] F1-7 確認 RG 內無 ACR + 嗰個 GUID 唔係 subscription
 - [x] F1-8 確認 `apps/api/src` 零 BullMQ/Redis 用法
 - [x] F1-9 寫 `docs/13-deployment/09-dev-as-built.md`(座標 + 六處差異 + 四條 infra 問題)
-- [ ] F1-10 把四條問題交畀 Chris → infra team
+- [x] F1-10 把四條問題交畀 Chris → infra team(**2026-08-04 已答**;Q3 網絡 ✅ / Q4 join ✅ / Q2 部分 / **Q1 答咗但實測用唔到**)
+- [ ] F1-11 🔴 **第二輪三條問題**(plan 附錄 C):**Q1** image 兩條路都斷,三個解法揀一個 · **Q2** UOP database 叫咩建咗未 · **Q3** container 打唔打得入內網 n8n + 用邊個 base URL
 
 ## F2 — DEV 專用 ARM template(**前置 F0-6**)
 
@@ -60,8 +61,11 @@ last_updated: 2026-08-04
 - [ ] F4-3 改動經 template 變數,**唔影響 UAT** — 用 UAT 值渲染一次對比
 - [ ] F4-4 verify:本機起 web container 渲染出嚟嘅 nginx.conf 逐行睇過
 
-## F5 — image build + push(🔴 **前置 B1**)
+## F5 — image build + push(🔴 **前置 B1 —— 2026-08-04 實測兩條路都斷,等 infra 揀解法**)
 
+> `az acr build` ❌ 冇 management plane(AcrPush 唔包 `scheduleRun/action`)· 本地 `docker build` ❌ Docker Hub CDN 503 **兼** ACR firewall 拒 `165.85.7.2`。三個解法見 plan 附錄 C **Q1**。
+
+- [ ] F5-0 🔴 等 infra 回覆 Q1 並確認走邊條路(決定咗先寫得 F5-1..4 嘅實際步驟)
 - [ ] F5-1 配 ACR credential 落 container app `registries`
 - [ ] F5-2 `az acr build` api image(tag `dev-<short-sha>`)
 - [ ] F5-3 `az acr build` web image

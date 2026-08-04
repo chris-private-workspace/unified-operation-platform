@@ -29,11 +29,37 @@
 | # | Blocker | 實測證據 | 卡住 |
 |---|---|---|---|
 | **B1** | **冇任何可達嘅 container registry** | `azure_container_registry` 給定值 = `4a6e1474-a105-4ea4-b273-3c6ae7f1923a`(GUID),而 **ACR 名只准 5–50 個純字母數字**(冇 dash)⇒ 唔可能係 ACR 名。三個獨立實測:RG 內冇 `Microsoft.ContainerRegistry/registries` · `az acr list` 返 `[]` · 用該 GUID 做 subscription = `not found`。🔴 **2026-08-04 更新理解**:registry 應該係**企業中央**嗰個(舊環境自建 ACR 係因為佢係孤島)⇒ 問題唔係「registry 去咗邊」,而係「**企業中央 registry 叫咩、SP 要點攞 AcrPush**」 | build / push / pull 全部 |
-| **B2** | **PG credential 對唔上** | server `administratorLogin` = **`rcitadmin`**,但交付值係 `azure_postgresql_id=rapoaiuopdev` | `databaseUrl` 砌唔到 |
-| **B3** | **ACA env 連唔連到 private PG/Redis,證明唔到** | SP 讀 `acaen-rapo-dev` → `AuthorizationFailed`;PE `dnsZoneGroup` = **null** | 部署後先知(而部署要先過 B1) |
-| ⚠️ **B4** | SP 對 ACA env 連 read 都冇 ⇒ 部署可能需要 `managedEnvironments/join/action` 而 403 | 同上 | 待實測 |
+| **B2** | 🟡 **部分解** | infra 2026-08-04:**`rapoaiuopdev` 係 DB admin**(唔係 database 名),對 `pgsql-rapo-uop-dev.postgres.database.azure.com` 內所有 DB 有權 ⇒ credential 有咗。**但仍缺:UOP 用嘅 database 叫咩、建咗未** —— Prisma `migrate deploy` **唔會建 database**,而我哋喺公司網連唔到 private PG,自己建唔到 | `databaseUrl` 尾嗰個 db 名 |
+| **B3** | 🟢 **infra 已答** | infra 2026-08-04:`acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis 四個 URL(「landing zone design,your AI cannot detect it but network level already configurated」)。⚠️ **佢列嗰四個入面冇 n8n** ⇒ **outbound 路由仍未答** | — |
+| ⚠️ **B4** | 🟢 **infra 已答** | 「used contributor to replace」⇒ 用 contributor 處理 join action。**未實測**,部署時若 403 再追 | — |
+
+### ⚠️ B3 答咗一半 —— **outbound 到 n8n 仍未確認**
+
+infra 列嘅四個 DNS 目標(web portal / api / PG / Redis)**全部係 UOP 自己嘅資源**,冇一個係 n8n。而呢個環境開嚟就係為咗接 n8n,**outbound 半邊(ADR-0017 三個接縫)先係舊環境做唔到嗰樣**。⇒ 仍要問:**container app 打唔打得入企業內網嘅 n8n?UOP 應該用邊個 n8n base URL?**
+
+### ⚠️ 另一個對唔上嘅細節:web portal 個 scheme
+
+infra 寫 **`http://rapo-uop-web-dev.rci-t.com/`**,但實測 container app 個 `customDomains` 有 **`bindingType: SniEnabled`** + certificateId(`acaen-rapo-dev/certificates/rcit`)⇒ ACA 側支援 **https**。兩個 scheme 部署後都要實測,而 **`appBaseUrl` 填錯 scheme 係最靜嘅錯法**(密碼重設信條 link 錯,而 API 照返 204)。
 
 **交畀 infra team 嘅問題**:見 `W44-azure-dev-deploy/plan.md` 附錄 C。
+
+### 🔴 B1 深化(2026-08-04 下午,infra 回覆後實測)—— **image 兩條路都斷**
+
+Infra 回覆:registry = **`acrrci3ailanding1.azurecr.io`**(RCI AI landing zone),用 **cross-tenant SP `4a6e1474-…`** 有 AcrPush。實測之後,**兩條 build 路都行唔通**:
+
+| 路 | 實測結果 | 出處 |
+|---|---|---|
+| **`az acr build`**(Azure 側 build,UAT 嗰條路) | ❌ SP login **成功**,但 `az acr show -n acrrci3ailanding1` → **`could not be found in subscription`**;`az role assignment list` 顯示佢喺我哋 sub **只有 `Reader`**(scope `RG-RAPO-UOP-DEV`)⇒ **registry 唔喺我哋 subscription,冇 management plane 存取**,開唔到 task run | 本節 |
+| **本地 `docker build` + `docker push`** | ❌ **兩重失敗**:①`docker pull node:20-slim` → Docker Hub CDN `production.cloudfront.docker.com` **503**(runbook §0 嗰條環境規律仍然成立)②`docker login acrrci3ailanding1.azurecr.io` → **`DENIED: client with IP '165.85.7.2' is not allowed access`**(ACR firewall) | 本節 |
+
+**⚠️ 一個 runbook §0 需要更正嘅點**:§0 寫「ACR `/v2/` 被公司 proxy 擋」。實測**呢個 registry 唔係咁** —— `/v2/` **通得過 proxy**,我哋收到嘅係 **ACR 自己嘅 firewall 拒絕訊息**(真回應,唔係 MITM / 503)。⇒ 兩者要分開講:**Docker Hub CDN 確實被 proxy 503;ACR data-plane 通得到,但被 registry firewall 擋**。
+
+**三個解法(要 infra team 揀一個)**:
+1. 🥇 **畀 management plane 權限 + firewall 放行** —— SP 對 `acrrci3ailanding1` 要 `Contributor`(或者 `AcrPush` + `Microsoft.ContainerRegistry/registries/scheduleRun/action`,因為 **`AcrPush` 唔包 scheduleRun**),**同時**把出口 IP **`165.85.7.2`** 加入 ACR firewall allow list(`az acr build` 要上傳 source context,嗰步係 data-plane)。呢條路最乾淨 —— **base image 喺 Azure 側 pull,完全繞開公司 proxy**。
+2. **只放行 firewall + 提供 base image 來源** —— 咁本地 push 得,但 `docker build` 仍然要 `node:20-slim` / `nginx:1.27-alpine`。除非 ACR 內已有 mirror(可改 Dockerfile `FROM acrrci3ailanding1.azurecr.io/node:20-slim`),否則呢條路仍然斷喺 Docker Hub。
+3. **infra team 代 build + push** —— 佢哋喺 allowed 網絡,由 repo build 兩個 image 推上 registry。最少改權限,但每次部署都要人手。
+
+**ACA pull 側仲有一個未驗嘅點**:即使我哋 push 得,`aca-rapo-uop-api-dev` / `-web-dev` 都要 pull 得到 —— container app `registries` 而家係 `[]`,要配 credential,而 ACR 喺 VNet 側嘅可達性(private endpoint / service endpoint)未確認。
 
 ## Subscription / 位置
 
