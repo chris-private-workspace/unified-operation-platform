@@ -33,7 +33,8 @@ last_updated: 2026-08-04
 - [x] F1-8 確認 `apps/api/src` 零 BullMQ/Redis 用法
 - [x] F1-9 寫 `docs/13-deployment/09-dev-as-built.md`(座標 + 六處差異 + 四條 infra 問題)
 - [x] F1-10 把四條問題交畀 Chris → infra team(**2026-08-04 已答**;Q3 網絡 ✅ / Q4 join ✅ / Q2 部分 / **Q1 答咗但實測用唔到**)
-- [ ] F1-11 🔴 **第二輪問題**(plan 附錄 C,含**精簡版**):**Q1** image 兩條路都斷,三個解法揀一個 · **Q3** container 打唔打得入內網 n8n + 用邊個 base URL · Q4(minor)http 定 https。~~Q2 database~~ **已自己解決,拎走咗**
+- [x] F1-11 ✅ **第二輪已發已答**:~~Q1~~ 部分(pull 側撤銷,push 側未解)· **Q3 ✅** n8n = `http://rapo-n8n-uat.rci-t.com/` · **Q4 ✅** https · ~~Q2~~ 自解
+- [ ] F1-12 🔴 **第三輪(只剩 ACR 一條)** —— 回應 infra 問「what is the deployment detail error?」,附兩個確切 error(**(a) 權限 / (b) 網絡,要分開講**)+ 明講「就算放行 firewall 我哋一樣 build 唔到」⇒ **收窄到兩個可行解**。精簡版 ② 已存 plan 附錄 C
 
 ## F2 — DEV 專用 ARM template(**F0-6 已解封**)✅
 

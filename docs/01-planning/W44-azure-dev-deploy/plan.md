@@ -170,11 +170,12 @@ Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的�
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| **B1** | 🔴 **仍未解(2026-08-04 深化)** —— registry 知道咗係 **`acrrci3ailanding1.azurecr.io`**(cross-tenant SP `4a6e1474-…` 有 AcrPush),但**兩條 build 路實測都斷**:①`az acr build` —— SP 對該 registry **冇 management plane 存取**(`could not be found in subscription`;佢喺我哋 sub 只有 `Reader`)⇒ 開唔到 task run ②本地 `docker build`+push —— Docker Hub CDN **503**(pull 唔到 `node:20-slim`)**兼** ACR firewall **`DENIED: client with IP '165.85.7.2' is not allowed access`** | **確定** | **致命** —— 冇 image 就乜都部署唔到 | **三選一**(詳見 `09-dev-as-built.md` B1 深化):①🥇 SP 攞 `Contributor`(或 AcrPush + `scheduleRun/action`,因為 **AcrPush 唔包 scheduleRun**)+ firewall 放行 `165.85.7.2` ②只放行 firewall + 提供 base image 來源(否則仍斷喺 Docker Hub)③infra 代 build + push |
+| **B1** | 🔴 **仍未解(2026-08-04 深化)** —— registry 知道咗係 **`acrrci3ailanding1.azurecr.io`**(cross-tenant SP `4a6e1474-…` 有 AcrPush),但**兩條 build 路實測都斷**:①`az acr build` —— SP 對該 registry **冇 management plane 存取**(`could not be found in subscription`;佢喺我哋 sub 只有 `Reader`)⇒ 開唔到 task run ②本地 `docker build`+push —— Docker Hub CDN **503**(pull 唔到 `node:20-slim`)**兼** ACR firewall **`DENIED: client with IP '165.85.7.2' is not allowed access`** | **確定** | **致命** —— 冇 image 就乜都部署唔到 | **二選一**(2026-08-04 由三個收窄):①🥇 SP 攞 `Contributor` + firewall 放行 `165.85.7.2` ⇒ 行 `az acr build`,base image **Azure 側 pull** ②infra 代 build + push。<br>🔴 **原本嗰個「只放行 firewall」已剔走** —— 放行咗我哋 push 得,但**仍然 build 唔到**(Docker Hub 503),留住只會令人揀一條死路。<br>✅ **pull 側擔心已撤銷**:infra 確認 ACR 有 private DNS + endpoint ⇒ ACA 唔行 public egress,150+ outbound IP 唔關事 |
 | **B2** | 🟢 **已解封(2026-08-04)** —— infra 答咗 `rapoaiuopdev` 係 **DB admin**;而 database **我哋自己建咗** `platform`(`az postgres flexible-server db create`,management plane,唔需要連到 PG data-plane)。🔴 呢條原本被我錯判成 blocker,理由係「連唔到 PG 所以建唔到」—— **把「連唔到 data-plane」同「做唔到嗰件事」混埋** | — | — | 完成。`databaseUrl` = `postgresql://rapoaiuopdev:<pw>@pgsql-rapo-uop-dev.postgres.database.azure.com:5432/platform?sslmode=require` |
-| **B3** | 🟢 **DB/Redis 半邊已答** —— infra 2026-08-04 確認 `acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis(「landing zone design…network level already configurated」)。⚠️ **但佢列嗰四個目標入面冇 n8n** ⇒ **outbound 半邊仍未答** | 低(DB)/ **中(n8n)** | **致命(n8n 半邊)** —— 打唔到 n8n = 本環境嘅存在意義冇咗 | 追問第 5 條:container app 打唔打得入企業內網嘅 n8n?UOP 用邊個 n8n base URL? |
+| **B3** | 🟢 **兩半邊都有答案(2026-08-04)** —— DB/Redis:`acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis。n8n:第二輪答 **`http://rapo-n8n-uat.rci-t.com/`** | 低 | 高(若實測唔通) | ⚠️ **「有 URL」≠「container 到得到」** —— 呢個係本環境存在嘅意義,**唔可以當佢已驗**。留 **F7-9/10/11** 由 container 側真打一次。同時登 **B6**(個 URL 係 http) |
 | **B4** | 🟢 **infra 已答**(「used contributor to replace」)—— 用 contributor 處理 `managedEnvironments/join/action` | 低 | 中 | **未實測**;部署時若 403 再追 |
-| **B5** | 🆕 **web portal scheme 對唔上** —— infra 寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 綁咗 **SNI cert**(`acaen-rapo-dev/certificates/rcit`)⇒ ACA 側支援 https | 中 | 中 —— **`appBaseUrl` 填錯 scheme 係最靜嘅錯法**(密碼重設信條 link 錯,API 照返 204) | 部署後兩個 scheme 都實測,以實測為準 |
+| ~~B5~~ | 🟢 **已消除(2026-08-04)** —— infra 第二輪回「**https:**」⇒ 用 https。`aca.params.dev.json` 個 `appBaseUrl` 本來就填咗 `https://…` ⇒ **零改動** | — | — | 完成 |
+| **B6** | 🆕 🔴 **n8n base URL 係 `http://rapo-n8n-uat.rci-t.com/`(明文)** —— 將來接 outbound 嗰陣,`N8N_OUTBOUND_WEBHOOK_KEY` 會**明文過線**。內網 http 喺企業環境常見,但呢個係一個要**明確接受**嘅取捨,唔應該靜靜咁行(H4 相關) | 確定(若接 n8n outbound) | 中 | 接 n8n outbound 之前同 Chris 確認;或者問 infra 有冇 https endpoint。**本 phase 唔接 n8n**(F3-6 同一原則),所以唔阻部署 |
 | R5 | **PG v18**(UAT 係 v16)—— Prisma migration 未喺 v18 跑過 | 中 | 中 | F6 G8 明確驗;失敗即回報,唔靜靜兜 |
 | R6 | ARM 宣告式覆蓋會**刪走 infra team 已配好嘅嘢**(尤其 web custom domain + SNI cert binding) | 中 | 高 | F2 明確保留;部署前先 `az resource show` 存底,部署後逐項對返 |
 | R7 | api external ingress = **平台第一次把 API 直接暴露到互聯網** | 確定(若 F0 通過) | 高 | F0 ADR 明寫代價;`IntakeKeyGuard` fail-closed 已有;考慮 IP restriction |
@@ -270,14 +271,45 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 > **實測**:`db list` 顯示 server 上只有三個系統 database(`azure_maintenance` / `postgres` / `azure_sys`)⇒ UOP 嗰個確實未建。跟住 `db create -d platform` 成功,再 `db list` 覆核見到 **`platform`**。
 > ⇒ **B2 完全解封**,`databaseUrl` = `postgresql://rapoaiuopdev:<pw>@pgsql-rapo-uop-dev.postgres.database.azure.com:5432/platform?sslmode=require`。
 
-**Q3 — container app 打唔打得入企業內網嘅 n8n?**
-> 你哋列嘅四個 DNS 目標(web / api / PG / Redis)**全部係 UOP 自己嘅資源** —— 入面冇 n8n。而**呢個環境開嚟就係為咗接 n8n**,而且係雙向:UOP 除咗要收 n8n 打入嚟,仲要**主動打出去**(webhook / license 操作 / ticket 更新)。舊環境接唔到 n8n 正正就係因為自建 ACA env 冇 VNet 整合、打唔入內網。⇒ 請確認 `acaen-rapo-dev` 出得去嘅路由範圍,同埋 **UOP 應該用邊個 n8n base URL**。
+**~~Q3 — container app 打唔打得入企業內網嘅 n8n?~~ 🟢 已答(2026-08-04 第二輪)**
+> infra:「N8N also can access by **`http://rapo-n8n-uat.rci-t.com/`**」⇒ **n8n base URL 有咗**。
+> ⚠️ **仍要實測**:「有 URL」唔等於「container 到得到」—— 呢個係本環境存在嘅意義,留 **F7-9/10/11** 由 container 側真打一次。
+> 🔴 **順帶一個安全點**:個 URL 係 **`http://`**。將來接 n8n outbound 嗰陣,`N8N_OUTBOUND_WEBHOOK_KEY` 會**明文過線**。內網 http 喺企業環境常見,但呢個要 Chris 知同埋接受(H4 相關),已登做 **B6**。
 
-**Q4(順帶,唔 blocking)** — web portal 你寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 已綁 SNI 證書 ⇒ ACA 側支援 https。應該用邊個?(影響 `appBaseUrl`,填錯會令密碼重設信條 link 錯而**冇任何錯誤訊號**)
+**~~Q4~~ 🟢 已答(2026-08-04 第二輪)** — infra 回「**https:**」⇒ 用 **https**。`aca.params.dev.json` 個 `appBaseUrl` 本來就填咗 `https://rapo-uop-web-dev.rci-t.com` ⇒ **零改動**,B5 消除。
+
+### 🔴 第三輪(只剩 ACR 一條 —— 回應 infra 問「what is the deployment detail error?」)
+
+infra 第二輪回:「We have private dns and endpoint for the ACR, so it will not use public egress IP」。
+
+**佢哋講得啱,而且我嗰個擔心係多餘嘅** —— 若 ACA 經 private endpoint 到 registry,咁 **pull 側根本唔行 public egress**,150+ outbound IP 唔關事。**B1 個 pull 半邊 ✅ 撤銷。**
+
+⇒ 但**我哋個問題由頭到尾喺 push 側**:我哋喺**公司網** build / push,**唔喺 VNet 入面**,所以一定行 public egress。兩個 error 要分開講,因為**一個係權限一個係網絡**:
+
+```
+(a) az acr build  —— 權限,唔關網絡事
+    az acr show -n acrrci3ailanding1
+    ERROR: The resource with name 'acrrci3ailanding1' and type
+    'Microsoft.ContainerRegistry/registries' could not be found in
+    subscription 'Microsoft Azure (rcitest): #1023861 (30dac177-…)'.
+
+    az role assignment list --assignee 4a6e1474-… --all
+    [ { "role": "Reader", "scope": ".../resourceGroups/RG-RAPO-UOP-DEV" } ]
+
+(b) docker push  —— 網絡
+    docker login acrrci3ailanding1.azurecr.io
+    Error response from daemon: Get "https://acrrci3ailanding1.azurecr.io/v2/":
+    denied: client with IP '165.85.7.2' is not allowed access.
+    CorrelationId: 9c671932-bc21-4b1b-bcae-4a0baf3a2caf
+```
+
+🔴 **順帶把三個解法收窄到兩個** —— 原本第 2 個(「只放行 firewall」)**其實唔可行**:放行咗我哋 push 得,但**仍然 build 唔到 image**,因為本地 `docker build` 要 pull `node:20-slim` / `nginx:1.27-alpine`,而 Docker Hub CDN 經公司 proxy **503**。⇒ 真正可行嘅只有:
+1. **SP 攞 `Contributor` + firewall 放行 `165.85.7.2`** ⇒ 行 `az acr build`,**base image 喺 Azure 側 pull**,一次過繞開 proxy
+2. **infra 代 build + push**
 
 ---
 
-### 📤 精簡版(實際發畀 infra team 嗰個)
+### 📤 精簡版 ①(2026-08-04 第一輪,已發 —— 保留做記錄)
 
 > **點解要兩個版本**:上面詳版係**我哋自己嘅工作記錄**(含實測指令、Prisma / ACA / proxy 內部細節、被否決嘅選項)。infra team 唔需要嗰啲 —— 佢哋需要嘅係「**壞咗乜 + 要你做乜**」。刪走內部細節唔係簡化,係**移走會分散注意嘅嘢**。
 > ⚠️ 尤其 **Q1 兩道牆要分開列** —— 放行 IP 而唔畀 Contributor 係**解決唔到**嘅,唔分開寫佢哋好易只做一半。
@@ -321,6 +353,64 @@ Two separate walls:
 
 3. Minor: you listed the web portal as http:// but the custom
    domain has an SSL certificate bound. Should we use https://?
+
+Thanks!
+```
+
+### 📤 精簡版 ②(2026-08-04 第二輪 —— 回應 infra 問「what is the deployment detail error?」)
+
+> **只剩 ACR 一條。** 兩個關鍵訊息:①**佢哋問嘅 pull 側,佢哋講得啱** —— 要先承認,唔好含糊帶過,否則佢哋會以為我哋冇睇佢答案 ②**收窄到兩個選項** —— 原本「只放行 firewall」睇落係一個中間路線,但**放行咗我哋一樣 build 唔到 image**(Docker Hub 503),留住佢只會令人揀一個死路。
+
+```
+Hi team,
+
+Thanks — https for the portal, and noted on the n8n URL.
+
+On the ACR: you're right that pull won't use the public egress IP
+if ACA reaches the registry over the private endpoint — so please
+ignore my earlier note about the 150+ outbound IPs.
+
+Our problem is the PUSH side. We build and push from the corporate
+network, not from inside the VNet, so we do go out over the public
+IP. Two separate errors — one permission, one network:
+
+(a) az acr build — permission, not network:
+
+    az acr show -n acrrci3ailanding1
+    ERROR: The resource with name 'acrrci3ailanding1' and type
+    'Microsoft.ContainerRegistry/registries' could not be found in
+    subscription 'Microsoft Azure (rcitest): #1023861
+    (30dac177-6dcb-412e-94f6-da9308fd1d09)'.
+
+    az role assignment list --assignee 4a6e1474-... --all
+    [ { "role": "Reader",
+        "scope": ".../resourceGroups/RG-RAPO-UOP-DEV" } ]
+
+    The SP cannot see the registry resource at all, so ACR Tasks
+    cannot be scheduled. AcrPush is a data-plane role and does not
+    include Microsoft.ContainerRegistry/registries/scheduleRun/action.
+
+(b) docker push — network:
+
+    docker login acrrci3ailanding1.azurecr.io
+    Error response from daemon:
+    Get "https://acrrci3ailanding1.azurecr.io/v2/": denied:
+    client with IP '165.85.7.2' is not allowed access.
+    CorrelationId: 9c671932-bc21-4b1b-bcae-4a0baf3a2caf
+
+    (This is a real ACR response, not a proxy failure — the data
+    plane is reachable, the registry just rejects our IP.)
+
+One more constraint on our side: even with the firewall opened, we
+still cannot build locally — pulling the base images (node:20-slim,
+nginx:1.27-alpine) fails with a 503 from the Docker Hub CDN through
+our proxy. az acr build avoids this because base images are pulled
+Azure-side.
+
+So there are really only two workable options:
+  1. Grant the SP Contributor on acrrci3ailanding1 AND allow-list
+     165.85.7.2  -> we run az acr build.
+  2. Your team builds and pushes the two images for us.
 
 Thanks!
 ```

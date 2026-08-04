@@ -33,13 +33,18 @@
 | **B3** | 🟢 **infra 已答** | infra 2026-08-04:`acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis 四個 URL(「landing zone design,your AI cannot detect it but network level already configurated」)。⚠️ **佢列嗰四個入面冇 n8n** ⇒ **outbound 路由仍未答** | — |
 | ⚠️ **B4** | 🟢 **infra 已答** | 「used contributor to replace」⇒ 用 contributor 處理 join action。**未實測**,部署時若 403 再追 | — |
 
-### ⚠️ B3 答咗一半 —— **outbound 到 n8n 仍未確認**
+### 🟢 B3 兩半邊都有答案(2026-08-04 第二輪)
 
-infra 列嘅四個 DNS 目標(web portal / api / PG / Redis)**全部係 UOP 自己嘅資源**,冇一個係 n8n。而呢個環境開嚟就係為咗接 n8n,**outbound 半邊(ADR-0017 三個接縫)先係舊環境做唔到嗰樣**。⇒ 仍要問:**container app 打唔打得入企業內網嘅 n8n?UOP 應該用邊個 n8n base URL?**
+- **DB / Redis** —— `acaen-rapo-dev` 已整合 `vNet-RCITest-HKG`,DNS 解析得到四個目標
+- **n8n** —— base URL = **`http://rapo-n8n-uat.rci-t.com/`**
 
-### ⚠️ 另一個對唔上嘅細節:web portal 個 scheme
+⚠️ **但「有 URL」唔等於「container 到得到」。** 呢個係本環境存在嘅意義,**唔可以當佢已驗** —— 留 F7 由 container 側真打一次。舊環境嘅教訓正正係:網絡層面睇落合理,實際打唔通。
 
-infra 寫 **`http://rapo-uop-web-dev.rci-t.com/`**,但實測 container app 個 `customDomains` 有 **`bindingType: SniEnabled`** + certificateId(`acaen-rapo-dev/certificates/rcit`)⇒ ACA 側支援 **https**。兩個 scheme 部署後都要實測,而 **`appBaseUrl` 填錯 scheme 係最靜嘅錯法**(密碼重設信條 link 錯,而 API 照返 204)。
+🔴 **順帶一個安全點(登 B6)**:個 n8n URL 係 **`http://`**。將來接 outbound 嗰陣,`N8N_OUTBOUND_WEBHOOK_KEY` 會**明文過線**。內網 http 喺企業環境常見,但呢個係一個要**明確接受**嘅取捨,唔應該靜靜咁行過去。
+
+### 🟢 web portal scheme 已確認 = **https**
+
+infra 第二輪回「**https:**」⇒ `appBaseUrl` 用 `https://rapo-uop-web-dev.rci-t.com`,同 `aca.params.dev.json` 本來填嘅一致 ⇒ **零改動**。(原本 B5 消除。)
 
 **交畀 infra team 嘅問題**:見 `W44-azure-dev-deploy/plan.md` 附錄 C。
 
@@ -54,12 +59,21 @@ Infra 回覆:registry = **`acrrci3ailanding1.azurecr.io`**(RCI AI landing zone),
 
 **⚠️ 一個 runbook §0 需要更正嘅點**:§0 寫「ACR `/v2/` 被公司 proxy 擋」。實測**呢個 registry 唔係咁** —— `/v2/` **通得過 proxy**,我哋收到嘅係 **ACR 自己嘅 firewall 拒絕訊息**(真回應,唔係 MITM / 503)。⇒ 兩者要分開講:**Docker Hub CDN 確實被 proxy 503;ACR data-plane 通得到,但被 registry firewall 擋**。
 
-**三個解法(要 infra team 揀一個)**:
+**兩個解法(2026-08-04 由三個收窄,要 infra team 揀一個)**:
 1. 🥇 **畀 management plane 權限 + firewall 放行** —— SP 對 `acrrci3ailanding1` 要 `Contributor`(或者 `AcrPush` + `Microsoft.ContainerRegistry/registries/scheduleRun/action`,因為 **`AcrPush` 唔包 scheduleRun**),**同時**把出口 IP **`165.85.7.2`** 加入 ACR firewall allow list(`az acr build` 要上傳 source context,嗰步係 data-plane)。呢條路最乾淨 —— **base image 喺 Azure 側 pull,完全繞開公司 proxy**。
-2. **只放行 firewall + 提供 base image 來源** —— 咁本地 push 得,但 `docker build` 仍然要 `node:20-slim` / `nginx:1.27-alpine`。除非 ACR 內已有 mirror(可改 Dockerfile `FROM acrrci3ailanding1.azurecr.io/node:20-slim`),否則呢條路仍然斷喺 Docker Hub。
-3. **infra team 代 build + push** —— 佢哋喺 allowed 網絡,由 repo build 兩個 image 推上 registry。最少改權限,但每次部署都要人手。
+2. **infra team 代 build + push** —— 佢哋喺 allowed 網絡,由 repo build 兩個 image 推上 registry。最少改權限,但每次部署都要人手。
 
-**ACA pull 側仲有一個未驗嘅點**:即使我哋 push 得,`aca-rapo-uop-api-dev` / `-web-dev` 都要 pull 得到 —— container app `registries` 而家係 `[]`,要配 credential,而 ACR 喺 VNet 側嘅可達性(private endpoint / service endpoint)未確認。
+🔴 **原本有第三個「只放行 firewall + 我哋自己 build」,已剔走** —— 放行咗我哋 push 得,但**仍然 build 唔到**:本地 `docker build` 要 pull `node:20-slim` / `nginx:1.27-alpine`,而 Docker Hub CDN 經公司 proxy **503**。除非 registry 內有 base image mirror,否則呢條路一定斷。**留住一個死路選項唔係保留彈性,係引人揀錯。**
+
+### ✅ pull 側擔心已撤銷(2026-08-04 infra 回覆)
+
+原本擔心:web app 有 150+ 個 `outboundIpAddresses` ⇒ ACA pull 一樣撞 ACR firewall,逐個放行唔實際。
+
+**infra 回覆:「We have private dns and endpoint for the ACR, so it will not use public egress IP」—— 佢哋講得啱。** ACA 有 VNet 整合,經 private endpoint 到 registry,**根本唔行 public egress** ⇒ outbound IP 清單唔關事。
+
+⇒ **B1 純粹係 push 側問題**:我哋喺**公司網** build / push,**唔喺 VNet 入面**,所以一定行 public IP。呢個分辨好重要 —— 唔講清楚嘅話,infra 好容易以為我哋描述緊一個佢哋已經解決咗嘅問題。
+
+**仍要配嘅**:container app `registries` 而家係 `[]`,pull credential 要落 template(已喺 `aca-dev.json` 做咗 parameter)。
 
 ## Subscription / 位置
 

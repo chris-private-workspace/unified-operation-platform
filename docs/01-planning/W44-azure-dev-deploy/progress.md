@@ -173,13 +173,35 @@ Chris 反問:「我們不能夠自行建立 DB 的嗎?即使有帳號?」
 - **F3-6 = 先 placeholder**(Chris 2026-08-04)—— DEV **暫時唔接**真 Graph / ServiceNow,部署成功之後再逐個接。理由:B1 未解部署都未得(決定隨時改得)· 先驗 boot/migration/seed/前端/break-glass 再接 vendor,壞咗分得清邊層 · 接真 SN 會喺真 instance 開單而手上已有 5 張等 cancel。
 - ⚠️ **`azure_url_for_api_call` 由今日起用唔著** —— Option A 令 api ingress 收返 internal。要同 infra 講(ADR-0027 OQ-2)。
 
+### infra 第二輪回覆 —— 三條答齊,其中一條**證明我睇錯咗**
+
+| 問 | 回覆 | 結果 |
+|---|---|---|
+| Q1 ACR | 「what is the deployment detail error? **We have private dns and endpoint for the ACR, so it will not use public egress IP**」 | ✅ **pull 側佢哋講得啱,我嗰個擔心係多餘嘅**;push 側仍未解 → 第三輪 |
+| Q3 n8n | 「N8N also can access by **`http://rapo-n8n-uat.rci-t.com/`**」 | 🟢 **B3 兩半邊都有答案**;新登 **B6**(URL 係 http) |
+| Q4 scheme | 「**https:**」 | 🟢 **B5 消除** —— params 檔本來就填咗 https,零改動 |
+
+#### ✅ 我要收返一個講法:pull 側嗰個擔心係多餘嘅
+
+F2-1 存底見到 web app 有 150+ 個 `outboundIpAddresses`,我由此推論「**ACA pull image 一樣會撞 ACR firewall,逐個放行唔實際**」,仲寫入咗 as-built 同精簡版 message。
+
+**infra 一句就拆咗**:ACR 有 **private DNS + private endpoint**,而 ACA 有 VNet 整合 ⇒ pull **根本唔行 public egress**,個 IP 清單同呢件事無關。
+
+⇒ **同 B2 嗰次一樣係「由一個真事實推去一個錯結論」**:嗰次係「連唔到 data-plane ⇒ 建唔到 database」,今次係「有 150 個 outbound IP ⇒ pull 會撞 firewall」。兩次嘅**前半都係實測嚟嘅真嘢**,錯喺後半嗰步推論,而且兩次都係**我漏咗一條我未睇過嘅路徑**(management plane / private endpoint)。已喺 as-built 明文撤銷。
+
+#### 🔴 順帶把 B1 三個解法收窄到兩個
+
+原本第 2 個係「只放行 firewall,我哋自己 build」。**佢其實唔可行** —— 放行咗我哋 push 得,但**仍然 build 唔到**,因為本地 `docker build` 要 pull `node:20-slim` / `nginx:1.27-alpine` 而 Docker Hub CDN **503**。⇒ 剔走。**留住一個死路選項唔係保留彈性,係引人揀錯**,而且揀完要行到一半先發現。
+
+真正可行:①SP 攞 `Contributor` + firewall 放行 ⇒ `az acr build`(base image Azure 側 pull)②infra 代 build + push。
+
 ### Blockers(Day 1 收工狀態)
 
-**🔴 B1 = 唯一硬 blocker,而且卡死晒下游。** 三個解法要 infra 揀(Q1)。冇 image ⇒ F5/F6/F7 全部做唔到,連 F4-4(渲染 nginx.conf 逐行睇)都做唔到 —— 因為起唔到 web container。
+**🔴 B1 = 唯一硬 blocker,而且卡死晒下游。** 二選一要 infra 揀。冇 image ⇒ F5/F6/F7 全部做唔到,連 F4-4(渲染 nginx.conf 逐行睇)都做唔到 —— 因為起唔到 web container。
 
-⚠️ **B3 outbound 半邊未答**(Q3)—— 呢個係本環境存在嘅意義,但佢**唔阻部署**,阻嘅係部署之後嗰半。
+⚠️ **B3 有答案但未驗** —— n8n URL 有咗,但「有 URL」≠「container 到得到」,留 F7 實測。**唔阻部署。**
 
-~~B2~~ 🟢 已自解 · ~~F0-6~~ ✅ 已 Accept · ~~F3-6~~ ✅ 已拍板。
+~~B2~~ 🟢 自解 · ~~B5~~ 🟢 消除 · ~~F0-6~~ ✅ Accept · ~~F3-6~~ ✅ 拍板 · 🆕 **B6**(n8n http 明文,接 outbound 前要 Chris 明確接受)。
 
 **⇒ 所有唔受 B1 影響嘅嘢已經做晒。** 下一步唔喺我哋手。
 
