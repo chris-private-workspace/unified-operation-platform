@@ -98,10 +98,10 @@ last_updated: 2026-08-03
 
 ## F6 — Close 路徑驗證（零新 code）
 
-- [ ] F6-1 test：新建 RITM → `pickTask` → close 成功
-- [ ] F6-2 test：`close_notes` 維持 UOP 指紋（**唔可以同 n8n 撞**）
-- [ ] F6-3 live：assign 後 `Execution Step` task 閂咗（**睇 `close_notes` 唔睇 `sys_updated_by`**）
-- [ ] F6-4 live：**兄弟 task 冇郁**（分辨「閂咗指定嗰張」vs「閂咗搵到嘅第一張」）
+- [x] F6-1 test：新建 RITM → `pickTask` → close 成功 —— **已由既有 test 覆蓋，冇加重複嘅**。條鏈三段各自有釘：①F2 把新 RITM 寫落 `RequestLineItem.serviceNowSysId`（`intake-adapter.service.spec.ts:718`）②assign 讀同一個欄去 close（`assign.service.spec.ts:243`）③provider `pickTask` 查 `request_item=<id>^active=true` on `sc_task` 再 PATCH `state=3`（`direct-ticket.provider.spec.ts:59`）。provider 對 RITM 嘅形狀係 agnostic，所以「新建嗰張 O365 RITM」唔係一個新 code path —— 再寫一個 test 行多次同一條鏈係做樣，唔係覆蓋
+- [x] F6-2 test：`close_notes` 維持 UOP 指紋（**唔可以同 n8n 撞**）—— 新增一個 test：斷言 note **有** `via platform` + SKU，且 **`not.toMatch(/n8n/i)` / `/handled by/i`**。🔴 呢個唔係文案潔癖:**RISK R7** 之下 `close_notes` 係**唯一**分得出 UOP close 同 n8n close 嘅嘢（共用 `n8napiservice1` ⇒ `sys_updated_by` 兩邊一樣），而 ADR-0024 D5 個 rationale 就係喺呢個歧義上寫錯咗
+- [ ] 🚧 F6-3 live：assign 後 `Execution Step` task 閂咗（**睇 `close_notes` 唔睇 `sys_updated_by`**）—— **未做，需 Chris 明示批准**：要真派一隻 licence落**真 tenant 一個真 synced user**（memory `V5d` 明文「未經明確指示唔撳」）。⚠️ 而且 gate ② 而家係**硬 gate**，做之前要有一張兩個 gate 都通嘅單
+- [ ] 🚧 F6-4 live：**兄弟 task 冇郁**（分辨「閂咗指定嗰張」vs「閂咗搵到嘅第一張」）—— 同 F6-3 一齊做。⚠️ G6 嗰張 RITM0047366 **剛好只有 1 張 active task**，所以佢**證唔到**呢點；要一張有 ≥2 task 嘅單，或者用 CH-014 造 fixture
 
 ## F7 — Doc sync + closeout
 

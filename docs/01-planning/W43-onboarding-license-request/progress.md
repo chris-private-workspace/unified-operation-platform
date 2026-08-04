@@ -250,6 +250,30 @@ cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in Ser
 | F5 前端 | ~2 | ~1.5 | 含 F5-6 非計劃內；light+dark 未驗 |
 | F3-2 / G5 scratch DB | ~1 | ~0.5 | 順帶揭到 G7 前半已有實證 |
 | G7 read 半 | ~0.5 | ~0.5 | 答案 = 回填冇 landed;寫入實驗等批准 |
+| G7 write 半 + ADR-0026 + F8 | ~2 | ~1.5 | 403 判實 → ADR → 拆走回填改 work note |
+| F6 test 半 | ~1 | ~0.4 | F6-1 已有覆蓋唔重複寫;live 半等批准 |
+
+### F6 — close 路徑：test 半做完，live 半等批准
+
+api **877 → 878**（68 suites）· **零 production code 改動**（F6 本來就係「零新 code」嘅驗證項）。
+
+**F6-1 我冇加 test，因為條鏈已經有釘，加多個係做樣。** 三段各自覆蓋咗:
+
+| 段 | 釘喺邊 |
+|---|---|
+| F2 把新 RITM 寫落 `RequestLineItem.serviceNowSysId` | `intake-adapter.service.spec.ts:718` |
+| assign 讀**同一個欄**去 close | `assign.service.spec.ts:243` |
+| provider `pickTask` 查 `request_item=<id>^active=true` on `sc_task` → PATCH `state=3` | `direct-ticket.provider.spec.ts:59` |
+
+provider 對 RITM 嘅形狀 **agnostic** ⇒「新建嗰張 O365 RITM」唔係一個新 code path。寫多一個 test 行多次同一條鏈，只會令 test 數字好睇啲。
+
+**F6-2 就係真空隙，加咗。** 斷言 close note **有** `via platform` + SKU，**且** `not.toMatch(/n8n/i)` / `/handled by/i`。
+
+🔴 **點解呢個唔係文案潔癖**:**RISK R7** 之下，`close_notes` 係**唯一**分得出「UOP 閂嘅」同「n8n 閂嘅」嘅嘢 —— 兩邊用同一個 `n8napiservice1`，`sys_updated_by` 講唔到嘢。而呢個歧義**已經咬過一次**:ADR-0024 D5 個 rationale 就係喺佢上面寫錯（以為 SCTASK0071807 被人手閂，實情係 UOP 自己閂）。個 note 一旦飄到同 n8n 撞，以後所有「邊個做過乜」嘅查證都會靜靜失效。
+
+（誠實講:正面兩句（`via platform` / SKU）先係有牙嗰啲 —— 反面兩句係 drift guard，平時唔會紅。）
+
+**F6-3 / F6-4 live 未做，需要 Chris 明示批准**（要真派一隻 licence 落真 tenant 一個真 synced user;memory `V5d` 明文「未經明確指示唔撳」）。⚠️ 兩件前置:①gate ② 而家係硬 gate ⇒ 要一張**兩個 gate 都通**嘅單 ②G6 嗰張 RITM0047366 **剛好只有 1 張 active task**，所以佢**證唔到 F6-4**（兄弟 task 冇郁）—— 要一張有 ≥2 task 嘅單，或者用 CH-014 造 fixture。
 
 ### G7 read 半 — 回填**冇** landed（2026-08-04，PR #75 merge 之後）
 
