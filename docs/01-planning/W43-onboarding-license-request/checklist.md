@@ -54,24 +54,26 @@ last_updated: 2026-08-03
 
 ## F3 — Gate ②：schema + sweep + 回填
 
-- [ ] F3-1 migration：`Request` 加 `serviceNowUserSyncedAt` / `serviceNowUserSysId`（additive nullable）
-- [ ] F3-2 verify：scratch DB apply **+ rollback**（唔碰 dev DB）
-- [ ] F3-3 `SyncSweepService.findCandidates()` 條件由「gate ① 未通」放寬成「**任一 gate 未通**」
-- [ ] F3-4 🔴 兩個 gate **各自 try/catch**，逐 vendor abort（Graph 掛唔可以拖跨 SN）
-- [ ] F3-5 Gate ② = `snow.query('sys_user', 'email=<targetUpn>')`；**≥2 命中 fail-closed**（OQ-4）
-- [ ] F3-6 開閘：寫 `serviceNowUserSyncedAt` + `serviceNowUserSysId` + `RequestEvent` + audit
-- [ ] F3-7 **回填**：同一刻 PATCH 新 RITM 個 `target_user` 成真人 sys_id
-- [ ] F3-8 回填失敗 non-fatal（gate 照開，failure 入佇列）
-- [ ] F3-9 `SyncCheckService` 加 on-demand gate ②（跟既有 cooldown pattern）
-- [ ] F3-10 `scrub-pii.spec.ts` 白名單同步（新 code path 會攞 UPN）
-- [ ] F3-11 test：sweep 兩 vendor 獨立失敗 / ≥2 命中 / 回填 / 回填失敗
+- [x] F3-1 migration `20260804032725_w43_gate2_sn_user_sync`（additive、兩個 nullable、零 backfill）
+- [ ] 🚧 F3-2 scratch DB apply + rollback —— **未做**，同 **G5** 一齊喺批 B 收尾做
+- [x] F3-3 `findCandidates()` → `OR: [{azureSyncedAt: null}, {serviceNowUserSyncedAt: null}]`，select 帶埋兩個 gate 狀態（一個半開嘅 request 只花一個 vendor call）
+- [x] F3-4 🔴 **一個 vendor 一個 abort flag**（`graphDown` / `snowDown`）—— 共用一個 flag 會令一邊 outage 靜靜停低另一邊，而 round 仍然「成功」
+- [x] F3-5 Gate ② = `findUserSysIdByEmail`；**≥2 命中**用新 `AmbiguousServiceNowUserError` 分辨 —— 呢個係**單一 request 嘅問題唔係 SN 掛咗**，所以 gate 關住但**唔 abort vendor**（OQ-4）
+- [x] F3-6 開閘 = `openServiceNowUserGate`（同 `openSyncGate` 放同一個檔，兩個 gate 並排睇到差異）+ `SYNC_GATE_MESSAGE.SN_VERIFIED` + audit
+- [x] F3-7 **回填** `target_user`：新 `ServiceNowService.updateCatalogVariable()`（`sc_item_option_mtom` → `sc_item_option` → `item_option_new` 三層 walk）
+- [x] F3-8 回填失敗 **non-fatal**，gate 照開（專項 test）—— 而且 `sc_item_option` 寫權**未證實**（BUG-010 已示範 insert / update 係兩套 ACL）
+- [ ] 🚧 F3-9 `SyncCheckService` on-demand gate ② —— **未做**。理由：sweep 每 10 分鐘已覆蓋，on-demand 純屬 UX 便利，唔影響 gate 正確性。**target：批 C 或 BACKLOG**
+- [x] F3-10 `scrub-pii` 白名單 —— `sync-sweep.service.ts` 本身已喺表內；`findUserSysIdByEmail` 個 email 走 `logPath` redact（專項 test 斷言 log 冇地址、有 `<redacted>`）
+- [x] F3-11 test：6 個新 —— 開閘 / 回填 / 回填失敗 gate 照開 / ≥2 唔停其他 / **SN 掛咗 Graph 照開** / **Graph 掛咗 SN 照開**
+- [x] F3-12 *(新增)* `audit-fields` `SyncSweep` 白名單加 `snOpened` —— 唔加會**靜靜丟**，round 永遠少報 gate ②（ADR-0009 D4）
 
 ## F4 — Assign 雙 gate
 
-- [ ] F4-1 `assign.service.ts:135` 之後加第二閘，**既有嗰行逐字不變**
-- [ ] F4-2 兩個訊息分開（operator 睇得出等緊邊一邊）
-- [ ] F4-3 verify：`budgetOverrideReason` **override 唔到**任何一個 gate（專項 test）
-- [ ] F4-4 verify：既有 gate ① test（`spec.ts:406` / `:619`）仍然綠
+- [x] F4-1 第二閘加咗，**既有嗰行逐字不變**（連 wording）
+- [x] F4-2 兩個訊息分開：`Phase 1 sync gate not passed…` vs `ServiceNow sync gate not passed: the target user is not in ServiceNow yet`
+- [x] F4-3 專項 test：`budgetOverrideReason` **override 唔到** gate ②（override 係畀人為**預算決定**負責；sync gate 唔係決定，係「呢個人存唔存在」嘅事實）
+- [x] F4-4 既有 gate ① test 仍然綠
+- [x] F4-5 *(新增，非計劃內)* 🔴 修 `readyItem` fixture：`...over` 本來喺 `request` **之後**，所以 `over.request` 係**整個取代**而唔係 merge。以前得一個 gate 所以冇人發現;兩個 gate 之後，「關 gate ②」會連 gate ① 一齊抹走，測試就會**因為錯嘅原因而 pass**
 
 ## F5 — 前端：兩個 gate 狀態可見
 

@@ -268,7 +268,10 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
      * ADMIN-only table, and RequestEvent(SYNC) already records it per request
      * under the request's own (narrower) read permission.
      */
-    SyncSweep: ['scanned', 'opened'],
+    // ADR-0025 D4 added `snOpened` (gate ②). An unlisted key is dropped
+    // silently, so forgetting it here would make the round under-report for
+    // ever with nothing to show anything was lost.
+    SyncSweep: ['scanned', 'opened', 'snOpened'],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */

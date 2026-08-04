@@ -27,4 +27,19 @@ export const SYNC_GATE_MESSAGE = {
    * the whole point, so it does not read as equivalent to VERIFIED.
    */
   MANUAL: 'Phase 1 sync manually confirmed (not verified against Graph)',
+
+  /**
+   * ADR-0025 D4 — gate ②. Named for the QUESTION it answers, not the field it
+   * writes: "does ServiceNow know this person yet", which is what decides
+   * whether the licence request can name them as its target instead of the
+   * requester placeholder (D3).
+   *
+   * No MANUAL counterpart, and that is deliberate: unlike gate ①, opening this
+   * one requires a `sys_user` sys_id to back-fill. There is nothing for a human
+   * to assert — either ServiceNow has the record or it does not.
+   */
+  SN_VERIFIED:
+    'ServiceNow sync verified — the target user exists in ServiceNow (scheduled sweep)',
+  SN_VERIFIED_ON_DEMAND:
+    'ServiceNow sync verified — the target user exists in ServiceNow (on-demand check)',
 } as const;

@@ -60,16 +60,27 @@ describe('AssignService', () => {
     id: 'li1',
     stage: 'READY',
     requestId: 'r1',
+    sku: { id: 'c1', skuId: 'guid-1', skuPartNumber: 'SPE_E3' },
+    ...over,
+    /**
+     * 🔴 AFTER `...over`, deliberately. `request` used to sit before it, which
+     * meant `over.request` REPLACED the defaults instead of merging into them —
+     * a test that shut one gate silently dropped every other request field too.
+     * Harmless while there was one gate to shut; actively misleading now that
+     * there are two, because shutting gate ② also blanked gate ① and the test
+     * then passed for the wrong reason.
+     */
     request: {
       id: 'r1',
       targetUpn: 'new.user@rhk.com',
       opcoId: 'o1',
       azureSyncedAt: new Date(),
+      // ADR-0025 D5 — gate ② defaults OPEN so every test written before W43
+      // still exercises the thing it was written for, not the new gate.
+      serviceNowUserSyncedAt: new Date(),
       serviceNowSysId: 'sys1',
       ...(over.request ?? {}),
     },
-    sku: { id: 'c1', skuId: 'guid-1', skuPartNumber: 'SPE_E3' },
-    ...over,
   });
 
   /** Ledger row for the OpCo budget gate; default has plenty of headroom. */
@@ -418,6 +429,39 @@ describe('AssignService', () => {
       await expect(
         service.assignLineItem('li1', undefined, ADMIN),
       ).rejects.toThrow(BadRequestException);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    /**
+     * ADR-0025 D5 — gate ②, and the message is asserted because it is the whole
+     * reason there are two: the operator has to know WHICH side they are waiting
+     * on, since the two are chased differently.
+     */
+    it('rejects when the ServiceNow sync gate is closed', async () => {
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { serviceNowUserSyncedAt: null } }),
+      );
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN),
+      ).rejects.toThrow(/not in ServiceNow yet/);
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 An override exists so a human can own a BUDGET decision. A sync gate is
+     * not a decision — it states whether the person exists yet, and there is no
+     * such thing as knowingly assigning a licence to someone who does not.
+     */
+    it('does not let a budget override bypass the ServiceNow gate', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { serviceNowUserSyncedAt: null } }),
+      );
+
+      await expect(
+        service.assignLineItem('li1', undefined, ADMIN, 'urgent joiner'),
+      ).rejects.toThrow(/not in ServiceNow yet/);
       expect(graph.assignLicense).not.toHaveBeenCalled();
     });
 

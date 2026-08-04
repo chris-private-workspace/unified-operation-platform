@@ -40,6 +40,29 @@ export interface CatalogOrderResult {
  * read — and a missing answer throws here rather than returning '' that would
  * fail two steps later inside a lookup, where the cause would be invisible.
  */
+/**
+ * ≥2 `sys_user` rows share an address (ADR-0025 OQ-4).
+ *
+ * A distinct type because the two callers must react differently: the outbound
+ * submit refuses outright, while the sweep has to skip THIS request and carry
+ * on — treating it as "ServiceNow is down" would stall every other onboarding
+ * behind one person's duplicated account.
+ */
+/** Reference fields come back as `{value, link}` or as a bare string. */
+function refValue(raw: unknown): string {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw;
+  const value = (raw as { value?: unknown }).value;
+  return typeof value === 'string' ? value : '';
+}
+
+export class AmbiguousServiceNowUserError extends Error {
+  constructor() {
+    super('ServiceNow has more than one user with that e-mail address');
+    this.name = 'AmbiguousServiceNowUserError';
+  }
+}
+
 function readRequestNumber(result: ServiceNowRecord | undefined): string {
   const raw = result?.request_number ?? result?.number;
   if (typeof raw !== 'string' || !raw) {
@@ -293,12 +316,53 @@ export class ServiceNowService implements OnModuleInit {
     );
     const rows = data.result ?? [];
     if (rows.length > 1) {
-      throw new Error(
-        'ServiceNow has more than one user with that e-mail address',
-      );
+      throw new AmbiguousServiceNowUserError();
     }
     const sysId = rows[0]?.sys_id;
     return typeof sysId === 'string' && sysId ? sysId : null;
+  }
+
+  /**
+   * Set one catalog variable on an existing RITM. Returns false if the RITM has
+   * no such variable (nothing was written).
+   *
+   * ADR-0025 D3 — this exists for exactly one job: when gate ② opens, replace
+   * the `target_user` placeholder (the requester) with the joiner who now has a
+   * `sys_user` record. Until that happens the request names the wrong person as
+   * its target, and only `target_users_email` is telling the truth.
+   *
+   * Costs 1 + 2N reads because variable values are reached through a join table
+   * (`sc_item_option_mtom` → `sc_item_option` → `item_option_new`) and only the
+   * definition carries the NAME. Acceptable: this runs once per onboarding, at
+   * the moment a gate opens — not on any hot path.
+   *
+   * ⚠️ Whether the integration account may WRITE `sc_item_option` is not proven
+   * (BUG-010 showed insert and update are separate ACLs on this instance). The
+   * caller must treat failure as non-fatal — the gate is about what ServiceNow
+   * knows, not about whether we managed to tidy the ticket.
+   */
+  async updateCatalogVariable(
+    ritmSysId: string,
+    variableName: string,
+    value: string,
+  ): Promise<boolean> {
+    const links = await this.query(
+      `request_item=${ritmSysId}`,
+      'sc_item_option_mtom',
+      60,
+    );
+    for (const link of links) {
+      const optionId = refValue(link.sc_item_option);
+      if (!optionId) continue;
+      const option = await this.getRecord(optionId, 'sc_item_option');
+      const definitionId = refValue(option?.item_option_new);
+      if (!definitionId) continue;
+      const definition = await this.getRecord(definitionId, 'item_option_new');
+      if (definition?.name !== variableName) continue;
+      await this.updateRecord(optionId, { value }, 'sc_item_option');
+      return true;
+    }
+    return false;
   }
 
   /** Update fields on a record — used to write fulfilment status back. */

@@ -148,6 +148,24 @@ status: in-progress    # in-progress | closed
 
 ⚠️ **REQ0044071 要人手 cancel**（SN 刪唔到），同 CH-014 OQ-2 嗰 3 張一齊處理。
 
+### 批 B — F3 gate ② + F4 雙閘完成
+
+api **866 → 874**，68 suites，lint exit 0。migration `20260804032725_w43_gate2_sn_user_sync`。
+
+**設計上最重要嗰兩點**：
+
+1. 🔴 **一個 vendor 一個 abort flag**（`graphDown` / `snowDown`）。兩個 gate 問同一個人，但 Graph outage 同 ServiceNow 無關。共用一個 flag 會令一邊掛低就**靜靜**停低另一邊 —— 而 round 仍然返成功，冇任何嘢睇得出。有兩個對稱 test 釘住（SN 掛 Graph 照開 / Graph 掛 SN 照開）。
+2. 🔴 **≥2 命中唔等於 SN 掛咗**。新 `AmbiguousServiceNowUserError` 分辨兩者：撞名係**嗰一個 request** 嘅問題，gate 關住但**唔可以 abort vendor**，否則全部其他 onboarding 被一個重複目錄記錄拖住。
+
+**順帶修咗一個測試陷阱（F4-5，非計劃內）**：`readyItem` 個 `...over` 本來喺 `request` 之後，所以 `over.request` 係**整個取代**預設值。以前得一個 gate 所以無害;加咗第二個之後，「關 gate ②」會連 gate ① 一齊抹走 —— 我兩個新 test 就係咁**因為錯嘅原因而紅**，先揭到。修完 `request` 移去 `...over` 之後，變成真 merge。
+
+**未做、已標 🚧**：
+- **F3-2 / G5** scratch DB apply + rollback —— 批 B 收尾做
+- **F3-9** `SyncCheckService` on-demand gate ② —— sweep 每 10 分鐘已覆蓋，on-demand 純 UX 便利，唔影響 gate 正確性。target 批 C / BACKLOG
+- **F5** 前端未開
+
+⚠️ **未證實嘅假設**：`updateCatalogVariable` 要寫 `sc_item_option`，而**呢個帳號有冇寫權未驗過** —— BUG-010 已經示範咗 insert 同 update 喺呢個 instance 係兩套 ACL。所以回填做成 non-fatal，gate 唔會因為佢失敗而重新關上。要驗就要真 PATCH 一張單（G7）。
+
 ### Actual vs Planned Effort
 
 | Deliverable | Planned (h) | Actual (h) | Variance |
@@ -155,6 +173,8 @@ status: in-progress    # in-progress | closed
 | F1 BUG-010 | ~3 | ~2.5 | — |
 | F2 建單 | ~3 | ~1.5 | 少咗，因為 F1-8 已經做起 requester 解析 |
 | G6 live | ~1 | ~0.7 | — |
+| F3 gate ② | ~4 | ~2.5 | — |
+| F4 雙閘 | ~1 | ~0.8 | 含順帶修 fixture 陷阱 |
 
 ### Commits
 

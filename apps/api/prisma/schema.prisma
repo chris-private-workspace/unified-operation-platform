@@ -235,6 +235,19 @@ model Request {
   accountCreatedAt  DateTime?
   azureSyncedAt     DateTime?
 
+  // ── ADR-0025 D4: gate ② — the SERVICENOW half of "is this person real yet" ──
+  //
+  // Two gates, not one, because they answer different questions and open at
+  // different times: Azure says the licence CAN be assigned (Graph can find the
+  // user); ServiceNow says the licence request is OPERABLE (the RITM's
+  // target_user can point at a real person instead of the requester placeholder).
+  //
+  // `serviceNowUserSysId` is not bookkeeping — it is what the sweep backfills
+  // into the RITM's `target_user` variable the moment the gate opens (D3), so
+  // the request stops naming the requester as its own target.
+  serviceNowUserSyncedAt DateTime?
+  serviceNowUserSysId    String? // sys_user sys_id of the target, once SN has them
+
   lineItems         RequestLineItem[]
   events            RequestEvent[]
   outboundFailures  OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)

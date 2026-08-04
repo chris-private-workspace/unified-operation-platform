@@ -137,6 +137,26 @@ export class AssignService {
         'Phase 1 sync gate not passed: azureSyncedAt is null',
       );
     }
+    /**
+     * ADR-0025 D5 — gate ②. The line above is deliberately UNTOUCHED, wording
+     * and all: its meaning has not changed, and it has tests pinned to it.
+     *
+     * Two messages rather than one because the operator has to know WHICH side
+     * they are waiting on — the two are chased differently (Entra Connect on one
+     * side, the ServiceNow user import on the other), and "sync gate not passed"
+     * alone tells them nothing about who to ask.
+     *
+     * 🔴 Neither gate is overridable, and `budgetOverrideReason` does not reach
+     * here. That is not an oversight: an override exists so a human can take
+     * responsibility for a BUDGET decision. A sync gate is not a decision — it
+     * is a statement of fact about whether the person exists yet, and there is
+     * no such thing as knowingly assigning a licence to someone who does not.
+     */
+    if (!request.serviceNowUserSyncedAt) {
+      throw new BadRequestException(
+        'ServiceNow sync gate not passed: the target user is not in ServiceNow yet',
+      );
+    }
     // findUser returns null for a genuine 404 (not synced yet) but *throws* on
     // an auth / network / throttle failure. The provider wraps that into the
     // same 503 this service used to build itself (BUG-002: a raw Graph error
