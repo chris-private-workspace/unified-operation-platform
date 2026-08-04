@@ -74,6 +74,7 @@ last_updated: 2026-08-04
 > `az acr build` ❌ 冇 management plane(AcrPush 唔包 `scheduleRun/action`)· 本地 `docker build` ❌ Docker Hub CDN 503 **兼** ACR firewall 拒 `165.85.7.2`。三個解法見 plan 附錄 C **Q1**。
 
 - [ ] F5-0 🔴 等 infra 回覆 Q1 並確認走邊條路(決定咗先寫得 F5-1..4 嘅實際步驟)
+- [x] F5-0b ✅ **解法 ②(infra 代 build)嘅指引已預先寫定** —— `09-dev-as-built.md`「附:B1 解法 ②」。含:source 兩個交法(repo access / `git archive`,**後者實測 1065 檔 8.9MB 且零 secret**)· 三個一定要講嘅點(**context = repo root** · **web 依賴 root 嘅 `design_handoff_licenseops/`** · **唔使傳 build arg**)· 可直接發嘅英文指引 · 收到之後我哋嘅四步。🔴 明文標低**證唔到嗰樣**:呢兩個 image 從來冇人真正 build 過(本機 `docker build` 撞 Docker Hub 503),而 api 有 `RUN test -f dist/main.js` 硬閘要預先同 infra 講,否則佢哋會當係我哋 Dockerfile 有 bug
 - [ ] F5-1 配 ACR credential 落 container app `registries`
 - [ ] F5-2 `az acr build` api image(tag `dev-<short-sha>`)
 - [ ] F5-3 `az acr build` web image

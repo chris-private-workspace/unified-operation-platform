@@ -75,6 +75,65 @@ Infra 回覆:registry = **`acrrci3ailanding1.azurecr.io`**(RCI AI landing zone),
 
 **仍要配嘅**:container app `registries` 而家係 `[]`,pull credential 要落 template(已喺 `aca-dev.json` 做咗 parameter)。
 
+## 附:B1 解法 ② —— 若 infra team 代 build,交畀佢哋嘅嘢
+
+> **預先寫定,等 infra 一揀就即刻發得出。** 解法 ① 若通過(SP 攞 Contributor + firewall 放行)呢節唔使用。
+> **本節所有事實都實測過**(2026-08-05),唔係憑 Dockerfile 讀出嚟嘅推測 —— 除咗最後嗰個 build 本身,原因見下面「⚠️ 我證到咩、證唔到咩」。
+
+### 先決定:source code 點交
+
+| 做法 | 說明 |
+|---|---|
+| 🥇 **畀 infra GitHub repo access** | repo 係 **private**(`chris-private-workspace/unified-operation-platform`)。最乾淨 —— 佢哋自己 clone,tag 對得返 commit,將來重 build 唔使再傳一次 |
+| **`git archive` 交一個 tarball** | 若唔想開 repo access。**實測(HEAD)**:`git archive --format=tar -o uop-src.tar HEAD` → **1065 個檔 / 8.9 MB**,包含兩個 Dockerfile · `docker-entrypoint.sh` · `nginx.conf.template` · `design_handoff_licenseops/` · `package-lock.json`。<br>✅ **天然唔含 secret**:`git archive` 只包 **tracked** 檔,而 `.env` / `deploy/azure/*.params.*.json` 全部 gitignored ⇒ **實測 archive 入面一個都冇**。只有兩個 `.env.example`(已逐行看過,全部 placeholder;兩個 `SERVICENOW_*_CATALOG_ITEM_SYS_ID` 係真值但**係識別碼唔係 secret**,一直喺 repo) |
+
+### 🔴 三個一定要講清楚嘅點(唔講就會 build 失敗或者 build 錯)
+
+1. **Build context = repo ROOT**,唔係 `apps/api/` / `apps/web/`。兩個 Dockerfile 都靠 root 個 `package-lock.json` 解 workspace。
+2. **`apps/web` 個 build 依賴 repo root 嘅 `design_handoff_licenseops/`** —— `apps/web/src/index.css:4` 有 `@import '../../../design_handoff_licenseops/design-system/styles.css'`,而 Dockerfile 有 `COPY design_handoff_licenseops ./design_handoff_licenseops`。**呢個目錄唔喺 `apps/web` 入面**,所以 context 一錯就直接掛。(`.dockerignore` 特登冇排除佢,仲寫咗註釋講點解。)
+3. **兩個 image 都唔使傳 build arg。** `apps/web/Dockerfile` 有四個 `VITE_ENTRA_*` ARG,但**留空 = 跌返 break-glass 本地登入**,正正係 DEV 而家要嘅(W44 F3-6:先唔接 vendor;而且 DEV 冇 Entra app registration)。
+
+### 發畀 infra 嘅指引(英文)
+
+```
+Build context is the repo ROOT for both images (not apps/api or apps/web).
+The web build reads design_handoff_licenseops/ from the repo root, so the
+context must include it.
+
+From the repo root:
+
+  TAG=dev-<short-git-sha>        # we'll tell you the exact sha
+
+  docker build -f apps/api/Dockerfile \
+      -t acrrci3ailanding1.azurecr.io/uop-api:$TAG .
+
+  docker build -f apps/web/Dockerfile \
+      -t acrrci3ailanding1.azurecr.io/uop-web:$TAG .
+
+  docker push acrrci3ailanding1.azurecr.io/uop-api:$TAG
+  docker push acrrci3ailanding1.azurecr.io/uop-web:$TAG
+
+No build arguments are needed — the web image's VITE_ENTRA_* args are meant
+to be left empty for this environment.
+
+Please confirm the exact tag you pushed, and that the two container apps
+(aca-rapo-uop-api-dev / aca-rapo-uop-web-dev) can pull from the registry —
+they currently have no registry credentials configured.
+```
+
+### 收到之後我哋做咩
+
+1. `deploy/azure/aca.params.dev.json` 更新 `apiImage` / `webImage` 個 tag 做 infra 實際 push 嗰個
+2. 重跑 `az deployment group what-if` —— 今次應該淨係多咗兩個 image 改動
+3. `az deployment group create` → 驗 revision **Running/Healthy**(⚠️ `az acr build` Succeeded / push 成功 **都唔證明容器起得身**,BUG-008)
+4. Smoke:`https://rapo-uop-web-dev.rci-t.com/` → `/api/docs/api` → break-glass login
+
+### ⚠️ 我證到咩、證唔到咩
+
+**證到**(全部有真 tool output):archive 內容齊全兼零 secret · `.dockerignore` 唔排除 design handoff · `index.css` 真係 `@import` 佢 · 85 個 handoff 檔 tracked · 兩個 Dockerfile 寫明 context = root。
+
+🔴 **證唔到:呢兩個 image 實際 build 得成。** 我哋本機 `docker build` **跑唔到**(pull `node:20-slim` 撞 Docker Hub CDN 503),所以**冇任何人喺呢個 repo 狀態下真正 build 過**。infra 第一次 build 撞到嘢係有可能嘅 —— 尤其 `apps/api/Dockerfile` 有一道 `RUN test -f dist/main.js` 硬閘(BUG-008 留低),佢會令「編譯綠但輸出唔喺度」直接 build fail 而唔係出一個壞 image。**呢個係 feature,唔係問題** —— 但要同 infra 講定,否則佢哋見到會以為係我哋 Dockerfile 有 bug。
+
 ## Subscription / 位置
 
 | 項 | 值 |
