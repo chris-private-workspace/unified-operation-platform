@@ -261,7 +261,7 @@ cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in Ser
 | `bea936b` | `feat(fulfilment)` W43 F3+F4 — gate ② + assign 雙閘 | F3-1,3~8,10~12 / F4-1 ~ F4-5 |
 | `29ee6d3` | `feat(web)` W43 F5 — request detail 顯示兩個 sync gate 狀態 | F5-1,2,4,5,6 |
 | `00033bd` | `docs(planning)` progress 補回 commit ↔ checklist 對照 | R2 |
-| `b649637` | `docs(planning)` W43 F3-2 / G5 scratch DB apply + rollback 驗證通過 | F3-2 / G5 |
+| `faa4786` | `docs(planning)` W43 F3-2 / G5 scratch DB apply + rollback 驗證通過 | F3-2 / G5 |
 
 ---
 
