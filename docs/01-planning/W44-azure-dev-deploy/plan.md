@@ -170,7 +170,7 @@ Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的�
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
 | **B1** | 🔴 **仍未解(2026-08-04 深化)** —— registry 知道咗係 **`acrrci3ailanding1.azurecr.io`**(cross-tenant SP `4a6e1474-…` 有 AcrPush),但**兩條 build 路實測都斷**:①`az acr build` —— SP 對該 registry **冇 management plane 存取**(`could not be found in subscription`;佢喺我哋 sub 只有 `Reader`)⇒ 開唔到 task run ②本地 `docker build`+push —— Docker Hub CDN **503**(pull 唔到 `node:20-slim`)**兼** ACR firewall **`DENIED: client with IP '165.85.7.2' is not allowed access`** | **確定** | **致命** —— 冇 image 就乜都部署唔到 | **三選一**(詳見 `09-dev-as-built.md` B1 深化):①🥇 SP 攞 `Contributor`(或 AcrPush + `scheduleRun/action`,因為 **AcrPush 唔包 scheduleRun**)+ firewall 放行 `165.85.7.2` ②只放行 firewall + 提供 base image 來源(否則仍斷喺 Docker Hub)③infra 代 build + push |
-| **B2** | 🟡 **部分解** —— infra 答咗 `rapoaiuopdev` 係 **DB admin**(唔係 db 名),credential 有齊。**但 UOP 用嘅 database 叫咩、建咗未,仍未知** —— Prisma `migrate deploy` **唔會建 database**,而我哋喺公司網連唔到 private PG,自己建唔到 | **確定** | 高 —— `databaseUrl` 尾嗰個 db 名填唔到 | 問 infra 建一個(UAT 慣例叫 `platform`)或者講返現有邊個可以用 |
+| **B2** | 🟢 **已解封(2026-08-04)** —— infra 答咗 `rapoaiuopdev` 係 **DB admin**;而 database **我哋自己建咗** `platform`(`az postgres flexible-server db create`,management plane,唔需要連到 PG data-plane)。🔴 呢條原本被我錯判成 blocker,理由係「連唔到 PG 所以建唔到」—— **把「連唔到 data-plane」同「做唔到嗰件事」混埋** | — | — | 完成。`databaseUrl` = `postgresql://rapoaiuopdev:<pw>@pgsql-rapo-uop-dev.postgres.database.azure.com:5432/platform?sslmode=require` |
 | **B3** | 🟢 **DB/Redis 半邊已答** —— infra 2026-08-04 確認 `acaen-rapo-dev` **已整合 `vNet-RCITest-HKG`**,DNS 解析得到 web / api / PG / Redis(「landing zone design…network level already configurated」)。⚠️ **但佢列嗰四個目標入面冇 n8n** ⇒ **outbound 半邊仍未答** | 低(DB)/ **中(n8n)** | **致命(n8n 半邊)** —— 打唔到 n8n = 本環境嘅存在意義冇咗 | 追問第 5 條:container app 打唔打得入企業內網嘅 n8n?UOP 用邊個 n8n base URL? |
 | **B4** | 🟢 **infra 已答**(「used contributor to replace」)—— 用 contributor 處理 `managedEnvironments/join/action` | 低 | 中 | **未實測**;部署時若 403 再追 |
 | **B5** | 🆕 **web portal scheme 對唔上** —— infra 寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 綁咗 **SNI cert**(`acaen-rapo-dev/certificates/rcit`)⇒ ACA 側支援 https | 中 | 中 —— **`appBaseUrl` 填錯 scheme 係最靜嘅錯法**(密碼重設信條 link 錯,API 照返 204) | 部署後兩個 scheme 都實測,以實測為準 |
@@ -263,13 +263,62 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 >
 > 另外:`aca-rapo-uop-api-dev` / `-web-dev` 個 `registries` 而家係空,**pull 側都要配 credential**,而 ACR 喺 VNet 內嘅可達性未確認。
 
-**Q2 — UOP 用嘅 database 叫咩?建咗未?**
-> `rapoaiuopdev` 有 admin 權冇問題,但 **Prisma `migrate deploy` 唔會建 database**,佢要 database 已存在。而 PG 係 private-only,我哋喺公司網連唔到,自己建唔到。⇒ 請建一個(UAT 慣例叫 **`platform`**),或者話返我哋現有邊個可以用。
+**~~Q2 — UOP 用嘅 database~~ 🟢 已自己解決(2026-08-04),唔使問 infra**
+> 🔴 **原本呢條問題係基於我一個錯誤斷言** —— 我寫「PG 係 private-only,我哋連唔到,自己建唔到」,把「**連唔到 data-plane**」同「**做唔到嗰件事**」混埋咗。Azure PG 建 database 有 **management plane 路徑**(`az postgres flexible-server db create`,ARM 操作),完全唔需要網絡連得到 PG,而我哋個 SP `d2f094a3-…` 係 `RG-RAPO-UOP-DEV` **Contributor** ⇒ 做得到。UAT runbook §2 本來就係咁建 `platform` 嘅。
+> **實測**:`db list` 顯示 server 上只有三個系統 database(`azure_maintenance` / `postgres` / `azure_sys`)⇒ UOP 嗰個確實未建。跟住 `db create -d platform` 成功,再 `db list` 覆核見到 **`platform`**。
+> ⇒ **B2 完全解封**,`databaseUrl` = `postgresql://rapoaiuopdev:<pw>@pgsql-rapo-uop-dev.postgres.database.azure.com:5432/platform?sslmode=require`。
 
 **Q3 — container app 打唔打得入企業內網嘅 n8n?**
 > 你哋列嘅四個 DNS 目標(web / api / PG / Redis)**全部係 UOP 自己嘅資源** —— 入面冇 n8n。而**呢個環境開嚟就係為咗接 n8n**,而且係雙向:UOP 除咗要收 n8n 打入嚟,仲要**主動打出去**(webhook / license 操作 / ticket 更新)。舊環境接唔到 n8n 正正就係因為自建 ACA env 冇 VNet 整合、打唔入內網。⇒ 請確認 `acaen-rapo-dev` 出得去嘅路由範圍,同埋 **UOP 應該用邊個 n8n base URL**。
 
 **Q4(順帶,唔 blocking)** — web portal 你寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 已綁 SNI 證書 ⇒ ACA 側支援 https。應該用邊個?(影響 `appBaseUrl`,填錯會令密碼重設信條 link 錯而**冇任何錯誤訊號**)
+
+---
+
+### 📤 精簡版(實際發畀 infra team 嗰個)
+
+> **點解要兩個版本**:上面詳版係**我哋自己嘅工作記錄**(含實測指令、Prisma / ACA / proxy 內部細節、被否決嘅選項)。infra team 唔需要嗰啲 —— 佢哋需要嘅係「**壞咗乜 + 要你做乜**」。刪走內部細節唔係簡化,係**移走會分散注意嘅嘢**。
+> ⚠️ 尤其 **Q1 兩道牆要分開列** —— 放行 IP 而唔畀 Contributor 係**解決唔到**嘅,唔分開寫佢哋好易只做一半。
+
+```
+Hi team,
+
+Thanks — 3 of the 4 are sorted, and we've handled the database
+ourselves. Two things still block us:
+
+
+1. We can't push images to acrrci3ailanding1
+
+Two separate walls:
+  - SP 4a6e1474-... has no access to the registry resource
+    (only "Reader" in our subscription) -> az acr build can't run.
+    Note: AcrPush alone is not enough for ACR Tasks.
+  - Our egress IP 165.85.7.2 is blocked by the ACR firewall
+    -> docker push fails too.
+
+  Simplest fix: give that SP Contributor on acrrci3ailanding1
+  AND allow-list 165.85.7.2.
+  (Alternative: your team builds + pushes the two images for us.)
+
+  Also: both container apps have no registry credentials set yet,
+  so the pull side needs those too.
+
+
+2. Can the container apps reach n8n?
+
+  The four DNS targets you listed are all UOP's own resources -
+  none of them is n8n. This environment exists to integrate with
+  n8n, and traffic goes BOTH ways (n8n calls us, we also call n8n).
+
+  Please confirm outbound access to n8n, and give us the n8n
+  base URL to use.
+
+
+3. Minor: you listed the web portal as http:// but the custom
+   domain has an SSL certificate bound. Should we use https://?
+
+Thanks!
+```
 
 ---
 

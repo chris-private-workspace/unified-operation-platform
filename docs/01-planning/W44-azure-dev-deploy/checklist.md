@@ -33,7 +33,7 @@ last_updated: 2026-08-04
 - [x] F1-8 確認 `apps/api/src` 零 BullMQ/Redis 用法
 - [x] F1-9 寫 `docs/13-deployment/09-dev-as-built.md`(座標 + 六處差異 + 四條 infra 問題)
 - [x] F1-10 把四條問題交畀 Chris → infra team(**2026-08-04 已答**;Q3 網絡 ✅ / Q4 join ✅ / Q2 部分 / **Q1 答咗但實測用唔到**)
-- [ ] F1-11 🔴 **第二輪三條問題**(plan 附錄 C):**Q1** image 兩條路都斷,三個解法揀一個 · **Q2** UOP database 叫咩建咗未 · **Q3** container 打唔打得入內網 n8n + 用邊個 base URL
+- [ ] F1-11 🔴 **第二輪問題**(plan 附錄 C,含**精簡版**):**Q1** image 兩條路都斷,三個解法揀一個 · **Q3** container 打唔打得入內網 n8n + 用邊個 base URL · Q4(minor)http 定 https。~~Q2 database~~ **已自己解決,拎走咗**
 
 ## F2 — DEV 專用 ARM template(**前置 F0-6**)
 
@@ -46,10 +46,11 @@ last_updated: 2026-08-04
 - [ ] F2-7 UAT 個 `aca.json` **一個字唔改** — 用 `git diff` 證
 - [ ] F2-8 verify:`az deployment group validate` 返 `Succeeded`
 
-## F3 — params 檔 + secret 策略(**前置 B2**)
+## F3 — params 檔 + secret 策略(**B2 已解封**)
 
+- [x] F3-0 建 UOP 嘅 database —— `az postgres flexible-server db create -s pgsql-rapo-uop-dev -g RG-RAPO-UOP-DEV -d platform`;verify `db list` 由 3 個系統 db 變 4 個(**management plane,唔需要連到 PG data-plane**)
 - [ ] F3-1 `deploy/azure/aca.params.dev.json`(由 `aca.params.example.json` 起)
-- [ ] F3-2 `databaseUrl` 按 B2 答案砌 + `sslmode=require`
+- [ ] F3-2 `databaseUrl` = `postgresql://rapoaiuopdev:<pw>@pgsql-rapo-uop-dev.postgres.database.azure.com:5432/platform?sslmode=require`
 - [ ] F3-3 `appBaseUrl` = `https://rapo-uop-web-dev.rci-t.com`(**唔係** `.env` 寫嘅 http)
 - [ ] F3-4 其餘 secret 沿用 runbook §4 生成規則
 - [ ] F3-5 verify:`git check-ignore -v deploy/azure/aca.params.dev.json` 有 output(H4 硬要求)

@@ -151,12 +151,28 @@ Chris 喺我交完 ADR draft 之後更正:**W32/W33 部署嗰個環境唔係企�
 
 infra 寫 `http://rapo-uop-web-dev.rci-t.com/`,但實測 custom domain 綁咗 **SNI cert**。⇒ 兩個 scheme 部署後都要實測。呢個唔 blocking,但**填錯係最靜嘅錯法**(密碼重設信條 link 錯,API 照返 204),同 CH-011 R1 同族。
 
+#### 🔴 B2 解封 —— 而且係 **Chris 一句反問揭穿我一個錯誤斷言**
+
+我原本把 B2 寫成 blocker,理由係:「Prisma `migrate deploy` 唔會建 database,而 PG private-only 我哋連唔到,**自己建唔到**」,仲寫咗做交畀 infra 嘅 **Q2**。
+
+Chris 反問:「我們不能夠自行建立 DB 的嗎?即使有帳號?」
+
+**佢啱,我錯。** 我把兩件事混埋咗:
+- 「**連唔到 PG 嘅 data-plane**」← 真(private endpoint,公司網未證實通)
+- 「**建唔到 database**」← **假** —— Azure PG 建 database 有 **management plane 路徑**(`az postgres flexible-server db create`,純 ARM),同網絡連唔連到 PG **完全無關**。我哋個 SP 係 RG **Contributor** ⇒ 做得到。而且 **UAT runbook §2 本來就係咁建 `platform` 嘅** —— 答案一直喺我自己份 runbook 入面。
+
+實測:`db list` → 只有 `azure_maintenance` / `postgres` / `azure_sys`(UOP 嗰個確實未建)→ `db create -d platform` 成功 → 再 `db list` 見到 **`platform`**。⇒ **B2 完全解封,Q2 由問題清單拎走。**
+
+**值得記嘅教訓 —— 「我做唔到」呢類斷言,同「我做得到」一樣要有證據。** 我對「做得到」一向要求 tool output(H7),但對「**做唔到**」就容許自己憑推理下結論,而呢次個推理錯咗一層。代價唔止係多問一條 —— 係**叫外部團隊做一件我哋自己做得到嘅嘢**,而佢哋照做嘅話冇人會發現我判斷錯。
+
+而且呢個同 **ADR-0026** 嗰條記得好熟嘅規矩係**鏡像**:嗰次係「唔可以由『某張 table 寫得』推論『另一張寫得』」(由通推通);今次係「唔可以由『data-plane 唔通』推論『件事做唔到』」(**由唔通推唔通**)。同一個結構,反方向,而我只防住咗一邊。
+
 ### Blockers
 
 - **F0-6** — 等 Chris 拍板 ADR-0027 D1 + 改 Status。**未 Accept 唔開 F2**(PROCESS R5)。
-- 🔴 **B1 仍然係硬 blocker** —— 三個解法要 infra 揀(Q1)。**冇 image 就乜都部署唔到**,F5/F6/F7 全部卡死。
-- 🟡 **B2** — 要 infra 建 database(Q2)。
+- 🔴 **B1 仍然係唯一硬 blocker** —— 三個解法要 infra 揀(Q1)。**冇 image 就乜都部署唔到**,F5/F6/F7 全部卡死。
 - ⚠️ **B3 outbound 半邊未答**(Q3)—— 呢個係本環境存在嘅意義。
+- ~~B2~~ 🟢 **已自己解決**(見上)。
 
 ### Actual vs Planned Effort
 
