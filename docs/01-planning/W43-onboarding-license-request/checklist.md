@@ -38,18 +38,19 @@ last_updated: 2026-08-03
 
 ## F2 — Onboarding intake → 建 O365 單
 
-- [ ] F2-1 決定 catalog item id 放邊（`ConnectorConfig` vs constant）+ 實作
-- [ ] F2-2 requester email → `sys_user` sys_id 解析
-- [ ] F2-3 **fail-closed**：解析不到 → 唔建單 + `request.submit` failure（**唔用 fallback 帳號**）
-- [ ] F2-4 variable mapping：4 個 mandatory 齊全
-- [ ] F2-5 `target_user` = requester sys_id（placeholder）· `target_users_email` = 真新用戶 email
-- [ ] F2-6 `target_user_opcos` = `opcoCode` 轉小寫；`action_type` = `new_license_assignment`
-- [ ] F2-7 `license_type` best-effort（對唔到留空，**唔 fail**）
-- [ ] F2-8 新 RITM sys_id / number 寫落 `RequestLineItem.serviceNowSysId` / `serviceNowNumber`（OQ-2）
-- [ ] F2-9 schema 註釋寫死「`Request.serviceNow*` = onboarding REQ；line item = UOP 建嗰張」
-- [ ] F2-10 多條 line → cart（OQ-3）
-- [ ] F2-11 failure：`request.submit`（未變）/ `request.mirror`（已變，**絕不重新提交**）
-- [ ] F2-12 test 覆蓋 F2-2 ~ F2-11
+- [x] F2-1 catalog item id → **env-only**（`SERVICENOW_O365/D365_CATALOG_ITEM_SYS_ID`）。**否決 `ConnectorConfig` column** —— ADR-0025 冇授權嗰個 schema 改動，env 零 schema 兼可逆；要 UI 可改 = 另一個 H1，批 C 再判斷
+- [x] F2-2 requester email → `sys_user` sys_id（`findUserSysIdByEmail`，F1-8）
+- [x] F2-3 **fail-closed**：解析不到 / 冇 requesterEmail → **唔打任何 SN 寫入**（專項 test 斷言 `orderNow` 零呼叫），**冇 fallback 帳號**
+- [x] F2-4 variable mapping：4 個 mandatory 齊全
+- [x] F2-5 `target_user` = requester（placeholder）· `target_users_email` = 真新用戶 email（專項 test 釘死）
+- [x] F2-6 `target_user_opcos` / `opcos` = `opcoCode` 轉小寫；`action_type` = `new_license_assignment`
+- [x] F2-7 `license_type` **一個字唔送**（`mandatory=false`，冇 mapping ⇒ 送個估更差）
+- [x] F2-8 新 RITM 寫落 `RequestLineItem.serviceNowSysId` / `serviceNowNumber`（OQ-2）
+- [x] F2-9 `schema.prisma` 註釋寫死兩張 REQ 嘅分工 + 點解平台自己嗰張**冇** `Request` 層位置
+- [x] F2-10 多條 line → cart（OQ-3），cart 非空 fail-closed
+- [x] F2-11 failure 分兩種：`request.submit`（外部未變 → repair 重新提交）/ `request.mirror`（**單已存在，絕不重新提交**，帶 `externalRef`）
+- [x] F2-12 test：5 個新 test，**含 once-guard**（n8n 重推唔會開第二張真飛）+ 兩種 failure kind 分辨
+- [x] F2-13 *(新增)* hook 點揀 `IntakeAdapterService.intakeFlat`，**唔郁 canonical `IntakeService`** —— 否則 ADR-0021 import-from-SN 呢類 caller（由已存在嘅 REQ 導入）會被無端開多一張單
 
 ## F3 — Gate ②：schema + sweep + 回填
 

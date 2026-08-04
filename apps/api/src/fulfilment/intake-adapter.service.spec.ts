@@ -10,6 +10,9 @@ import { ServiceNowService } from '../integration/servicenow/servicenow.service'
 import { ConnectorConfigService } from '../integration/connector-config.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
+import { RequestSubmissionProvider } from './request-submission.provider';
+import { OutboundFailureService } from './outbound-failure.service';
+import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
 import {
   N8N_INTAKE_EVENT,
   type N8nNativeIntakeDto,
@@ -61,11 +64,14 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
     request: Record<string, jest.Mock>;
     opco: Record<string, jest.Mock>;
     skuCatalog: Record<string, jest.Mock>;
+    requestLineItem: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
   let snow: { getRecordByNumber: jest.Mock };
   let connectorConfig: { resolve: jest.Mock };
   let audit: { log: jest.Mock };
+  let submission: { submit: jest.Mock };
+  let failures: { record: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -75,13 +81,30 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
       },
       opco: { findUnique: jest.fn() },
       skuCatalog: { findUnique: jest.fn(), findMany: jest.fn() },
-      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prisma)),
+      /**
+       * ADR-0025 D2 — default EMPTY, which makes `raiseLicenceRequest` return
+       * before it can call anything. Every test written before W43 therefore
+       * behaves exactly as it did; the ones that care opt in explicitly.
+       */
+      requestLineItem: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
+      },
+      // Two shapes now: the interactive callback form, and the array form the
+      // RITM write-back uses.
+      $transaction: jest.fn((arg: unknown) =>
+        Array.isArray(arg)
+          ? Promise.all(arg)
+          : (arg as (tx: unknown) => unknown)(prisma),
+      ),
     };
     snow = { getRecordByNumber: jest.fn() };
     // Default: no default SKU configured. Every pre-W42 test carries licence
     // lines, so injection never runs for them either way.
     connectorConfig = { resolve: jest.fn().mockResolvedValue(undefined) };
     audit = { log: jest.fn() };
+    submission = { submit: jest.fn() };
+    failures = { record: jest.fn() };
 
     // The REAL IntakeService is wired in on purpose: "nothing was written" then
     // means the whole path stayed dry, not just that a mock went uncalled.
@@ -93,6 +116,8 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
         { provide: ServiceNowService, useValue: snow },
         { provide: ConnectorConfigService, useValue: connectorConfig },
         { provide: AuditService, useValue: audit },
+        { provide: RequestSubmissionProvider, useValue: submission },
+        { provide: OutboundFailureService, useValue: failures },
       ],
     }).compile();
     adapter = moduleRef.get(IntakeAdapterService);
@@ -644,6 +669,139 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
 
       const { data } = prisma.request.create.mock.calls[0][0];
       expect(data.requesterEmail).toBeNull();
+    });
+
+    /**
+     * ADR-0025 D2 — after taking the onboarding in, the platform raises the
+     * `O365 User License Maintenance Request` it will later close itself.
+     */
+    describe('raising the licence request (ADR-0025 D2)', () => {
+      const pendingLine = () => ({
+        id: 'li-1',
+        quantity: 1,
+        serviceNowSysId: null,
+        sku: { skuId: 'guid-e5', skuPartNumber: 'SPE_E5' },
+      });
+
+      const submitted = () => ({
+        serviceNowSysId: 'new-req-sys',
+        serviceNowNumber: 'REQ0044200',
+        lineItems: [
+          {
+            skuId: 'guid-e5',
+            quantity: 1,
+            serviceNowSysId: 'new-ritm',
+            serviceNowNumber: 'RITM0055',
+          },
+        ],
+      });
+
+      it('submits the intaken lines and records the RITM on each', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+
+        await adapter.intakeFlat(flatPayload());
+
+        expect(submission.submit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            targetUpn: TARGET_EMAIL,
+            opcoCode: 'RHK',
+            requesterEmail: 'it.rhk@rapo.com.hk',
+            lineItems: [
+              { skuId: 'guid-e5', skuPartNumber: 'SPE_E5', quantity: 1 },
+            ],
+          }),
+        );
+        // OQ-2: the platform's own REQ lands on the LINE, never on the request —
+        // Request.serviceNowSysId stays the onboarding REQ (the idempotency key).
+        expect(prisma.requestLineItem.update).toHaveBeenCalledWith({
+          where: { id: 'li-1' },
+          data: {
+            serviceNowSysId: 'new-ritm',
+            serviceNowNumber: 'RITM0055',
+          },
+        });
+      });
+
+      /**
+       * 🔴 The guard that matters most in this file. `intakeFlat` is idempotent
+       * by design, so without it every re-push from n8n opens ANOTHER REAL
+       * TICKET for the same joiner — and nothing in the platform would look
+       * wrong afterwards.
+       */
+      it('does not raise a second ticket when n8n re-pushes', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([
+          { ...pendingLine(), serviceNowSysId: 'raised-already' },
+        ]);
+
+        await adapter.intakeFlat(flatPayload());
+
+        expect(submission.submit).not.toHaveBeenCalled();
+        // A correct no-op must also stay quiet — a queued failure here would
+        // send someone looking for a problem that does not exist.
+        expect(failures.record).not.toHaveBeenCalled();
+      });
+
+      it('asks for nothing when the request has no lines (default SKU unset)', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([]);
+
+        await adapter.intakeFlat(flatPayload());
+
+        expect(submission.submit).not.toHaveBeenCalled();
+      });
+
+      /**
+       * 🔴 Fail-soft. The Request is already written and visible by this point;
+       * throwing would turn "ServiceNow was briefly down" into "the onboarding
+       * vanished". The ticket is recoverable from the queue, a lost intake is
+       * not (same reasoning as ADR-0020 D6).
+       */
+      it('keeps the request and queues a SUBMIT failure when ServiceNow refuses', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockRejectedValue(new Error('SN 503'));
+
+        await expect(adapter.intakeFlat(flatPayload())).resolves.toBeDefined();
+
+        expect(failures.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: OUTBOUND_FAILURE_KINDS.REQUEST_SUBMIT,
+            requestId: 'r1',
+          }),
+        );
+        expect(prisma.requestLineItem.update).not.toHaveBeenCalled();
+      });
+
+      /**
+       * 🔴 ADR-0011 D3 — the two kinds are NOT interchangeable. Here the ticket
+       * EXISTS and only the local write failed, so the repair must replay from
+       * `externalRef` instead of submitting again. Recording this as
+       * `request.submit` would open a second real ticket on retry.
+       */
+      it('queues a MIRROR failure when the ticket was raised but not recorded', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+        prisma.requestLineItem.update.mockImplementation(() => {
+          throw new Error('db down');
+        });
+
+        await expect(adapter.intakeFlat(flatPayload())).resolves.toBeDefined();
+
+        expect(failures.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: OUTBOUND_FAILURE_KINDS.REQUEST_MIRROR,
+            externalRef: expect.objectContaining({
+              serviceNowSysId: 'new-req-sys',
+              serviceNowNumber: 'REQ0044200',
+            }),
+            requestId: 'r1',
+          }),
+        );
+      });
     });
   });
 });

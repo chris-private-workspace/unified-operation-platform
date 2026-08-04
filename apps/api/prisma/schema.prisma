@@ -272,6 +272,16 @@ model RequestLineItem {
 
   // ServiceNow sc_req_item (RITM) — two-level linkage (ADR-0008 D6 / CONTRACT §4).
   // Request.serviceNow* = parent REQ (sc_request); these = THIS line's RITM.
+  //
+  // 🔴 ADR-0025 OQ-2 — on an onboarding these two now point at DIFFERENT
+  // ServiceNow requests, and mixing them up is the easiest mistake to make here:
+  //   Request.serviceNow*  = the ONBOARDING REQ n8n raised (and the @unique
+  //                          idempotency key — it must never change)
+  //   these fields         = the O365 User License Maintenance Request the
+  //                          PLATFORM raised for this line, and the one it
+  //                          closes after assigning.
+  // The platform's own REQ deliberately has nowhere on `Request` to live: giving
+  // it one would mean two candidate idempotency keys for the same row.
   // Nullable: legacy rows + user-facing intake without a per-line RITM.
   serviceNowSysId     String?
   serviceNowNumber    String?

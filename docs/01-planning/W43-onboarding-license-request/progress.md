@@ -109,6 +109,33 @@ status: in-progress    # in-progress | closed
 
 - `f6ec471` — `chore(planning): kickoff W43 + ADR-0025 onboarding licence request creation`
 - `9afc5c3` — `refactor(fulfilment): W43 F0 — 停用 by-task close，兩個 task 欄改做 traceability`（F0-1..F0-5）
+- `1a29240` — `feat(integration): W43 F1 — 平台開單改行 Service Catalog API（修 BUG-010）`（F1-1..F1-9）
+
+---
+
+## Day 2 — 2026-08-04（同日，接住做）
+
+### Done
+
+- **F2 完成**（F2-1 ~ F2-13）：onboarding intake 收貨之後**即刻**建 `O365 User License Maintenance Request`，新 RITM 寫落對應 line item。api **861 → 866**，68 suites，lint exit 0。
+
+### 兩個實作決定（ADR 冇明講，記低理由）
+
+1. **Hook 喺 `IntakeAdapterService.intakeFlat`，唔喺 canonical `IntakeService`**。plan §1.1 講「唔碰 canonical CONTRACT」係其一，但真正理由更硬：**ADR-0021 `import-from-servicenow` 都行 `IntakeService`**，而嗰條路係「由一張**已經存在**嘅 SN REQ 導入」—— 喺嗰度建單會為一張已有嘅單再開多一張。
+2. **catalog item id 行 env 唔行 `ConnectorConfig`**。ADR-0013 精神係非機密配置落 DB 可 UI 改，但 ADR-0025 **冇授權** `ConnectorConfig` 加 column，而加 column = schema = H1。env 零 schema、可逆；要 UI 可改就批 C 另開。
+
+### 🔴 F2 最重要嗰個 guard
+
+`intakeFlat` **本身係 idempotent**（重推返同一個 Request）。所以「建單」如果冇 once-guard，**n8n 每重推一次就開多一張真飛**，而且平台側完全睇唔出有問題。Guard 用 line item 自己嘅 `serviceNowSysId`：呢條路佢一定係 null（1001 唔送 RITM），而**只有呢個 method 會填佢**。有專項 test 釘住。
+
+### Actual vs Planned Effort
+
+| Deliverable | Planned (h) | Actual (h) | Variance |
+|---|---|---|---|
+| F1 BUG-010 | ~3 | ~2.5 | — |
+| F2 建單 | ~3 | ~1.5 | 少咗，因為 F1-8 已經做起 requester 解析 |
+
+### Commits
 
 ---
 
