@@ -56,7 +56,8 @@ last_updated: 2026-08-04
 - [x] F3-3 `appBaseUrl` = `https://rapo-uop-web-dev.rci-t.com`(**唔係** infra 寫嘅 http —— custom domain 綁咗 SNI cert;待 Q4 確認)
 - [x] F3-4 其餘 secret 用 `RandomNumberGenerator` 生成(intakeApiKey hex-32B · authJwtSecret base64-48B · break-glass 密碼 19 字元 ≥3 類,符合 AUTH-4c-A policy)
 - [x] F3-5 verify:`git check-ignore -v` → **`.gitignore:7:deploy/azure/*.params.*.json`**(H4 硬要求)
-- [ ] F3-6 🔴 **待 Chris 決定**:DEV 要唔要接**真** Graph / ServiceNow?而家全部係非空 placeholder(constructor `getOrThrow` 只需非空就 boot)。接真 = 端到端驗得到,但 **assign 會真派 licence、建單會真開 SN 單**
+- [x] F3-6 ✅ **Chris 2026-08-04 拍板:先 placeholder,部署成功之後再逐個接** ⇒ params 檔現狀就啱,唔使改。理由:①B1 未解,部署都未得,呢個決定隨時改得 ②先驗 boot / migration / seed / 前端 / break-glass 登入,再接 vendor 係更小步,壞咗分得清邊層 ③接真 SN 會喺真 instance 開單,而手上已有 5 張測試單等 cancel。UAT 當初同樣先 placeholder 後補
+- [ ] F3-7 🚧 接真 vendor(**部署成功之後先做**)—— 逐個接,每個接完即驗;`ConnectorConfig` DB 值優先於 env(ADR-0013 Model C),改完要新 revision(C2 `onModuleInit`)
 
 ## F4 — web 建構調整 ✅ **零改動**(Option A 令本 deliverable 消失,plan changelog v1.2)
 

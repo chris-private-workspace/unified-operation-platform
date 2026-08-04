@@ -167,12 +167,21 @@ Chris 反問:「我們不能夠自行建立 DB 的嗎?即使有帳號?」
 
 而且呢個同 **ADR-0026** 嗰條記得好熟嘅規矩係**鏡像**:嗰次係「唔可以由『某張 table 寫得』推論『另一張寫得』」(由通推通);今次係「唔可以由『data-plane 唔通』推論『件事做唔到』」(**由唔通推唔通**)。同一個結構,反方向,而我只防住咗一邊。
 
-### Blockers
+### Decisions(Day 1 尾)
 
-- **F0-6** — 等 Chris 拍板 ADR-0027 D1 + 改 Status。**未 Accept 唔開 F2**(PROCESS R5)。
-- 🔴 **B1 仍然係唯一硬 blocker** —— 三個解法要 infra 揀(Q1)。**冇 image 就乜都部署唔到**,F5/F6/F7 全部卡死。
-- ⚠️ **B3 outbound 半邊未答**(Q3)—— 呢個係本環境存在嘅意義。
-- ~~B2~~ 🟢 **已自己解決**(見上)。
+- **ADR-0027 D1 = Option A**(Chris 2026-08-04)—— api ingress 收返 internal。
+- **F3-6 = 先 placeholder**(Chris 2026-08-04)—— DEV **暫時唔接**真 Graph / ServiceNow,部署成功之後再逐個接。理由:B1 未解部署都未得(決定隨時改得)· 先驗 boot/migration/seed/前端/break-glass 再接 vendor,壞咗分得清邊層 · 接真 SN 會喺真 instance 開單而手上已有 5 張等 cancel。
+- ⚠️ **`azure_url_for_api_call` 由今日起用唔著** —— Option A 令 api ingress 收返 internal。要同 infra 講(ADR-0027 OQ-2)。
+
+### Blockers(Day 1 收工狀態)
+
+**🔴 B1 = 唯一硬 blocker,而且卡死晒下游。** 三個解法要 infra 揀(Q1)。冇 image ⇒ F5/F6/F7 全部做唔到,連 F4-4(渲染 nginx.conf 逐行睇)都做唔到 —— 因為起唔到 web container。
+
+⚠️ **B3 outbound 半邊未答**(Q3)—— 呢個係本環境存在嘅意義,但佢**唔阻部署**,阻嘅係部署之後嗰半。
+
+~~B2~~ 🟢 已自解 · ~~F0-6~~ ✅ 已 Accept · ~~F3-6~~ ✅ 已拍板。
+
+**⇒ 所有唔受 B1 影響嘅嘢已經做晒。** 下一步唔喺我哋手。
 
 ### ✅ F0 Accepted → F2 + F3 一次過交付
 
