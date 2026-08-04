@@ -58,12 +58,12 @@ last_updated: 2026-08-04
 - [x] F3-5 verify:`git check-ignore -v` → **`.gitignore:7:deploy/azure/*.params.*.json`**(H4 硬要求)
 - [ ] F3-6 🔴 **待 Chris 決定**:DEV 要唔要接**真** Graph / ServiceNow?而家全部係非空 placeholder(constructor `getOrThrow` 只需非空就 boot)。接真 = 端到端驗得到,但 **assign 會真派 licence、建單會真開 SN 單**
 
-## F4 — web 建構調整
+## F4 — web 建構調整 ✅ **零改動**(Option A 令本 deliverable 消失,plan changelog v1.2)
 
-- [ ] F4-1 `nginx.conf.template` `/api` upstream 支援 **https + external**(DEV `allowInsecure=false`)
-- [ ] F4-2 重新確認 `Host` header 規則喺 https upstream 下仍啱(runbook §8.2 個 `$proxy_host` 坑)
-- [ ] F4-3 改動經 template 變數,**唔影響 UAT** — 用 UAT 值渲染一次對比
-- [ ] F4-4 verify:本機起 web container 渲染出嚟嘅 nginx.conf 逐行睇過
+- [x] F4-1 ~~upstream 改 https+external~~ **唔需要** —— Option A 之後 DEV 同 UAT 一模一樣(`http://` + internal FQDN),`API_UPSTREAM` 本來就係 env 渲染
+- [x] F4-2 `Host $proxy_host` 規則**原樣適用**(api 仍係 internal ingress,正正係嗰條規則存在嘅原因)
+- [x] F4-3 `apps/web/nginx.conf.template` **零 diff** ⇒ 對 UAT 零影響
+- [ ] F4-4 🚧 實際渲染出嚟嘅 `nginx.conf` 逐行睇 —— **卡 B1**(起唔到 web container:`docker pull` base image 撞 Docker Hub 503)⇒ **移去 F6 部署後驗**
 
 ## F5 — image build + push(🔴 **前置 B1 —— 2026-08-04 實測兩條路都斷,等 infra 揀解法**)
 

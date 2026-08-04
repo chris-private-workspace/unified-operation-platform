@@ -88,15 +88,16 @@ Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的�
 - **Effort estimate**:2h
 - **Owner**:AI
 
-### F4 — web 建構調整(api base URL + nginx upstream)
+### F4 — web 建構調整 —— ✅ **零改動(ADR-0027 Option A 之後,本 deliverable 消失)**
 
 - **Spec ref**:`apps/web/nginx.conf.template` · `04-deploy-runbook.md` §8.2
-- **Dependencies**:F0
-- **Acceptance criteria**:
-  - nginx `/api` upstream 由 UAT 嘅 **http + internal** 改成 DEV 嘅 **https + external**(DEV api `allowInsecure=false`)
-  - `Host` header 規則(UAT 嗰個 `$proxy_host` 坑,runbook §8.2)喺 https upstream 下重新確認
-  - 改動**唔影響 UAT** —— 靠 template 變數而唔係改死值
-- **Effort estimate**:3h
+- **Dependencies**:F0(**已 Accept = Option A**)
+- **原本 acceptance**(前提已冇):「nginx `/api` upstream 由 http+internal 改成 **https+external**」—— 呢條寫嘅時候 assume 咗 api 會保持 external。
+- **實際結果**:Option A 令 DEV 嘅 upstream 形狀**同 UAT 一模一樣**(`http://` + **internal** FQDN + `Host $proxy_host` + api `allowInsecure:true`)⇒ **`nginx.conf.template` 一個字都唔使改**,`API_UPSTREAM` 本來就係 env 渲染。
+- **保留驗證**:
+  - [x] 邏輯核對 —— `aca-dev.json` 出嘅 `API_UPSTREAM` = `http://` + api internal fqdn,配 nginx `proxy_pass ${API_UPSTREAM}/` + `proxy_set_header Host $proxy_host`,同 UAT as-built 逐項對得上
+  - 🚧 實際渲染出嚟嘅 `nginx.conf` 逐行睇 —— **卡 B1**(起唔到 web container:`docker pull` base image 撞 Docker Hub 503)⇒ 移去 **F6** 部署後驗
+- **Effort estimate**:3h → **實際 ~0.25h**
 - **Owner**:AI
 
 ### F5 — image build + push
@@ -205,6 +206,7 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-04 | Initial plan | — | Chris Lai |
+| 2026-08-04 | **v1.2 — F0 Accepted(Option A)⇒ F4 deliverable 消失;B2 自解** | ①Chris Accept **ADR-0027 D1 = Option A**(api 收返 internal)⇒ DEV upstream 形狀**同 UAT 一模一樣**,原本 F4「nginx 改 https+external」嘅**前提冇咗**,`nginx.conf.template` 零改動(3h → 0.25h)。呢個係 Option A 一個落 plan 時冇預見嘅好處。②**B2 由 blocker 變自解** —— 原判斷「PG private 連唔到所以建唔到 database」錯,建 database 係 management plane 操作;已自建 `platform`,Q2 由 infra 問題清單拎走。③新增 **B5**(web portal scheme 對唔上)| Chris Lai |
 | 2026-08-04 | **v1.1 — 「UAT」正名 + B3 升級 + F7 加 outbound 半邊** | Chris 更正:之前部署嗰個唔係真 UAT,只係自建測試環境(冇 VNet)⇒ 同 n8n **兩個方向都接唔通**,而呢個就係 W36–W42 嗰句「n8n 側零 live 驗證」嘅根本原因。連帶三項:①六處差異塌縮成「自建孤島 → 企業託管」一個轉變(B1 隨之由「registry 唔知去咗邊」變「企業中央 registry 座標同權限」)②**B3 由部署細節升格成本環境成敗關鍵**(outbound 繫於 ACA env VNet 整合,而 **ADR-0027 D1 揀 A 定 B 都改變唔到**)③F7 acceptance 補 outbound —— 原本只寫 inbound,會令「接通」驗一半當全部 | Chris Lai |
 
 ---
