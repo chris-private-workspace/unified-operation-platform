@@ -105,7 +105,7 @@ last_updated: 2026-08-03
 - [ ] G3 — root `npm run lint` exit 0（CI 真正 gate 嗰條）
 - [ ] G4 — tsc api + web 各 0 error
 - [ ] G5 — migration scratch DB apply + rollback
-- [ ] G6 — **live 真建一張 O365 單**（⚠️ 需 Chris 明示批准，SN 刪唔到）
+- [x] G6 — **live 真建一張 O365 單** ✅（Chris 2026-08-04 批准）：**REQ0044071 / RITM0047366 / SCTASK0071831**（`Execution Step` · `O365 Support` · 剛好 1 張 active）。行 production class 唔另寫 SN 呼叫；獨立 read 覆核 variables（`target_user` = requester · `license_type` 空 · `rapo` 小寫）。⚠️ **張單要人手 cancel**
 - [ ] G7 — **live** gate ② 由未通 → 通，`target_user` 真係由 requester 變新用戶
 - [ ] G8 — **live** close 成功 + 兄弟 task 冇郁
 - [ ] G9 — 前端 light + dark + `ui-design` 跑過

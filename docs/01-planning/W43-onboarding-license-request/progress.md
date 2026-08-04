@@ -128,12 +128,33 @@ status: in-progress    # in-progress | closed
 
 `intakeFlat` **本身係 idempotent**（重推返同一個 Request）。所以「建單」如果冇 once-guard，**n8n 每重推一次就開多一張真飛**，而且平台側完全睇唔出有問題。Guard 用 line item 自己嘅 `serviceNowSysId`：呢條路佢一定係 null（1001 唔送 RITM），而**只有呢個 method 會填佢**。有專項 test 釘住。
 
+### ✅ G6 live 驗證通過（Chris 2026-08-04 批准真 POST）
+
+驗法：**行 production class**（`ServiceNowService` + `DirectServiceNowProvider`，只 stub `ConfigService`/`ConnectorConfigService` 令佢唔使 DB），**唔另寫一段 SN 呼叫** —— 嗰樣只會再證一次 BUG-010 §2 #5 已知嘅嘢，證唔到出貨嘅 code。Dry-run 先行，`--post` 至寫。
+
+| | |
+|---|---|
+| REQ | **REQ0044071** · `request_state=Approved` · `requested_for=Chris Lai` |
+| RITM | **RITM0047366** · `cat_item = O365 User License Maintenance Request`（唔係 D365）· `[UOP TEST]` 已標 |
+| Task | **SCTASK0071831** · `Execution Step` · `O365 Support` · **剛好 1 張 active** |
+
+**獨立 read 覆核**（唔用 script 自己嘅 output，直接查 SN）：`target_user` = requester sys_id ✅（D3 placeholder 真係生效）· `target_users_email` = 新人地址 ✅ · `license_type` **留空** ✅（D7）· `opcos` / `target_user_opcos` = `rapo` 小寫 ✅ · `action_type = new_license_assignment` ✅
+
+⇒ **BUG-010 → `done`** · **ADR-0025 D6「close 零新 code」得到實證**：1 RITM : 1 task 正正係 ADR-0018 D3 要求嗰個形狀。
+
+一次性 script **跑完即刪**（hardcode 咗 requester email，而且係 gate 驗證唔係持續工具；造 SN fixture 嘅需要 CH-014 script 已經覆蓋）。
+
+🔴 **順帶揭到、影響 production**：SN 個 **integration account 冇 email address**。CH-014 script 靠直接畀 sys_id 所以無事，但 production 靠 email 反查 ⇒ **integration account 做唔到 requester**。連帶：onboarding 路徑嘅 `requesterEmail` 係 n8n 由 **Outlook sender** 帶落嚟，唔保證係某個 `sys_user` 嘅 email；搵唔到就按 D3 fail-closed 唔建單（設計上正確，但命中率要 live 先知）—— plan **R2** 兌現。
+
+⚠️ **REQ0044071 要人手 cancel**（SN 刪唔到），同 CH-014 OQ-2 嗰 3 張一齊處理。
+
 ### Actual vs Planned Effort
 
 | Deliverable | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
 | F1 BUG-010 | ~3 | ~2.5 | — |
 | F2 建單 | ~3 | ~1.5 | 少咗，因為 F1-8 已經做起 requester 解析 |
+| G6 live | ~1 | ~0.7 | — |
 
 ### Commits
 
