@@ -1,5 +1,14 @@
 # ADR-0012 — Azure UAT 部署 topology(Container Apps 單一 origin)
 
+> ## 🔴 2026-08-04 命名更正 —— 本 ADR 講嘅「UAT」實際係一個**自建測試環境**
+>
+> Chris 2026-08-04 更正:W32/W33 部署嗰個環境**唔係企業 UAT**,只係一個測試用嘅 Azure 環境 —— 自建 RG + 自建 ACR + 自建 ACA env(**冇 VNet 整合**)+ PG public `0.0.0.0`,住喺 Azure 公網上,**同企業網絡冇任何連繫** ⇒ **同 n8n 兩個方向都接唔通**(inbound 冇企業 domain 入口;outbound 打唔入內網)。
+>
+> **本 ADR 嘅技術決定全部仍然成立、冇一條被推翻** —— 單一 origin、ACA、managed Postgres、Redis 暫緩、dual-provider 認證,全部照用,而且 **ADR-0027 明文擴充佢到第二個環境**。錯嘅只係個**環境名**。
+>
+> ⇒ 讀本 ADR 時,把「UAT」讀成「**第一個 Azure 環境(自建測試)**」。真正接得通企業網絡嘅環境見 **ADR-0027** + `docs/13-deployment/09-dev-as-built.md`。
+> **點解唔改標題**:改咗會令 git history / commit message / 大量交叉引用永久對唔上(W36 同一判斷)。Chris 拍板保留。
+
 - **Status**:Accepted
 - **Date**:2026-07-22
 - **Owner**:Chris Lai

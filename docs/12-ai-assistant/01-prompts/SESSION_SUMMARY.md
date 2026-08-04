@@ -5,7 +5,19 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-04,W43 收官)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api ~878 test(68 suites)· web ~281 test(31 files)**。ADR 到 **0026** · CH 到 **020**。⚠️ **W43 未部署上 UAT**。
+**當前座標(2026-08-04,W43 收官)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api ~878 test(68 suites)· web ~281 test(31 files)**。ADR 到 **0027** · CH 到 **020**。⚠️ **W43 未部署**。**W44 進行中 = 部署上新 Azure DEV 環境**(見下)。
+> ## 🔴 環境:「Azure UAT」係誤名(2026-08-04 Chris 更正)—— 呢格睇漏會用錯前提開始
+>
+> **W32/W33 部署嗰個唔係企業 UAT,只係一個自建測試 Azure 環境**:自建 RG(`RG-RCITest-RAPO-N8N`)/ ACR / ACA env(**冇 VNet 整合**)+ PG public,住喺 Azure 公網,**同企業網絡零連繫**。
+>
+> ⇒ **佢同 n8n 兩個方向都接唔通**:inbound 冇企業 domain 入口;**outbound 打唔入內網**(n8n 住 on-prem / 內部 VM)。
+> 🔴 **呢個就係 W36–W42 一路 carry 嗰句「n8n 側從未真接通,三個 seam 零 live 驗證」嘅根本原因 —— 唔係漏做,係環境上做唔到。**
+>
+> **檔名 / ADR 標題刻意保留**(改名會令 git history 永久對唔上,W36 判斷)⇒ 讀 `07-uat-as-built.md` / ADR-0012 嗰陣,把「UAT」讀成「**第一個 Azure 環境(自建測試)**」;兩個檔頂都有更正 blockquote。
+>
+> **真正接得通企業網絡嘅環境 = `RG-RAPO-UOP-DEV`**(infra 2026-08-04 交付 · 企業共用 ACA env `acaen-rapo-dev` + hub VNet PE + custom domain `rapo-uop-web-dev.rci-t.com`)—— **W44 進行中,未部署**。🔴 三個 blocker 全部要 infra:①**企業中央 ACR** 座標 + AcrPush(畀嘅值係 GUID,ACR 名唔可能有 dash)②**PG credential**(server admin 實測 `rcitadmin`,唔係畀嘅 `rapoaiuopdev`)③**ACA env 有冇 VNet 整合** —— ③ **唔止管 DB,UOP → n8n outbound 一樣繫於佢**,所以佢係本環境成敗嘅關鍵,而 **ADR-0027 D1 揀邊個都改變唔到**(ingress 係 inbound 概念)。
+> ADR-0027(**Proposed**,待拍板 D1:api 收返 internal[推薦]定保持 external)· `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。
+
 > 🔴 **W43 最要緊嗰三件(ADR-0025 / 0026)**:
 > ① **onboarding intake 收貨即刻自己建一張 `O365 User License Maintenance Request`**(catalog `order_now`/cart,**唔係** Table API insert —— `sc_request` insert 403,BUG-010)。once-guard = **line item 自己嘅 `serviceNowSysId`**;冇佢嘅話 n8n 每重推一次就開多一張**真飛**,而平台側完全睇唔出。
 > ② **assign 由單閘變雙閘**:`azureSyncedAt`(Graph)**同** `serviceNowUserSyncedAt`(SN 有冇呢個人)。兩個都**冇得 override** —— `budgetOverrideReason` override 唔到,因為 sync gate 唔係決定,係「呢個人存唔存在」嘅事實。sweep 一個 vendor 一個 abort flag。

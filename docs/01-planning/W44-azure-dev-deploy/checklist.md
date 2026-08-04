@@ -18,7 +18,7 @@ last_updated: 2026-08-04
 - [x] F0-4 Alternatives — Option A 收返 internal / Option B 保持 external + D2 三項收窄 / Option C per-path(ACA 做唔到)/ Option D 前端直打 api(明確 reject)
 - [x] F0-5 明寫 **cookie 邊界不變**(AUTH-4c-B `SameSite=Strict` httpOnly 唔受影響 —— 兩個選項嘅分別**只在 machine-to-machine**,唔涉及瀏覽器)
 - [ ] F0-6 🔴 **等 Chris 拍板 D1 + 改 Status = Accepted**(未 Accept 唔可以開 F2)
-- [ ] F0-6b 🔴 查 **OQ-1**:n8n UAT 解析唔解析到 `rapo-uop-web-dev.rci-t.com`(決定 A 走唔走得通)
+- [x] F0-6b **OQ-1 resolved**(Chris 2026-08-04):n8n UAT 住喺**企業內網**(on-prem / 內部 VM)⇒ 解析得到企業 domain,**Option A 走得通**。⚠️ 仍係推論唔係實測 ⇒ 實測降級做 **F7-1**,唔再 block D1
 - [x] F0-7 `docs/adr/README.md` index 加一行(順帶修正 **ADR-0026 index status** `Proposed` → `Accepted`,檔本身一直係 Accepted,W43 收官漏改)
 
 ## F1 — 環境 discovery + 差異登記
@@ -89,6 +89,12 @@ last_updated: 2026-08-04
 - [ ] F7-6 對:`requestId` 係 REQ number 唔係冪等鍵 sysId
 - [ ] F7-7 對:2003 sticky 要求 assigner skip 已持有 E5 嘅 user
 - [ ] F7-8 逐項標明係 **n8n 側改** 定 **平台側改**
+
+### 🔴 F7 outbound 半邊(舊環境做唔到嗰樣 —— 唔驗呢半就係「接通」驗一半當全部)
+
+- [ ] F7-9 由 UOP container 側實試打企業內網嘅 n8n(ADR-0017 三個接縫嘅 outbound)
+- [ ] F7-10 verify:**n8n 側真收到**,唔可以只睇平台側冇 error —— B3 唔通嘅話呢個會**紅得靜**(provider fail 但 app 照起得身)
+- [ ] F7-11 三個接縫逐個確認:outbound webhook(`N8N_OUTBOUND_WEBHOOK_*`)· `LicenseOperationsProvider` · `TicketUpdateProvider`
 
 ## F8 — doc sync + closeout
 

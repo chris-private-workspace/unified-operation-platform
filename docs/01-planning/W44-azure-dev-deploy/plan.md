@@ -22,7 +22,21 @@ prior_phase: W43-onboarding-license-request
 
 Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的係令 UOP **同 n8n UAT 環境接得通** —— 呢個正正解封 W36/W39/W40/W42 一路 carry 落嚟嗰個「n8n 側從未真接通,所有 seam 零 live 驗證」嘅缺口。本 phase 要把 UOP(`apps/api` + `apps/web`)部署上呢個環境並驗到端到端。
 
-**呢個唔係「照跑一次 UAT runbook」**。實測(2026-08-04,SP 真登入)顯示 DEV 同 UAT 有**六處結構性差異**,其中三處係 blocker(見 §4)。最要緊嘅一處係 **API ingress 由 internal 變 external** —— 呢個係安全邊界改變,必須先出 ADR 由 Chris 拍板(F0),**未 Accept 之前唔落任何部署 code**。
+### 🔴 2026-08-04 Chris 更正 —— 之前嗰個「UAT」唔係 UAT
+
+**W32/W33 部署嗰個環境唔係企業 UAT,只係一個測試用嘅 Azure 環境** —— 自建 RG(`RG-RCITest-RAPO-N8N`)+ 自建 ACR + 自建 ACA env(**冇 VNet 整合**)+ PG public `0.0.0.0`,住喺 Azure 公網上,**同企業網絡冇任何連繫**。
+
+⇒ **佢同 n8n 兩個方向都接唔通**:inbound 冇企業 domain 入口;**outbound 打唔入企業內網**(n8n 住喺 on-prem / 內部 VM,Chris 2026-08-04 確認)。**呢個就係 W36/W39/W40/W42 嗰句「n8n 側從未真接通」嘅根本原因 —— 唔係漏做,係環境上做唔到。**
+
+命名更正處理:**保留舊檔名 / ADR 標題**,靠 blockquote 更正(改名會令 git history 永久對唔上,W36 教訓)。已加註 `07-uat-as-built.md` + ADR-0012 頂部。
+
+### 本 phase 唔係「照跑一次 runbook」
+
+實測(2026-08-04,SP 真登入)顯示新環境同舊環境有**六處差異**,其中三處係 blocker(見 §4)。而呢六處**唔係六件獨立嘅事**,係「**自建孤島 → 企業託管**」同一個轉變嘅表現 —— 理解咗呢點,B1 就由「registry 唔知去咗邊」變成「registry 係**企業中央**嗰個,只有一個 RG scope 嘅 SP 梗係睇唔到」。
+
+最要緊嘅兩處:
+1. **API ingress 由 internal 變 external** —— 安全邊界改變,必須先出 ADR 由 Chris 拍板(F0),**未 Accept 之前唔落任何部署 code**。
+2. 🔴 **B3(ACA env VNet 整合)由「部署細節」升格成「本環境成敗嘅關鍵」** —— outbound 半邊(ADR-0017 三個接縫)完全繫於佢。**ADR-0027 D1 揀 A 定 B 都改變唔到呢件事**(ingress 係 inbound 概念)。
 
 ## 2. Deliverables
 
@@ -114,7 +128,9 @@ Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的�
 - **Spec ref**:`docs/13-deployment/08-n8n-integration-go-live.md` · `N8N-INTEGRATION-SETUP`
 - **Dependencies**:F6
 - **Acceptance criteria**:
-  - n8n UAT 打得到 `POST /requests/intake`(flat mode contract,W43 F1)—— **真 201 + DB 真 row**
+  - **兩個方向都要驗,唔可以只驗 inbound**:
+    - **inbound** — n8n UAT 打得到 `POST /requests/intake`(flat mode contract,W43 F1)—— **真 201 + DB 真 row**
+    - 🔴 **outbound** — UOP container **打得入企業內網嘅 n8n**(ADR-0017 三個接縫嘅另一半)。呢個先係舊環境做唔到嗰樣;若 B3 唔通,呢項一定紅,而且**紅得靜**(provider 會 fail 但唔會令 app 起唔到身)
   - W42 retro 列低嗰 **五個 n8n 側缺口**逐個對(URL `/api` 前綴 · `X-Intake-Key` 冇送 · `resolveOpco` 只認 RHK/RAPO · `requestId` 用 REQ number 唔係 sysId · 2003 sticky skip 已持有 E5)
   - 未通嘅逐項標明係 **n8n 側要改** 定 **平台側要改**,唔可以含糊
 - **Effort estimate**:6h
@@ -155,7 +171,7 @@ Infra team 交付咗一個**新嘅 Azure DEV 環境**(`RG-RAPO-UOP-DEV`),目的�
 |---|---|---|---|---|
 | **B1** | 🔴 **冇任何可達嘅 container registry** —— `azure_container_registry` 個值係 GUID(`4a6e1474-…`),而 ACR 名只准 5–50 純字母數字 ⇒ **唔可能係 ACR 名**;實測 RG 內冇 ACR、`az acr list` 返空、嗰個 GUID 亦唔係 subscription id | **確定** | **致命** —— build/push/pull 全部做唔到 | 問 infra team 攞 registry 全名 + login server + 憑證;SP 需要 **AcrPush** |
 | **B2** | 🔴 **PG credential 對唔上** —— server admin 係 `rcitadmin`,但 `.env` 畀嘅係 `rapoaiuopdev`;UOP 用嘅 database 建咗未、叫咩名,未知 | **確定** | **致命** —— `databaseUrl` 砌唔到 | 問 infra team:`rapoaiuopdev` 係 db 名定 user?pw 對應邊個?database 名? |
-| **B3** | 🔴 **ACA env 連唔連到 private PG/Redis,無法確認** —— 兩者 `publicNetworkAccess=Disabled`,PE 落 `vNet-RCITest-HKG/Subnet-RCITest-D-DB`,但 SP **讀唔到** `acaen-rapo-dev`(AuthorizationFailed),而且 PE **`dnsZoneGroup=null`**(冇綁 private DNS zone group) | **中** | **致命** —— container 起得身但連唔到 DB | 問 infra team 確認 VNet 整合 + DNS 解析路徑;否則只能部署後實測 |
+| **B3** | 🔴🔴 **ACA env 有冇 VNet 整合,無法確認** —— PG/Redis 兩者 `publicNetworkAccess=Disabled`,PE 落 `vNet-RCITest-HKG/Subnet-RCITest-D-DB`,但 SP **讀唔到** `acaen-rapo-dev`(AuthorizationFailed),而且 PE **`dnsZoneGroup=null`**。**2026-08-04 升級**:呢個唔止管 DB —— **UOP → n8n outbound(ADR-0017 三個接縫)一樣繫於佢**,因為 n8n 住喺企業內網,ACA 冇 VNet 整合就打唔入去(呢個正正係舊環境接唔到 n8n 嘅原因) | **中** | **致命 ×2** —— container 起得身但①連唔到 DB ②打唔到 n8n ⇒ **本環境嘅存在意義冇咗** | 問 infra team 確認 VNet 整合 + DNS 解析路徑 + 有冇路由到 on-prem;否則只能部署後由 container 側實試 |
 | **B4** | SP 對 `acaen-rapo-dev` 連 read 都冇 ⇒ 部署 container app 若需要 `managedEnvironments/join/action` 會 403 | 中 | 高 | 實測(要先過 B1);必要時問 infra 補權 |
 | R5 | **PG v18**(UAT 係 v16)—— Prisma migration 未喺 v18 跑過 | 中 | 中 | F6 G8 明確驗;失敗即回報,唔靜靜兜 |
 | R6 | ARM 宣告式覆蓋會**刪走 infra team 已配好嘅嘢**(尤其 web custom domain + SNI cert binding) | 中 | 高 | F2 明確保留;部署前先 `az resource show` 存底,部署後逐項對返 |
@@ -188,6 +204,7 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-04 | Initial plan | — | Chris Lai |
+| 2026-08-04 | **v1.1 — 「UAT」正名 + B3 升級 + F7 加 outbound 半邊** | Chris 更正:之前部署嗰個唔係真 UAT,只係自建測試環境(冇 VNet)⇒ 同 n8n **兩個方向都接唔通**,而呢個就係 W36–W42 嗰句「n8n 側零 live 驗證」嘅根本原因。連帶三項:①六處差異塌縮成「自建孤島 → 企業託管」一個轉變(B1 隨之由「registry 唔知去咗邊」變「企業中央 registry 座標同權限」)②**B3 由部署細節升格成本環境成敗關鍵**(outbound 繫於 ACA env VNet 整合,而 **ADR-0027 D1 揀 A 定 B 都改變唔到**)③F7 acceptance 補 outbound —— 原本只寫 inbound,會令「接通」驗一半當全部 | Chris Lai |
 
 ---
 
@@ -209,23 +226,26 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 | App Insights | `appi-rapo-uop-dev` · connection string 攞到 |
 | Container Registry | 🔴 **RG 內冇,sub-level list 返空** |
 
-## 附錄 B — DEV vs UAT 六處差異
+## 附錄 B — DEV vs 舊測試環境 六處差異
 
-| # | 差異 | UAT | DEV | 影響 |
+> **全部係「自建孤島 → 企業託管」同一個轉變嘅表現**,唔係六件獨立嘅事。
+
+| # | 差異 | 舊測試環境 | DEV | 影響 |
 |---|---|---|---|---|
 | 1 | API ingress | **internal**(web 做單一 origin) | **external** | **F0 ADR** — 安全邊界改變 |
-| 2 | ACA env | 自己建(`aca.json` 內) | **共用既有**,喺另一個 RG,SP 無 read 權 | **F2** — 要新 template |
+| 2 | ACA env | 自己建(`aca.json` 內)**冇 VNet** | **共用既有**,喺另一個 RG,SP 無 read 權 | **F2** — 要新 template;**B3** — outbound 命脈 |
 | 3 | DB 網絡 | public `0.0.0.0`(allow Azure services) | **Private Endpoint,public disabled** | **B3** — 連通性未確認 |
 | 4 | PG 版本 | 16 | **18** | **G8** — Prisma 未驗過 |
-| 5 | Registry | 自建 ACR(RG 內) | **冇** | **B1** — blocker |
-| 6 | 額外資源 | — | **Redis + App Insights + custom domain/SNI cert** | R8(Redis 唔接)· F3(appBaseUrl 用 https custom domain) |
+| 5 | Registry | 自建 ACR(RG 內) | **冇 —— 應該係企業中央嗰個** | **B1** — blocker |
+| 6 | 額外資源 | — | **Redis + App Insights + custom domain/SNI cert** | R8(Redis 唔接)· F3(appBaseUrl 用 https custom domain)· **custom domain = n8n inbound 嘅入口** |
 
 ## 附錄 C — 交畀 infra team 嘅問題
 
-1. UOP DEV 要 push/pull container image,用邊個 ACR?請畀 **registry 全名 + login server + 憑證**(或確認 `4a6e1474-a105-4ea4-b273-3c6ae7f1923a` 呢個 GUID 代表咩)。SP `d2f094a3-…` 需要對該 registry 有 **AcrPush**。
-2. `pgsql-rapo-uop-dev`:`rapoaiuopdev` 係 database 名定 DB user?配嘅 password 對應邊個?UOP 用嘅 database 建咗未、叫咩名?
+1. UOP DEV 要 push/pull container image,用**企業中央嘅邊個 ACR**?請畀 **registry 全名 + login server + 憑證**(或確認 `4a6e1474-a105-4ea4-b273-3c6ae7f1923a` 呢個 GUID 代表咩)。SP `d2f094a3-…` 需要對該 registry 有 **AcrPush**(佢而家只係 `RG-RAPO-UOP-DEV` Contributor,睇唔到任何 registry)。
+2. `pgsql-rapo-uop-dev`:`rapoaiuopdev` 係 database 名定 DB user?配嘅 password 對應邊個?UOP 用嘅 database 建咗未、叫咩名?(server admin 實測係 `rcitadmin`)
 3. `acaen-rapo-dev` 有冇整合 `vNet-RCITest-HKG`?兩個 PE 冇 private DNS zone group,container app 內部點解析 `pgsql-rapo-uop-dev.postgres.database.azure.com` / `redis-rapo-uop-dev.redis.cache.windows.net` 到私有 IP?
 4. SP 有冇 `Microsoft.App/managedEnvironments/join/action` 落 `acaen-rapo-dev`?
+5. 🔴 **container app 打唔打得入企業內網嘅 n8n?**(n8n 住 on-prem / 內部 VM)呢個係本環境存在嘅意義 —— 舊環境接唔到 n8n 就係因為自建 ACA env 冇 VNet 整合。請確認 `acaen-rapo-dev` 出得去嘅路由範圍,同埋 UOP 應該用邊個 n8n base URL。
 
 ---
 

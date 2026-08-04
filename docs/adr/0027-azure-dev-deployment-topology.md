@@ -1,6 +1,6 @@
 # ADR-0027 — Azure DEV 部署拓撲:api ingress 對外定收返 internal(擴 ADR-0012 至第二個雲環境)
 
-- **Status**:**Proposed** —— 🔴 **待 Chris 拍板 D1**(兩個選項並列,見下)
+- **Status**:**Proposed** —— 🔴 **待 Chris 拍板 D1**(**OQ-1 已 resolved 2026-08-04 ⇒ 推薦嘅 Option A 走得通**,見下)
 - **Date**:2026-08-04
 - **Owner**:Chris Lai
 - **觸發**:CLAUDE.md §5 **H1**(部署 topology = 架構決定,同 ADR-0012 同源)+ **H4**(把 API 直接暴露互聯網 = 安全邊界改變)
@@ -10,6 +10,31 @@
 ---
 
 ## Context
+
+### 🔴 先更正一個一直錯咗嘅前提:之前嗰個「UAT」唔係 UAT
+
+Chris 2026-08-04 更正:**W32/W33 部署嗰個環境唔係真正嘅 UAT,只係一個測試用嘅 Azure 環境** —— 我哋自己喺 `rcitest` subscription 由零建起嘅**孤島**(自建 RG + 自建 ACR + 自建 ACA env**冇 VNet 整合** + PG 開 public `0.0.0.0`)。佢住喺 Azure 公網上,同企業網絡**冇任何連繫**。
+
+**呢個就係佢連唔到 n8n 嘅根本原因,而且係雙向嘅**:
+
+| 方向 | 用途 | 舊環境點解唔通 |
+|---|---|---|
+| **n8n → UOP** | `POST /requests/intake` | n8n 喺企業內網,而舊環境只有一個 `azurecontainerapps.io` 公網 FQDN,冇企業 domain 入口 |
+| **UOP → n8n** | outbound webhook · `LicenseOperationsProvider` · `TicketUpdateProvider`(ADR-0017 三個接縫) | 🔴 ACA env **冇 VNet 整合** ⇒ **打唔入企業內網**,無論 n8n 個 URL 係咩 |
+
+⇒ ADR-0012 同 `07-uat-as-built.md` 入面所有「UAT」字眼,**實際指嘅係「自建測試環境」**。命名更正處理:Chris 拍板**保留檔名 / ADR 標題**(改名會令 git history 同文檔引用永久對唔上,W36 教訓),改為喺每個相關檔頂加更正 blockquote。
+
+### 呢個更正令「六處差異」塌縮成一件事
+
+W44 F1 原本列咗 DEV 同舊環境有六處差異。有咗上面個更正,佢哋唔係六件獨立嘅事 —— 係**「自建孤島 → 企業託管」同一個轉變嘅六個表現**:共用 ACA env(企業 env)· PE 落 `vNet-RCITest-HKG`(企業 hub)· **冇 ACR**(registry 應該係企業中央嗰個,所以只有一個 RG scope 嘅 SP 睇唔到 —— **B1 由「唔知去咗邊」變成「要問企業中央 registry 座標同權限」**)· custom domain `.rci-t.com` · PG v18 / App Insights(infra 標準)· api external ingress(infra 假設,即本 ADR 要拍板嗰樣)。
+
+### 本 ADR 管乜、唔管乜(範圍澄清)
+
+🔴 **D1 只管 inbound**(n8n → UOP)。**Outbound(UOP → n8n)完全唔受 D1 影響** —— ingress 設定係 inbound 概念,api 收唔收返 internal 同 UOP 打唔打得出去無關。Outbound 通唔通,**完全繫於 ACA env 有冇 VNet 整合 + 路由到 on-prem**(即 W44 **B3**)。
+
+⇒ **B3 升級**:佢原本只係「container 連唔連到 private PG/Redis」,而家連 **ADR-0017 三個接縫嘅 outbound 半邊通唔通都繫喺佢度**。呢個環境開嚟就係為咗接 n8n,所以 B3 由「部署細節」變成**本環境成敗嘅關鍵**。
+
+---
 
 Infra team 交付咗 `RG-RAPO-UOP-DEV`,目的係令 UOP **同 n8n UAT 接得通**。W44 F1 實測(2026-08-04,SP 真登入)發現佢哋**已經預先建好**兩個 container app,而且 **api 個 ingress 係 `external`**(`aca-rapo-uop-api-dev.…azurecontainerapps.io`,`allowInsecure=false`),仲喺 `.env` 一併交咗個 `azure_url_for_api_call` 畀我哋。
 
@@ -26,7 +51,9 @@ Infra team 交付咗 `RG-RAPO-UOP-DEV`,目的係令 UOP **同 n8n UAT 接得通*
 
 **② api external = 平台第一次把整個 API 直接暴露互聯網。** 唔淨止 `/requests/intake`,而係**所有** route,包括 `/docs/api` 個 OpenAPI UI(會把成套 endpoint + DTO 結構公開)。防線只剩 `IntakeKeyGuard`(fail-closed)同 JWT guard —— 兩者都可靠,但「可靠」同「唔應該暴露」係兩件事。
 
-**③ Option A 有一個未驗證前提。** n8n UAT 要解析到 **`rapo-uop-web-dev.rci-t.com`** 呢個企業 custom domain。若 n8n 所處網段解析唔到 `.rci-t.com`(而 `azurecontainerapps.io` 係公網一定解析到),Option A 就走唔通。**呢點未驗**,係 D1 拍板前唯一要落地查嘅嘢。
+**③ Option A 原本嗰個未驗證前提,已經冇咗大半。** 原本擔心 n8n 解析唔到企業 custom domain `rapo-uop-web-dev.rci-t.com`。Chris 2026-08-04 確認 **n8n UAT 住喺企業內網(on-prem / 內部 VM)** ⇒ 企業 DNS 解析企業 domain,呢條路成立(**OQ-1 resolved**)。
+
+⚠️ **但仍未係實測**:「內網解析到企業 domain」係一個**合理推論**,唔係一個 curl 出嚟嘅 200。而且個 A record 指住 ACA 公網 IP ⇒ n8n 除咗解析到,仲要**出得到公網**先到得到。⇒ 降級成 **F7 部署後第一件要驗嘅嘢**,唔再 block D1 拍板。
 
 ### 順帶:cookie 邊界喺兩個選項下都唔變
 
@@ -42,13 +69,13 @@ Infra team 交付咗 `RG-RAPO-UOP-DEV`,目的係令 UOP **同 n8n UAT 接得通*
 | 對外暴露 | **只有 web 一個 hostname** | web + **整個 API**(含 `/docs/api`) |
 | 同 UAT 一致 | ✅ 一套拓撲兩個環境 | ❌ 兩個環境兩套 |
 | `aca-dev.json` | 貼近 `aca.json`,api 加 `allowInsecure:true` | api ingress 照 infra 現狀 |
-| 未驗證前提 | 🔴 **n8n 解析唔解析到 `.rci-t.com`** | 無(公網 FQDN) |
+| 未驗證前提 | ~~n8n 解析唔解析到 `.rci-t.com`~~ **OQ-1 resolved** — n8n 喺企業內網 ⇒ 成立(實測留 F7) | 無(公網 FQDN) |
 | 要同 infra 講 | 要(佢哋開咗 external,我哋收窄)+ `azure_url_for_api_call` 變成用唔著 | 唔使 |
 | 多一跳 | nginx → api(內部,可忽略) | 無 |
 
 **推薦 Option A**,理由三條:①ADR-0012 嗰兩條認證約束嘅**設計意圖**係「對外面只有一個 hostname」,唔止係為咗 cookie ②DEV 環境本身係為咗接 n8n 而開,而 n8n 需要嘅嘢 Option A **已經滿足** ⇒ external 係**多出嚟嘅**暴露,唔係需求 ③兩個環境同一套拓撲,runbook / template / 排錯經驗全部通用。
 
-**若 ③ 嗰個未驗證前提爆咗**(n8n 解析唔到 `.rci-t.com`)⇒ 直接轉 Option B,並照 D2 收窄。
+**OQ-1 resolved 之後,Option A 已經冇已知障礙。** 若 F7 實測發現 n8n 打唔到 web hostname(例如內網出唔到公網),⇒ 轉 Option B 並照 D2 收窄 —— 呢個 fallback 成本細,因為 ingress 設定改一個 ARM 欄就得,唔使重 build image。
 
 ### D2 — 若揀 Option B,必須同時收窄(唔可以淨係「開咗就算」)
 
@@ -80,8 +107,9 @@ DEV 環境有 `redis-rapo-uop-dev`,但 `apps/api/src` 實測**零** BullMQ / Red
 
 ## Open Questions
 
-- **OQ-1(blocking D1)** — **n8n UAT 解析唔解析到 `rapo-uop-web-dev.rci-t.com`?** 呢個決定咗 Option A 走唔走得通。查法:喺 n8n 側直接 curl 個 web FQDN(部署完之後),或者問 infra team n8n 所處網段用邊個 DNS。
+- **OQ-1 — resolved(Chris 2026-08-04)**:n8n UAT 住喺**企業內網(on-prem / 內部 VM)**⇒ 企業 DNS 解析企業 domain,Option A 成立。⚠️ 仍係推論唔係實測(見 Context ③)⇒ 實測降級做 **W44 F7** 第一項。
 - **OQ-2(唔阻 D1)** — infra team 除咗 n8n,仲有冇其他系統打算直接打 `azure_url_for_api_call`?若有,Option A 要重新評估。
+- **OQ-3(新增 —— 唔阻 D1,但阻成個環境)** — 🔴 **UOP 由 ACA 打得入企業內網嘅 n8n 嗎?** 即 W44 **B3**。呢個環境開嚟就係為咗接 n8n,而 outbound 半邊(ADR-0017 三個接縫)完全繫於 ACA env 有冇 VNet 整合 + 路由到 on-prem。**D1 揀 A 定 B 都改變唔到呢件事** —— 兩者都要 B3 通先做得到 outbound。查法:問 infra team,或者部署後由 container 側實試打 n8n。
 
 ## References
 

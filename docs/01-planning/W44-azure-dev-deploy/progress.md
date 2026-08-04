@@ -98,10 +98,27 @@ status: in-progress    # in-progress | closed
 
 `docs/adr/README.md` 嗰行 ADR-0026 寫住 status **`Proposed`**,但 `0026-*.md` 檔本身由頭到尾寫 **`Accepted`**(Approver:Chris Lai,2026-08-04)。W43 收官 doc-sync 漏改。已改正 —— 呢個唔屬「順手改 adjacent」(§1.3),係一個**互相矛盾嘅事實**,而 index 正正係下一個 session 會先睇嘅嘢。
 
+### 🔴🔴 Chris 更正:之前嗰個「UAT」根本唔係 UAT(本 phase 到目前為止**最重要**嘅一件事)
+
+Chris 喺我交完 ADR draft 之後更正:**W32/W33 部署嗰個環境唔係企業 UAT,只係一個測試用嘅 Azure 環境** —— 我哋自己喺 `rcitest` subscription 由零建起嘅孤島(自建 RG `RG-RCITest-RAPO-N8N` + 自建 ACR + 自建 ACA env **冇 VNet 整合** + PG public `0.0.0.0`),住喺 Azure 公網,**同企業網絡冇任何連繫**。
+
+**呢個一次過解釋咗三件我原本當成獨立嘅事:**
+
+**① W36–W42 嗰句「n8n 側從未真接通,三個 seam 零 live 驗證」嘅根本原因。** 唔係漏做,係**環境上做唔到**,而且係雙向:inbound 冇企業 domain 入口;outbound 打唔入內網(n8n 住 on-prem,Chris 同日確認)。呢句 carry 咗四個 phase,而**冇一次寫低過原因** —— 一直當咗係「n8n 側未配好」。
+
+**② 我列嘅「六處差異」唔係六件事。** 佢哋係「**自建孤島 → 企業託管**」同一個轉變嘅六個表現。連帶一個實際收穫:**B1 由「registry 唔知去咗邊」變成「企業中央 registry 叫咩、SP 點攞 AcrPush」** —— 舊環境要自建 ACR 正正因為佢係孤島。問題由「搵嘢」變成「攞權」,問法完全唔同。
+
+**③ 🔴 B3 由部署細節升格成本環境成敗嘅關鍵。** 佢原本只係「container 連唔連到 private PG/Redis」。而家:**UOP → n8n outbound 一樣繫於佢**(ACA env 冇 VNet 整合就打唔入內網)。⇒ **ADR-0027 D1 揀 A 定 B 都改變唔到呢件事** —— ingress 係 inbound 概念,同 outbound 無關。呢個範圍澄清已寫入 ADR-0027 Context。
+
+**我自己嘅 miss**:F7 acceptance 原本**只寫咗 inbound**(「n8n 打得到 intake → 201 + DB row」)。若照原文做,會出現一個典型假驗證 —— **「接通」驗一半當全部**,而 outbound 唔通嘅話係**靜態失敗**(provider fail 但 app 照起得身、smoke 照綠)。已補 F7-9/10/11。呢個同 `feedback_verification-that-proves-nothing` 嗰條「每個 assertion 問『行為壞咗佢會唔會變紅』」係同一族。
+
+**命名更正處理(Chris 拍板)**:**保留檔名 / ADR 標題**,靠 blockquote 更正 —— 改名會令 commit message / PR / 舊 progress 入面寫死嘅「UAT」永久對唔上(**W36 同一判斷**)。已加註 `07-uat-as-built.md` 頂 + `ADR-0012` 頂。
+
 ### Decisions / Open-Questions Resolved
 
-- **OQ-1(新增,blocking ADR-0027 D1)**:n8n UAT 解析唔解析到企業 custom domain `rapo-uop-web-dev.rci-t.com`?解析到 → Option A;解析唔到 → Option B + D2 三項收窄。**未查**。
+- **OQ-1 — resolved(Chris 2026-08-04)**:n8n UAT 住喺**企業內網**(on-prem / 內部 VM)⇒ 企業 DNS 解析企業 domain,**Option A 走得通**。⚠️ **仍係推論唔係實測** —— 「內網解析到企業 domain」冇 curl 過,而且個 A record 指住 ACA 公網 IP ⇒ n8n 仲要出得到公網。**降級做 F7-1 實測,唔再 block D1**。
 - **OQ-2(新增,唔阻)**:infra team 除咗 n8n,仲有冇其他系統打算直接打 `azure_url_for_api_call`?
+- **OQ-3(新增 —— 唔阻 D1,但阻成個環境)**:🔴 UOP 由 ACA 打唔打得入企業內網嘅 n8n?即 **B3**。已加做交畀 infra 嘅第 5 條問題。
 
 ### Blockers
 
