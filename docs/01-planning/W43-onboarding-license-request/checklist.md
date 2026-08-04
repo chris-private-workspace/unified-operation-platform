@@ -111,7 +111,12 @@ last_updated: 2026-08-03
 - [x] G6 — **live 真建一張 O365 單** ✅（Chris 2026-08-04 批准）：**REQ0044071 / RITM0047366 / SCTASK0071831**（`Execution Step` · `O365 Support` · 剛好 1 張 active）。行 production class 唔另寫 SN 呼叫；獨立 read 覆核 variables（`target_user` = requester · `license_type` 空 · `rapo` 小寫）。⚠️ **張單要人手 cancel**
 - [ ] G7 — **live** gate ② 由未通 → 通，`target_user` 真係由 requester 變新用戶
   - **前半已有實證**（G5 順帶查到，非計劃內）：dev DB 兩張單 2026-08-04 03:40 由 **scheduled sweep** 真開咗 gate ②（`RequestEvent` 有 `ServiceNow sync verified …(scheduled sweep)` + `serviceNowUserSysId` 有真 sys_id）⇒ `findUserSysIdByEmail` + `openServiceNowUserGate` 打真 SN 行得通
-  - **後半仍然未驗**：`target_user` 回填走 `updateCatalogVariable`（寫 `sc_item_option`），而佢**刻意 non-fatal** ⇒ 失敗唔會喺 DB 留低任何痕跡。要證就要**去 SN 讀返嗰兩張 RITM 個 `target_user`**（read-only）
+  - **後半:read 做咗,答案係「冇 landed」**（2026-08-04,獨立 read probe,零寫入）——
+    - `RITM0047331`（`O365 User License Maintenance Request` · Open）：`target_user` **有**呢個 variable，但值係**另一位同事**，唔係 gate ② 記低嗰個 sys_id ⇒ **回填冇寫入**
+    - `RITM0047333`（`New Hire Windows Domain Account` · **Closed Complete**）：`target_user` **吉**
+    - 🔴 **好彩冇寫到** —— dev fixture 把「target = requester 本人」嘅平台 request 駁咗落一張**真人真事、關另一位同事事**嘅 RITM。真寫落去 = 改咗人哋張飛
+  - 🚧 **未判到因由**，三個候選分唔開：(a) `sc_item_option` **冇寫權**（BUG-010 已示範 insert/update 兩套 ACL）(b) 03:40 sweep 跑嗰刻回填 code 未完整（`bea936b` 03:59 先 commit）(c) 行過但 return false / throw 畀 non-fatal 食咗
+  - **要分開三者只有一條路 = 真 PATCH 一次**（live 寫入,需 Chris 明示批准）。唯一安全對象 = **RITM0047366**（G6 嗰張 `[UOP TEST]`,本來就等緊人手 cancel）。🔴 **絕不可以攞 RITM0047331 做實驗** —— 佢係真人張飛
 - [ ] G8 — **live** close 成功 + 兄弟 task 冇郁
 - [ ] G9 — 前端 light + dark + `ui-design` 跑過
 - [ ] G10 — UAT 部署後抽 running OpenAPI **實搜**新契約（唔靠 tag 推論）

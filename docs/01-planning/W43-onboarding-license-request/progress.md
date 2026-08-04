@@ -249,6 +249,32 @@ cmscld7iz… | SYNC | ServiceNow sync verified — the target user exists in Ser
 | F4 雙閘 | ~1 | ~0.8 | 含順帶修 fixture 陷阱 |
 | F5 前端 | ~2 | ~1.5 | 含 F5-6 非計劃內；light+dark 未驗 |
 | F3-2 / G5 scratch DB | ~1 | ~0.5 | 順帶揭到 G7 前半已有實證 |
+| G7 read 半 | ~0.5 | ~0.5 | 答案 = 回填冇 landed;寫入實驗等批准 |
+
+### G7 read 半 — 回填**冇** landed（2026-08-04，PR #75 merge 之後）
+
+獨立 read probe（plain `fetch`，同 `updateCatalogVariable` 一模一樣嘅三層 walk，**零寫入**）。用獨立 read 路而唔用 production class，係因為呢度問嘅係「ServiceNow 而家係咩狀態」—— 攞寫嗰個 object 去問佢自己寫成點，證據力弱。
+
+| RITM | cat_item / state | `target_user` | 判斷 |
+|---|---|---|---|
+| **RITM0047331** | `O365 User License Maintenance Request` · Open | **有**呢個 variable，但值 = **另一位同事** | ❌ 回填**冇**寫入 |
+| **RITM0047333** | `New Hire Windows Domain Account` · **Closed Complete** | **吉** | ❌ 冇寫入 |
+
+🔴 **最值得記低嗰件事:好彩佢冇寫到。** dev fixture 把一張「target = requester 本人」嘅平台 request，駁咗落一張**真人真事、關另一位同事事**嘅 RITM。若果回填 work，佢就會靜靜把人哋張飛個 `target_user` 改成我哋嘅 target。⇒ **回填並冇限制只寫平台自己建嘅 RITM** —— production 上 F2 建嘅單無問題（platform 自己開嘅），但 **ADR-0021 import-from-SN 嗰條路**嘅 line item 指住嘅係已存在嘅 SN RITM，值得 Chris 判斷要唔要收窄。
+
+**三個候選因由，而家分唔開**：
+
+| | 候選 | 點解未排除 |
+|---|---|---|
+| (a) | `sc_item_option` **冇寫權** | BUG-010 已示範呢個 instance insert / update 係兩套 ACL |
+| (b) | sweep 03:40 跑嗰刻回填 code 未完整 | `bea936b` 係 **03:59** 先 commit —— 但 watch mode 可能早就 load 咗，分唔到 |
+| (c) | 行過，return `false` / throw，畀 non-fatal 食咗 | 回填**刻意**唔留痕（F3-8）⇒ DB 呢邊點查都查唔到 |
+
+⚠️ **(b) 呢個 confound 係我自己整出嚟嘅** —— 驗證跑喺 commit 之前，所以「當時行緊咩 code」講唔死。下次 live gate 驗證應該喺 commit 之後先跑。
+
+**要分開三者只有一條路 = 真 PATCH 一次。** 唯一安全對象 = **RITM0047366**（G6 嗰張 `[UOP TEST]`，本來就等緊人手 cancel）。🔴 **絕不可以攞 RITM0047331** —— 佢係真人張飛。**等 Chris 明示批准先做**（同 G6 一樣）。
+
+⚠️ **順帶一個我自己嘅失誤**：probe 特登只攞 `user_name` 唔攞 email / displayName 去避開 H4，但呢個 instance 個 `user_name` **本身就係 email address**，所以照樣印咗兩個地址落 terminal。冇造成實際外洩（本機 + private repo），但下次要**先確認個欄實際載住咩**先當佢安全。
 
 ### Commits
 
