@@ -302,8 +302,11 @@ Two separate walls:
   AND allow-list 165.85.7.2.
   (Alternative: your team builds + pushes the two images for us.)
 
-  Also: both container apps have no registry credentials set yet,
-  so the pull side needs those too.
+  Please also cover the PULL side: the container apps have no
+  registry credentials set yet, and the web app alone reports
+  150+ outbound IPs (Consumption profile) - so IP allow-listing
+  won't make ACA able to pull the image. Please confirm the
+  container apps can reach acrrci3ailanding1 as well.
 
 
 2. Can the container apps reach n8n?
