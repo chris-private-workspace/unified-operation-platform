@@ -234,7 +234,21 @@ SP(app id `d2f094a3-b1ec-4c05-b71a-7fae91e08af0` · object id `d6a6b91e-e98d-4c3
 
 **scope 只需要嗰一個 env resource,唔需要成個 RG。** 內建角色定自訂角色由 infra 揀 —— 我哋唯一硬要求係嗰個 `join/action`(順帶畀埋 `managedEnvironments/read` 會方便診斷,但唔係必需)。
 
-⚠️ **一條未驗嘅繞道**:`az containerapp update`(PATCH)可能唔會送 `environmentId`,因而唔觸發 linked authorization 檢查。**呢個係推論唔係實測**,而且就算通,**將來任何 ARM 部署一樣會撞返同一道牆** ⇒ 佢係 unblock 手段,唔係解決方案,而且會令 as-built 同 `aca-dev.json` 脫節。
+### 🔴 繞道已排除 —— PATCH 一樣 403(2026-08-05 實測)
+
+原本估「`az containerapp` 嘅 PATCH 可能唔送 `environmentId`,因而唔觸發 linked auth」。**實測推翻**:
+
+```
+az containerapp registry set -n aca-rapo-uop-api-dev -g RG-RAPO-UOP-DEV \
+    --server acrrci3ailanding1.azurecr.io --username … --password …
+→ (LinkedAuthorizationFailed) …does not have permission to perform
+  'Microsoft.App/managedEnvironments/join/action' on the linked scope(s)
+  '…/RG-RAPO-ContainerAPP-DEV/…/managedEnvironments/acaen-rapo-dev'
+```
+
+**一模一樣嘅 error**,而呢個 PATCH 連 image 都冇掂,只係加 registry credential。⇒ **任何 `Microsoft.App/containerApps/write` 都會觸發 linked authorization 檢查** —— 唔理 ARM full PUT 定 CLI PATCH,因為既有 resource 本身已經 linked 住嗰個 env,RP 每次 write 都要驗你 join 唔 join 得。零改變(`registries` / `secrets` 實測仍空)。
+
+🔴 **⇒ 冇繞道。`join/action` 係硬需求,唔係 template 寫法問題。**
 
 ## 附:B1 解法 ② —— 若 infra team 代 build,交畀佢哋嘅嘢
 

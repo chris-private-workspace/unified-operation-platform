@@ -398,7 +398,15 @@ however, it does not have permission to perform
 
 **要 infra 做嘅嘢(精確)**:SP object id `d6a6b91e-e98d-4c38-8103-45e70f410006` 要 **`Microsoft.App/managedEnvironments/join/action`**,scope 只需要 `…/RG-RAPO-ContainerAPP-DEV/providers/Microsoft.App/managedEnvironments/acaen-rapo-dev` 嗰一個 resource(唔使成個 RG)。
 
-⚠️ **一條未驗嘅繞道**:`az containerapp update`(PATCH)可能唔送 `environmentId` ⇒ 唔觸發 linked auth 檢查。**推論唔係實測**,而且**就算通,將來任何 ARM 部署一樣撞返同一道牆** ⇒ 佢係 unblock 手段唔係解決方案,仲會令 as-built 同 `aca-dev.json` 脫節。**要 Chris 拍板先做。**
+### 🔴 繞道實測 —— PATCH 一樣 403,**冇路可繞**
+
+Chris 問「係咪真係部署唔到」(同 Day 2 嗰句一樣,而嗰次揭穿咗三個 assumption)⇒ 唔用結論答,去實測。
+
+原本估「`az containerapp` PATCH 可能唔送 `environmentId`」。**用一個最小、部署本身需要、可逆嘅步驟做探針**(`az containerapp registry set`,唔掂 image)—— **一模一樣嘅 `LinkedAuthorizationFailed`**。零改變(`registries`/`secrets` 實測仍空)。
+
+⇒ **任何 `Microsoft.App/containerApps/write` 都觸發 linked auth 檢查**,唔理 ARM full PUT 定 CLI PATCH —— 因為既有 resource 本身已經 linked 住嗰個 env,RP 每次 write 都要驗。**`join/action` 係硬需求,唔係 template 寫法問題。**
+
+> 順帶:呢次探針**冇重複 Day 2 嘅模式**。Day 2 Chris 一問就揭到三個未立過嘅 assumption;今次同樣去查,但查完結論企得住 —— **分別在於今次係實測企住,唔係推理企住**。
 
 ### Blockers
 
