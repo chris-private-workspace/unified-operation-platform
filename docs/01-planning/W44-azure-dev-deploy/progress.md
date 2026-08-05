@@ -313,6 +313,14 @@ Chris 叫我重新檢查。查嘅時候先發現:**我前三個解法全部 assu
 
 `docker manifest inspect` 探五個候選:node 有兩個(`devcontainers/javascript-node:20` · `azurelinux/base/nodejs:20`),**但 nginx 一個都冇** ⇒ 只解到一半。加上 Azure Linux 用 `tdnf` 唔係 `apt-get`、Prisma binary target 要重驗、兩環境 base image diverge ⇒ **唔建議**,記低免得下次再查一次。
 
+#### 🚫 Chris 決定:唔自建,等 infra
+
+**Chris 2026-08-05 拍板** —— 解法 ④ 技術上驗咗可行,但**唔採用**:保持同 infra 交付嘅 landing zone 設計一致,唔為咗快而開一個日後要搬返去嘅平行 registry。
+
+⇒ **B1 繼續係硬 blocker,等 infra 回覆 ①②③。** 評估本身完整保留喺 `09-dev-as-built.md`(標咗「唔採用」)—— 唔係因為想留後路,而係嗰輪實測(provider 狀態 / ARM validate / MCR 五個候選)花咗真功夫,**若日後另一個環境撞同一個牆,唔使由頭查一次**。
+
+⚠️ **要接受嘅代價**:成個部署鏈繼續驗唔到 —— ARM template 打真環境 · **PG v18 migration**(第一次踩)· **ACA 連唔連到 private endpoint 嘅 PG** · seed · smoke · n8n 雙向。呢啲每樣都可能有自己嘅坑,而佢哋**同 registry 完全無關**,只係一齊卡喺同一道閘後面。⇒ infra 一通,呢堆風險會**一次過湧出嚟**,唔會逐個嚟。
+
 #### 呢輪最值得記嘅
 
 **「做唔到」呢類結論,同「做得到」一樣會 rot。** 我第一次講「兩條路都斷」係啱嘅(當時 firewall 未開),但之後環境變咗兩次(firewall 修好、infra 澄清邊個 SP),而**我每次都只係更新結論嘅措辭,冇重新問「個 assumption 仲成唔成立」**。Chris 一句「重新檢查一次」就揭到三樣嘢。⇒ 條件變咗之後,**要重驗嘅唔止係結論,係推出結論嗰個前提**。

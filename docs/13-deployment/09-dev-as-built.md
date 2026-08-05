@@ -91,7 +91,10 @@ infra 回覆:①「`4a6e1474-…` is the login for registry server；the one hav
 
 ⚠️ **push 側只證到 `login`,未證到 `push`** —— 因為我哋根本冇 image 可以推(build 唔到)。要真證明 push 通,要等有第一個 image。
 
-### 🆕 解法 ④ —— **我哋自建一個 ACR,唔使等 infra**(2026-08-05 重新檢查揭到)
+### 🚫 解法 ④ —— 自建 ACR:**技術上可行,但 Chris 2026-08-05 決定唔採用**
+
+> **決定**:唔自建,等 infra 回覆 ①②③。**保持同 infra 交付嘅 landing zone 設計一致**,唔為咗快而開一個要日後搬返去嘅平行 registry。
+> **點解仍然完整記低**:呢個評估本身花咗一輪真實測(provider 狀態 / ARM validate / MCR 探測),而且**若日後 infra 一直卡住、或者將來另一個環境撞同一個牆,唔使由頭查一次**。以下全部係當時嘅實測結果,唔係建議。
 
 Chris 質疑「係咪真係唔部署得到」之後重新查一輪,發現**之前三個解法全部 assume 咗「registry 一定要係 `acrrci3ailanding1`」,而呢個 assumption 從來冇人立過**。
 
