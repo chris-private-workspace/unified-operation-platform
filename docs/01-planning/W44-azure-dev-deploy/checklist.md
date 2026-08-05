@@ -51,6 +51,8 @@ last_updated: 2026-08-04
 - [x] F2-11 ✅ **`az deployment group what-if` —— R6 由「部署後對數」提前變成「部署前證明」**。結果:**零 resource 被 Delete** · 只有兩個 container app `Modify`,其餘 **9 個資源全部 `Ignore`**(Redis / PG / App Insights / KV / 2 NIC / 2 PE / alert rule)· **`customDomains` 同 `workloadProfileName` 唔喺 delta ⇒ 保留** · web `external` 唔喺 delta ⇒ 保持 true · `registries` + `secrets` `Create`(what-if 自己 mask 咗值)。api delta 只有預期嗰四樣:`allowInsecure` false→true · `external` true→false · `targetPort` 80→3000 · 三個 default unset
 - [x] F2-12 ⚠️ **三個 property 會被 ARM unset,評估為無害,刻意唔寫返**:`exposedPort`(只對 TCP transport 有意義)· `traffic`(`activeRevisionsMode: Single` 下 ACA 自動全部去 latest)· `maxInactiveRevisions`(unset 即用預設 100)。理由唔係「應該冇事」而係**UAT `aca.json` 同樣三個都冇寫,而 UAT 三次部署都成功** —— 有實證先當佢無害
 
+- [ ] F2-13 🆕 ⚠️ **2026-08-05 重跑 what-if 發現被 unset 嘅係四個唔係三個** —— 多咗 `properties.runningStatus: Running → ''`。佢係 read-only status field,ARM **應該**唔會真改,**但呢個係推論冇實證** ⇒ 照 F2-12 自己立嘅標準,唔可以當已驗,留 F6-9 對數專登睇
+
 ## F3 — params 檔 + secret 策略(**B2 已解封**)
 
 - [x] F3-0 建 UOP 嘅 database —— `az postgres flexible-server db create -s pgsql-rapo-uop-dev -g RG-RAPO-UOP-DEV -d platform`;verify `db list` 由 3 個系統 db 變 4 個(**management plane,唔需要連到 PG data-plane**)
@@ -69,16 +71,20 @@ last_updated: 2026-08-04
 - [x] F4-3 `apps/web/nginx.conf.template` **零 diff** ⇒ 對 UAT 零影響
 - [ ] F4-4 🚧 實際渲染出嚟嘅 `nginx.conf` 逐行睇 —— **卡 B1**(起唔到 web container:`docker pull` base image 撞 Docker Hub 503)⇒ **移去 F6 部署後驗**
 
-## F5 — image build + push(🔴 **前置 B1 —— 2026-08-04 實測兩條路都斷,等 infra 揀解法**)
+## F5 — image build + push ✅ **B1 已解封(2026-08-05 Day 3)**
 
-> `az acr build` ❌ 冇 management plane(AcrPush 唔包 `scheduleRun/action`)· 本地 `docker build` ❌ Docker Hub CDN 503 **兼** ACR firewall 拒 `165.85.7.2`。三個解法見 plan 附錄 C **Q1**。
+> **走咗第 ⑤ 條路 —— 換一台唔喺公司網嘅 build host**(出口 IP `52.187.129.166`,Azure 段)。四條列過嘅解法全部 assume 咗「build 一定要喺公司網嗰台機做」,而呢個 assumption 冇人立過。詳見 progress Day 3。
+> 🔴 **R3 deviation**:F5-2/F5-3 由 `az acr build` 改成本地 `docker build` + `docker push`(兩個 SP 都冇 management plane)。**deliverable 冇變**,變嘅係手段。
+> ⚠️ **唔可以當 B1 永久消失** —— 呢條路等於繞開公司 proxy,唔係令部署鏈喺公司網跑得到。解法 ①(SP 攞 `scheduleRun/action`)仍然係最乾淨嗰個,infra 嗰邊唔應該撤走。
 
-- [ ] F5-0 🔴 等 infra 回覆 Q1 並確認走邊條路(決定咗先寫得 F5-1..4 嘅實際步驟)
+- [x] F5-0 ~~等 infra 回覆 Q1~~ **唔再 block** —— 換 build host 之後兩條前置(base image / firewall)自己通咗
 - [x] F5-0b ✅ **解法 ②(infra 代 build)嘅指引已預先寫定** —— `09-dev-as-built.md`「附:B1 解法 ②」。含:source 兩個交法(repo access / `git archive`,**後者實測 1065 檔 8.9MB 且零 secret**)· 三個一定要講嘅點(**context = repo root** · **web 依賴 root 嘅 `design_handoff_licenseops/`** · **唔使傳 build arg**)· 可直接發嘅英文指引 · 收到之後我哋嘅四步。🔴 明文標低**證唔到嗰樣**:呢兩個 image 從來冇人真正 build 過(本機 `docker build` 撞 Docker Hub 503),而 api 有 `RUN test -f dist/main.js` 硬閘要預先同 infra 講,否則佢哋會當係我哋 Dockerfile 有 bug
-- [ ] F5-1 配 ACR credential 落 container app `registries`
-- [ ] F5-2 `az acr build` api image(tag `dev-<short-sha>`)
-- [ ] F5-3 `az acr build` web image
-- [ ] F5-4 verify:`az acr task list-runs` 兩個都 `Succeeded`(**唔可以信 CLI exit code** — charmap crash 假象)
+- [x] F5-1 配 ACR credential 落 container app `registries` —— 已喺 `aca-dev.json` 做 parameter;what-if 顯示兩個 app 都 `registries` **Create**。⚠️ **真正生效要等 F6-1 部署**
+- [x] F5-2 ~~`az acr build`~~ **本地 `docker build`** api image → `acrrci3ailanding1.azurecr.io/uop-api:dev-0d01f0c`(BUG-008 個 `RUN test -f dist/main.js` 硬閘 **過**)
+- [x] F5-3 ~~`az acr build`~~ **本地 `docker build`** web image → `…/uop-web:dev-0d01f0c`(vite `✓ built in 7.16s`)
+- [x] F5-4 verify:~~`az acr task list-runs`~~ **`docker push` 真 digest** —— api `sha256:5a8d48cd…` · web `sha256:1d543670…`。🟢 **push 側史上第一次證到**(之前只證到 `login`,冇 image 可推)
+- [x] F5-5 🆕 `aca.params.dev.json` 個 `apiImage`/`webImage` tag 由 `dev-3ff9c73` 更新做 **`dev-0d01f0c`**(對齊實際 push 上去嗰兩個)
+- [x] F5-6 🆕 部署前重跑 `what-if` —— **同 Day 1 baseline 一致**:零 Delete · 9 Ignore · 2 Modify · `customDomains`/`workloadProfileName` 保留
 
 ## F6 — 部署 + smoke(🔴 **前置 F2/F3/F5 + B3**)
 

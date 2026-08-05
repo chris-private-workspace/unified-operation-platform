@@ -327,4 +327,67 @@ Chris 叫我重新檢查。查嘅時候先發現:**我前三個解法全部 assu
 
 ---
 
+## Day 3 — 2026-08-05:B1 **完全解封** —— 但解封佢嘅係一條從來冇人列過嘅路
+
+### 先補一件冇入 progress 嘅事(R2 gap,自報)
+
+commit **`0d01f0c`**(`fix(deploy): api build stage 注入公司 root CA 解 prisma generate TLS`)**冇對應 Day-N entry** —— 佢喺 Day 2 收工 doc-sync(`619619f`)之後先 commit,而我冇補返。R2 要求每個 commit 對應一個 Day-N mention,呢度補返:
+
+Day 2 尾段實際上 Docker Hub **一度通返**,於是本機 `docker build` 行得到 —— 但**死喺 `npx prisma generate`**:`self-signed certificate in certificate chain`。公司網對 `binaries.prisma.sh` 做 TLS 重簽,乾淨容器驗唔到 chain。
+
+修法同一個**唔可以靠估**嘅位:實測個 chain 係 `leaf ← CN=RicohCA ← CN=RICOHAP-ROOT-CA`,**唔係**名字最似 proxy 嗰兩張 `Forward Trust CA`(佢哋 2025-02 已過期)。⇒ 揀錯就會「裝咗張 CA 但仲係 fail」,而症狀一模一樣。另加 `NODE_EXTRA_CA_CERTS` —— **Node 唔讀 OS trust store**,單靠 `update-ca-certificates` 無效(`--use-system-ca` 係 Node 22+ 先有,呢度係 node:20)。**只落 build stage**,runtime image 唔會信呢張 CA。
+
+### 🔴 Chris 換咗一台機 —— 而呢個一次過拆晒 B1
+
+Chris 把 project 搬去一台**接得通 Azure DEV 環境**嘅機再叫我重驗。逐項實測(全部真 output):
+
+| 檢查 | 公司網嗰台 | 呢台 | 證據 |
+|---|---|---|---|
+| **出口 IP** | `165.85.7.2`(公司網) | **`52.187.129.166`**(Azure 段) | `curl ifconfig.me` |
+| **Docker Hub** | ❌ CDN 503(反覆) | ✅ **通** | `node:20-slim` · `nginx:1.27-alpine` 兩個都 pull 到 |
+| **ACR firewall** | 一度 DENIED,後來 infra 修好 | ✅ **通** | `Login Succeeded` —— **新 IP 一樣放行** |
+| **api image build** | 卡 prisma TLS → `0d01f0c` 修好 | ✅ **成功** | BUG-008 個 `RUN test -f dist/main.js` 硬閘 **DONE** |
+| **web image build** | **從未試過** | ✅ **成功** | vite `✓ built in 7.16s`,5 個 chunk |
+| **push** | 🔴 **從未證過**(冇 image 可推) | ✅ **兩個都成功** | api `sha256:5a8d48…` · web `sha256:1d5436…` |
+
+⇒ **B1 由頭到尾嘅三個未知數(base image 攞唔攞到 · firewall 放唔放行 · push 通唔通)全部有真 output**,而最後嗰個**係史上第一次證到**。
+
+### 🔴 呢個係第 **⑤** 條路,而佢由頭到尾冇出現喺任何一份解法清單
+
+我列過四條:①SP 攞 `scheduleRun/action` ②infra 代 build ③`az acr import` base image ④自建 ACR。**四條全部 assume 咗「build 一定要喺公司網嗰台機做」** —— 而呢個 assumption **同 Day 2 揭嗰個「registry 一定要係 `acrrci3ailanding1`」係同一個病**:唔係有人立過,係「一直喺嗰度做」自然滑成「只可以喺嗰度做」。
+
+**Day 2 retro 我自己寫咗**:「條件變咗之後,要重驗嘅唔止係結論,係推出結論嗰個前提。」今次係同一句嘅**下一層** —— 我當時重驗嘅係「firewall 通咗未」「邊個 SP 有權」,即係**清單入面嘅前提**;但「build host 一定係呢台機」**根本冇入過清單**,所以重驗幾多次都掃唔到佢。⇒ 真正要問嘅唔係「呢幾個前提仲成唔成立」,而係「**有咩前提我根本冇寫落嚟**」。
+
+⚠️ **同時要講清楚一件事**:呢條路解決咗 build/push,**但佢唔係一個更好嘅長期方案** —— 佢等於「換一台唔受公司 proxy 影響嘅機」,而唔係「令部署鏈喺公司網跑得到」。解法 ①(SP 攞 management plane 跑 `az acr build`)仍然係最乾淨嗰個,**infra 嗰邊唔應該因為我哋通咗就撤走**。呢點要同 Chris 講,唔可以靜靜當 B1 消失咗。
+
+### ✅ 部署前 gate 重跑(F2-11 baseline 對數)
+
+`az deployment group what-if` —— tag 更新做 `dev-0d01f0c` 之後重跑,**同 Day 1 baseline 一致**:
+
+- `status: Succeeded` · **零 resource 被 Delete** · **9 個 Ignore** · 只有 2 個 container app `Modify`
+- 🟢 **`customDomains` / `workloadProfileName` 都唔喺 delta ⇒ 保留**;web `external` 保持 true
+- api delta = ADR-0027 Option A 預期嗰三樣(`allowInsecure` false→true · `external` true→**false** · `targetPort` 80→**3000**)
+- web delta = `targetPort` 80→**8080**
+- 兩個都 `registries` + `secrets` **Create**;scale `min 0→1`
+
+⚠️ **被 unset 嘅 property 今次係四個,唔係三個**。F2-12 記錄咗三個(`exposedPort` / `traffic` / `maxInactiveRevisions`,有 UAT 實證),今次多咗 **`properties.runningStatus: Running → ''`**。佢係 read-only status field,ARM 應該唔會真改 —— **但我冇實證,呢個係推論**,照 F2-12 自己立嘅標準(「有實證先當佢無害」)就唔可以當佢已驗 ⇒ 部署後 F6-9 對數要專登睇佢。
+
+### Decisions
+
+- **F5 走本地 `docker build` + `docker push`,唔係 `az acr build`**(R3 deviation)。原 plan F5-2/F5-3 寫 `az acr build`,因為 UAT 一直行嗰條;而家兩個 SP 都冇 management plane,而本機 build 通咗 ⇒ 改走本地。**deliverable 冇變**(兩個 image 上到 registry),變嘅係手段。F5-4 個 verify 亦由 `az acr task list-runs` 改成 `docker push` digest。
+- **params tag `dev-3ff9c73` → `dev-0d01f0c`** —— 對齊實際 push 上去嗰兩個 image。
+
+### Blockers
+
+🟢 **B1 CLOSED**。⚠️ B3(ACA → private PG / n8n outbound)· B6(n8n http 明文)未動,兩個都要部署後先驗得到。
+
+**⇒ 一直卡喺 B1 後面嗰堆風險而家會一次過湧出嚟**(Day 2 已預告):ARM template 打真環境 · **PG v18 migration 第一次踩** · ACA 由 VNet 內 pull 唔 pull 到 registry · ACA 連唔連到 private endpoint 嘅 PG · seed · smoke · n8n 雙向。呢啲同 registry **完全無關**,只係一齊卡喺同一道閘後面。
+
+### Commits
+
+- `0d01f0c` — `fix(deploy): api build stage 注入公司 root CA 解 prisma generate TLS`(**補記**,見本節開頭)
+- `<pending>` — `docs(deploy): W44 Day 3 — B1 解封,image build + push 實證`
+
+---
+
 **End of W44 progress**(進行中)

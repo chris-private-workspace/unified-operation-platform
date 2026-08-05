@@ -19,9 +19,11 @@
 >
 > **已解封 / 已交付**:**ADR-0027 Accepted**(Chris 揀 **Option A** —— api ingress 收返 internal,對外只剩 web 一個 hostname;🔴 **cookie / CORS / 前端一個字唔變**,兩個選項嘅分別只在 machine-to-machine)· `deploy/azure/aca-dev.json`(**唔建 ACA env**,只 update 兩個既有 app;`validate` **Succeeded**)· `aca.params.dev.json`(gitignored,已證)· **`what-if` 已跑**:零 Delete、9 個無關資源 `Ignore`、**custom domain + `workloadProfileName` 保留** · PG database **`platform` 已自建**(management plane,唔使連到 PG)· `nginx.conf.template` **零改動**(Option A 令 F4 消失)· vendor **暫時全 placeholder**(F3-6 拍板:部署成功再逐個接)。
 >
-> 🔴 **唯一硬 blocker = B1(image build)** —— registry `acrrci3ailanding1.azurecr.io`(跨 tenant 企業中央 ACR):`docker login` **通**(firewall 2026-08-05 修好),但 **`4a6e1474` / `d2f094a3` 兩個 SP 都冇 management plane** ⇒ `az acr build` 做唔到(🔴 **`AcrPush` 唔包 `scheduleRun/action`**);本地 `docker build` 撞 **Docker Hub CDN 503**(⚠️ **MCR 通,淨係 Docker Hub 唔通** —— 呢個分辨好重要),registry 7 個 repo **冇 base image mirror**。⇒ 等 infra 三選一(①SP 攞 registry `read`+`scheduleRun/action` ②infra 代 build[指引已備好]③`az acr import` 兩個 base image)。**Chris 2026-08-05 拍板唔自建 ACR**(權限已驗夠,但保持同 landing zone 一致)。
+> 🟢 **B1(image build)2026-08-05 解封** —— registry `acrrci3ailanding1.azurecr.io`(跨 tenant 企業中央 ACR)。解封方式 = **換一台唔喺公司網嘅 build host**(出口 IP `52.187.129.166`,Azure 段):Docker Hub ✅ · ACR `Login Succeeded` ✅ · api image(BUG-008 個 `test -f dist/main.js` 硬閘過)+ web image 都 build 成功 ✅ · **push 真證到**(api `sha256:5a8d48cd…` / web `sha256:1d543670…` —— 之前四輪只證到 `login`,冇 image 可推)。params tag = **`dev-0d01f0c`**,`what-if` 重跑同 baseline 一致。
 >
-> ⚠️ **infra 一通,一堆同 registry 無關嘅風險會一次過湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16,第一次踩)· **ACA 連唔連到 private endpoint 嘅 PG** · seed · smoke · **n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
+> ⚠️ **三件唔可以靜靜當佢消失**:①呢條路**繞開**公司 proxy,唔係令部署鏈喺公司網跑得到 ⇒ **解法 ①(SP 攞 registry `read` + `scheduleRun/action`)仍然最乾淨,infra 唔應該撤走**(🔴 `AcrPush` **唔包** `scheduleRun/action`)②之前四條解法**全部 assume 咗「build 一定要喺公司網嗰台機做」而冇人立過呢個 assumption** ③F5 由 `az acr build` 改本地 `docker build` = **R3 deviation**,已 log。
+>
+> ⚠️ **B1 一通,一堆同 registry 無關嘅風險即刻湧出嚟**(下一步 = `az deployment group create`):ARM 打真環境 · **PG v18 migration**(UAT 係 16,第一次踩)· **ACA 由 VNet 內 pull 唔 pull 到 registry** · **ACA 連唔連到 private endpoint 嘅 PG**(B3)· seed · smoke · **n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
 > ADR-0027 · `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。
 
 > 🔴 **W43 最要緊嗰三件(ADR-0025 / 0026)**:

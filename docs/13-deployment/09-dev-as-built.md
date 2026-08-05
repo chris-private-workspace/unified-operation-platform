@@ -24,6 +24,13 @@
 
 > **命名更正處理**:Chris 拍板**保留舊檔名 / ADR 標題**,靠 blockquote 更正(改名會令 git history 永久對唔上,W36 教訓)。見 `07-uat-as-built.md` 同 ADR-0012 頂部。
 
+## 🟢 B1 已解封(2026-08-05)—— 部署前置全部齊
+
+> **2026-08-05 更新**:B1 由 2026-08-04 起卡咗兩日,**2026-08-05 換一台唔喺公司網嘅 build host 之後完全解封**。
+> 兩個 image 已 build + **真 push 上 `acrrci3ailanding1`**;`what-if` 重跑同 baseline 一致。
+> **下一步 = `az deployment group create`(F6-1)**。詳見下面「🟢 2026-08-05 第四輪」。
+> ⚠️ **本節以下由「三個 blocker」到「解法 ④」保留原文** —— 記錄當時嘅實測同判斷,唔係現況。
+
 ## 🔴 三個 blocker(未解封,部署做唔到)
 
 | # | Blocker | 實測證據 | 卡住 |
@@ -139,8 +146,42 @@ Chris 質疑「係咪真係唔部署得到」之後重新查一輪,發現**之�
 
 **仍要配嘅**:container app `registries` 而家係 `[]`,pull credential 要落 template(已喺 `aca-dev.json` 做咗 parameter)。
 
+## 🟢 2026-08-05 第四輪:**B1 解封** —— 靠一條從來冇列過嘅路
+
+Chris 把 project 搬去一台**接得通 Azure DEV 環境**嘅機再重驗。出口 IP 由公司網嘅 `165.85.7.2` 變成 **`52.187.129.166`**(Azure 段)。
+
+**逐項實測(全部有真 tool output)**:
+
+| 檢查 | 公司網嗰台 | 呢台 | 證據 |
+|---|---|---|---|
+| **Docker Hub** | ❌ CDN 503 | ✅ **通** | `node:20-slim` · `nginx:1.27-alpine` 兩個都 pull 到 |
+| **ACR firewall** | 一度 DENIED,infra 後來修好 | ✅ **通** | `Login Succeeded`(**新 IP 一樣放行**) |
+| **api image build** | 卡 prisma TLS → `0d01f0c` 修好 | ✅ **成功** | BUG-008 個 `RUN test -f dist/main.js` 硬閘 **DONE** |
+| **web image build** | **從未試過** | ✅ **成功** | vite `✓ built in 7.16s`,5 個 chunk |
+| **push** | 🔴 **從未證過**(冇 image 可推) | ✅ **兩個都成功** | api `sha256:5a8d48cd…` · web `sha256:1d543670…` |
+
+⇒ B1 三個未知數(base image 攞唔攞到 · firewall 放唔放行 · **push 通唔通**)全部有真 output,**最後嗰個係史上第一次證到**。
+
+### 🔴 呢個係第 ⑤ 條路,而佢冇出現喺任何一份解法清單
+
+列過嘅四條(①SP 攞 `scheduleRun/action` ②infra 代 build ③`az acr import` ④自建 ACR)**全部 assume 咗「build 一定要喺公司網嗰台機做」**。呢個 assumption 同 Day 2 揭嗰個「registry 一定要係 `acrrci3ailanding1`」係**同一個病** —— 唔係有人立過,係「一直喺嗰度做」滑成「只可以喺嗰度做」。
+
+**⇒ 條件變咗要重驗嘅唔止係清單入面嘅前提,仲有「有咩前提我根本冇寫落嚟」。**
+
+### ⚠️ 兩件唔可以靜靜當佢消失
+
+1. **呢條路唔係長期方案** —— 佢等於「換一台唔受公司 proxy 影響嘅機」,**唔係**令部署鏈喺公司網跑得到。**解法 ① 仍然係最乾淨嗰個,infra 嗰邊唔應該因為我哋通咗就撤走。**
+2. **`0d01f0c` 個 root CA 注入喺呢台機用唔着**(冇 TLS 重簽),但**保留** —— 佢只落 build stage、Azure 側 build 一樣用唔着(commit message 已寫),而公司網嗰台機仍然需要佢。
+
+### ✅ 部署前 gate 重跑
+
+`what-if`(tag 更新做 `dev-0d01f0c` 之後)**同 2026-08-04 baseline 一致**:`Succeeded` · **零 Delete** · **9 個 `Ignore`** · 只有 2 個 container app `Modify` · 🟢 **`customDomains` / `workloadProfileName` 保留** · web `external` 保持 true。api delta = ADR-0027 Option A 預期(`allowInsecure` false→true · `external` true→**false** · `targetPort` 80→**3000**);web = `targetPort` 80→**8080**;兩個都 `registries` + `secrets` **Create**。
+
+⚠️ **被 unset 嘅 property 今次係四個唔係三個** —— 多咗 **`properties.runningStatus: Running → ''`**。佢係 read-only status field,ARM **應該**唔會真改,但**冇實證,係推論** ⇒ 照上面「有實證先當佢無害」嘅標準,留部署後對數專登睇。
+
 ## 附:B1 解法 ② —— 若 infra team 代 build,交畀佢哋嘅嘢
 
+> 🟢 **2026-08-05:B1 已解封,本節唔使用。** 完整保留 —— 若日後 build host 冇咗、或者另一個環境撞同一個牆,呢節可以即刻發得出。
 > **預先寫定,等 infra 一揀就即刻發得出。** 解法 ① 若通過(SP 攞 Contributor + firewall 放行)呢節唔使用。
 > **本節所有事實都實測過**(2026-08-05),唔係憑 Dockerfile 讀出嚟嘅推測 —— 除咗最後嗰個 build 本身,原因見下面「⚠️ 我證到咩、證唔到咩」。
 

@@ -113,9 +113,11 @@
 >
 > ✅ **ADR-0027 Accepted**(Chris 揀 **Option A**:api ingress 收返 internal)· plan 轉 `active` · **F0–F4 全部交付**:`aca-dev.json`(唔建 env,`validate` **Succeeded**)· gitignored params · **`what-if` 已跑**(零 Delete、9 個無關資源 `Ignore`、**custom domain 保留**)· `platform` database **自建咗** · `nginx.conf.template` **零改動**(Option A 令 F4 消失)。**B2/B3/B5 全部解封**(B2 係我自己錯判 —— 建 database 走 management plane,唔使連到 PG)。
 >
-> 🔴 **唯一硬 blocker 仍然係 B1(image build),而佢卡位變過兩次**:`docker login` **通咗**(infra 2026-08-05 修 firewall),但 **兩個 SP 都冇 management plane** ⇒ `az acr build` 唔得(🔴 **`AcrPush` 唔包 `scheduleRun/action`**);本地 `docker build` 撞 **Docker Hub CDN 503**(⚠️ **MCR 通,淨係 Docker Hub 唔通**),registry 7 個 repo **冇 base image mirror**。⇒ 等 infra 三選一。**Chris 拍板唔自建 ACR**(權限已驗夠,但保持同 landing zone 一致)。
+> 🟢 **B1 已解封(2026-08-05 Day 3)—— 靠第 ⑤ 條路:換一台唔喺公司網嘅 build host**(出口 IP `52.187.129.166`,Azure 段)。Docker Hub ✅ · ACR `Login Succeeded` ✅ · **兩個 image build 成功**(api 個 `test -f dist/main.js` BUG-008 硬閘過)· **push 真證到**(api `sha256:5a8d48cd…` / web `sha256:1d543670…` —— 之前四輪只證到 `login`)。`what-if` 重跑同 baseline 一致。
+> 🔴 **列過嘅四條解法全部 assume 咗「build 一定要喺公司網嗰台機做」,而呢個 assumption 冇人立過** —— 同 Day 2 揭嗰個「registry 一定要係 `acrrci3ailanding1`」係同一個病。⇒ 條件變咗要重驗嘅唔止係清單入面嘅前提,仲有**有咩前提根本冇寫落嚟**。
+> ⚠️ **唔可以當 B1 永久消失**:呢條路**繞開**公司 proxy,唔係令部署鏈喺公司網跑得到 ⇒ **解法 ①(SP 攞 registry `read` + `scheduleRun/action`)仍然最乾淨,infra 唔應該撤走**。F5 由 `az acr build` 改本地 `docker build` = **R3 deviation**,已 log。
 >
-> ⚠️ **infra 一通,一堆同 registry 無關嘅風險會一次過湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16)· **ACA 連唔連到 private endpoint 嘅 PG** · seed · smoke · **n8n 雙向**。
+> ⚠️ **下一步 = `az deployment group create`,而一堆同 registry 無關嘅風險會一次過湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16)· **ACA 由 VNet 內 pull 唔 pull 到 registry** · **ACA 連唔連到 private endpoint 嘅 PG**(B3)· seed · smoke · **n8n 雙向**。
 >
 > 🆕 **B6**:n8n base URL = `http://rapo-n8n-uat.rci-t.com/` —— **http 明文**,接 outbound 前要 Chris 明確接受(webhook key 會過線)。
 
