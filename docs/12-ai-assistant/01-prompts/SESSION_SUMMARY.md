@@ -15,8 +15,14 @@
 >
 > **檔名 / ADR 標題刻意保留**(改名會令 git history 永久對唔上,W36 判斷)⇒ 讀 `07-uat-as-built.md` / ADR-0012 嗰陣,把「UAT」讀成「**第一個 Azure 環境(自建測試)**」;兩個檔頂都有更正 blockquote。
 >
-> **真正接得通企業網絡嘅環境 = `RG-RAPO-UOP-DEV`**(infra 2026-08-04 交付 · 企業共用 ACA env `acaen-rapo-dev` + hub VNet PE + custom domain `rapo-uop-web-dev.rci-t.com`)—— **W44 進行中,未部署**。🔴 三個 blocker 全部要 infra:①**企業中央 ACR** 座標 + AcrPush(畀嘅值係 GUID,ACR 名唔可能有 dash)②**PG credential**(server admin 實測 `rcitadmin`,唔係畀嘅 `rapoaiuopdev`)③**ACA env 有冇 VNet 整合** —— ③ **唔止管 DB,UOP → n8n outbound 一樣繫於佢**,所以佢係本環境成敗嘅關鍵,而 **ADR-0027 D1 揀邊個都改變唔到**(ingress 係 inbound 概念)。
-> ADR-0027(**Proposed**,待拍板 D1:api 收返 internal[推薦]定保持 external)· `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。
+> **真正接得通企業網絡嘅環境 = `RG-RAPO-UOP-DEV`**(infra 2026-08-04 交付 · 企業共用 ACA env `acaen-rapo-dev` + hub VNet PE + custom domain `rapo-uop-web-dev.rci-t.com`)—— **W44 進行中,仍未部署**。
+>
+> **已解封 / 已交付**:**ADR-0027 Accepted**(Chris 揀 **Option A** —— api ingress 收返 internal,對外只剩 web 一個 hostname;🔴 **cookie / CORS / 前端一個字唔變**,兩個選項嘅分別只在 machine-to-machine)· `deploy/azure/aca-dev.json`(**唔建 ACA env**,只 update 兩個既有 app;`validate` **Succeeded**)· `aca.params.dev.json`(gitignored,已證)· **`what-if` 已跑**:零 Delete、9 個無關資源 `Ignore`、**custom domain + `workloadProfileName` 保留** · PG database **`platform` 已自建**(management plane,唔使連到 PG)· `nginx.conf.template` **零改動**(Option A 令 F4 消失)· vendor **暫時全 placeholder**(F3-6 拍板:部署成功再逐個接)。
+>
+> 🔴 **唯一硬 blocker = B1(image build)** —— registry `acrrci3ailanding1.azurecr.io`(跨 tenant 企業中央 ACR):`docker login` **通**(firewall 2026-08-05 修好),但 **`4a6e1474` / `d2f094a3` 兩個 SP 都冇 management plane** ⇒ `az acr build` 做唔到(🔴 **`AcrPush` 唔包 `scheduleRun/action`**);本地 `docker build` 撞 **Docker Hub CDN 503**(⚠️ **MCR 通,淨係 Docker Hub 唔通** —— 呢個分辨好重要),registry 7 個 repo **冇 base image mirror**。⇒ 等 infra 三選一(①SP 攞 registry `read`+`scheduleRun/action` ②infra 代 build[指引已備好]③`az acr import` 兩個 base image)。**Chris 2026-08-05 拍板唔自建 ACR**(權限已驗夠,但保持同 landing zone 一致)。
+>
+> ⚠️ **infra 一通,一堆同 registry 無關嘅風險會一次過湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16,第一次踩)· **ACA 連唔連到 private endpoint 嘅 PG** · seed · smoke · **n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
+> ADR-0027 · `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。
 
 > 🔴 **W43 最要緊嗰三件(ADR-0025 / 0026)**:
 > ① **onboarding intake 收貨即刻自己建一張 `O365 User License Maintenance Request`**(catalog `order_now`/cart,**唔係** Table API insert —— `sc_request` insert 403,BUG-010)。once-guard = **line item 自己嘅 `serviceNowSysId`**;冇佢嘅話 n8n 每重推一次就開多一張**真飛**,而平台側完全睇唔出。

@@ -108,6 +108,16 @@
 > **ADR-0027(Proposed,待拍板 D1)** — **擴充 ADR-0012 唔推翻**。infra 開咗 api **external**(同 ADR-0012 D1 嘅 internal 相反)⇒ H1 + H4。**Option A 收返 internal(推薦)**:`nginx.conf.template` 個 `API_UPSTREAM` **已經** proxy `/api` ⇒ n8n 打 web hostname 就到得到,即 external 係**多出嚟嘅暴露唔係需求**(暴露嘅係成個 API 連 `/docs/api`)· **Option B 保持 external** 要同時做 D2 三項收窄 · **D3 唔議**:browser 流量永遠行 web 同源 proxy,cookie/CORS/前端**一個字唔變**。**OQ-1 resolved**(n8n 住企業內網 ⇒ A 走得通,但係推論唔係實測 ⇒ 降級做 F7-1)。
 >
 > **兩個方法論教訓**:①🔴 **infra team 配咗乜 ≠ 平台需要乜** —— 差啲就把「api external」當既定前提寫入 plan,而答案一直喺 repo(`nginx.conf.template`)②**「接通」好易驗一半當全部** —— F7 acceptance 原本只寫 inbound,而 outbound 唔通係**靜態失敗**(provider fail 但 app 照起得身、smoke 照綠)。已補 F7-9/10/11。
+>
+> ### 📌 **2026-08-05 收工狀態(三輪 infra 往返之後)**
+>
+> ✅ **ADR-0027 Accepted**(Chris 揀 **Option A**:api ingress 收返 internal)· plan 轉 `active` · **F0–F4 全部交付**:`aca-dev.json`(唔建 env,`validate` **Succeeded**)· gitignored params · **`what-if` 已跑**(零 Delete、9 個無關資源 `Ignore`、**custom domain 保留**)· `platform` database **自建咗** · `nginx.conf.template` **零改動**(Option A 令 F4 消失)。**B2/B3/B5 全部解封**(B2 係我自己錯判 —— 建 database 走 management plane,唔使連到 PG)。
+>
+> 🔴 **唯一硬 blocker 仍然係 B1(image build),而佢卡位變過兩次**:`docker login` **通咗**(infra 2026-08-05 修 firewall),但 **兩個 SP 都冇 management plane** ⇒ `az acr build` 唔得(🔴 **`AcrPush` 唔包 `scheduleRun/action`**);本地 `docker build` 撞 **Docker Hub CDN 503**(⚠️ **MCR 通,淨係 Docker Hub 唔通**),registry 7 個 repo **冇 base image mirror**。⇒ 等 infra 三選一。**Chris 拍板唔自建 ACR**(權限已驗夠,但保持同 landing zone 一致)。
+>
+> ⚠️ **infra 一通,一堆同 registry 無關嘅風險會一次過湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16)· **ACA 連唔連到 private endpoint 嘅 PG** · seed · smoke · **n8n 雙向**。
+>
+> 🆕 **B6**:n8n base URL = `http://rapo-n8n-uat.rci-t.com/` —— **http 明文**,接 outbound 前要 Chris 明確接受(webhook key 會過線)。
 
 ---
 
