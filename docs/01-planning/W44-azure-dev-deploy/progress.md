@@ -289,6 +289,34 @@ infra 話「有 deploy 權嗰個係 `d2f094a3`」。我 check 返自己做過乜
 
 > 🔍 順帶:registry 有一個 **`n8n`** repo ⇒ 側面印證 n8n 同 UOP 住喺同一個 landing zone。
 
+### 🔴 Chris 質疑「係咪真係唔部署得到」→ 重新查一輪,揭到一個未立過嘅 assumption
+
+Chris 叫我重新檢查。查嘅時候先發現:**我前三個解法全部 assume 咗「registry 一定要係 `acrrci3ailanding1`」,而呢個 assumption 由頭到尾冇人立過** —— 佢只係「infra 畀咗呢個」自然滑成「只可以用呢個」。
+
+同時亦發現**我漏咗兩個最基本嘅檢查**:
+1. **從來冇睇過本機有冇 base image**(`docker images`)—— 之前 `docker pull` 一 fail 就下結論,但 `docker build` **唔一定要 pull**。查完:本機有 `node:20-**alpine**` 但冇 `20-slim`、冇 `nginx:1.27-alpine` ⇒ 結論冇變,但**又係一次「啱咗但方法唔對」**。
+2. **從來冇分辨過「Docker Hub 唔通」同「所有 registry 都唔通」** —— 實測 **MCR 通**(`docker pull mcr/hello-world` exit=0),淨係 Docker Hub CDN 503。本機仲有一個 `mcr.microsoft.com/mcr/hello-world` image 一直擺喺度,即係**線索一早喺 `docker images` 裡面**。
+
+#### 解法 ④:自建 ACR(唔使等 infra)
+
+| 檢查 | 結果 |
+|---|---|
+| `Microsoft.ContainerRegistry` provider | **`Registered`** |
+| `az deployment group validate`(建 Basic ACR 落 `RG-RAPO-UOP-DEV`) | **`Succeeded`**,error 全 null |
+
+⇒ `d2f094a3` 個 RG Contributor **建得到我哋自己嘅 registry**,而自己建嘅 registry **有 management plane** ⇒ `az acr build` 跑得,**base image Azure 側 pull** —— 同 UAT 一直行嗰條路一樣。
+
+🔴 **但呢個係 owner 決定唔係純技術**:偏離 infra 交付嘅中央 registry 設計 · 多一個資源同成本 · 將來 image 要搬返中央 · RCI 治理(PAR)未問。
+⚠️ **兩件未驗**:`validate` 唔跑 Azure Policy(policy 擋自建就要 `create` 先知)· **ACA 喺 VNet 內 pull 唔 pull 到新 ACR 未實測**(大機會通 —— 佢而家跑緊 `mcr.microsoft.com/k8se/quickstart` ⇒ 出得到公網 —— 但呢個係推論)。
+
+#### 順帶排除咗「換 MCR base image」
+
+`docker manifest inspect` 探五個候選:node 有兩個(`devcontainers/javascript-node:20` · `azurelinux/base/nodejs:20`),**但 nginx 一個都冇** ⇒ 只解到一半。加上 Azure Linux 用 `tdnf` 唔係 `apt-get`、Prisma binary target 要重驗、兩環境 base image diverge ⇒ **唔建議**,記低免得下次再查一次。
+
+#### 呢輪最值得記嘅
+
+**「做唔到」呢類結論,同「做得到」一樣會 rot。** 我第一次講「兩條路都斷」係啱嘅(當時 firewall 未開),但之後環境變咗兩次(firewall 修好、infra 澄清邊個 SP),而**我每次都只係更新結論嘅措辭,冇重新問「個 assumption 仲成唔成立」**。Chris 一句「重新檢查一次」就揭到三樣嘢。⇒ 條件變咗之後,**要重驗嘅唔止係結論,係推出結論嗰個前提**。
+
 ---
 
 **End of W44 progress**(進行中)

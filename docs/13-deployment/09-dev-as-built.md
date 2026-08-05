@@ -91,6 +91,41 @@ infra 回覆:①「`4a6e1474-…` is the login for registry server；the one hav
 
 ⚠️ **push 側只證到 `login`,未證到 `push`** —— 因為我哋根本冇 image 可以推(build 唔到)。要真證明 push 通,要等有第一個 image。
 
+### 🆕 解法 ④ —— **我哋自建一個 ACR,唔使等 infra**(2026-08-05 重新檢查揭到)
+
+Chris 質疑「係咪真係唔部署得到」之後重新查一輪,發現**之前三個解法全部 assume 咗「registry 一定要係 `acrrci3ailanding1`」,而呢個 assumption 從來冇人立過**。
+
+**實測(全部有真 output)**:
+
+| 檢查 | 結果 |
+|---|---|
+| `Microsoft.ContainerRegistry` provider 註冊狀態 | **`Registered`** |
+| `az deployment group validate`(建一個 Basic ACR 落 `RG-RAPO-UOP-DEV`) | **`provisioningState: Succeeded`**,`error` 全 null |
+| MCR(`mcr.microsoft.com`)可達性 | ✅ **通**(`docker pull mcr/hello-world` → `exit=0`) |
+| Docker Hub CDN | ❌ 仍然 **503**(同一 layer 再撞) |
+
+⇒ `d2f094a3` 個 `RG-RAPO-UOP-DEV` Contributor **建得到我哋自己嘅 registry**。而**自己建嘅 registry 我哋有 management plane** ⇒ `az acr build` 跑得,**base image 喺 Azure 側 pull**,完全繞開公司 proxy —— 同 UAT 一直行嗰條路一模一樣。
+
+**流程**:`az acr create -g RG-RAPO-UOP-DEV --sku Basic` → `az acr build` 兩個 image → `aca.params.dev.json` 個 `acrServer` / `acrUsername` / `acrPassword` 改指自己個 ACR → 部署。
+
+🔴 **但呢個係一個決定,唔係純技術問題,要 owner 拍板**:
+- **偏離 infra 交付嘅設計** —— 佢哋特登畀咗中央 registry `acrrci3ailanding1`,自建等於行返 UAT 嗰條「孤島」路
+- **多一個資源**(Basic ACR,成本細但要記入環境清單)· 將來 image 要由自建 registry 搬返中央
+- **治理**:RCI 側對自建資源有冇要求(PAR),要問
+
+⚠️ **仲有兩件未驗證,唔可以當通**:
+1. **`validate` Succeeded ≠ 一定建得成** —— validate 唔跑 Azure Policy;若 landing zone 有 policy 擋自建 registry,要 `create` 先知。
+2. 🔴 **ACA 喺 VNet 內 pull 唔 pull 到我哋個新 ACR,未驗。** 新 ACR 預設 public,而 ACA 明顯出得到公網(佢而家跑緊 `mcr.microsoft.com/k8se/quickstart`),所以**大機會通** —— 但呢個係推論,唔係實測。
+
+### 順帶:MCR 有 node 但**冇 nginx** ⇒ 換 base image 嗰條路唔完整
+
+`docker manifest inspect` 探過五個候選:
+- ✅ `mcr.microsoft.com/devcontainers/javascript-node:20`
+- ✅ `mcr.microsoft.com/azurelinux/base/nodejs:20`
+- ❌ `mcr.microsoft.com/mirror/docker/library/node:20-slim` · `.../nginx:1.27-alpine` · `mcr.microsoft.com/cbl-mariner/base/nodejs:20`
+
+⇒ **web image 個 `nginx:1.27-alpine` 喺 MCR 冇對應**,所以「改用 MCR base image」呢條路**只解到一半**。而且就算解到,代價亦唔細:Azure Linux 用 `tdnf` 唔係 `apt-get`(Dockerfile 要改)、Prisma engine binary target 要重驗、兩個環境 base image diverge。**⇒ 唔建議,已記低免得下次再查一次。**
+
 ### ✅ pull 側擔心已撤銷(2026-08-04 infra 回覆)
 
 原本擔心:web app 有 150+ 個 `outboundIpAddresses` ⇒ ACA pull 一樣撞 ACR firewall,逐個放行唔實際。
