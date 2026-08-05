@@ -12,8 +12,18 @@
 FROM node:20-slim AS build
 WORKDIR /app
 # openssl: required by the Prisma engine at generate time.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
+# Corporate TLS interception: on the office network binaries.prisma.sh is
+# re-signed by RICOHAP-ROOT-CA, so a clean container cannot verify the chain and
+# `prisma generate` dies with "self-signed certificate in certificate chain".
+# Node does NOT read the OS trust store, so NODE_EXTRA_CA_CERTS is needed on top
+# of update-ca-certificates. BUILD STAGE ONLY — the runtime image never trusts
+# it. Azure-side builds (az acr build) see no interception, so the extra root
+# simply goes unused there.
+COPY deploy/ca/ricohap-root-ca.crt /usr/local/share/ca-certificates/ricohap-root-ca.crt
+RUN update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/ricohap-root-ca.crt
 # Workspace manifests first for layer caching. Both app manifests are copied so
 # the single root lockfile resolves; --workspace scopes the actual install.
 COPY package.json package-lock.json ./
