@@ -23,7 +23,12 @@
 >
 > ⚠️ **三件唔可以靜靜當佢消失**:①呢條路**繞開**公司 proxy,唔係令部署鏈喺公司網跑得到 ⇒ **解法 ①(SP 攞 registry `read` + `scheduleRun/action`)仍然最乾淨,infra 唔應該撤走**(🔴 `AcrPush` **唔包** `scheduleRun/action`)②之前四條解法**全部 assume 咗「build 一定要喺公司網嗰台機做」而冇人立過呢個 assumption** ③F5 由 `az acr build` 改本地 `docker build` = **R3 deviation**,已 log。
 >
-> ⚠️ **B1 一通,一堆同 registry 無關嘅風險即刻湧出嚟**(下一步 = `az deployment group create`):ARM 打真環境 · **PG v18 migration**(UAT 係 16,第一次踩)· **ACA 由 VNet 內 pull 唔 pull 到 registry** · **ACA 連唔連到 private endpoint 嘅 PG**(B3)· seed · smoke · **n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
+> 🔴 **而家唯一硬 blocker = B4(2026-08-05 部署嘗試 #1 兌現)** —— `az deployment group create` 撞 **`LinkedAuthorizationFailed`**:SP 有 `containerApps/write`,但**冇 `Microsoft.App/managedEnvironments/join/action`** 喺共用 env `acaen-rapo-dev`(住喺**另一個 RG** `RG-RAPO-ContainerAPP-DEV`)。實測 SP **只有一個** role assignment:`[Contributor] RG-RAPO-UOP-DEV` ⇒ infra 答嗰句「used contributor to replace」畀錯咗 RG。**要 infra 畀嘅嘢好精確**:SP object id `d6a6b91e-e98d-4c38-8103-45e70f410006` 要 `join/action`,scope 只需要 `acaen-rapo-dev` 嗰一個 resource。
+> 🟢 **零破壞** —— `LinkedAuthorization` 係 pre-flight,行喺任何 resource 改動之前:兩個 app 仍係 quickstart image、**web custom domain 完好**、`workloadProfileName` 保留。
+> 🔴 **教訓**:B4 掛咗兩日「🟢 infra 已答(**未實測**)」,而「已答」被當成「已解決」。**一個未實測嘅答覆同一個未問嘅問題,喺風險上係同一樣嘢** —— 分別只在於前者令人唔再追。
+> ⚠️ **未驗嘅繞道**:`az containerapp update`(PATCH)可能唔觸發 linked auth 檢查 —— **推論唔係實測**,而且就算通,將來任何 ARM 部署一樣撞返同一道牆,仲會令 as-built 同 `aca-dev.json` 脫節。要 Chris 拍板先做。
+>
+> ⚠️ **B4 一通,一堆無關嘅風險即刻湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16,第一次踩)· **ACA 由 VNet 內 pull 唔 pull 到 registry** · **ACA 連唔連到 private endpoint 嘅 PG**(B3)· seed · smoke · **n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
 > ADR-0027 · `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。
 
 > 🔴 **W43 最要緊嗰三件(ADR-0025 / 0026)**:

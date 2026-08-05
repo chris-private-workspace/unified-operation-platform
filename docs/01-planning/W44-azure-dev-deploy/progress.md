@@ -377,11 +377,35 @@ Chris 把 project 搬去一台**接得通 Azure DEV 環境**嘅機再叫我重�
 - **F5 走本地 `docker build` + `docker push`,唔係 `az acr build`**(R3 deviation)。原 plan F5-2/F5-3 寫 `az acr build`,因為 UAT 一直行嗰條;而家兩個 SP 都冇 management plane,而本機 build 通咗 ⇒ 改走本地。**deliverable 冇變**(兩個 image 上到 registry),變嘅係手段。F5-4 個 verify 亦由 `az acr task list-runs` 改成 `docker push` digest。
 - **params tag `dev-3ff9c73` → `dev-0d01f0c`** —— 對齊實際 push 上去嗰兩個 image。
 
+### 🔴 部署嘗試 #1 —— `LinkedAuthorizationFailed`,**B4 兌現**
+
+B1 一通即刻跑 `az deployment group create -n uop-dev-w44-0d01f0c`。**失敗**:
+
+```
+LinkedAuthorizationFailed: client 'd2f094a3-…' has permission to perform
+'Microsoft.App/containerApps/write' on '…/RG-RAPO-UOP-DEV/…/aca-rapo-uop-api-dev';
+however, it does not have permission to perform
+'Microsoft.App/managedEnvironments/join/action' on the linked scope
+'…/RG-RAPO-ContainerAPP-DEV/…/managedEnvironments/acaen-rapo-dev'
+```
+
+**🟢 零破壞** —— 部署後 `az containerapp list` 實測:兩個 app `Succeeded`/`Running`、仍係 quickstart image、**web `customDomains` 完好**、`workloadProfileName` 保留、`registries` 仍空。`LinkedAuthorization` 係**授權 pre-flight**,行喺任何 resource 改動之前 ⇒ **what-if 個「零 Delete」保證冇被破壞**。
+
+**🔴 B4 唔係「未實測」,係「答錯咗」。** `az role assignment list --assignee-object-id d6a6b91e-…  --all` 實測 —— SP **只有一個** assignment:`[Contributor] /subscriptions/30dac177-…/resourceGroups/RG-RAPO-UOP-DEV`。infra 答 B4 嗰句「used contributor to replace」係畀咗 **UOP 個 RG** 嘅 Contributor,而 ACA env 住喺**另一個 RG**。B4 原文本身就寫住「SP 對 `acaen-rapo-dev` 連 read 都冇」—— 資料一直喺度,只係我哋見到「infra 已答」就唔再追。
+
+> 🔴 **今日第二個同類教訓,而且更直接**:B4 掛咗兩日「🟢 infra 已答(未實測)」,而**「已答」被當成「已解決」**。一個未實測嘅答覆同一個未問嘅問題,喺風險上係同一樣嘢 —— 分別只在於前者**令人唔再追**。
+> 同 Day 3 上半嗰條(「有咩前提我根本冇寫落嚟」)加埋一齊睇:**今日兩次卡位,兩次都唔係技術問題,係「我以為呢格已經冇嘢」**。
+
+**要 infra 做嘅嘢(精確)**:SP object id `d6a6b91e-e98d-4c38-8103-45e70f410006` 要 **`Microsoft.App/managedEnvironments/join/action`**,scope 只需要 `…/RG-RAPO-ContainerAPP-DEV/providers/Microsoft.App/managedEnvironments/acaen-rapo-dev` 嗰一個 resource(唔使成個 RG)。
+
+⚠️ **一條未驗嘅繞道**:`az containerapp update`(PATCH)可能唔送 `environmentId` ⇒ 唔觸發 linked auth 檢查。**推論唔係實測**,而且**就算通,將來任何 ARM 部署一樣撞返同一道牆** ⇒ 佢係 unblock 手段唔係解決方案,仲會令 as-built 同 `aca-dev.json` 脫節。**要 Chris 拍板先做。**
+
 ### Blockers
 
-🟢 **B1 CLOSED**。⚠️ B3(ACA → private PG / n8n outbound)· B6(n8n http 明文)未動,兩個都要部署後先驗得到。
+🟢 **B1 CLOSED** · 🔴 **B4 OPEN(新嘅唯一硬 blocker)** —— 等 infra 畀 `join/action`。
+⚠️ B3(ACA → private PG / n8n outbound)· B6(n8n http 明文)未動,兩個都要部署後先驗得到。
 
-**⇒ 一直卡喺 B1 後面嗰堆風險而家會一次過湧出嚟**(Day 2 已預告):ARM template 打真環境 · **PG v18 migration 第一次踩** · ACA 由 VNet 內 pull 唔 pull 到 registry · ACA 連唔連到 private endpoint 嘅 PG · seed · smoke · n8n 雙向。呢啲同 registry **完全無關**,只係一齊卡喺同一道閘後面。
+**⇒ 一直卡喺 B1 後面嗰堆風險而家全部搬去卡喺 B4 後面**(Day 2 已預告佢哋會一次過湧出嚟):ARM template 打真環境 · **PG v18 migration 第一次踩** · ACA 由 VNet 內 pull 唔 pull 到 registry · ACA 連唔連到 private endpoint 嘅 PG · seed · smoke · n8n 雙向。呢啲同 registry / 權限 **完全無關**,只係一齊卡喺同一道閘後面。
 
 ### Commits
 

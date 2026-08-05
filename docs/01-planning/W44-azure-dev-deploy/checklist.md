@@ -86,9 +86,13 @@ last_updated: 2026-08-04
 - [x] F5-5 🆕 `aca.params.dev.json` 個 `apiImage`/`webImage` tag 由 `dev-3ff9c73` 更新做 **`dev-0d01f0c`**(對齊實際 push 上去嗰兩個)
 - [x] F5-6 🆕 部署前重跑 `what-if` —— **同 Day 1 baseline 一致**:零 Delete · 9 Ignore · 2 Modify · `customDomains`/`workloadProfileName` 保留
 
-## F6 — 部署 + smoke(🔴 **前置 F2/F3/F5 + B3**)
+## F6 — 部署 + smoke(🔴 **卡 B4 —— 2026-08-05 嘗試 #1 失敗**)
 
-- [ ] F6-1 `az deployment group create`
+> 🔴 **B4 兌現**:`az deployment group create` → **`LinkedAuthorizationFailed`**。SP 有 `containerApps/write`,但**冇 `Microsoft.App/managedEnvironments/join/action`** 喺 `RG-RAPO-ContainerAPP-DEV/…/acaen-rapo-dev`。實測 SP **只有一個** role assignment:`[Contributor] RG-RAPO-UOP-DEV` ⇒ infra 答嗰句「used contributor to replace」畀錯咗 RG。
+> 🟢 **零破壞** —— pre-flight 授權檢查行喺任何改動之前,兩個 app 完全原狀(custom domain / workloadProfile 都喺)。
+
+- [ ] F6-0 🔴 **等 infra 畀 `Microsoft.App/managedEnvironments/join/action`**(scope 只需要 `acaen-rapo-dev` 嗰一個 resource;SP object id `d6a6b91e-e98d-4c38-8103-45e70f410006`)
+- [ ] F6-1 `az deployment group create` —— ⚠️ **嘗試 #1(`uop-dev-w44-0d01f0c`)失敗於 B4**,零破壞,等 F6-0
 - [ ] F6-2 verify:`az deployment group show` → `provisioningState = Succeeded`
 - [ ] F6-3 verify:兩個 revision **Running / Healthy**(`az rest` replica 狀態)
 - [ ] F6-4 verify:`GET https://rapo-uop-web-dev.rci-t.com/` = 200

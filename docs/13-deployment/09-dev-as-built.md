@@ -24,11 +24,12 @@
 
 > **命名更正處理**:Chris 拍板**保留舊檔名 / ADR 標題**,靠 blockquote 更正(改名會令 git history 永久對唔上,W36 教訓)。見 `07-uat-as-built.md` 同 ADR-0012 頂部。
 
-## 🟢 B1 已解封(2026-08-05)—— 部署前置全部齊
+## 🟢 B1 已解封 / 🔴 **B4 兌現咗,變成新嘅硬 blocker**(2026-08-05)
 
-> **2026-08-05 更新**:B1 由 2026-08-04 起卡咗兩日,**2026-08-05 換一台唔喺公司網嘅 build host 之後完全解封**。
-> 兩個 image 已 build + **真 push 上 `acrrci3ailanding1`**;`what-if` 重跑同 baseline 一致。
-> **下一步 = `az deployment group create`(F6-1)**。詳見下面「🟢 2026-08-05 第四輪」。
+> **2026-08-05 更新**:B1 卡咗兩日,**換一台唔喺公司網嘅 build host 之後完全解封** —— 兩個 image 已 build + **真 push 上 `acrrci3ailanding1`**,`what-if` 重跑同 baseline 一致。詳見下面「🟢 2026-08-05 第四輪」。
+>
+> 🔴 **但 `az deployment group create` 隨即撞 `LinkedAuthorizationFailed`** —— 即係一直標住「infra 已答、**未實測**」嘅 **B4**。詳見下面「🔴 2026-08-05 部署嘗試 #1」。
+> 🟢 **零破壞**:ARM 喺 pre-flight 授權檢查就斷,兩個 app 完全保持原狀(custom domain / workloadProfile 都喺)。
 > ⚠️ **本節以下由「三個 blocker」到「解法 ④」保留原文** —— 記錄當時嘅實測同判斷,唔係現況。
 
 ## 🔴 三個 blocker(未解封,部署做唔到)
@@ -178,6 +179,62 @@ Chris 把 project 搬去一台**接得通 Azure DEV 環境**嘅機再重驗。�
 `what-if`(tag 更新做 `dev-0d01f0c` 之後)**同 2026-08-04 baseline 一致**:`Succeeded` · **零 Delete** · **9 個 `Ignore`** · 只有 2 個 container app `Modify` · 🟢 **`customDomains` / `workloadProfileName` 保留** · web `external` 保持 true。api delta = ADR-0027 Option A 預期(`allowInsecure` false→true · `external` true→**false** · `targetPort` 80→**3000**);web = `targetPort` 80→**8080**;兩個都 `registries` + `secrets` **Create**。
 
 ⚠️ **被 unset 嘅 property 今次係四個唔係三個** —— 多咗 **`properties.runningStatus: Running → ''`**。佢係 read-only status field,ARM **應該**唔會真改,但**冇實證,係推論** ⇒ 照上面「有實證先當佢無害」嘅標準,留部署後對數專登睇。
+
+## 🔴 2026-08-05 部署嘗試 #1:`LinkedAuthorizationFailed` —— **B4 兌現**
+
+B1 解封之後即刻跑 `az deployment group create -n uop-dev-w44-0d01f0c`。**失敗**,error 原文:
+
+```
+LinkedAuthorizationFailed:
+The client 'd2f094a3-b1ec-4c05-b71a-7fae91e08af0' with object id
+'d6a6b91e-e98d-4c38-8103-45e70f410006' has permission to perform action
+'Microsoft.App/containerApps/write' on scope
+'/subscriptions/30dac177-…/resourcegroups/RG-RAPO-UOP-DEV/providers/
+ Microsoft.App/containerApps/aca-rapo-uop-api-dev';
+however, it does not have permission to perform action(s)
+'Microsoft.App/managedEnvironments/join/action' on the linked scope(s)
+'/subscriptions/30dac177-…/resourceGroups/RG-RAPO-ContainerAPP-DEV/providers/
+ Microsoft.App/managedEnvironments/acaen-rapo-dev'
+```
+
+### 🟢 零破壞 —— ARM 喺 pre-flight 就斷
+
+部署後 `az containerapp list` 實測,兩個 app **完全保持原狀**:
+
+| 檢查 | api | web |
+|---|---|---|
+| `provisioningState` / `runningStatus` | `Succeeded` / `Running` | `Succeeded` / `Running` |
+| image | 仍係 `mcr.microsoft.com/k8se/quickstart:latest` | 同左 |
+| `customDomains` | — | 🟢 **`rapo-uop-web-dev.rci-t.com` 完好** |
+| `workloadProfileName` | `Consumption` 保留 | `Consumption` 保留 |
+| `registries` | 仍然空 | 仍然空 |
+
+⇒ `LinkedAuthorization` 係**授權 pre-flight**,行喺任何 resource 改動之前。**what-if 個「零 Delete」保證冇被破壞。**
+
+### 🔴 B4 唔係「未實測」,係「答錯咗」
+
+`az role assignment list --assignee-object-id d6a6b91e-… --all` 實測 —— SP **只有一個** role assignment:
+
+```
+[Contributor] scope = /subscriptions/30dac177-…/resourceGroups/RG-RAPO-UOP-DEV
+```
+
+infra 2026-08-04 答 B4 嗰句「used contributor to replace」**係畀咗 UOP 個 RG 嘅 Contributor**,而 ACA env 住喺**另一個 RG `RG-RAPO-ContainerAPP-DEV`** ⇒ 嗰個 Contributor 覆蓋唔到。B4 原文本來就寫住「SP 對 `acaen-rapo-dev` 連 read 都冇」,而我哋當時標咗 🟢 **`未實測`** 就當佢過咗。
+
+> 🔴 **教訓同 Day 3 嗰條係同一族,而且更直接**:B4 一直掛住「🟢 infra 已答」,而「已答」被當成「已解決」。**一個未實測嘅答覆,同一個未問嘅問題,喺風險上係同一樣嘢** —— 分別只在於前者令人唔再追。
+
+### 需要 infra 做嘅嘢(精確)
+
+SP(app id `d2f094a3-b1ec-4c05-b71a-7fae91e08af0` · object id `d6a6b91e-e98d-4c38-8103-45e70f410006`)需要 **`Microsoft.App/managedEnvironments/join/action`**,scope:
+
+```
+/subscriptions/30dac177-6dcb-412e-94f6-da9308fd1d09/resourceGroups/
+  RG-RAPO-ContainerAPP-DEV/providers/Microsoft.App/managedEnvironments/acaen-rapo-dev
+```
+
+**scope 只需要嗰一個 env resource,唔需要成個 RG。** 內建角色定自訂角色由 infra 揀 —— 我哋唯一硬要求係嗰個 `join/action`(順帶畀埋 `managedEnvironments/read` 會方便診斷,但唔係必需)。
+
+⚠️ **一條未驗嘅繞道**:`az containerapp update`(PATCH)可能唔會送 `environmentId`,因而唔觸發 linked authorization 檢查。**呢個係推論唔係實測**,而且就算通,**將來任何 ARM 部署一樣會撞返同一道牆** ⇒ 佢係 unblock 手段,唔係解決方案,而且會令 as-built 同 `aca-dev.json` 脫節。
 
 ## 附:B1 解法 ② —— 若 infra team 代 build,交畀佢哋嘅嘢
 
