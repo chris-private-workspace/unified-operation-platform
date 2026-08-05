@@ -257,4 +257,38 @@ F2-1 存底見到 web app 有 150+ 個 `outboundIpAddresses`,我由此推論「*
 
 ---
 
+## Day 2 — 2026-08-05:infra 第三輪 —— firewall 通咗,但 build 仍然斷
+
+### infra 回覆
+
+1. 「`4a6e1474-…` is the login for registry server；the one have permission to deploy is `d2f094a3-…`」
+2. 「i think it is fixed now, the new network having issue. I edited the setting」
+
+### 逐條實測(唔靠推論)
+
+| 測乜 | 結果 |
+|---|---|
+| `docker login`(用 `4a6e1474`) | ✅ **`Login Succeeded`** —— firewall 真係修好咗 |
+| `az acr show -n acrrci3ailanding1` 用 **`d2f094a3`** | ❌ **`could not be found in subscription`** |
+| `/v2/_catalog`(firewall 開咗之後) | ✅ 通,**7 個 repo 全部係應用 image,冇 base image mirror** |
+
+#### 🔴 (a) 揭到我一個真嘅疏忽
+
+infra 話「有 deploy 權嗰個係 `d2f094a3`」。我 check 返自己做過乜:**我一直用 `4a6e1474` 試 `az acr show`,而 `d2f094a3` 我只用佢跑過 `az acr list`** —— 而 `list` 同 `show` 唔同(前者要 subscription-level read,返空唔代表 show 唔到)。即係話 **我從來冇用正確嗰個 SP 試過正確嗰條命令**,而我之前已經把「冇 management plane」寫成結論。
+
+補測之後結論**冇變**(`d2f094a3` 一樣 `could not be found`),但**呢個係運氣好,唔係方法對**。教訓同 Day 1 嗰兩次(B2 建 database / pull 側 IP)同一族:**由一個相關但唔對位嘅觀察,推去一個更強嘅結論**。分別係前兩次錯咗,今次啱,而**啱咗唔代表方法企得住**。
+
+#### B1 卡位變咗
+
+由「入唔到 registry」變成「**攞唔到 base image 嚟 build**」:
+- ✅ push 側解封(⚠️ 但只證到 `login`,**未證到 `push`** —— 因為冇 image 可以推)
+- ❌ `az acr build`:兩個 SP 都冇 management plane
+- ❌ 本地 `docker build`:Docker Hub 503,而且 registry **冇 mirror 可以借**
+
+⇒ 解法由兩個變**三個**(firewall 通咗令一條新路可行):①SP 攞 registry `read` + **`scheduleRun/action`**(🔴 **後者唔喺 `AcrPush` 入面**,呢個係整件事嘅關鍵誤解)②infra 代 build ③🆕 infra `az acr import` 兩個 base image 入 registry + 我哋加 `ARG BASE_REGISTRY`(**預設空值令 UAT 逐字不變**)。
+
+> 🔍 順帶:registry 有一個 **`n8n`** repo ⇒ 側面印證 n8n 同 UOP 住喺同一個 landing zone。
+
+---
+
 **End of W44 progress**(進行中)

@@ -65,6 +65,32 @@ Infra 回覆:registry = **`acrrci3ailanding1.azurecr.io`**(RCI AI landing zone),
 
 🔴 **原本有第三個「只放行 firewall + 我哋自己 build」,已剔走** —— 放行咗我哋 push 得,但**仍然 build 唔到**:本地 `docker build` 要 pull `node:20-slim` / `nginx:1.27-alpine`,而 Docker Hub CDN 經公司 proxy **503**。除非 registry 內有 base image mirror,否則呢條路一定斷。**留住一個死路選項唔係保留彈性,係引人揀錯。**
 
+### 🔄 2026-08-05 第三輪:**firewall 通咗,但 build 仍然斷**
+
+infra 回覆:①「`4a6e1474-…` is the login for registry server；the one have permission to deploy is `d2f094a3-…`」②「i think it is fixed now, the new network having issue. I edited the setting」
+
+**逐條實測**:
+
+| 測乜 | 結果 |
+|---|---|
+| `docker login acrrci3ailanding1.azurecr.io`(用 `4a6e1474`) | ✅ **`Login Succeeded`** —— firewall 真係修好咗,**push 側解封** |
+| `az acr show -n acrrci3ailanding1`(用 **`d2f094a3`**,infra 話有 deploy 權嗰個) | ❌ **`could not be found in subscription`** —— 同 `4a6e1474` 一樣,**兩個 SP 都冇 management plane 存取** ⇒ `az acr build` 仍然做唔到 |
+| `/v2/_catalog`(data-plane,firewall 開咗之後) | ✅ 通。**7 個 repo,全部係應用 image**:`ai-document-processor` · `document-processor` · `document-processor-integrated` · `document-processor-stage1` · `myopenwebui` · **`n8n`** · `simple-document-processor` ⇒ **冇 `node` / `nginx` base image mirror 可以借** |
+
+> 🔍 順帶:registry 入面有 **`n8n`** —— 側面印證 n8n 同 UOP 住喺同一個 landing zone。
+
+⇒ **B1 而家卡喺一個唔同嘅位**:唔再係「入唔到 registry」,而係「**攞唔到 base image 嚟 build**」。
+
+**三個解法(2026-08-05 更新 —— 由兩個變三個,因為 firewall 通咗令一條新路可行)**:
+
+| # | 做法 | 評價 |
+|---|---|---|
+| **①🥇** | infra 畀 SP 對 `acrrci3ailanding1` 嘅 **management plane** 權 —— 最小需要 `Microsoft.ContainerRegistry/registries/**read**` + `.../**scheduleRun/action**`(後者**唔喺 `AcrPush` 入面**,喺 `Contributor`)⇒ 我哋跑 `az acr build` | 最乾淨:**base image 喺 Azure 側 pull**,一次過繞開公司 proxy;將來每次重 build 都自助 |
+| **②** | infra **代 build + push** | 可行,但每次部署都要人手。指引已預先寫定(見下面「附:B1 解法 ②」) |
+| **③🆕** | infra 用 `az acr import` 把兩個 base image 拉入 registry(`docker.io/library/node:20-slim` · `docker.io/library/nginx:1.27-alpine`),我哋改 Dockerfile 加 `ARG BASE_REGISTRY` 指去佢 | 我哋自助 build 得返。**代價**:base image 要有人定期更新;Dockerfile 多一個 ARG(**要預設空值令 UAT 逐字不變**) |
+
+⚠️ **push 側只證到 `login`,未證到 `push`** —— 因為我哋根本冇 image 可以推(build 唔到)。要真證明 push 通,要等有第一個 image。
+
 ### ✅ pull 側擔心已撤銷(2026-08-04 infra 回覆)
 
 原本擔心:web app 有 150+ 個 `outboundIpAddresses` ⇒ ACA pull 一樣撞 ACR firewall,逐個放行唔實際。
