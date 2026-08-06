@@ -40,6 +40,16 @@
 > ```
 > **零 `WARN: migrate deploy failed` · 零 `WARN: seed failed` · 零 Error** ⇒ **B3(ACA 連 private endpoint PG)✅** · **PG v18 migration(G8)✅ 19 個全部 applied** · **seed ✅ 精確 24 個 OpCo**。
 > ⚠️ **陷阱以後仍然成立**:`docker-entrypoint.sh` 令 migrate/seed 失敗 **NON-FATAL** ⇒ revision `Healthy` **證明唔到 DB 通**,驗證一定要睇 log 或 HTTP。
+> 🔴 **B9 = SSO 未接得到(2026-08-06)。而家行緊 break-glass 本地登入 `admin@uop.local`。** infra 交嘅 app registration `08fa14bf-…`(tenant `d1ea071a-…` = **公司 M365 tenant**,同 Graph app `27d329e5-…` 同 tenant 但**唔同 app**)**只配咗 client-credentials**,用戶登入三樣缺晒,全部有錯誤碼:
+> ① **一條 redirect URI 都冇** → `AADSTS900971: No reply address provided`(🔴 唔係「登記咗但唔啱」嗰個 `AADSTS50011`,係**一條都冇**)
+> ② **冇 Expose an API scope** → `AADSTS500011: resource principal not found`
+> ③ **token 係 v1**(`ver: 1.0`)而 `apps/api/src/auth/jwt-auth.guard.ts:170-177` 用 `jwt.verify(…, { issuer })` **精確比對** `…/v2.0`;v1 issuer 係 `https://sts.windows.net/{tid}/` ⇒ **一定 401,而且登入會睇落完全成功**(典型「紅得靜」)
+> **要 infra 補三樣**:SPA platform(**唔係 Web**)+ redirect URI 逐字 `https://rapo-uop-web-dev.rci-t.com` · Expose an API + delegated scope `access_as_user` · manifest `"accessTokenAcceptedVersion": 2`。**唔使 client secret**(PKCE)。
+> ⚠️ `VITE_ENTRA_*` 係 **build-time 烘死落 image** ⇒ 估錯個 Application ID URI 就要重 build(~10 分鐘),所以要問 infra 攞**確切值**,唔可以估。
+> 🟢 **接 SSO 可回退**:`api.ts:25` local profile 優先於 `msalConfigured` · `login.tsx:167-174` 本地登入表單永遠喺 ⇒ 最壞只係 SSO 按鈕報錯。
+> 🟢 **Graph app 權限齊**(`LicenseAssignment.Read.All` / `User.Read.All` / `LicenseAssignment.ReadWrite.All`)⇒ F3-7 接真 Graph 冇障礙。🔴 client secret **exp 2028-07-28** 要入 RISK。
+> 💡 **測 Entra 一定要用真瀏覽器** —— 命令列打 authorize endpoint 會攞到「200 冇錯誤」嘅**假陽性**(現代登入頁係 SPA,錯誤由 JS 畫)。跑一個**故意錯**嘅對照 case 先信自己個測試。
+>
 > ⚠️ **呢台機嘅 az session 唔穩定** —— 一日內撞過 **4 個唔同 SP**(`d2f094a3` / `a19dfe76` / `2ae44f00` / ACR `4a6e1474`),錯身份會畀出**誤導性 error**(403 睇落似權限未落,其實係身份唔啱)。⇒ **做 az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP**(憑證喺 `apps/api/.env` 尾段)。
 > 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**。2026-08-06 由**公司網絡**(DNS `10.160.92.1`)實測:`rapo-n8n-uat.rci-t.com` → **`10.160.71.243`** ✅ 但 `rapo-uop-web-dev.rci-t.com` → **Non-existent domain** ⇒ **infra 漏咗建** ⇒ custom domain **連喺企業網都訪問唔到**。⚠️ 之前「ACA 綁 custom domain 要 hostname 驗證 ⇒ DNS 應該配好」呢個推論**已被一條 `nslookup` 推翻**。
 > 🟢 **B8 唔 block 驗證** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` + `/api/docs/api` ⇒ **F6-4/5/6 即刻收得**,custom domain 嗰半留 B8 解封後補驗。

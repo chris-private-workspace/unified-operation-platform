@@ -139,6 +139,22 @@ last_updated: 2026-08-04
 - [ ] F8-6 `RISK_REGISTER.md` 加本 phase risk
 - [ ] F8-7 memory 更新(`azure-uat-deployment` 加 DEV,或者新開一則)
 
+## F9 — Entra SSO 接線(🆕 plan v1.4;🔴 **卡 B9**)
+
+> **點解而家先有**:原 plan 冇 SSO deliverable(F3-6 拍板「先 placeholder,部署成功再接」,而 SSO 一直掛喺 **AUTH-2b** 等 IT)。infra 2026-08-06 交出 app registration ⇒ 由「等 IT」變「有嘢做」。
+> 🔴 **但實測揭到嗰個 app 只配咗 client-credentials,用戶登入三樣缺晒** ⇒ **B9**,F9 卡住。
+
+- [x] F9-1 確認 infra 交嘅 app registration 身份 —— `APP - unified operations portal - SSO - UAT` · appId `08fa14bf-…` · tenant `d1ea071a-…`(**公司 M365 tenant**,同 Graph app 同 tenant 但**唔同 app**)· `roles` **空**(⇒ 唔係畀 Graph 用)
+- [x] F9-2 確認接 SSO **可回退** —— `api.ts:25` local profile 優先於 `msalConfigured`;`login.tsx:167-174` 本地登入表單永遠喺 ⇒ 最壞只係 SSO 按鈕報錯,**break-glass 照用**
+- [x] F9-3 🔴 **B9 實測(三樣缺失,全部有錯誤碼)**:①**冇任何 redirect URI** → `AADSTS900971: No reply address provided` ②**冇 Expose an API scope** → `AADSTS500011: resource principal not found` ③**token 係 v1**(`ver: 1.0`)而 `jwt-auth.guard.ts:170-177` 精確比對 v2 issuer ⇒ 一定 401
+- [x] F9-4 交畀 infra 嘅三項要求已寫定(plan 附錄 C 第四輪)。⚠️ 第 ② 項問法係「**Application ID URI 係咩**」唔係「請設定」—— 因為佢可以叫另一個名,而我哋只證到 `api://<client-id>` 唔存在
+- [ ] F9-5 🔴 **等 infra 補三樣**(SPA platform + redirect URI · Expose an API + scope · `accessTokenAcceptedVersion: 2`)
+- [ ] F9-6 重 build web image 傳 **3 個** build-arg(`VITE_ENTRA_CLIENT_ID` / `VITE_ENTRA_TENANT_ID` / `VITE_ENTRA_API_SCOPE`)—— 🔍 `VITE_ENTRA_REDIRECT_URI` **可以唔傳**:`msal.ts:29` 冇值時跌返 `window.location.origin`,而佢正好 = `https://rapo-uop-web-dev.rci-t.com`
+- [ ] F9-7 PATCH api 加 `ENTRA_TENANT_ID` + `ENTRA_API_AUDIENCE`。⚠️ **`AUTH_JWT_SECRET` 保留唔拆**(dual-provider,ADR-0005)
+- [ ] F9-8 verify:**SSO 登入通 + break-glass 仍然通** —— 兩邊都要驗,唔可以只驗新嗰邊
+- [ ] F9-9 🔴 client secret **expiry 2028-07-28** 入 `RISK_REGISTER.md`(到期會**靜靜咁全部 401**)
+- [ ] F9-10 🟢 順帶記低:Graph app `App-N8N-LicenseManagement` 有 `LicenseAssignment.Read.All` · `User.Read.All` · `LicenseAssignment.ReadWrite.All` ⇒ **F3-7 接真 Graph 冇權限障礙**
+
 ---
 
 ## Cross-Cutting

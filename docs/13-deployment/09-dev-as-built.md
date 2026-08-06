@@ -412,7 +412,51 @@ ERROR: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
 
 ## 認證(as-built)
 
-**未部署,尚未適用。** 計劃沿用 ADR-0012 D2:Entra SSO 為主 + seeded 本地 admin 做 break-glass(dual-provider,ADR-0005)。DEV 嘅 Entra app registration **未有** —— 同 UAT 一樣,先用 break-glass 起,SSO 後補(AUTH-2b 仍卡 IT app registration)。
+**而家行緊 = break-glass 本地登入**(seeded `admin@uop.local`,`AUTH_JWT_SECRET` + `LOCAL_ADMIN_INITIAL_PASSWORD`)。SSO **未接**,原因見下面 B9。
+沿用 ADR-0012 D2 / ADR-0005 dual-provider:兩個 provider 並存,SSO 接通之後 break-glass **唔會拆**。
+
+### 🔴 B9 —— infra 交嘅 SSO app registration **淨係配咗程式對程式,用戶登入三樣缺晒**
+
+infra 2026-08-06 交出:`APP - unified operations portal - SSO - UAT` · appId **`08fa14bf-03f7-4a1a-9c48-da31da9c47e3`** · tenant **`d1ea071a-…`** · 一個 client secret(exp **2028-07-28**)。
+
+🔍 **先確認咗兩件事**:①個 app 喺**公司 M365 tenant**(`d1ea071a`),同 Graph app 同一個 tenant,但**唔同 app**(Graph 係 `27d329e5`)⇒ 佢真係為 SSO 而建,唔係重發 Graph 嗰組 ②佢 `roles` 係**空**(冇 Graph application permission)⇒ 確認唔係畀 Graph 用。
+
+**三樣缺失,全部有錯誤碼佐證**:
+
+| # | 缺乜 | 實測證據 |
+|---|---|---|
+| 1 | **一條 redirect URI 都冇** | 瀏覽器打 authorize → **`AADSTS900971: No reply address provided`**(Req Id `e2ff51a9-779f-4b3b-93e2-10da97575300`)。🔴 呢個唔係「登記咗但唔啱」(嗰個係 `AADSTS50011`),係**一條都冇** |
+| 2 | **冇 Expose an API / scope** | 帶 `api://08fa14bf-…/access_as_user` → **`AADSTS500011: resource principal not found`**(Req Id `29f91e96-197c-4a6b-8a24-56ebf9a65400`) |
+| 3 | **token 係 v1** | client credentials 攞 token → claim **`ver: 1.0`**。而 `apps/api/src/auth/jwt-auth.guard.ts:170-177` 用 `jwt.verify(…, { issuer })` **精確比對** `https://login.microsoftonline.com/{tid}/v2.0`;v1 token 個 issuer 係 `https://sts.windows.net/{tid}/` ⇒ **一定 401** |
+
+🔴 **第 3 樣最危險** —— 登入會**睇落完全成功**,但入到系統全部 401,而錯誤訊息**一個字都唔提版本**。呢個係典型「紅得靜」,同 F7 outbound 嗰種同族。
+
+**要 infra 做三樣**:
+1. Authentication → 加 platform **Single-page application**(**唔係** Web)+ redirect URI **逐字** `https://rapo-uop-web-dev.rci-t.com`
+2. Expose an API → 設 Application ID URI + delegated scope `access_as_user` + admin consent。⚠️ **若用另一個 URI 名,一定要話我哋確切值** —— 佢係 **build-time** 烘死落 image,估錯就要重 build(一次 ~10 分鐘)
+3. Manifest → `"accessTokenAcceptedVersion": 2`
+
+**唔使畀 client secret** —— SPA 行 PKCE。infra 畀嗰個保留但前端唔會用。
+
+### 🟢 接 SSO 係可回退嘅(查過 code)
+
+- `apps/web/src/lib/api.ts:25` —— `if (getLocalProfile()) return {}` **喺 `msalConfigured` 檢查之前** ⇒ break-glass session **完全唔受影響**
+- `apps/web/src/pages/login.tsx:167-174` —— SSO 按鈕之後有 `or with a local account` + **真嘅本地登入表單**;`msalConfigured` 只控制個按鈕 `disabled`
+
+⇒ 最壞情況只係「SSO 按鈕撳落去報錯」,**break-glass 照用**。
+
+### ⚠️ 兩個方法論記錄(唔係湊數,兩個都改變咗結論)
+
+1. **一個假陽性被對照組接住** —— 我最初用 PowerShell 打 authorize endpoint 測 redirect URI,得到「200,冇 AADSTS」,差啲寫成「redirect URI 已登記」。跑對照組(**故意錯**嘅 URI)一樣係 200 冇錯誤 ⇒ **個方法本身無效**。真相係現代 Azure 登入頁係 SPA,**錯誤由瀏覽器 JS 畫出嚟**,命令列只攞到空殼 HTML。⇒ **要喺真瀏覽器開先睇到。**
+2. **一個措辭要收返** —— 「冇 Expose an API」實測到嘅只係「叫 `api://<client-id>` 嗰個唔存在」。Application ID URI **可以係任何名**,infra 設咗第二個名嘅話其實已經配好。⇒ 畀 infra 嘅問法改成「**係咩**」而唔係「**請設定**」。
+
+### 🔴 順帶:client secret 有 expiry = **2028-07-28**
+
+到期嗰日相關認證會**靜靜咁全部 401**,而症狀係「突然登入唔到 / 對帳唔 work」,冇人會即刻諗到係憑證過期。**要入 `RISK_REGISTER.md`。**
+
+### 🟢 順帶查到:Graph app 權限齊
+
+`App-N8N-LicenseManagement`(appId `27d329e5-…`)`roles` = **`LicenseAssignment.Read.All` · `User.Read.All` · `LicenseAssignment.ReadWrite.All`** ⇒ **正好係 LicenseOps 要嘅**,F3-7 接真 Graph **冇權限障礙**。
 
 ## 部署記錄
 

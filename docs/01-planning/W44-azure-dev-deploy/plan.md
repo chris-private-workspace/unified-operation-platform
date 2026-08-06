@@ -206,6 +206,8 @@ Carry-over from `W43-onboarding-license-request/progress.md` retro:
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
+| 2026-08-06 | **v1.4 — 新增 F9(Entra SSO 接線),前置 B9** | 部署成功之後 Chris 提出「部署咗上 Azure 就應該開 SSO」。原 plan 冇 SSO deliverable —— F3-6 拍板「先 placeholder,部署成功再逐個接」,而 SSO 一直掛喺 **AUTH-2b**(卡 IT app registration)。infra 2026-08-06 交出 app registration `08fa14bf-…`,所以佢由「等 IT」變成「有嘢可以做」⇒ 開 F9。**但實測揭到嗰個 app 只配咗 client-credentials,用戶登入三樣缺晒** ⇒ 登記做 **B9**,F9 卡住 | Chris Lai |
+| 2026-08-06 | **v1.3 — F5 改走本地 `docker build`;F6 改走 raw ARM PATCH** | ①**F5**:兩個 SP 都冇 registry management plane ⇒ `az acr build` 做唔到;換一台唔喺公司網嘅 build host 之後本地 build + push 通(B1 解封)。deliverable 冇變,手段變。②**F6**:ARM full PUT 必然送 `environmentId`,觸發 `managedEnvironments/join/action` 檢查而 SP 冇(B4)⇒ 改用 `az rest --method patch`,body 唔含 `environmentId`。`aca-dev.json` 保留做宣告式真相,infra 一畀 `join/action` 就用得返。新增腳本 `deploy/azure/patch-deploy-dev.ps1` | Chris Lai |
 | 2026-08-04 | Initial plan | — | Chris Lai |
 | 2026-08-04 | **v1.2 — F0 Accepted(Option A)⇒ F4 deliverable 消失;B2 自解** | ①Chris Accept **ADR-0027 D1 = Option A**(api 收返 internal)⇒ DEV upstream 形狀**同 UAT 一模一樣**,原本 F4「nginx 改 https+external」嘅**前提冇咗**,`nginx.conf.template` 零改動(3h → 0.25h)。呢個係 Option A 一個落 plan 時冇預見嘅好處。②**B2 由 blocker 變自解** —— 原判斷「PG private 連唔到所以建唔到 database」錯,建 database 係 management plane 操作;已自建 `platform`,Q2 由 infra 問題清單拎走。③新增 **B5**(web portal scheme 對唔上)| Chris Lai |
 | 2026-08-04 | **v1.1 — 「UAT」正名 + B3 升級 + F7 加 outbound 半邊** | Chris 更正:之前部署嗰個唔係真 UAT,只係自建測試環境(冇 VNet)⇒ 同 n8n **兩個方向都接唔通**,而呢個就係 W36–W42 嗰句「n8n 側零 live 驗證」嘅根本原因。連帶三項:①六處差異塌縮成「自建孤島 → 企業託管」一個轉變(B1 隨之由「registry 唔知去咗邊」變「企業中央 registry 座標同權限」)②**B3 由部署細節升格成本環境成敗關鍵**(outbound 繫於 ACA env VNet 整合,而 **ADR-0027 D1 揀 A 定 B 都改變唔到**)③F7 acceptance 補 outbound —— 原本只寫 inbound,會令「接通」驗一半當全部 | Chris Lai |
@@ -308,6 +310,22 @@ infra 第二輪回:「We have private dns and endpoint for the ACR, so it will n
 2. **infra 代 build + push**
 
 ---
+
+### 🔴 第四輪(2026-08-06 —— SSO app registration,三樣缺失)
+
+> **背景**:infra 交出 `APP - unified operations portal - SSO - UAT`(appId `08fa14bf-03f7-4a1a-9c48-da31da9c47e3`,tenant `d1ea071a-…`)+ 一個 client secret(exp 2028-07-28)。
+> **實測發現佢只配咗 client-credentials(程式對程式),用戶登入三樣缺晒。** 全部有錯誤碼佐證,唔係推論。
+
+| # | 缺乜 | 實測證據 |
+|---|---|---|
+| 1 | **冇任何 redirect URI** | 瀏覽器打 authorize → **`AADSTS900971: No reply address provided`**(Request Id `e2ff51a9-779f-4b3b-93e2-10da97575300`)。注意呢個唔係「登記咗但唔啱」(嗰個係 50011),係**一條都冇** |
+| 2 | **冇 Expose an API / scope** | 同上帶 `api://08fa14bf-…/access_as_user` → **`AADSTS500011: resource principal not found`**(Request Id `29f91e96-197c-4a6b-8a24-56ebf9a65400`)。⚠️ 呢個只證到**叫呢個名**嗰個唔存在 —— infra 可以設咗第二個名,所以要問「係咩」唔係叫佢「設定」 |
+| 3 | **token 係 v1** | client credentials 攞 token,claim `ver: 1.0`。而 `jwt-auth.guard.ts:170-177` 用 `jwt.verify(..., { issuer })` **精確比對** `https://login.microsoftonline.com/{tid}/v2.0`,v1 token 個 issuer 係 `https://sts.windows.net/{tid}/` ⇒ **一定 401** |
+
+🔴 **第 3 樣最危險**:登入會**睇落完全成功**,但入到系統之後全部 401,而錯誤訊息**一個字都唔會提版本**。
+
+**要 infra 做**:①Authentication → 加 platform **Single-page application**(唔係 Web)+ redirect URI **逐字** `https://rapo-uop-web-dev.rci-t.com` ②Expose an API → 設 Application ID URI + 加 delegated scope `access_as_user` + admin consent(**若用另一個 URI 名,要話我哋確切值** —— 佢係編譯期烘死落 image)③manifest 設 `"accessTokenAcceptedVersion": 2`。
+**唔使畀**:client secret(SPA 行 PKCE)。
 
 ### 📤 精簡版 ①(2026-08-04 第一輪,已發 —— 保留做記錄)
 

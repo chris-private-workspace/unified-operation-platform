@@ -523,6 +523,35 @@ log 攞到之後,**啟動嗰刻嘅記錄仲喺度**:
 > **metrics 推論事後對照**:之前靠 `storage_used` +944 KB 推「連得到 + 寫咗嘢」,並**刻意**把 seed 標 🟡(分唔開 schema 同 data)。log 出嚟三項全中,而 seed 嗰個 🟡 **正正係應該嘅強度**。
 > 🔴 **值得記嘅唔係「我推啱咗」,係「我標啱咗信心強度」** —— 前者靠彩數,後者可以複製。本 phase 之前五次錯,全部都係**強度標錯**(把「一條路實測」當「所有路實測」),唔係推論方向錯。
 
+### 🔴 SSO(新 F9)—— infra 交嘅 app registration **只配咗程式對程式**
+
+部署成功之後 Chris 提出「上咗 Azure 就應該開 SSO」。infra 同日交出 `APP - unified operations portal - SSO - UAT`(appId `08fa14bf-…`)+ 一個 client secret(exp 2028-07-28)。
+
+**先排除咗兩個誤判**:
+- 我最初以為嗰組 `tenant + client + secret` **係 Graph 嗰組**(形狀完全對得上 client credentials)。**Chris 一句「Graph 嘅 `.env` 一直有」就推翻咗** —— 實測 confirm:新 app 喺同一個公司 M365 tenant(`d1ea071a`)但**係另一個 app**(Graph 係 `27d329e5`),而且新 app `roles` **空**(冇 Graph permission)⇒ 佢真係為 SSO 而建。
+
+**三樣缺失,全部有錯誤碼**(Chris 喺瀏覽器實測):
+
+| # | 缺乜 | 證據 |
+|---|---|---|
+| 1 | **一條 redirect URI 都冇** | `AADSTS900971: No reply address provided` —— 🔴 唔係「登記咗但唔啱」(嗰個係 50011),係**一條都冇** |
+| 2 | **冇 Expose an API scope** | `AADSTS500011: resource principal not found` |
+| 3 | **token 係 v1** | claim `ver: 1.0`;而 `jwt-auth.guard.ts:170-177` 用 `jwt.verify(…, { issuer })` **精確比對** v2 issuer ⇒ 一定 401 |
+
+🔴 **第 3 樣最危險**:登入**睇落完全成功**,入到系統全部 401,錯誤訊息一個字都唔提版本。同 F7 outbound 嗰種「紅得靜」同族。
+
+**先查咗可回退性再落任何嘢**:`api.ts:25` local profile 優先於 `msalConfigured` · `login.tsx:167-174` 本地登入表單永遠喺 ⇒ 最壞只係 SSO 按鈕報錯,break-glass 照用。**確認安全先繼續。**
+
+**唔重 build 嘅理由**:`VITE_ENTRA_API_SCOPE` 係 build-time 烘死落 image,而個 scope 根本唔存在 ⇒ build 咗係浪費一次(~10 分鐘)。等 infra 補齊一次過做。
+
+#### 🔴 兩個方法論事件(兩個都改咗結論)
+
+**① 一個假陽性,被對照組接住。** 最初用 PowerShell 打 authorize endpoint 測 redirect URI,得到「200,冇 AADSTS」,**差啲寫成「redirect URI 已登記」**。跑對照組(**故意錯**嘅 URI)一樣 200 冇錯誤 ⇒ **個方法本身無效**。真相:現代 Azure 登入頁係 SPA,**錯誤由瀏覽器 JS 畫**,命令列只攞到空殼 HTML ⇒ 要喺**真瀏覽器**開。
+> 呢個係今日**第二次**靠對照組接住自己(第一次係攞 n8n DNS 做對照)。**「加一個已知應該失敗嘅 case」而家係我測任何嘢嘅預設動作。**
+
+**② 一個措辭要收返。** 我寫「冇 Expose an API」,但實測到嘅只係「叫 `api://<client-id>` 嗰個唔存在」—— Application ID URI **可以係任何名**。⇒ 問法改成「**係咩**」唔係「請設定」。
+> 🔴 **同 Chris 問「你肯定冇睇漏?」直接相關** —— 佢問嗰陣我本來可以答「我肯定」,但去翻查就揭到呢兩樣。**「你肯定嗎」唔應該用重申答,要用重查答。**
+
 ### Decisions
 
 - **走 raw ARM PATCH 部署**(Chris 2026-08-06 拍板)。`aca-dev.json` 保留 —— 佢仍然係 topology 嘅宣告式真相,而且 infra 一畀 `join/action` 就用得返。⚠️ **部署機制由宣告式 template 變成 PATCH 腳本,係一個要記入 ADR-0027 嘅補充**(未做,見下)。

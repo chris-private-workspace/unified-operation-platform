@@ -129,7 +129,11 @@
 > 🟢🟢 **B7 已解封(infra 2026-08-06 畀咗 `managedEnvironments/read` + enable log)⇒ 三個未知數全部收齊**。container log 原文:`19 migrations found` → `The following migration(s) have been applied:` · `Seeded 24 OpCos + admin + RHK OPCO_IT user.` · `Nest application successfully started`,**零 `WARN: … failed`**。
 > ⇒ **B3(ACA 連 private endpoint PG)✅ 本環境存在嘅意義,通咗** · **PG v18 migration(G8)✅ 19 個全部 applied** · **seed ✅ 精確 24 個 OpCo**。
 > ⚠️ **陷阱仍然成立**:`docker-entrypoint.sh` 令 migrate/seed 失敗 NON-FATAL ⇒ revision `Healthy` 證明唔到 DB 通,驗證一定要睇 log 或 HTTP。
+> 🔴 **B9 = SSO 未接得到(2026-08-06)⇒ 而家行緊 break-glass 本地登入。** infra 交嘅 app registration `08fa14bf-…` **只配咗 client-credentials**,用戶登入三樣缺晒(全部有錯誤碼):①冇任何 redirect URI → `AADSTS900971` ②冇 Expose an API scope → `AADSTS500011` ③token 係 **v1** 而 guard 精確比對 v2 issuer ⇒ **一定 401,但登入會睇落成功**。
+> **要 infra**:SPA platform + redirect URI `https://rapo-uop-web-dev.rci-t.com` · Expose an API + `access_as_user` · `accessTokenAcceptedVersion: 2`。⚠️ `VITE_ENTRA_*` 係 build-time ⇒ 要**確切** Application ID URI,估錯要重 build。
+> 🟢 接 SSO 可回退(本地登入表單永遠喺)· 🟢 Graph app 權限齊 ⇒ F3-7 冇障礙 · 🔴 client secret **exp 2028-07-28** 入 RISK。詳見 `W44-azure-dev-deploy/` F9 + plan 附錄 C 第四輪。
 > ⚠️ **build host 嘅 az session 唔穩定**(一日撞過 4 個 SP)⇒ az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP,否則 403 error 會誤導。
+> 💡 **測 Entra 一定要用真瀏覽器** —— 命令列打 authorize endpoint 會攞到假陽性(錯誤由 JS 畫)。跑一個故意錯嘅對照 case 先信自己個測試。
 > 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**:公司網絡實測 `rapo-n8n-uat.rci-t.com` → `10.160.71.243` ✅ / `rapo-uop-web-dev.rci-t.com` → **NXDOMAIN** ⇒ infra 漏咗建,custom domain 連企業網都訪問唔到。
 > 🟢 **但唔 block 驗證** —— 由公司網絡打 **ACA 預設 FQDN**(`aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io`)⇒ F6-4/5/6 即刻收得。
 > 🔴 **仍要一次直接驗證收尾**(row count / admin 帳號 / API 200):最快 = 上面條 FQDN;其次 ①infra 畀 `managedEnvironments/read` ②Chris 個人帳號睇 Portal log。
