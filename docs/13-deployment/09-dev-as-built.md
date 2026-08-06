@@ -474,7 +474,17 @@ exec node dist/main
 
 🔴 **關鍵**:我哋同**一個已知在用嘅服務**表現一模一樣 ⇒ **冇證據話我哋條 DNS 記錄「未建」**,亦**冇證據話佢「建咗」**。呢台 build host 喺 **SGP VNet**,唔喺 hub VNet 亦唔喺解析得到企業內部記錄嘅網絡。
 
-### 🔴 B8(新)—— **企業 DNS 冇我哋條記錄**(2026-08-06 由公司網絡實測)
+### 🟢 B8 已解決(2026-08-06 稍後)—— custom domain 通,**而且係 https**
+
+infra 建咗 DNS 記錄之後,Chris 由公司網絡實測:**`https://rapo-uop-web-dev.rci-t.com/` 開到 login 頁面**。
+
+⇒ **F6-4 收**(前端經 custom domain + SNI render 到)。同 ingress 配置對得上:`external=true` · `targetPort=8080` · **`allowInsecure=false`**(http 會 301 去 https)· `customDomains: rapo-uop-web-dev.rci-t.com [SniEnabled]`。
+🟢 **順帶消除一個潛在靜態 bug**:`APP_BASE_URL` 我哋填咗 **https**(F3-3,對抗 infra 最初寫嘅 http)—— 而家證實填啱。若當時照 infra 個 http 填,密碼重設信入面條 link 會壞,而 **API 照返 204、信照寄,冇任何紅燈**。
+🟢 cookie `Secure` flag 嘅擔心亦同時消除(走 https)。
+
+⬇️ **以下保留 B8 當時嘅實測記錄** —— 佢係「custom domain binding 存在 ≠ DNS 記錄存在」呢個教訓嘅證據。
+
+### 🔴 B8(當時)—— **企業 DNS 冇我哋條記錄**(2026-08-06 由公司網絡實測)
 
 Chris 喺**公司網絡嘅電腦**(DNS server `10.160.92.1`)跑分診:
 

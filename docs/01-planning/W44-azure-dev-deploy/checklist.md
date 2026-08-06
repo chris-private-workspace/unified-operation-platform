@@ -96,9 +96,9 @@ last_updated: 2026-08-04
 - [x] F6-1 ~~`az deployment group create`~~ **`az rest --method patch` ×2** —— 兩個都 `exit=0`。腳本 `deploy/azure/patch-deploy-dev.ps1`,先 dry-run 印 masked 結構驗過先送
 - [x] F6-2 verify:api / web PATCH 都 `exit=0`,兩個 app `provisioningState = Succeeded`
 - [x] F6-3 verify:**兩個 revision 都 `Healthy`** —— api `--0000002` `RunningAtMaxScale` · web `--0000001` `Running`,replicas 各 1。🟢 **順帶證到 ACA 由 VNet 內 pull 到 `acrrci3ailanding1`**
-- [ ] F6-4 verify:`GET https://rapo-uop-web-dev.rci-t.com/` = 200 —— 🔴 **卡 B8**:2026-08-06 由**公司網絡**實測,`rapo-n8n-uat.rci-t.com` → `10.160.71.243` 但 `rapo-uop-web-dev.rci-t.com` → **Non-existent domain** ⇒ **infra 漏咗建我哋條 DNS 記錄**
-- [ ] F6-5 verify:`GET .../api/docs/api` = 200 —— 同上(custom domain 半邊)
-- [ ] F6-6 verify:break-glass login = 200 + role ADMIN —— 同上(custom domain 半邊)
+- [x] F6-4 verify:`https://rapo-uop-web-dev.rci-t.com/` —— 🟢 **Chris 由公司網絡實測,login 頁面 render 到**。B8(infra 漏建 DNS)已解決;**係 https 唔係 http** ⇒ `APP_BASE_URL` 填 https **證實填啱**(F3-3 當時對抗 infra 寫嘅 http),cookie `Secure` 擔心同時消除
+- [ ] F6-5 verify:`GET https://rapo-uop-web-dev.rci-t.com/api/docs/api` = 200(驗 nginx `/api` proxy → internal api)
+- [ ] F6-6 verify:break-glass login = 200 + role ADMIN(`admin@uop.local`,密碼 = `aca.params.dev.json` 個 `localAdminInitialPassword`)
 - [ ] F6-4b 🆕 🟢 **唔使等 B8** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` → 前端 200 · `/api/docs/api` → 200 · break-glass login。⇒ **F6-4/5/6 嘅實質內容即刻收得**,custom domain 嗰半留 B8 解封後補驗
 - [x] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🟢 **已證(container log 原文)**:`19 migrations found` → 逐個 `Applying migration …` → `The following migration(s) have been applied:`,**零 error**
 - [x] F6-8 verify:seed 完成 —— 🟢 **已證(原文)**:`Seeded local admin (admin@uop.local).` + **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** —— 精確 24 個
