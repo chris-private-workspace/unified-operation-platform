@@ -453,7 +453,39 @@ exec node dist/main
 | `az containerapp exec` | ❌ 同上 |
 | HTTP smoke | ❌ 四個 URL 全部 `000`(連接失敗) |
 
-**HTTP 打唔到嘅原因唔係部署壞咗**,係網絡:`aca-…azurecontainerapps.io` 同 `rapo-uop-web-dev.rci-t.com` **喺企業 DNS(`az-sgp-dc1`, 10.160.50.4)同公網 DNS(8.8.8.8)都解析唔到** ⇒ `acaen-rapo-dev` 係 **internal-only env**,FQDN 只喺 hub VNet 嘅 private DNS 註冊;custom domain 亦係企業 split-horizon DNS。**呢台 build host 喺 SGP VNet,唔喺嗰兩個網絡入面,結構上打唔到。**
+**HTTP 打唔到嘅原因唔係部署壞咗,係網絡** —— 而呢個唔再係推論,有對照實測:
+
+**① `acaen-rapo-dev` 係 internal-only env(已實證)**
+
+| FQDN | 公網 DNS(8.8.8.8) |
+|---|---|
+| 舊 UAT(**external** env,自建孤島)`ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerapps.io` | 🟢 **`20.239.118.203`** |
+| 新 DEV `aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io` | 🔴 **Non-existent domain** |
+
+同一個 subscription、同一個 region,一個有公網 A record 一個完全冇 ⇒ **新 env 嘅 app FQDN 只喺 hub VNet 嘅 private DNS 註冊**。
+
+**② custom domain 係企業 split-horizon(對照組:一個已知在用嘅服務)**
+
+| Hostname | 公網 | 呢台機(`az-sgp-dc1` 10.160.50.4) |
+|---|---|---|
+| `rci-t.com` | 🟢 `3.33.130.190` / `15.197.148.33` | 🟢 同上 |
+| **`rapo-n8n-uat.rci-t.com`**(infra 話 n8n 用緊,**已知在用**) | 🔴 冇 | 🔴 冇 |
+| `rapo-uop-web-dev.rci-t.com`(我哋) | 🔴 冇 | 🔴 冇 |
+
+🔴 **關鍵**:我哋同**一個已知在用嘅服務**表現一模一樣 ⇒ **冇證據話我哋條 DNS 記錄「未建」**,亦**冇證據話佢「建咗」**。呢台 build host 喺 **SGP VNet**,唔喺 hub VNet 亦唔喺解析得到企業內部記錄嘅網絡。
+
+⚠️ **一個仍未排除嘅可能**:custom domain 喺**真正嘅企業 DNS** 到底建咗未,我哋喺呢度驗唔到。
+一個支持性(**唔係證明**)論據:ACA 綁 custom domain 需要 hostname 驗證,而 binding 連 SNI cert 都存在 ⇒ **綁嗰陣** DNS 應該係配好嘅。
+
+**⇒ 由公司電腦跑兩條 `nslookup` 就一次過分診**:
+
+| 結果 | 意思 |
+|---|---|
+| 兩個都解析到 | DNS 齊 ⇒ 直接 curl,F6-4/5/6 一次過收 |
+| n8n 解析到、我哋嘅解析唔到 | 🔴 **infra 漏咗建我哋條記錄**,要補 |
+| 兩個都解析唔到 | 連公司電腦都唔喺對嘅網絡 ⇒ 要問返 infra「邊度打得到 n8n」 |
+
+> 🔍 **順帶:公網打唔到係功能正常嘅表現,唔係故障。** W44 開呢個環境正正就係為咗「**只喺企業網絡內可達 + 打得入 n8n**」;舊環境嘅問題就係佢住喺公網孤島。
 
 ### 🟢 但 management plane metrics 補到大部分 —— **`storage_used` 係決定性嗰個**
 
