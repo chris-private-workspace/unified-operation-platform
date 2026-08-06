@@ -148,7 +148,10 @@ last_updated: 2026-08-04
 - [x] F9-2 確認接 SSO **可回退** —— `api.ts:25` local profile 優先於 `msalConfigured`;`login.tsx:167-174` 本地登入表單永遠喺 ⇒ 最壞只係 SSO 按鈕報錯,**break-glass 照用**
 - [x] F9-3 🔴 **B9 實測(三樣缺失,全部有錯誤碼)**:①**冇任何 redirect URI** → `AADSTS900971: No reply address provided` ②**冇 Expose an API scope** → `AADSTS500011: resource principal not found` ③**token 係 v1**(`ver: 1.0`)而 `jwt-auth.guard.ts:170-177` 精確比對 v2 issuer ⇒ 一定 401
 - [x] F9-4 交畀 infra 嘅三項要求已寫定(plan 附錄 C 第四輪)。⚠️ 第 ② 項問法係「**Application ID URI 係咩**」唔係「請設定」—— 因為佢可以叫另一個名,而我哋只證到 `api://<client-id>` 唔存在
-- [ ] F9-5 🔴 **等 infra 補三樣**(SPA platform + redirect URI · Expose an API + scope · `accessTokenAcceptedVersion: 2`)
+- [x] F9-5a 🟢 **① redirect URI —— infra 已補**(同一條 authorize URL 由 `AADSTS900971` 變正常 login 頁,**有前後對比**)
+- [ ] F9-5b 🔴 **② Application ID URI / scope —— 仍然差**。`api://<client-id>` 實測唔存在,但 infra 可能設咗**另一個名** ⇒ 要問「**係咩**」唔係叫佢「設定」。⚠️ 佢係 build-time 烘死落 image,估錯要重 build
+- [x] F9-5c 🟢 **③ token version —— 唔再需要 infra**(Chris 拍板走「路 B」,見 F9-11)
+- [x] F9-11 🆕 **`jwt-auth.guard.ts` 改成同時接受同一 tenant 嘅兩個 issuer**(`…/v2.0` + `https://sts.windows.net/{tid}/`)。🔴 **`audience` 保持單一精確值** —— 放寬佢先至係真窿。新增 test `verifies against BOTH tenant issuer forms`,同時 assert audience 冇被放寬。**879 test / 68 suite 全過**(之前 878)。⚠️ 型別陷阱:`@types/jsonwebtoken` 個 `issuer` 要**非空 tuple** 唔收 `string[]`。**唔開 ADR** —— 冇改 vendor / 邊界 / storage,亦冇推翻 ADR-0002,屬 §5.1 明文嘅「唔屬架構改動」
 - [ ] F9-6 重 build web image 傳 **3 個** build-arg(`VITE_ENTRA_CLIENT_ID` / `VITE_ENTRA_TENANT_ID` / `VITE_ENTRA_API_SCOPE`)—— 🔍 `VITE_ENTRA_REDIRECT_URI` **可以唔傳**:`msal.ts:29` 冇值時跌返 `window.location.origin`,而佢正好 = `https://rapo-uop-web-dev.rci-t.com`
 - [ ] F9-7 PATCH api 加 `ENTRA_TENANT_ID` + `ENTRA_API_AUDIENCE`。⚠️ **`AUTH_JWT_SECRET` 保留唔拆**(dual-provider,ADR-0005)
 - [ ] F9-8 verify:**SSO 登入通 + break-glass 仍然通** —— 兩邊都要驗,唔可以只驗新嗰邊

@@ -130,7 +130,8 @@
 > ⇒ **B3(ACA 連 private endpoint PG)✅ 本環境存在嘅意義,通咗** · **PG v18 migration(G8)✅ 19 個全部 applied** · **seed ✅ 精確 24 個 OpCo**。
 > ⚠️ **陷阱仍然成立**:`docker-entrypoint.sh` 令 migrate/seed 失敗 NON-FATAL ⇒ revision `Healthy` 證明唔到 DB 通,驗證一定要睇 log 或 HTTP。
 > 🔴 **B9 = SSO 未接得到(2026-08-06)⇒ 而家行緊 break-glass 本地登入。** infra 交嘅 app registration `08fa14bf-…` **只配咗 client-credentials**,用戶登入三樣缺晒(全部有錯誤碼):①冇任何 redirect URI → `AADSTS900971` ②冇 Expose an API scope → `AADSTS500011` ③token 係 **v1** 而 guard 精確比對 v2 issuer ⇒ **一定 401,但登入會睇落成功**。
-> **要 infra**:SPA platform + redirect URI `https://rapo-uop-web-dev.rci-t.com` · Expose an API + `access_as_user` · `accessTokenAcceptedVersion: 2`。⚠️ `VITE_ENTRA_*` 係 build-time ⇒ 要**確切** Application ID URI,估錯要重 build。
+> **📌 2026-08-06 尾**:①redirect URI 🟢 infra 已補 ②Application ID URI / scope 🔴 **仍差**(問「係咩」唔係叫佢「設定」—— 佢可能設咗另一個名;build-time 烘死,估錯要重 build)③token v1 🟢 **自己解咗** —— guard 同時接受同一 tenant 兩個 issuer,**audience 保持單一**,879 test 全過,唔開 ADR(§5.1)但有攞 Chris 拍板。
+> 🔴 **⇒ SSO 淨係差一個答案:確切嘅 Application ID URI。**
 > 🟢 接 SSO 可回退(本地登入表單永遠喺)· 🟢 Graph app 權限齊 ⇒ F3-7 冇障礙 · 🔴 client secret **exp 2028-07-28** 入 RISK。詳見 `W44-azure-dev-deploy/` F9 + plan 附錄 C 第四輪。
 > ⚠️ **build host 嘅 az session 唔穩定**(一日撞過 4 個 SP)⇒ az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP,否則 403 error 會誤導。
 > 💡 **測 Entra 一定要用真瀏覽器** —— 命令列打 authorize endpoint 會攞到假陽性(錯誤由 JS 畫)。跑一個故意錯嘅對照 case 先信自己個測試。

@@ -552,6 +552,30 @@ log 攞到之後,**啟動嗰刻嘅記錄仲喺度**:
 **② 一個措辭要收返。** 我寫「冇 Expose an API」,但實測到嘅只係「叫 `api://<client-id>` 嗰個唔存在」—— Application ID URI **可以係任何名**。⇒ 問法改成「**係咩**」唔係「請設定」。
 > 🔴 **同 Chris 問「你肯定冇睇漏?」直接相關** —— 佢問嗰陣我本來可以答「我肯定」,但去翻查就揭到呢兩樣。**「你肯定嗎」唔應該用重申答,要用重查答。**
 
+### 🟢 第 ③ 樣自己解咗 —— guard 同時接受兩個 issuer(Chris 拍板「路 B」)
+
+infra 補咗 redirect URI(①)之後,重測發現 ② ③ 仍然差。**Chris 拍板:第 ③ 樣唔等 infra,我哋自己喺 API 側解。**
+
+```ts
+this.issuer = [
+  `https://login.microsoftonline.com/${tenantId}/v2.0`,  // accessTokenAcceptedVersion: 2
+  `https://sts.windows.net/${tenantId}/`,                // 1 / null(legacy)
+];
+```
+
+**點解呢個唔係放鬆安全**:
+- 兩個值都由**同一個 `tenantId`** 推導 ⇒ 跨 tenant **零放寬**
+- `audience` 保持**單一精確值** —— 放寬佢先至係真窿(test 有明文 assert 守住呢條線)
+- token 用邊個 issuer 係 **app registration 嘅屬性**,唔係我哋 code 嘅屬性。只認 v2 等於把一個 infra 側配置變成我哋側嘅硬失敗,而且係**最貴嗰種**(登入成功 → 之後全部 401 → 錯誤唔提版本)
+
+⚠️ **型別陷阱(實撞,值得記)**:`@types/jsonwebtoken` 個 `issuer` 係 `string | [string, ...string[]]`(**非空 tuple**)。用 `string[]` 會令 **7 個 overload 全部唔匹配**,連帶 callback 兩個參數變 implicit `any` —— 即係**一個型別錯會偽裝成三個唔相關嘅錯誤**。改宣告成 tuple 就三個一齊消失。
+
+**驗證**:新增 test `verifies against BOTH tenant issuer forms (v2.0 and legacy v1)` —— 捕獲傳畀 `jwt.verify` 嘅 options,assert `issuer` 係嗰兩個值 **兼且** `audience` 仍然單一。**879 test / 68 suite 全過**(之前 878,新增嘅正好係呢個)。
+
+**點解唔開 ADR**:冇改 vendor / module 邊界 / storage / 任何 locked 決策,亦**冇推翻 ADR-0002**(佢仍然係「Entra token,RS256 + JWKS + aud/iss/exp」)—— 變嘅只係 `iss` 由認一個變認同一 tenant 嘅兩個。屬 §5.1 明文列出嘅「唔屬架構改動」。**但因為佢掂到認證,落手前有攞 Chris 明確拍板。**
+
+🔴 **⇒ SSO 而家淨係差一個答案:確切嘅 Application ID URI。**
+
 ### Decisions
 
 - **走 raw ARM PATCH 部署**(Chris 2026-08-06 拍板)。`aca-dev.json` 保留 —— 佢仍然係 topology 嘅宣告式真相,而且 infra 一畀 `join/action` 就用得返。⚠️ **部署機制由宣告式 template 變成 PATCH 腳本,係一個要記入 ADR-0027 嘅補充**(未做,見下)。

@@ -44,7 +44,8 @@
 > ① **一條 redirect URI 都冇** → `AADSTS900971: No reply address provided`(🔴 唔係「登記咗但唔啱」嗰個 `AADSTS50011`,係**一條都冇**)
 > ② **冇 Expose an API scope** → `AADSTS500011: resource principal not found`
 > ③ **token 係 v1**(`ver: 1.0`)而 `apps/api/src/auth/jwt-auth.guard.ts:170-177` 用 `jwt.verify(…, { issuer })` **精確比對** `…/v2.0`;v1 issuer 係 `https://sts.windows.net/{tid}/` ⇒ **一定 401,而且登入會睇落完全成功**(典型「紅得靜」)
-> **要 infra 補三樣**:SPA platform(**唔係 Web**)+ redirect URI 逐字 `https://rapo-uop-web-dev.rci-t.com` · Expose an API + delegated scope `access_as_user` · manifest `"accessTokenAcceptedVersion": 2`。**唔使 client secret**(PKCE)。
+> **📌 2026-08-06 尾狀態**:①redirect URI 🟢 **infra 已補**(同一條 authorize URL 由 `AADSTS900971` 變正常 login 頁)②Application ID URI / scope 🔴 **仍差** —— `api://<client-id>` 實測唔存在,**但 infra 可能設咗另一個名**,我哋窮舉唔到 ⇒ **要問「係咩」,唔係叫佢「設定」**(佢係 build-time 烘死落 image,估錯要重 build)③token v1 🟢 **我哋自己解咗** —— `jwt-auth.guard.ts` 改成同時接受同一 tenant 嘅**兩個** issuer(`…/v2.0` + `https://sts.windows.net/{tid}/`);🔴 **`audience` 保持單一精確值**(放寬佢先至係真窿,test 有 assert 守住);879 test / 68 suite 全過;**唔開 ADR**(§5.1「唔屬架構改動」,但因為掂認證,落手前有攞 Chris 拍板)。⚠️ 型別陷阱:`@types/jsonwebtoken` 個 `issuer` 要**非空 tuple**,用 `string[]` 會令 7 個 overload 全部唔匹配 + callback 變 implicit any(**一個型別錯偽裝成三個錯誤**)。
+> 🔴 **⇒ SSO 淨係差一個答案:確切嘅 Application ID URI。** **唔使 client secret**(PKCE)。
 > ⚠️ `VITE_ENTRA_*` 係 **build-time 烘死落 image** ⇒ 估錯個 Application ID URI 就要重 build(~10 分鐘),所以要問 infra 攞**確切值**,唔可以估。
 > 🟢 **接 SSO 可回退**:`api.ts:25` local profile 優先於 `msalConfigured` · `login.tsx:167-174` 本地登入表單永遠喺 ⇒ 最壞只係 SSO 按鈕報錯。
 > 🟢 **Graph app 權限齊**(`LicenseAssignment.Read.All` / `User.Read.All` / `LicenseAssignment.ReadWrite.All`)⇒ F3-7 接真 Graph 冇障礙。🔴 client secret **exp 2028-07-28** 要入 RISK。

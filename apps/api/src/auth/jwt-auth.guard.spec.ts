@@ -349,6 +349,37 @@ describe('JwtAuthGuard', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
+    // W44 B9: which issuer Entra stamps is a property of the app registration
+    // (accessTokenAcceptedVersion), not of our code. Pinning only the v2.0 form
+    // makes a v1 registration fail in the most expensive way there is — sign-in
+    // succeeds, then every request is 401 and nothing in the error names the
+    // token version. Both values derive from the same tenantId, so accepting the
+    // pair widens nothing across tenants.
+    it('verifies against BOTH tenant issuer forms (v2.0 and legacy v1)', async () => {
+      let seen: jwt.VerifyOptions | undefined;
+      (jwt.verify as unknown as jest.Mock).mockImplementation(
+        (_t, _k, o: jwt.VerifyOptions, cb) => {
+          seen = o;
+          cb(null, { oid: 'oid-123', email: 'x@y', name: 'X' });
+        },
+      );
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prismaWith(jest.fn().mockResolvedValue(ADMIN)),
+        localJwt(null),
+        config(PROD_CFG),
+      );
+      await guard.canActivate(
+        ctxWith({ headers: { authorization: 'Bearer x.y.z' } }),
+      );
+      expect(seen?.issuer).toEqual([
+        `https://login.microsoftonline.com/${PROD_CFG.ENTRA_TENANT_ID}/v2.0`,
+        `https://sts.windows.net/${PROD_CFG.ENTRA_TENANT_ID}/`,
+      ]);
+      // audience stays a single exact value — widening it would be a real hole.
+      expect(seen?.audience).toBe(PROD_CFG.ENTRA_API_AUDIENCE);
+    });
+
     it('401 when an Entra token arrives but SSO is not configured', async () => {
       const guard = new JwtAuthGuard(
         reflectorFor(false),

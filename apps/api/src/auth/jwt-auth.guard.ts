@@ -21,8 +21,9 @@ import { ACCESS_COOKIE } from './cookie';
  * Two transports:
  *  • an httpOnly `uop_access` cookie → a locally-signed HS256 token (local
  *    password session) → verify + resolve the AppUser by `sub` + force-change gate.
- *  • otherwise an `Authorization: Bearer` header → an Entra v2.0 token → RS256 via
- *    the tenant JWKS + aud / iss / exp → resolve/upsert the AppUser by `oid`.
+ *  • otherwise an `Authorization: Bearer` header → an Entra token (v1 or v2 —
+ *    both of the tenant's issuer forms are accepted) → RS256 via the tenant
+ *    JWKS + aud / iss / exp → resolve/upsert the AppUser by `oid`.
  * `@Public()` routes skip validation (login / refresh / logout manage cookies
  * themselves). Entra config is optional (a local-only deployment need not set it);
  * the guard fails fast at boot only if NO provider is configured.
@@ -36,7 +37,8 @@ export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
   private readonly devBypass: boolean;
   private readonly devUserEmail?: string;
-  private readonly issuer?: string;
+  // Tuple, not string[] — jsonwebtoken's VerifyOptions takes a non-empty tuple.
+  private readonly issuer?: [string, string];
   private readonly audience?: string;
   private readonly jwks?: JwksClient;
   private devUser?: AppUser;
@@ -63,7 +65,17 @@ export class JwtAuthGuard implements CanActivate {
     const audience = config.get<string>('ENTRA_API_AUDIENCE');
     if (tenantId && audience) {
       this.audience = audience;
-      this.issuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
+      // Accept BOTH issuer forms for this tenant. Which one Entra stamps is a
+      // property of the app registration (`accessTokenAcceptedVersion`), not of
+      // our code: 2 → the v2.0 issuer, 1/null → the legacy sts.windows.net one.
+      // Pinning only v2.0 makes a v1 registration fail in the most expensive way
+      // possible — sign-in succeeds, then every request is 401 with nothing in
+      // the error naming the token version (W44 B9). Both values are derived
+      // from the same tenantId, so this widens nothing across tenants.
+      this.issuer = [
+        `https://login.microsoftonline.com/${tenantId}/v2.0`,
+        `https://sts.windows.net/${tenantId}/`,
+      ];
       this.jwks = new JwksClient({
         jwksUri: `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`,
         cache: true,

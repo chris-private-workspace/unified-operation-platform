@@ -431,12 +431,39 @@ infra 2026-08-06 交出:`APP - unified operations portal - SSO - UAT` · appId *
 
 🔴 **第 3 樣最危險** —— 登入會**睇落完全成功**,但入到系統全部 401,而錯誤訊息**一個字都唔提版本**。呢個係典型「紅得靜」,同 F7 outbound 嗰種同族。
 
-**要 infra 做三樣**:
-1. Authentication → 加 platform **Single-page application**(**唔係** Web)+ redirect URI **逐字** `https://rapo-uop-web-dev.rci-t.com`
-2. Expose an API → 設 Application ID URI + delegated scope `access_as_user` + admin consent。⚠️ **若用另一個 URI 名,一定要話我哋確切值** —— 佢係 **build-time** 烘死落 image,估錯就要重 build(一次 ~10 分鐘)
-3. Manifest → `"accessTokenAcceptedVersion": 2`
+### 📌 三樣嘅最新狀態(2026-08-06 尾)
+
+| # | 項 | 狀態 |
+|---|---|---|
+| ① redirect URI | 🟢 **infra 已補** —— 同一條 authorize URL 由 `AADSTS900971` 變成正常 login 頁(**有前後對比,可信**) |
+| ② Application ID URI / scope | 🔴 **仍然差** —— `api://<client-id>` 實測唔存在。⚠️ **但 infra 可能設咗另一個名**,我哋窮舉唔到 ⇒ **要問「係咩」,唔係叫佢「設定」** |
+| ③ token version v1 | 🟢 **我哋自己解咗**(見下)—— 唔再需要 infra 郁 manifest |
 
 **唔使畀 client secret** —— SPA 行 PKCE。infra 畀嗰個保留但前端唔會用。
+
+### 🟢 第 ③ 樣:改咗 API 同時接受兩個 issuer(Chris 2026-08-06 拍板走「路 B」)
+
+`apps/api/src/auth/jwt-auth.guard.ts` —— `issuer` 由單一字串變成**同一 tenant 嘅兩個形式**:
+
+```ts
+this.issuer = [
+  `https://login.microsoftonline.com/${tenantId}/v2.0`,  // accessTokenAcceptedVersion: 2
+  `https://sts.windows.net/${tenantId}/`,                // 1 / null(legacy)
+];
+```
+
+**點解呢個係啱嘅取捨,唔係放鬆安全**:
+- 兩個值都由**同一個 `tenantId`** 推導 ⇒ **跨 tenant 完全冇放寬**
+- `audience` 仍然係**單一精確值** —— 放寬佢先至係真窿(test 有明文 assert 守住)
+- token 用邊個 issuer 係 **app registration 嘅屬性**(`accessTokenAcceptedVersion`),唔係我哋 code 嘅屬性。只認 v2 就等於**把一個 infra 側配置變成我哋側嘅硬失敗**,而且係**最貴嗰種失敗**:登入成功、之後每個 request 401、錯誤訊息一個字都唔提版本
+
+⚠️ **型別陷阱**(實撞):`@types/jsonwebtoken` 個 `issuer` 係 `string | [string, ...string[]]`(**非空 tuple**),唔收 `string[]` ⇒ field 要宣告成 tuple,否則 overload 解析失敗,連 callback 參數都會變 implicit `any`。
+
+**Test**:`jwt-auth.guard.spec.ts` 新增 `verifies against BOTH tenant issuer forms (v2.0 and legacy v1)` —— 捕獲傳畀 `jwt.verify` 嘅 options,assert `issuer` 係嗰兩個值 **兼且** `audience` 仍然係單一精確值。**879 test / 68 suite 全過**(之前 878)。
+
+**點解唔開新 ADR**:唔改 vendor / module 邊界 / storage / 任何 locked 決策,亦冇推翻 ADR-0002 —— 佢仍然係「Entra token,RS256 + JWKS + aud/iss/exp」。變嘅只係 `iss` 由認一個變認同一 tenant 嘅兩個。屬 §5.1 明文嘅「唔屬架構改動」。
+
+🔴 **⇒ 而家淨係差第 ② 樣一個答案(確切嘅 Application ID URI),SSO 就可以 build + 上。**
 
 ### 🟢 接 SSO 係可回退嘅(查過 code)
 
