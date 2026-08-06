@@ -100,9 +100,12 @@ last_updated: 2026-08-04
 - [ ] F6-5 verify:`GET .../api/docs/api` = 200 —— 同上(custom domain 半邊)
 - [ ] F6-6 verify:break-glass login = 200 + role ADMIN —— 同上(custom domain 半邊)
 - [ ] F6-4b 🆕 🟢 **唔使等 B8** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` → 前端 200 · `/api/docs/api` → 200 · break-glass login。⇒ **F6-4/5/6 嘅實質內容即刻收得**,custom domain 嗰半留 B8 解封後補驗
-- [x] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🟢 **強證據**:`storage_used` 喺 api revision 起身嗰個窗口(`04:14:08Z` → `04:15`)由 `4,421,869,568` 跳到 `4,422,836,224`(**+944 KB**),之後零變動。migration fail 嘅話 entrypoint 只會 `WARN`,**唔會有任何寫入**。⚠️ 仍未見過 `migrate status` 原文
-- [ ] F6-8 verify:seed 完成(24 OpCo + admin + catalog SKU 真數)—— 🟡 **證到「有寫入」,證唔到「數目啱」** —— 944 KB 入面 schema 同 data 拆唔開。要 F6-11/12 先收得尾
-- [x] F6-7b 🆕 **B3 — ACA 連唔連到 private endpoint 嘅 PG** —— 🟢 **實質已證**:冇連接就唔可能有 storage 寫入。`connections_failed` **全程 0**(排除密碼錯 / 連接上限)· `active_connections` 部署後 **+2**(單 replica Prisma idle pool)。**呢個係本環境存在嘅意義,而佢通咗**
+- [x] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🟢 **已證(container log 原文)**:`19 migrations found` → 逐個 `Applying migration …` → `The following migration(s) have been applied:`,**零 error**
+- [x] F6-8 verify:seed 完成 —— 🟢 **已證(原文)**:`Seeded local admin (admin@uop.local).` + **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** —— 精確 24 個
+- [x] F6-7b **B3 — ACA 連到 private endpoint 嘅 PG** —— 🟢 **已證**:migration 真跑咗 19 個,冇連接根本做唔到。**呢個係本環境存在嘅意義,而佢通咗**
+- [x] F6-7d 🆕 `[NestApplication] Nest application successfully started`(`04:14:31`)· `[entrypoint]` 零 `WARN: … failed`
+- [x] F6-10 ✅ **infra 2026-08-06 畀咗 `managedEnvironments/read`(+ enable log)⇒ B7 解封**,`logs show` 通,而且**啟動嗰刻嘅 log 仲喺度**
+- [ ] F6-13 🆕 ⚠️ 記低一個無害 warn:`package.json#prisma is deprecated and will be removed in Prisma 7` ⇒ 將來升 Prisma 7 要轉 `prisma.config.ts`(**唔阻本 phase**)
 - [x] F6-7c 🆕 方法論:直接驗證路(log / exec / HTTP)封死之後,轉去 **PG management plane metrics** —— 佢一直喺我哋嘅 RG Contributor 範圍內,四日嚟冇用過
 - [x] F6-9 R6 對數:🟢 **`customDomains`(`rapo-uop-web-dev.rci-t.com` SniEnabled)· `workloadProfileName` · `environmentId` 全部完好**。PATCH 唔 unset 冇送嘅 property ⇒ 比 ARM full PUT 結構上更安全
 - [ ] F6-10 🆕 🔴 **要 infra 畀 `Microsoft.App/managedEnvironments/read`**(純唯讀,比 `join/action` 細)⇒ 解封 `logs show` + `exec`,係而家最大樽頸

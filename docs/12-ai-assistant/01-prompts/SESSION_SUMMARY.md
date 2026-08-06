@@ -29,10 +29,18 @@
 > 🟢 **PATCH 比 ARM full PUT 更安全** —— 唔 unset 冇送嘅 property ⇒ infra 配嘅 `customDomains`+SNI / `workloadProfileName` **結構上掂唔到**(實測完好)。`aca-dev.json` 保留做宣告式真相。
 > **實測**:api `--0000002` `Healthy`/`RunningAtMaxScale` · web `--0000001` `Healthy`/`Running` · 🟢 **ACA 由 VNet 內 pull 到 registry**。
 >
-> 🔴 **B7 = 新樽頸,而佢係「觀測權限」唔係「部署權限」**:冇 `Microsoft.App/managedEnvironments/read` ⇒ `logs show` / `exec` 都 403;HTTP smoke 亦打唔到(**`acaen-rapo-dev` 係 internal-only env** —— ACA FQDN 同 `rapo-uop-web-dev.rci-t.com` 喺**企業 DNS 同公網 DNS 都解析唔到**;build host 喺 SGP VNet,唔喺 hub VNet 亦唔喺企業網)。
-> 🔴 **而 `Healthy` 證明唔到 DB 通** —— `apps/api/docker-entrypoint.sh` 明文令 migrate / seed 失敗 **NON-FATAL**(`|| echo WARN` 之後照 `exec node dist/main`)⇒ PG 連唔到一樣 `Healthy`。呢個係 W33 為 UAT 做嘅有意取捨,但代價係 F7 嗰種「**紅得靜**」。
-> 🟢 **PG management plane metrics 補到大部分**(PG 喺我哋有 Contributor 嘅 RG ⇒ 讀得到,唔使 log / exec / 企業網):`storage_used` 喺 api revision 起身嗰個 5 分鐘窗口(`04:14:08Z` → `04:15`)由 `4,421,869,568` 跳到 `4,422,836,224`(**+944 KB**),之後**零變動** · `connections_failed` **全程 0**(排除密碼錯 / 連接上限)· `active_connections` **+2**(單 replica Prisma idle pool)。
-> ⇒ **B3(ACA 連 private endpoint PG)= 🟢 實質已證**(冇連接就唔可能有寫入 —— **本環境存在嘅意義,通咗**)· **PG v18 migration(G8)= 🟢 強證據**(migrate fail 只會 `WARN`,唔會有寫入)· **seed = 🟡 證到「有寫入」,證唔到「24 個 OpCo 齊」**(944 KB 入面 schema 同 data 拆唔開)。
+> 🟢🟢 **B7 已解封(infra 2026-08-06 畀咗 `managedEnvironments/read` + enable log)⇒ 三個未知數全部收齊**。container log 原文:
+> ```
+> 04:14:26 [entrypoint] prisma migrate deploy
+> 04:14:27 19 migrations found in prisma/migrations
+> 04:14:28 The following migration(s) have been applied:
+> 04:14:28 [entrypoint] seeding (idempotent upserts)
+> 04:14:30 Seeded 24 OpCos + admin + RHK OPCO_IT user.
+> 04:14:31 [NestApplication] Nest application successfully started
+> ```
+> **零 `WARN: migrate deploy failed` · 零 `WARN: seed failed` · 零 Error** ⇒ **B3(ACA 連 private endpoint PG)✅** · **PG v18 migration(G8)✅ 19 個全部 applied** · **seed ✅ 精確 24 個 OpCo**。
+> ⚠️ **陷阱以後仍然成立**:`docker-entrypoint.sh` 令 migrate/seed 失敗 **NON-FATAL** ⇒ revision `Healthy` **證明唔到 DB 通**,驗證一定要睇 log 或 HTTP。
+> ⚠️ **呢台機嘅 az session 唔穩定** —— 一日內撞過 **4 個唔同 SP**(`d2f094a3` / `a19dfe76` / `2ae44f00` / ACR `4a6e1474`),錯身份會畀出**誤導性 error**(403 睇落似權限未落,其實係身份唔啱)。⇒ **做 az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP**(憑證喺 `apps/api/.env` 尾段)。
 > 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**。2026-08-06 由**公司網絡**(DNS `10.160.92.1`)實測:`rapo-n8n-uat.rci-t.com` → **`10.160.71.243`** ✅ 但 `rapo-uop-web-dev.rci-t.com` → **Non-existent domain** ⇒ **infra 漏咗建** ⇒ custom domain **連喺企業網都訪問唔到**。⚠️ 之前「ACA 綁 custom domain 要 hostname 驗證 ⇒ DNS 應該配好」呢個推論**已被一條 `nslookup` 推翻**。
 > 🟢 **B8 唔 block 驗證** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` + `/api/docs/api` ⇒ **F6-4/5/6 即刻收得**,custom domain 嗰半留 B8 解封後補驗。
 > 🔴 **仍要一次直接驗證先收尾**(row count / admin 帳號 / API 200):**最快 = 上面條 ACA FQDN**;其次 ①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 個人帳號睇 Azure Portal log。

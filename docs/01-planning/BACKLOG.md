@@ -126,10 +126,10 @@
 > 🟢 **PATCH 比 ARM full PUT 更安全**:唔 unset 冇送嘅 property ⇒ infra 配嘅 `customDomains`+SNI / `workloadProfileName` 結構上掂唔到(實測完好)。`aca-dev.json` 保留做宣告式真相,infra 一畀 `join/action` 就用得返。
 > **實測**:api `--0000002` `Healthy`/`RunningAtMaxScale` · web `--0000001` `Healthy`/`Running` · 🟢 **ACA 由 VNet 內 pull 到 `acrrci3ailanding1`**。
 >
-> 🔴 **B7(新樽頸)= 觀測權限,唔係部署權限**:冇 `managedEnvironments/**read**` ⇒ `logs show` / `exec` 都 403;HTTP smoke 亦打唔到(**env 係 internal-only** —— ACA FQDN 同 `rci-t.com` 喺企業 DNS 同公網 DNS **都解析唔到**,build host 喺 SGP VNet)。
-> 🔴 **`Healthy` 證明唔到 DB 通** —— `docker-entrypoint.sh` 明文令 migrate/seed 失敗 **NON-FATAL** ⇒ PG 連唔到一樣 `Healthy`(W33 為 UAT 做嘅有意取捨,代價 = F7 嗰種「紅得靜」)。
-> 🟢 **PG management plane metrics 補到大部分**:`storage_used` 喺 api revision 起身嗰個窗口(`04:14:08Z`→`04:15`)跳 **+944 KB** 之後零變動 · `connections_failed` 全程 **0** · `active_connections` **+2**。
-> ⇒ **B3(ACA 連 private endpoint PG)🟢 實質已證 —— 本環境存在嘅意義,通咗** · **PG v18 migration(G8)🟢 強證據** · **seed 🟡 證到有寫入,證唔到數目啱**。
+> 🟢🟢 **B7 已解封(infra 2026-08-06 畀咗 `managedEnvironments/read` + enable log)⇒ 三個未知數全部收齊**。container log 原文:`19 migrations found` → `The following migration(s) have been applied:` · `Seeded 24 OpCos + admin + RHK OPCO_IT user.` · `Nest application successfully started`,**零 `WARN: … failed`**。
+> ⇒ **B3(ACA 連 private endpoint PG)✅ 本環境存在嘅意義,通咗** · **PG v18 migration(G8)✅ 19 個全部 applied** · **seed ✅ 精確 24 個 OpCo**。
+> ⚠️ **陷阱仍然成立**:`docker-entrypoint.sh` 令 migrate/seed 失敗 NON-FATAL ⇒ revision `Healthy` 證明唔到 DB 通,驗證一定要睇 log 或 HTTP。
+> ⚠️ **build host 嘅 az session 唔穩定**(一日撞過 4 個 SP)⇒ az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP,否則 403 error 會誤導。
 > 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**:公司網絡實測 `rapo-n8n-uat.rci-t.com` → `10.160.71.243` ✅ / `rapo-uop-web-dev.rci-t.com` → **NXDOMAIN** ⇒ infra 漏咗建,custom domain 連企業網都訪問唔到。
 > 🟢 **但唔 block 驗證** —— 由公司網絡打 **ACA 預設 FQDN**(`aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io`)⇒ F6-4/5/6 即刻收得。
 > 🔴 **仍要一次直接驗證收尾**(row count / admin 帳號 / API 200):最快 = 上面條 FQDN;其次 ①infra 畀 `managedEnvironments/read` ②Chris 個人帳號睇 Portal log。

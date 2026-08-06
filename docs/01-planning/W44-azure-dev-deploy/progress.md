@@ -496,6 +496,33 @@ az rest --method patch --url ".../containerApps/aca-rapo-uop-api-dev?api-version
 > **方法論收穫**:直接路封死唔等於冇路。**部署權限同觀測權限係兩套,但 metrics 係第三套** —— 佢喺我哋一直有嘅 RG Contributor 入面,四日嚟冇人諗過用佢。同 Day 3 嗰條「有咩前提我根本冇寫落嚟」係同一族:**唔係搵唔到答案,係冇問「仲有邊度可以問」。**
 > ⚠️ 但要守住強度:metrics 證到「連得到 + 寫咗嘢」,**證唔到 row count / admin 帳號 / API 200**。仍然要一次直接驗證先收得尾。
 
+### 🟢🟢 B7 解封 → 三個未知數**全部收齊**(container log 原文)
+
+infra 2026-08-06 畀咗 SP `managedEnvironments/read` + enable log。⚠️ **一個中途插曲**:第一次重試 `logs show` 仍然 403,但 error 入面個 client id 係 **`2ae44f00-…`** —— **第四個唔同嘅身份**(之前仲撞過 `a19dfe76`)。呢台機嘅 az session 唔穩定,而錯身份會畀出**誤導性 error**。⇒ 按 Day 0 做法,用**獨立 `AZURE_CONFIG_DIR`** 登入我哋自己個 SP,身份即刻穩定,亦冇踩到 operator 嘅 session。
+
+log 攞到之後,**啟動嗰刻嘅記錄仲喺度**:
+
+```
+04:14:26  [entrypoint] prisma migrate deploy
+04:14:27  19 migrations found in prisma/migrations
+04:14:28  The following migration(s) have been applied:      ← 19 個全部
+04:14:28  [entrypoint] seeding (idempotent upserts)
+04:14:30  Seeded local admin (admin@uop.local).
+04:14:30  Seeded 24 OpCos + admin + RHK OPCO_IT user.        ← 精確 24 個
+04:14:31  [NestApplication] Nest application successfully started
+```
+
+🟢 零 `WARN: migrate deploy failed` · 零 `WARN: seed failed` · 零 Error。
+
+| # | 項 | 狀態 |
+|---|---|---|
+| 1 | **B3 — ACA 連 private endpoint PG** | 🟢 **已證** —— migration 真跑咗,冇連接做唔到 |
+| 2 | **PG v18 migration(G8)** | 🟢 **已證** —— 19 個全部 applied |
+| 3 | **seed** | 🟢 **已證** —— 原文 `Seeded 24 OpCos + admin + RHK OPCO_IT user.` |
+
+> **metrics 推論事後對照**:之前靠 `storage_used` +944 KB 推「連得到 + 寫咗嘢」,並**刻意**把 seed 標 🟡(分唔開 schema 同 data)。log 出嚟三項全中,而 seed 嗰個 🟡 **正正係應該嘅強度**。
+> 🔴 **值得記嘅唔係「我推啱咗」,係「我標啱咗信心強度」** —— 前者靠彩數,後者可以複製。本 phase 之前五次錯,全部都係**強度標錯**(把「一條路實測」當「所有路實測」),唔係推論方向錯。
+
 ### Decisions
 
 - **走 raw ARM PATCH 部署**(Chris 2026-08-06 拍板)。`aca-dev.json` 保留 —— 佢仍然係 topology 嘅宣告式真相,而且 infra 一畀 `join/action` 就用得返。⚠️ **部署機制由宣告式 template 變成 PATCH 腳本,係一個要記入 ADR-0027 嘅補充**(未做,見下)。

@@ -525,15 +525,41 @@ https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/api
 | `active_connections` | 部署前 total ≈ **68** → 部署後 ≈ **79** | 約 **+2 個持續連接**,同單 replica Prisma idle pool 吻合。弱正面 |
 | `cpu_percent` | 12–13% 平穩,**無 spike** | 唔矛盾 —— migration + seed 對 B1ms 嘅工作量細,淹冇喺 12% 基線噪音入面 |
 
-### 三個未知數嘅最新狀態(**要分開講強度**)
+### 🟢🟢 B7 解封 → **三個未知數全部收齊(2026-08-06,container log 原文)**
+
+infra 2026-08-06 畀咗 SP `managedEnvironments/read`(同時 enable 咗 log)⇒ `az containerapp logs show` 通。**而且啟動嗰刻嘅 log 仲喺度**:
+
+```
+04:14:26.13  [entrypoint] prisma migrate deploy
+04:14:27.47  Prisma schema loaded from prisma/schema.prisma
+04:14:27.60  19 migrations found in prisma/migrations
+04:14:27.77  Applying migration `20260709070246_init`
+   …         (逐個 apply,共 19 個)
+04:14:28.37  Applying migration `20260804032725_w43_gate2_sn_user_sync`
+04:14:28.40  The following migration(s) have been applied:
+04:14:28.42  [entrypoint] seeding (idempotent upserts)
+04:14:30.91  Seeded local admin (admin@uop.local).
+04:14:30.91  Seeded 24 OpCos + admin + RHK OPCO_IT user.
+04:14:30.93  [entrypoint] starting api (node dist/main)
+04:14:31.74  [NestFactory] Starting Nest application...
+04:14:31.96  [NestApplication] Nest application successfully started
+```
+
+🟢 **零 `WARN: migrate deploy failed` · 零 `WARN: seed failed` · 零 Error。**
 
 | # | 項 | 狀態 | 依據 |
 |---|---|---|---|
-| 1 | **B3 — ACA 連唔連到 private endpoint 嘅 PG** | 🟢 **實質已證** | 冇連接就**唔可能**有 storage 寫入。呢個係本環境存在嘅意義,而佢通咗 |
-| 2 | **PG v18 migration**(G8,第一次踩 v18) | 🟢 **強證據** | storage 跳升 = 建表;若 migration fail,entrypoint 會 `WARN` 然後照起,**唔會有寫入** |
-| 3 | **seed**(24 OpCo + admin + catalog SKU) | 🟡 **有證據但分唔開** | 944 KB 入面 schema 同 data **拆唔開**;證到「有寫入」,證唔到「24 個 OpCo 齊」 |
+| 1 | **B3 — ACA 連到 private endpoint 嘅 PG** | 🟢 **已證** | migration 真跑咗 19 個 —— 冇連接根本做唔到 |
+| 2 | **PG v18 migration**(G8,第一次踩 v18) | 🟢 **已證** | **19 個全部 applied**,零 error |
+| 3 | **seed** | 🟢 **已證** | 原文 **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** —— 精確 24 個 |
 
-🔴 **仍然要一次直接驗證先收得尾** —— metrics 證到「連得到 + 寫咗嘢」,證唔到 **row count / admin 帳號存在 / API 起得到 200**。⇒ 下面三條路仍然要行一條。
+> **順帶記低一個無害 warn**(將來要處理):`The configuration property package.json#prisma is deprecated and will be removed in Prisma 7`。而家唔影響,但 Prisma 7 升級嗰陣要轉 `prisma.config.ts`。
+
+### metrics 推論事後對照 —— **啱晒,但強度標對咗先係重點**
+
+之前(冇 log 嗰陣)靠 `storage_used` +944 KB 推斷「連得到 + 寫咗嘢」,並**刻意**把 seed 標做 🟡(「證到有寫入,證唔到 24 個齊」)。log 出嚟之後三項全中,而 seed 嗰個 🟡 **正正係應該嘅強度** —— 當時真係分唔開 schema 同 data。**推論啱唔啱係一回事,標啱信心強度係另一回事**,後者先係可以複製嘅做法。
+
+🔴 **仍未驗**:HTTP 層(前端 render / `/docs/api` 200 / break-glass login)—— 見下面 B8。
 
 ### 下一步(三個都做得到,唔互相排斥)
 
