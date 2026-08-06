@@ -472,6 +472,30 @@ az rest --method patch --url ".../containerApps/aca-rapo-uop-api-dev?api-version
 
 > **今日最值得記嘅**:B1 通咗、B4 繞過咗、部署真係落咗 —— 但**驗證能力反而係新嘅樽頸**。之前四日一直當「部署到就驗到」,而實際上**部署權限同觀測權限係兩套嘢**,我哋只爭取過前者。
 
+### 🟢 轉去 management plane metrics —— **`storage_used` 補返大部分**
+
+三條直接驗證路封死之後,唔應該就咁停喺「等 infra / 等 Chris」。PG 住喺我哋有 Contributor 嘅 RG ⇒ **metrics 讀得到**,唔使 log / exec / 企業網。
+
+**`storage_used`(api revision 建於 `04:14:08Z`)**:
+
+```
+03:40 – 04:10   4,421,869,568   ← 連續 7 點完全一樣
+04:15           4,422,836,224   ← +966,656 bytes (≈944 KB)
+04:20 – 05:35   4,422,836,224   ← 之後零變動
+```
+
+🟢 跳升**精確落喺容器起身嗰個窗口**,量級同「建 schema + seed」吻合,之後平穩(冇 retry loop)。
+配合 `connections_failed` **全程 0**(排除密碼錯 / 連接上限)+ `active_connections` **+2**(單 replica idle pool)。
+
+| # | 項 | 狀態 |
+|---|---|---|
+| 1 | **B3 — ACA 連 private endpoint PG** | 🟢 **實質已證**(冇連接就唔可能有寫入)—— **本環境存在嘅意義,通咗** |
+| 2 | **PG v18 migration**(G8) | 🟢 **強證據**(migration fail 嘅話 entrypoint 只 `WARN`,唔會有寫入) |
+| 3 | **seed** | 🟡 **證到「有寫入」,證唔到「24 個 OpCo 齊」** —— 944 KB 入面 schema 同 data 拆唔開 |
+
+> **方法論收穫**:直接路封死唔等於冇路。**部署權限同觀測權限係兩套,但 metrics 係第三套** —— 佢喺我哋一直有嘅 RG Contributor 入面,四日嚟冇人諗過用佢。同 Day 3 嗰條「有咩前提我根本冇寫落嚟」係同一族:**唔係搵唔到答案,係冇問「仲有邊度可以問」。**
+> ⚠️ 但要守住強度:metrics 證到「連得到 + 寫咗嘢」,**證唔到 row count / admin 帳號 / API 200**。仍然要一次直接驗證先收得尾。
+
 ### Decisions
 
 - **走 raw ARM PATCH 部署**(Chris 2026-08-06 拍板)。`aca-dev.json` 保留 —— 佢仍然係 topology 嘅宣告式真相,而且 infra 一畀 `join/action` 就用得返。⚠️ **部署機制由宣告式 template 變成 PATCH 腳本,係一個要記入 ADR-0027 嘅補充**(未做,見下)。

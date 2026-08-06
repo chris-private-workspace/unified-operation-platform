@@ -455,11 +455,37 @@ exec node dist/main
 
 **HTTP 打唔到嘅原因唔係部署壞咗**,係網絡:`aca-…azurecontainerapps.io` 同 `rapo-uop-web-dev.rci-t.com` **喺企業 DNS(`az-sgp-dc1`, 10.160.50.4)同公網 DNS(8.8.8.8)都解析唔到** ⇒ `acaen-rapo-dev` 係 **internal-only env**,FQDN 只喺 hub VNet 嘅 private DNS 註冊;custom domain 亦係企業 split-horizon DNS。**呢台 build host 喺 SGP VNet,唔喺嗰兩個網絡入面,結構上打唔到。**
 
-🔴 **⇒ 以下三樣仍然係未知數,唔可以喺任何地方寫成「已驗」**:
+### 🟢 但 management plane metrics 補到大部分 —— **`storage_used` 係決定性嗰個**
 
-1. **B3 — ACA 連唔連到 private endpoint 嘅 PG**
-2. **PG v18 migration 跑唔跑得過**(G8,第一次踩 v18)
-3. **seed 有冇成功**(24 OpCo + admin + catalog SKU)
+三條直接驗證路封死之後,轉去查 **PG 嘅 management plane metrics**(`pgsql-rapo-uop-dev` 住喺我哋有 Contributor 嘅 RG ⇒ 讀得到,唔使 log / exec / 企業網)。
+
+**`storage_used`(bytes)—— api revision `--0000002` 建於 `04:14:08Z`**:
+
+```
+03:40 – 04:10   4,421,869,568   ← 連續 7 個點完全一樣,平穩
+04:15           4,422,836,224   ← 跳升 +966,656 bytes (≈944 KB)
+04:20 – 05:35   4,422,836,224   ← 之後零變動
+```
+
+🟢 **跳升精確落喺容器起身嗰個 5 分鐘窗口**,增量同「建 schema + seed(24 OpCo + admin + catalog SKU)」嘅量級吻合,而且之後**完全平穩**(冇 retry loop、冇持續寫入)。
+
+**其餘三個 metric(同一窗口)**:
+
+| Metric | 讀數 | 意義 |
+|---|---|---|
+| `connections_failed` | **全程 0** | 排除「到達 server 但被拒」(密碼錯 / 連接上限)。⚠️ **但單獨證明唔到連得到** —— 網絡唔通嘅話請求連 server 都未到,唔會計入 |
+| `active_connections` | 部署前 total ≈ **68** → 部署後 ≈ **79** | 約 **+2 個持續連接**,同單 replica Prisma idle pool 吻合。弱正面 |
+| `cpu_percent` | 12–13% 平穩,**無 spike** | 唔矛盾 —— migration + seed 對 B1ms 嘅工作量細,淹冇喺 12% 基線噪音入面 |
+
+### 三個未知數嘅最新狀態(**要分開講強度**)
+
+| # | 項 | 狀態 | 依據 |
+|---|---|---|---|
+| 1 | **B3 — ACA 連唔連到 private endpoint 嘅 PG** | 🟢 **實質已證** | 冇連接就**唔可能**有 storage 寫入。呢個係本環境存在嘅意義,而佢通咗 |
+| 2 | **PG v18 migration**(G8,第一次踩 v18) | 🟢 **強證據** | storage 跳升 = 建表;若 migration fail,entrypoint 會 `WARN` 然後照起,**唔會有寫入** |
+| 3 | **seed**(24 OpCo + admin + catalog SKU) | 🟡 **有證據但分唔開** | 944 KB 入面 schema 同 data **拆唔開**;證到「有寫入」,證唔到「24 個 OpCo 齊」 |
+
+🔴 **仍然要一次直接驗證先收得尾** —— metrics 證到「連得到 + 寫咗嘢」,證唔到 **row count / admin 帳號存在 / API 起得到 200**。⇒ 下面三條路仍然要行一條。
 
 ### 下一步(三個都做得到,唔互相排斥)
 

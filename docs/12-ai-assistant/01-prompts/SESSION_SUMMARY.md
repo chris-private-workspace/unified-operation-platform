@@ -31,7 +31,10 @@
 >
 > 🔴 **B7 = 新樽頸,而佢係「觀測權限」唔係「部署權限」**:冇 `Microsoft.App/managedEnvironments/read` ⇒ `logs show` / `exec` 都 403;HTTP smoke 亦打唔到(**`acaen-rapo-dev` 係 internal-only env** —— ACA FQDN 同 `rapo-uop-web-dev.rci-t.com` 喺**企業 DNS 同公網 DNS 都解析唔到**;build host 喺 SGP VNet,唔喺 hub VNet 亦唔喺企業網)。
 > 🔴 **而 `Healthy` 證明唔到 DB 通** —— `apps/api/docker-entrypoint.sh` 明文令 migrate / seed 失敗 **NON-FATAL**(`|| echo WARN` 之後照 `exec node dist/main`)⇒ PG 連唔到一樣 `Healthy`。呢個係 W33 為 UAT 做嘅有意取捨,但代價係 F7 嗰種「**紅得靜**」。
-> ⇒ **B3(ACA 連 private PG)· PG v18 migration(G8)· seed 三樣仍然係未知數。** 下一步三選(唔互斥):①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 用個人帳號睇 Azure Portal log ③由企業網絡內嘅機 curl。
+> 🟢 **PG management plane metrics 補到大部分**(PG 喺我哋有 Contributor 嘅 RG ⇒ 讀得到,唔使 log / exec / 企業網):`storage_used` 喺 api revision 起身嗰個 5 分鐘窗口(`04:14:08Z` → `04:15`)由 `4,421,869,568` 跳到 `4,422,836,224`(**+944 KB**),之後**零變動** · `connections_failed` **全程 0**(排除密碼錯 / 連接上限)· `active_connections` **+2**(單 replica Prisma idle pool)。
+> ⇒ **B3(ACA 連 private endpoint PG)= 🟢 實質已證**(冇連接就唔可能有寫入 —— **本環境存在嘅意義,通咗**)· **PG v18 migration(G8)= 🟢 強證據**(migrate fail 只會 `WARN`,唔會有寫入)· **seed = 🟡 證到「有寫入」,證唔到「24 個 OpCo 齊」**(944 KB 入面 schema 同 data 拆唔開)。
+> 🔴 **仍要一次直接驗證先收尾**(row count / admin 帳號 / API 200),三選一(唔互斥):①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 用個人帳號睇 Azure Portal log ③由企業網絡內嘅機 curl。
+> 💡 **方法論(值得帶去下一個環境)**:直接路封死唔等於冇路 —— **部署權限 / 觀測權限 / metrics 係三套唔同嘢**,而 metrics 一直喺我哋 RG Contributor 範圍內,四日嚟冇人諗過用。同 Day 3「有咩前提我根本冇寫落嚟」同一族。
 >
 > ⚠️ 仍未掂:**n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
 > ADR-0027 · `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。

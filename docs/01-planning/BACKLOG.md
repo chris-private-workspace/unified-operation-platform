@@ -128,7 +128,10 @@
 >
 > 🔴 **B7(新樽頸)= 觀測權限,唔係部署權限**:冇 `managedEnvironments/**read**` ⇒ `logs show` / `exec` 都 403;HTTP smoke 亦打唔到(**env 係 internal-only** —— ACA FQDN 同 `rci-t.com` 喺企業 DNS 同公網 DNS **都解析唔到**,build host 喺 SGP VNet)。
 > 🔴 **`Healthy` 證明唔到 DB 通** —— `docker-entrypoint.sh` 明文令 migrate/seed 失敗 **NON-FATAL** ⇒ PG 連唔到一樣 `Healthy`(W33 為 UAT 做嘅有意取捨,代價 = F7 嗰種「紅得靜」)。
-> ⇒ **B3(ACA 連 private PG)· PG v18 migration(G8)· seed 三樣仍然未知。** 下一步三選(唔互斥):①infra 畀 `managedEnvironments/read` ②Chris 個人帳號睇 Portal log ③企業網絡內嘅機 curl。
+> 🟢 **PG management plane metrics 補到大部分**:`storage_used` 喺 api revision 起身嗰個窗口(`04:14:08Z`→`04:15`)跳 **+944 KB** 之後零變動 · `connections_failed` 全程 **0** · `active_connections` **+2**。
+> ⇒ **B3(ACA 連 private endpoint PG)🟢 實質已證 —— 本環境存在嘅意義,通咗** · **PG v18 migration(G8)🟢 強證據** · **seed 🟡 證到有寫入,證唔到數目啱**。
+> 🔴 **仍要一次直接驗證收尾**(row count / admin 帳號 / API 200):①infra 畀 `managedEnvironments/read` ②Chris 個人帳號睇 Portal log ③企業網絡內嘅機 curl。
+> 💡 **方法論**:部署權限 / 觀測權限 / **metrics** 係三套嘢,而 metrics 一直喺手上 —— 四日冇人諗過用。
 >
 > 🔴 **本 phase 第四次同一個錯誤模式**:由「CLI PATCH 403」推去「任何 write 都 403」。前三次 = B2 建 database / pull 側 IP / Day 2 `az acr show`。今次最要記,因為我上一輪仲寫低「今次係實測企住」—— 而嗰個實測只覆蓋咗 CLI 一條路。**「我實測過」≠「我實測嘅範圍覆蓋到我個結論」。**
 >
