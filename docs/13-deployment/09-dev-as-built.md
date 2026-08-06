@@ -474,16 +474,32 @@ exec node dist/main
 
 🔴 **關鍵**:我哋同**一個已知在用嘅服務**表現一模一樣 ⇒ **冇證據話我哋條 DNS 記錄「未建」**,亦**冇證據話佢「建咗」**。呢台 build host 喺 **SGP VNet**,唔喺 hub VNet 亦唔喺解析得到企業內部記錄嘅網絡。
 
-⚠️ **一個仍未排除嘅可能**:custom domain 喺**真正嘅企業 DNS** 到底建咗未,我哋喺呢度驗唔到。
-一個支持性(**唔係證明**)論據:ACA 綁 custom domain 需要 hostname 驗證,而 binding 連 SNI cert 都存在 ⇒ **綁嗰陣** DNS 應該係配好嘅。
+### 🔴 B8(新)—— **企業 DNS 冇我哋條記錄**(2026-08-06 由公司網絡實測)
 
-**⇒ 由公司電腦跑兩條 `nslookup` 就一次過分診**:
+Chris 喺**公司網絡嘅電腦**(DNS server `10.160.92.1`)跑分診:
 
-| 結果 | 意思 |
-|---|---|
-| 兩個都解析到 | DNS 齊 ⇒ 直接 curl,F6-4/5/6 一次過收 |
-| n8n 解析到、我哋嘅解析唔到 | 🔴 **infra 漏咗建我哋條記錄**,要補 |
-| 兩個都解析唔到 | 連公司電腦都唔喺對嘅網絡 ⇒ 要問返 infra「邊度打得到 n8n」 |
+```
+nslookup rapo-n8n-uat.rci-t.com     → 10.160.71.243        ✅
+nslookup rapo-uop-web-dev.rci-t.com → Non-existent domain  ❌
+```
+
+⇒ **同一個企業 DNS、同一個 domain,n8n 有 A record 而我哋冇。** 之前嗰個「支持性論據」(ACA 綁 custom domain 要 hostname 驗證 ⇒ DNS 應該配好咗)**唔成立** —— 又一次「睇落合理嘅推論」被一條 `nslookup` 推翻。
+
+🔴 **⇒ `https://rapo-uop-web-dev.rci-t.com/` 而家喺企業網絡入面都訪問唔到**,直到 infra 建咗條記錄。呢個係 **B8**,獨立於 B7(觀測權限)。
+
+**要 infra 做**:喺企業 DNS 為 **`rapo-uop-web-dev.rci-t.com`** 建一條記錄指向 `acaen-rapo-dev` 個 internal static IP(ACA custom domain 通常仲要一條 `asuid.rapo-uop-web-dev` TXT 做 hostname 驗證 —— binding 已經存在,所以嗰條可能一早有)。
+🔍 **順帶一條線索**:`rapo-n8n-uat.rci-t.com` 解析到 **`10.160.71.243`**。若 n8n 都係跑喺同一個 ACA env(registry 入面確實有個 `n8n` repo),咁條記錄好可能係指同一個 IP ——**但呢個係推論,由 infra 確認**。
+
+### 🟢 但 B8 **唔 block 驗證** —— ACA 預設 FQDN 係另一條路
+
+custom domain 只係**一個** hostname。app 本身仲有 ACA 預設 FQDN,而佢喺 hub VNet 嘅 private DNS **一定有記錄**(internal env 就係咁註冊)。⇒ 喺**公司網絡**嘅機直接打:
+
+```
+https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/
+https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/api/docs/api
+```
+
+⇒ **F6-4/5/6(前端 200 · `/docs/api` 200 · break-glass login)可以即刻收**,唔使等 infra 建 DNS。custom domain 嗰半留返 B8 解封之後補驗。
 
 > 🔍 **順帶:公網打唔到係功能正常嘅表現,唔係故障。** W44 開呢個環境正正就係為咗「**只喺企業網絡內可達 + 打得入 n8n**」;舊環境嘅問題就係佢住喺公網孤島。
 

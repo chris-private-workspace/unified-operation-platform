@@ -33,7 +33,9 @@
 > 🔴 **而 `Healthy` 證明唔到 DB 通** —— `apps/api/docker-entrypoint.sh` 明文令 migrate / seed 失敗 **NON-FATAL**(`|| echo WARN` 之後照 `exec node dist/main`)⇒ PG 連唔到一樣 `Healthy`。呢個係 W33 為 UAT 做嘅有意取捨,但代價係 F7 嗰種「**紅得靜**」。
 > 🟢 **PG management plane metrics 補到大部分**(PG 喺我哋有 Contributor 嘅 RG ⇒ 讀得到,唔使 log / exec / 企業網):`storage_used` 喺 api revision 起身嗰個 5 分鐘窗口(`04:14:08Z` → `04:15`)由 `4,421,869,568` 跳到 `4,422,836,224`(**+944 KB**),之後**零變動** · `connections_failed` **全程 0**(排除密碼錯 / 連接上限)· `active_connections` **+2**(單 replica Prisma idle pool)。
 > ⇒ **B3(ACA 連 private endpoint PG)= 🟢 實質已證**(冇連接就唔可能有寫入 —— **本環境存在嘅意義,通咗**)· **PG v18 migration(G8)= 🟢 強證據**(migrate fail 只會 `WARN`,唔會有寫入)· **seed = 🟡 證到「有寫入」,證唔到「24 個 OpCo 齊」**(944 KB 入面 schema 同 data 拆唔開)。
-> 🔴 **仍要一次直接驗證先收尾**(row count / admin 帳號 / API 200),三選一(唔互斥):①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 用個人帳號睇 Azure Portal log ③由企業網絡內嘅機 curl。
+> 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**。2026-08-06 由**公司網絡**(DNS `10.160.92.1`)實測:`rapo-n8n-uat.rci-t.com` → **`10.160.71.243`** ✅ 但 `rapo-uop-web-dev.rci-t.com` → **Non-existent domain** ⇒ **infra 漏咗建** ⇒ custom domain **連喺企業網都訪問唔到**。⚠️ 之前「ACA 綁 custom domain 要 hostname 驗證 ⇒ DNS 應該配好」呢個推論**已被一條 `nslookup` 推翻**。
+> 🟢 **B8 唔 block 驗證** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` + `/api/docs/api` ⇒ **F6-4/5/6 即刻收得**,custom domain 嗰半留 B8 解封後補驗。
+> 🔴 **仍要一次直接驗證先收尾**(row count / admin 帳號 / API 200):**最快 = 上面條 ACA FQDN**;其次 ①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 個人帳號睇 Azure Portal log。
 > 💡 **方法論(值得帶去下一個環境)**:直接路封死唔等於冇路 —— **部署權限 / 觀測權限 / metrics 係三套唔同嘢**,而 metrics 一直喺我哋 RG Contributor 範圍內,四日嚟冇人諗過用。同 Day 3「有咩前提我根本冇寫落嚟」同一族。
 >
 > ⚠️ 仍未掂:**n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。

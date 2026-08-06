@@ -96,9 +96,10 @@ last_updated: 2026-08-04
 - [x] F6-1 ~~`az deployment group create`~~ **`az rest --method patch` ×2** —— 兩個都 `exit=0`。腳本 `deploy/azure/patch-deploy-dev.ps1`,先 dry-run 印 masked 結構驗過先送
 - [x] F6-2 verify:api / web PATCH 都 `exit=0`,兩個 app `provisioningState = Succeeded`
 - [x] F6-3 verify:**兩個 revision 都 `Healthy`** —— api `--0000002` `RunningAtMaxScale` · web `--0000001` `Running`,replicas 各 1。🟢 **順帶證到 ACA 由 VNet 內 pull 到 `acrrci3ailanding1`**
-- [ ] F6-4 verify:`GET https://rapo-uop-web-dev.rci-t.com/` = 200 —— 🔴 **做唔到**:企業 DNS(`az-sgp-dc1`)同公網 DNS 都解析唔到 ⇒ env 係 internal-only,呢台機唔喺 hub VNet 亦唔喺企業網
-- [ ] F6-5 verify:`GET .../api/docs/api` = 200 —— 同上
-- [ ] F6-6 verify:break-glass login = 200 + role ADMIN —— 同上
+- [ ] F6-4 verify:`GET https://rapo-uop-web-dev.rci-t.com/` = 200 —— 🔴 **卡 B8**:2026-08-06 由**公司網絡**實測,`rapo-n8n-uat.rci-t.com` → `10.160.71.243` 但 `rapo-uop-web-dev.rci-t.com` → **Non-existent domain** ⇒ **infra 漏咗建我哋條 DNS 記錄**
+- [ ] F6-5 verify:`GET .../api/docs/api` = 200 —— 同上(custom domain 半邊)
+- [ ] F6-6 verify:break-glass login = 200 + role ADMIN —— 同上(custom domain 半邊)
+- [ ] F6-4b 🆕 🟢 **唔使等 B8** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` → 前端 200 · `/api/docs/api` → 200 · break-glass login。⇒ **F6-4/5/6 嘅實質內容即刻收得**,custom domain 嗰半留 B8 解封後補驗
 - [x] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🟢 **強證據**:`storage_used` 喺 api revision 起身嗰個窗口(`04:14:08Z` → `04:15`)由 `4,421,869,568` 跳到 `4,422,836,224`(**+944 KB**),之後零變動。migration fail 嘅話 entrypoint 只會 `WARN`,**唔會有任何寫入**。⚠️ 仍未見過 `migrate status` 原文
 - [ ] F6-8 verify:seed 完成(24 OpCo + admin + catalog SKU 真數)—— 🟡 **證到「有寫入」,證唔到「數目啱」** —— 944 KB 入面 schema 同 data 拆唔開。要 F6-11/12 先收得尾
 - [x] F6-7b 🆕 **B3 — ACA 連唔連到 private endpoint 嘅 PG** —— 🟢 **實質已證**:冇連接就唔可能有 storage 寫入。`connections_failed` **全程 0**(排除密碼錯 / 連接上限)· `active_connections` 部署後 **+2**(單 replica Prisma idle pool)。**呢個係本環境存在嘅意義,而佢通咗**
