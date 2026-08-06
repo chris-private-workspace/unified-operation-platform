@@ -422,4 +422,72 @@ Chris 問「係咪真係部署唔到」(同 Day 2 嗰句一樣,而嗰次揭穿�
 
 ---
 
+## Day 4 — 2026-08-06:**部署咗** —— 但「部署成功」同「驗證到成功」係兩件事
+
+### infra 第四輪:兩個問題,而兩個都揭到嘢
+
+**問題一:「environment setting you need to change what? 點解部署要改 environment setting?」**
+
+呢個係我表達失誤引起 —— 我上一輪寫 `--role Contributor --scope <env>`,佢哋見到 "Contributor" 自然以為我哋要改佢哋個 env。**實情係我哋一個 environment setting 都唔使改**:`join/action` 唔係「改 environment」嘅權,係「**把 app 掛落 environment**」嘅權。已用 template 實證回覆(`aca-dev.json` 有**兩個** `Microsoft.App/containerApps` resource、**零個** `managedEnvironments` resource),並改推**只含 `join/action` 嘅自訂角色** —— 佢結構上做唔到任何修改 env 嘅嘢,直接消除佢哋嘅顧慮。
+
+**問題二:「`join/action` is used to create new container app. The container app is already created, please use aca-rapo-uop-api-dev & aca-rapo-uop-web-dev」**
+
+### 🔴 佢哋啱,我錯 —— 而我錯嘅方式係第四次重複同一個模式
+
+我上一輪寫低「**任何** `containerApps/write` 都觸發 linked auth 檢查,冇繞道」,依據係 `az containerapp registry set` 都 403。**實測推翻**:
+
+```
+az rest --method patch --url ".../containerApps/aca-rapo-uop-api-dev?api-version=2024-03-01" \
+        --body '{"properties":{"template":{"scale":{"minReplicas":1}}}}'
+→ 成功。minReplicas 由 0 變 1(實測確認)
+```
+
+| 路徑 | 結果 | 真正原因 |
+|---|---|---|
+| ARM template full PUT | 🔴 403 | template **明確送 `environmentId`** |
+| `az containerapp registry set`(CLI) | 🔴 403 | **CLI 做 read-modify-write**,連 `environmentId` 一齊送返去 |
+| **`az rest` PATCH,body 唔含 `environmentId`** | 🟢 **成功** | ARM 冇 linked resource 要驗 |
+
+⇒ 觸發條件係「**body 有冇宣告 `environmentId`**」,唔係「有冇 write」。
+
+🔴 **呢個係 B2(建 database)/ pull 側 IP / Day 2 `az acr show` 之後第四次同一個模式**:由一個真觀察推去一個更強嘅結論。今次最要記,因為我上一輪仲寫低咗「今次係實測企住,唔係推理企住」—— 而嗰個「實測」只覆蓋咗 CLI 一條路,我把佢推廣成「任何 write」。**「我實測過」唔等於「我實測嘅範圍覆蓋到我個結論」。**
+
+### ✅ 部署執行(Chris 拍板走 PATCH)
+
+兩個 `az rest --method patch`,body 對齊 `aca-dev.json` 但**刻意唔含 `environmentId` / `workloadProfileName` / web 嘅 `customDomains`+`external`**。腳本先 dry-run 印 masked 結構驗過先送(19 env · 8 secret · array 型別 · 零 `environmentId`)。
+
+**結果**:api revision `--0000002` **`Healthy`/`RunningAtMaxScale`** · web revision `--0000001` **`Healthy`/`Running`** · 🟢 **ACA 由 VNet 內成功 pull `acrrci3ailanding1`** · 🟢 **`customDomains` + `workloadProfileName` + `environmentId` 全部完好**。
+
+**PATCH 一個原本冇諗到嘅優勢**:ARM full PUT 會 unset 冇寫嘅 property(what-if 顯示四個);PATCH 只改你送嗰啲 ⇒ **infra 配嘅 custom domain / SNI binding 結構上掂唔到**。對「唔好整爛 infra 配好嘅嘢」呢個目標,**PATCH 比 template 更安全**。
+
+### 🔴 但 —— 三樣核心嘢仍然**未驗證**,`Healthy` 係假安心
+
+`apps/api/docker-entrypoint.sh` 第 12–16 行明文設計成 migrate / seed 失敗 **NON-FATAL**(`|| echo WARN` 之後照 `exec node dist/main`)⇒ **PG 完全連唔到,容器一樣 `Healthy`**。呢個係 W33 為 UAT 做嘅有意取捨,但代價正正係 F7 記錄嗰種「**紅得靜**」。
+
+**三條驗證路全部封死**:`logs show` ❌ 要 `managedEnvironments/read` · `exec` ❌ 同上 · HTTP smoke ❌ 四個 URL 全部 `000`。
+
+**HTTP 打唔到唔係部署壞咗** —— `aca-…azurecontainerapps.io` 同 `rapo-uop-web-dev.rci-t.com` 喺**企業 DNS(`az-sgp-dc1` 10.160.50.4)同公網 DNS(8.8.8.8)都解析唔到** ⇒ `acaen-rapo-dev` 係 **internal-only env**;custom domain 係企業 split-horizon DNS。**呢台 build host 喺 SGP VNet,結構上打唔到嗰兩個網絡。**
+
+🔴 **⇒ B3(ACA 連 private PG)· PG v18 migration(G8)· seed 三樣仍然係未知數。** 唔可以喺任何地方寫成「已驗」。
+
+> **今日最值得記嘅**:B1 通咗、B4 繞過咗、部署真係落咗 —— 但**驗證能力反而係新嘅樽頸**。之前四日一直當「部署到就驗到」,而實際上**部署權限同觀測權限係兩套嘢**,我哋只爭取過前者。
+
+### Decisions
+
+- **走 raw ARM PATCH 部署**(Chris 2026-08-06 拍板)。`aca-dev.json` 保留 —— 佢仍然係 topology 嘅宣告式真相,而且 infra 一畀 `join/action` 就用得返。⚠️ **部署機制由宣告式 template 變成 PATCH 腳本,係一個要記入 ADR-0027 嘅補充**(未做,見下)。
+- **仍然向 infra 要 `join/action`** —— PATCH 係 unblock,唔係取代;冇佢 ARM template 永遠用唔到。
+- 🆕 **新增向 infra 要 `managedEnvironments/read`** —— 純唯讀,解封 log + exec,係而家最大嘅樽頸。
+
+### Blockers
+
+🟢 B1 CLOSED · 🟢 B4 **繞過**(PATCH)· 🔴 **B7 新登 —— 觀測權限**:冇 `managedEnvironments/read` ⇒ 睇唔到 log、入唔到 container,而 entrypoint 又係 fail-soft ⇒ **部署咗但驗唔到**。
+⚠️ B3 / PG v18 / seed 三樣由「卡喺閘後面」變成「**部署咗但睇唔到結果**」。
+
+### Commits
+
+- `dbf4cc9` / `aaef7cd` / `2501213`(Day 3 + B4;⚠️ `2501213` 個結論**本日已推翻並更正**)
+- `<pending>` — `feat(deploy): W44 DEV 部署 #1 — raw ARM PATCH 繞過 join/action`
+
+---
+
 **End of W44 progress**(進行中)

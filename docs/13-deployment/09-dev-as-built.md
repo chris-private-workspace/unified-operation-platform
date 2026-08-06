@@ -234,21 +234,33 @@ SP(app id `d2f094a3-b1ec-4c05-b71a-7fae91e08af0` · object id `d6a6b91e-e98d-4c3
 
 **scope 只需要嗰一個 env resource,唔需要成個 RG。** 內建角色定自訂角色由 infra 揀 —— 我哋唯一硬要求係嗰個 `join/action`(順帶畀埋 `managedEnvironments/read` 會方便診斷,但唔係必需)。
 
-### 🔴 繞道已排除 —— PATCH 一樣 403(2026-08-05 實測)
+### 🔴→🟢 繞道:**有路**,但我一度判錯(2026-08-05 → 08-06)
 
-原本估「`az containerapp` 嘅 PATCH 可能唔送 `environmentId`,因而唔觸發 linked auth」。**實測推翻**:
+**第一輪判斷(錯)**:試咗 `az containerapp registry set`,一樣 `LinkedAuthorizationFailed` ⇒ 我寫低「**任何** `containerApps/write` 都觸發 linked auth 檢查,冇繞道」。
 
-```
-az containerapp registry set -n aca-rapo-uop-api-dev -g RG-RAPO-UOP-DEV \
-    --server acrrci3ailanding1.azurecr.io --username … --password …
-→ (LinkedAuthorizationFailed) …does not have permission to perform
-  'Microsoft.App/managedEnvironments/join/action' on the linked scope(s)
-  '…/RG-RAPO-ContainerAPP-DEV/…/managedEnvironments/acaen-rapo-dev'
-```
+**第二輪實測(推翻上面)**:用 `az rest` 直接打 ARM PATCH,body 只有 `{"properties":{"template":{"scale":{"minReplicas":1}}}}` —— **成功**,`minReplicas` 由 0 變 1 實測確認。
 
-**一模一樣嘅 error**,而呢個 PATCH 連 image 都冇掂,只係加 registry credential。⇒ **任何 `Microsoft.App/containerApps/write` 都會觸發 linked authorization 檢查** —— 唔理 ARM full PUT 定 CLI PATCH,因為既有 resource 本身已經 linked 住嗰個 env,RP 每次 write 都要驗你 join 唔 join 得。零改變(`registries` / `secrets` 實測仍空)。
+| 路徑 | 結果 | 真正原因 |
+|---|---|---|
+| ARM template full PUT | 🔴 403 | template **明確送 `environmentId`** |
+| `az containerapp registry set` / `update`(CLI) | 🔴 403 | **CLI 做 read-modify-write** —— 佢讀返成個 resource 再送返去,連 `environmentId` 一齊送 |
+| **`az rest` PATCH,body 唔含 `environmentId`** | 🟢 **成功** | ARM 冇 linked resource 要驗 |
 
-🔴 **⇒ 冇繞道。`join/action` 係硬需求,唔係 template 寫法問題。**
+⇒ **觸發條件係「request body 有冇宣告 `environmentId`」,唔係「有冇 write」。**
+
+🔴 **我錯喺邊**:由「CLI PATCH 403」推去「任何 write 都 403」。呢個係**同一個錯誤模式嘅第四次**(B2 建 database / pull 側 IP / Day 2 `az acr show`)—— 由一個真觀察推去一個更強嘅結論。今次特別要記,因為我當時仲寫咗「今次係實測企住,唔係推理企住」,而嗰個「實測」只覆蓋咗 CLI 一條路。
+
+> **順帶:infra 講「`join/action` is used to create new container app」方向係啱嘅** —— app 已經建好、已經 in the environment,我哋唔需要重新宣告佢屬於邊個 env,所以唔使 join 權。佢哋嘅措辭唔精確(更新既有 app 只要 body 含 `environmentId` 一樣要),但結論成立。
+
+### 🟢 PATCH 路徑仲有一個結構性優勢
+
+ARM full PUT 會 **unset 冇寫嘅 property**(what-if 顯示四個:`exposedPort`/`traffic`/`maxInactiveRevisions`/`runningStatus`)。**PATCH 只改你送嗰啲**,所以:
+
+- **唔送 `environmentId`** ⇒ 唔觸發 join 檢查
+- **唔送 `workloadProfileName`** ⇒ 自動保留
+- **web 唔送 `customDomains` / `external`** ⇒ infra 配嘅 custom domain + SNI binding **結構上掂唔到**
+
+⇒ 對「唔好整爛 infra 配好嘅嘢」呢個目標,**PATCH 比 ARM template 更安全**。代價係可重現性:要用一個 PATCH body 腳本代替宣告式 template。
 
 ## 附:B1 解法 ② —— 若 infra team 代 build,交畀佢哋嘅嘢
 
@@ -404,7 +416,58 @@ ERROR: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
 
 ## 部署記錄
 
-_(未部署 —— 部署後喺呢度加,格式跟 `07-uat-as-built.md`)_
+### 2026-08-06 · 部署 #1(raw ARM PATCH)— **配置全部落到,但下游三樣未驗證**
+
+**方式**:唔用 `aca-dev.json`(ARM full PUT 會 403,見上面 B4)。用兩個 `az rest --method patch`,body 對齊 template 內容但**刻意唔含 `environmentId` / `workloadProfileName` / web 嘅 `customDomains`+`external`**。腳本先 dry-run 印 masked 結構驗過(19 env · 8 secret · array 型別 · 零 `environmentId`)先送。
+
+**image**:`uop-api:dev-0d01f0c` · `uop-web:dev-0d01f0c`(commit `0d01f0c`)
+
+| 驗到嘅嘢(有真 tool output) | 結果 |
+|---|---|
+| api PATCH / web PATCH | `exit=0` |
+| api revision `--0000002` | **`Healthy` / `RunningAtMaxScale`** · replicas 1 |
+| web revision `--0000001` | **`Healthy` / `Running`** · replicas 1 |
+| **ACA 由 VNet 內 pull 到 `acrrci3ailanding1`** | 🟢 **通** —— revision 真係跑緊我哋個 image(pull 唔到就唔會 Healthy) |
+| api 配置 | image ✅ · 19 env ✅ · 8 secret ✅ · registry ✅ · ingress **internal + 3000 + allowInsecure**(ADR-0027 Option A)✅ |
+| web 配置 | image ✅ · `API_UPSTREAM` = api internal FQDN ✅ · targetPort **8080** ✅ |
+| 🟢 **`customDomains`** | **`rapo-uop-web-dev.rci-t.com[SniEnabled]` 完好** |
+| 🟢 `workloadProfileName` / `environmentId` | 兩個 app 都保留(PATCH 冇 unset) |
+
+### 🔴 驗證唔到嘅嘢 —— **唔可以當部署成功**
+
+**`Healthy` 喺呢個 image 上證明唔到 DB 通。** `apps/api/docker-entrypoint.sh` 明文設計成 migrate / seed 失敗 **NON-FATAL**:
+
+```sh
+npx prisma migrate deploy || echo "[entrypoint] WARN: migrate deploy failed (continuing)"
+npm run seed             || echo "[entrypoint] WARN: seed failed (continuing)"
+exec node dist/main
+```
+
+⇒ 就算 PG 完全連唔到,容器一樣 `Healthy`。呢個係 W33 為 UAT 做嘅有意取捨(唔想 crash-loop),但代價正正係 F7 記錄嗰種「**紅得靜**」。
+
+**三條驗證路全部封死**:
+
+| 路 | 結果 |
+|---|---|
+| `az containerapp logs show` | ❌ `AuthorizationFailed` — 要 **`managedEnvironments/read`** |
+| `az containerapp exec` | ❌ 同上 |
+| HTTP smoke | ❌ 四個 URL 全部 `000`(連接失敗) |
+
+**HTTP 打唔到嘅原因唔係部署壞咗**,係網絡:`aca-…azurecontainerapps.io` 同 `rapo-uop-web-dev.rci-t.com` **喺企業 DNS(`az-sgp-dc1`, 10.160.50.4)同公網 DNS(8.8.8.8)都解析唔到** ⇒ `acaen-rapo-dev` 係 **internal-only env**,FQDN 只喺 hub VNet 嘅 private DNS 註冊;custom domain 亦係企業 split-horizon DNS。**呢台 build host 喺 SGP VNet,唔喺嗰兩個網絡入面,結構上打唔到。**
+
+🔴 **⇒ 以下三樣仍然係未知數,唔可以喺任何地方寫成「已驗」**:
+
+1. **B3 — ACA 連唔連到 private endpoint 嘅 PG**
+2. **PG v18 migration 跑唔跑得過**(G8,第一次踩 v18)
+3. **seed 有冇成功**(24 OpCo + admin + catalog SKU)
+
+### 下一步(三個都做得到,唔互相排斥)
+
+| # | 做法 | 攞到咩 |
+|---|---|---|
+| ① | **infra 畀 SP `Microsoft.App/managedEnvironments/read`**(純唯讀,比 `join/action` 細得多) | 解封 `logs show` + `exec` ⇒ 直接見到 migrate / seed 真結果 |
+| ② | **Chris 用自己帳號喺 Azure Portal 睇 container log** | 同上,唔使等 infra(前提:個人帳號有 env read) |
+| ③ | **由企業網絡內嘅機 curl** `https://rapo-uop-web-dev.rci-t.com/` + `/api/docs/api` | 真 smoke;順帶驗 custom domain + nginx proxy |
 
 ## References
 

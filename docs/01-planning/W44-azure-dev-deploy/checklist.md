@@ -86,21 +86,25 @@ last_updated: 2026-08-04
 - [x] F5-5 🆕 `aca.params.dev.json` 個 `apiImage`/`webImage` tag 由 `dev-3ff9c73` 更新做 **`dev-0d01f0c`**(對齊實際 push 上去嗰兩個)
 - [x] F5-6 🆕 部署前重跑 `what-if` —— **同 Day 1 baseline 一致**:零 Delete · 9 Ignore · 2 Modify · `customDomains`/`workloadProfileName` 保留
 
-## F6 — 部署 + smoke(🔴 **卡 B4 —— 2026-08-05 嘗試 #1 失敗**)
+## F6 — 部署 + smoke(**2026-08-06 部署咗,但驗證卡 B7**)
 
-> 🔴 **B4 兌現**:`az deployment group create` → **`LinkedAuthorizationFailed`**。SP 有 `containerApps/write`,但**冇 `Microsoft.App/managedEnvironments/join/action`** 喺 `RG-RAPO-ContainerAPP-DEV/…/acaen-rapo-dev`。實測 SP **只有一個** role assignment:`[Contributor] RG-RAPO-UOP-DEV` ⇒ infra 答嗰句「used contributor to replace」畀錯咗 RG。
-> 🟢 **零破壞** —— pre-flight 授權檢查行喺任何改動之前,兩個 app 完全原狀(custom domain / workloadProfile 都喺)。
+> 🔴 **B4**:`az deployment group create` → `LinkedAuthorizationFailed`(SP 冇 `managedEnvironments/join/action`)。零破壞。
+> 🟢 **繞過咗**:`az rest --method patch`,body **唔含 `environmentId`** ⇒ 唔觸發 linked auth。CLI(`az containerapp update/registry set`)做 read-modify-write 會連 `environmentId` 一齊送,所以一樣 403 —— **要用 raw ARM PATCH**。
+> 🔴 **新樽頸 B7 — 觀測權限**:冇 `managedEnvironments/read` ⇒ `logs show` / `exec` 都 403;而 HTTP 又打唔到(env 係 internal-only,呢台機唔喺嗰個網絡)⇒ **部署咗但驗唔到**。
 
-- [ ] F6-0 🔴 **等 infra 畀 `Microsoft.App/managedEnvironments/join/action`**(scope 只需要 `acaen-rapo-dev` 嗰一個 resource;SP object id `d6a6b91e-e98d-4c38-8103-45e70f410006`)
-- [ ] F6-1 `az deployment group create` —— ⚠️ **嘗試 #1(`uop-dev-w44-0d01f0c`)失敗於 B4**,零破壞,等 F6-0
-- [ ] F6-2 verify:`az deployment group show` → `provisioningState = Succeeded`
-- [ ] F6-3 verify:兩個 revision **Running / Healthy**(`az rest` replica 狀態)
-- [ ] F6-4 verify:`GET https://rapo-uop-web-dev.rci-t.com/` = 200
-- [ ] F6-5 verify:`GET .../api/docs/api` = 200
-- [ ] F6-6 verify:break-glass login = 200 + role ADMIN
-- [ ] F6-7 verify:**PG v18 migration 真跑得過**(G8 — 第一次踩 v18)
-- [ ] F6-8 verify:seed 完成(24 OpCo + admin + catalog SKU 真數)
-- [ ] F6-9 R6 對數:逐項對返 F2-1 存底,確認 ARM 冇刪走 infra 配好嘅嘢
+- [x] F6-0 ~~等 infra 畀 `join/action`~~ **已繞過**(raw ARM PATCH)。⚠️ **仍然要向 infra 攞** —— 冇佢 `aca-dev.json` 永遠用唔到
+- [x] F6-1 ~~`az deployment group create`~~ **`az rest --method patch` ×2** —— 兩個都 `exit=0`。腳本 `deploy/azure/patch-deploy-dev.ps1`,先 dry-run 印 masked 結構驗過先送
+- [x] F6-2 verify:api / web PATCH 都 `exit=0`,兩個 app `provisioningState = Succeeded`
+- [x] F6-3 verify:**兩個 revision 都 `Healthy`** —— api `--0000002` `RunningAtMaxScale` · web `--0000001` `Running`,replicas 各 1。🟢 **順帶證到 ACA 由 VNet 內 pull 到 `acrrci3ailanding1`**
+- [ ] F6-4 verify:`GET https://rapo-uop-web-dev.rci-t.com/` = 200 —— 🔴 **做唔到**:企業 DNS(`az-sgp-dc1`)同公網 DNS 都解析唔到 ⇒ env 係 internal-only,呢台機唔喺 hub VNet 亦唔喺企業網
+- [ ] F6-5 verify:`GET .../api/docs/api` = 200 —— 同上
+- [ ] F6-6 verify:break-glass login = 200 + role ADMIN —— 同上
+- [ ] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🔴 **未知**。⚠️ `Healthy` **證明唔到**:`docker-entrypoint.sh` 明文令 migrate 失敗 NON-FATAL
+- [ ] F6-8 verify:seed 完成(24 OpCo + admin + catalog SKU 真數)—— 🔴 **未知**,同上
+- [x] F6-9 R6 對數:🟢 **`customDomains`(`rapo-uop-web-dev.rci-t.com` SniEnabled)· `workloadProfileName` · `environmentId` 全部完好**。PATCH 唔 unset 冇送嘅 property ⇒ 比 ARM full PUT 結構上更安全
+- [ ] F6-10 🆕 🔴 **要 infra 畀 `Microsoft.App/managedEnvironments/read`**(純唯讀,比 `join/action` 細)⇒ 解封 `logs show` + `exec`,係而家最大樽頸
+- [ ] F6-11 🆕 替代驗證:Chris 用個人帳號喺 Azure Portal 睇 container log
+- [ ] F6-12 🆕 替代驗證:由企業網絡內嘅機 curl web + `/api/docs/api`
 
 ## F7 — n8n UAT 接線驗證(前置 F6)
 

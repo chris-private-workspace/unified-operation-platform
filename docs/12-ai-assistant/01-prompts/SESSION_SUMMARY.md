@@ -23,12 +23,17 @@
 >
 > ⚠️ **三件唔可以靜靜當佢消失**:①呢條路**繞開**公司 proxy,唔係令部署鏈喺公司網跑得到 ⇒ **解法 ①(SP 攞 registry `read` + `scheduleRun/action`)仍然最乾淨,infra 唔應該撤走**(🔴 `AcrPush` **唔包** `scheduleRun/action`)②之前四條解法**全部 assume 咗「build 一定要喺公司網嗰台機做」而冇人立過呢個 assumption** ③F5 由 `az acr build` 改本地 `docker build` = **R3 deviation**,已 log。
 >
-> 🔴 **而家唯一硬 blocker = B4(2026-08-05 部署嘗試 #1 兌現)** —— `az deployment group create` 撞 **`LinkedAuthorizationFailed`**:SP 有 `containerApps/write`,但**冇 `Microsoft.App/managedEnvironments/join/action`** 喺共用 env `acaen-rapo-dev`(住喺**另一個 RG** `RG-RAPO-ContainerAPP-DEV`)。實測 SP **只有一個** role assignment:`[Contributor] RG-RAPO-UOP-DEV` ⇒ infra 答嗰句「used contributor to replace」畀錯咗 RG。**要 infra 畀嘅嘢好精確**:SP object id `d6a6b91e-e98d-4c38-8103-45e70f410006` 要 `join/action`,scope 只需要 `acaen-rapo-dev` 嗰一個 resource。
-> 🟢 **零破壞** —— `LinkedAuthorization` 係 pre-flight,行喺任何 resource 改動之前:兩個 app 仍係 quickstart image、**web custom domain 完好**、`workloadProfileName` 保留。
-> 🔴 **教訓**:B4 掛咗兩日「🟢 infra 已答(**未實測**)」,而「已答」被當成「已解決」。**一個未實測嘅答覆同一個未問嘅問題,喺風險上係同一樣嘢** —— 分別只在於前者令人唔再追。
-> ⚠️ **未驗嘅繞道**:`az containerapp update`(PATCH)可能唔觸發 linked auth 檢查 —— **推論唔係實測**,而且就算通,將來任何 ARM 部署一樣撞返同一道牆,仲會令 as-built 同 `aca-dev.json` 脫節。要 Chris 拍板先做。
+> 🟢 **2026-08-06 已部署上 DEV(部署 #1)** —— 但 **🔴 唔可以講「部署成功」**,見下面 B7。
+> **B4**:`az deployment group create` 撞 `LinkedAuthorizationFailed`(SP 冇 `managedEnvironments/join/action`;env `acaen-rapo-dev` 住喺**另一個 RG** `RG-RAPO-ContainerAPP-DEV`,SP 實測**只有** `[Contributor] RG-RAPO-UOP-DEV`)。
+> 🟢 **繞過 = `az rest --method patch`,body 唔含 `environmentId`**。🔴 **`az containerapp update`/`registry set` 一樣 403**(CLI read-modify-write 會連 `environmentId` 送返去)⇒ **一定要 raw ARM PATCH**。腳本 = **`deploy/azure/patch-deploy-dev.ps1`**(無參數 = dry-run 印 masked body;`-Send` 先真送)。
+> 🟢 **PATCH 比 ARM full PUT 更安全** —— 唔 unset 冇送嘅 property ⇒ infra 配嘅 `customDomains`+SNI / `workloadProfileName` **結構上掂唔到**(實測完好)。`aca-dev.json` 保留做宣告式真相。
+> **實測**:api `--0000002` `Healthy`/`RunningAtMaxScale` · web `--0000001` `Healthy`/`Running` · 🟢 **ACA 由 VNet 內 pull 到 registry**。
 >
-> ⚠️ **B4 一通,一堆無關嘅風險即刻湧出嚟**:ARM 打真環境 · **PG v18 migration**(UAT 係 16,第一次踩)· **ACA 由 VNet 內 pull 唔 pull 到 registry** · **ACA 連唔連到 private endpoint 嘅 PG**(B3)· seed · smoke · **n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
+> 🔴 **B7 = 新樽頸,而佢係「觀測權限」唔係「部署權限」**:冇 `Microsoft.App/managedEnvironments/read` ⇒ `logs show` / `exec` 都 403;HTTP smoke 亦打唔到(**`acaen-rapo-dev` 係 internal-only env** —— ACA FQDN 同 `rapo-uop-web-dev.rci-t.com` 喺**企業 DNS 同公網 DNS 都解析唔到**;build host 喺 SGP VNet,唔喺 hub VNet 亦唔喺企業網)。
+> 🔴 **而 `Healthy` 證明唔到 DB 通** —— `apps/api/docker-entrypoint.sh` 明文令 migrate / seed 失敗 **NON-FATAL**(`|| echo WARN` 之後照 `exec node dist/main`)⇒ PG 連唔到一樣 `Healthy`。呢個係 W33 為 UAT 做嘅有意取捨,但代價係 F7 嗰種「**紅得靜**」。
+> ⇒ **B3(ACA 連 private PG)· PG v18 migration(G8)· seed 三樣仍然係未知數。** 下一步三選(唔互斥):①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 用個人帳號睇 Azure Portal log ③由企業網絡內嘅機 curl。
+>
+> ⚠️ 仍未掂:**n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 **http 明文** = B6)。
 > ADR-0027 · `docs/13-deployment/09-dev-as-built.md` · `W44-azure-dev-deploy/`。
 
 > 🔴 **W43 最要緊嗰三件(ADR-0025 / 0026)**:
