@@ -83,6 +83,9 @@ $apiBody = @{
         @{ name = 'auth-jwt-secret';              value = $p.authJwtSecret.value }
         @{ name = 'local-admin-initial-password'; value = $p.localAdminInitialPassword.value }
         @{ name = 'acs-connection-string';        value = $p.acsConnectionString.value }
+        # ADR-0028 — the SSO client secret. This is the ONE secret Entra SSO
+        # needs, and it never leaves the server: the browser holds no token.
+        @{ name = 'entra-client-secret';          value = $p.entraClientSecret.value }
       )
     }
     template = @{
@@ -105,6 +108,16 @@ $apiBody = @{
           @{ name = 'RUN_SEED_ON_START';            value = 'true' }
           @{ name = 'ACS_SENDER_ADDRESS';           value = $p.acsSenderAddress.value }
           @{ name = 'APP_BASE_URL';                 value = $p.appBaseUrl.value }
+          # ADR-0028 — Entra SSO, read at RUNTIME. All four or SSO stays off
+          # (/auth/sso/status reports enabled:false and the button greys out).
+          # These used to be VITE_* baked into the web image at build time;
+          # moving them here is what makes an Entra config change a restart
+          # rather than a ~10-minute rebuild.
+          @{ name = 'ENTRA_TENANT_ID';              value = $p.entraTenantId.value }
+          @{ name = 'ENTRA_CLIENT_ID';              value = $p.entraClientId.value }
+          # Must match the app registration's registered redirect URI verbatim.
+          @{ name = 'ENTRA_REDIRECT_URI';           value = $p.entraRedirectUri.value }
+          @{ name = 'ENTRA_CLIENT_SECRET';          secretRef = 'entra-client-secret' }
           @{ name = 'DATABASE_URL';                 secretRef = 'database-url' }
           @{ name = 'LOCAL_ADMIN_INITIAL_PASSWORD'; secretRef = 'local-admin-initial-password' }
           @{ name = 'GRAPH_CLIENT_SECRET';          secretRef = 'graph-client-secret' }

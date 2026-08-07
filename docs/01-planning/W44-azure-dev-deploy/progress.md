@@ -663,14 +663,63 @@ this.issuer = [
 - **`local-profile.ts` 檔名同函數名唔改**,雖然佢而家承載兩個 provider。改名要動 8+ 個檔而零功能收益;改咗註釋講清楚就夠(§1.3)。
 - **唔做 federated sign-out**。登出只清平台 session,Entra session 唔掂 ⇒ 再撳「Continue with Microsoft」會即刻入返。呢個係正常 SSO 行為(同 tenant 其他 app 一樣),而 federated sign-out 會**順帶登出 Outlook / Teams** ⇒ 屬產品決定唔屬缺口,已寫入 `use-sign-out.ts`。
 
+### ✅ 部署 #2(同日稍後)—— image `dev-3971ad3` 上咗 DEV
+
+| 步 | 結果 |
+|---|---|
+| ACR 存取 | ⚠️ **`az acr login` 用錯身份就死** —— SP `d2f094a3` 冇 registry 權限,az 會 fallback 去互動式問 username 然後 `EOFError`。改用 `docker login` 配 params 入面嗰組 ACR 憑證(`4a6e1474`)⇒ `Login Succeeded` |
+| Build | api + web 兩個 `exit 0`(無 build arg —— **Entra 嘅已經拆晒**) |
+| Push | 🟢 **真 push**:api `sha256:eecd2521…` · web `sha256:070c4967…` |
+| PATCH | 兩個 app 都 `exit 0`。dry-run 先核對過:`has environmentId: False` · `has workloadProfile: False` · web 唔送 `external`/`customDomains` |
+| Revision | api `--0000003` `RunningAtMaxScale`/`Healthy` · web `--0000002` `Running`/`Healthy` |
+| infra 配置 | 🟢 實測完好:`customDomains` + **`SniEnabled`** · `external:true` · `workloadProfileName:Consumption` · `environmentId` 原封 |
+
+🟢 **決定性證據唔係 `Healthy`,係 container log 原文**:
+
+```
+[EntraSsoService] Entra SSO is configured (server-side code exchange).
+19 migrations found in prisma/migrations
+Seeded 24 OpCos + admin + RHK OPCO_IT user.
+Nest application successfully started
+```
+
+零 `WARN: … failed`。第一行係關鍵 —— `EntraSsoService` 個 constructor **四個 env 齊晒先會 log 呢句**,所以佢直接證到配置到位,唔使靠 `Healthy` 推論(而 `Healthy` 本來就證明唔到,entrypoint fail-soft)。
+
+### 🟢 bundle 實證 —— 前端真係唔再知道任何 Entra 座標
+
+`dist/assets/*.js` grep `msal|login.microsoftonline|VITE_ENTRA|acquireTokenSilent|PublicClientApplication|access_as_user` ⇒ **零命中**。
+**對照組**:同一個 grep 方法搵 `/auth/sso/status` · `/auth/entra/start` · `/auth/entra/callback` ⇒ **三條都搵到** ⇒ 方法有效,「零命中」係真嘅零。`msal-vendor` chunk 亦已喺 build output 消失。
+
+### 🔴 一個想提前拆但**拆唔到**嘅風險 —— 而對照組又一次接住咗我
+
+**風險**:ADR-0028 要 redirect URI 喺 **Web** platform,而我哋當初要求 infra 加嘅係 **SPA** platform(plan 附錄 C 第四輪原文寫住「加 platform **Single-page application**(唔係 Web)」)。若真係加咗喺 SPA 下,server-side exchange 會撞 **`AADSTS9002327`**(SPA client-type 只可以經 cross-origin 兌換)。
+
+**試過點拆**:用一個假 code 打 token endpoint,諗住睇錯誤碼分辨 —— SPA 會回 `9002327`,Web 會回「code 唔啱」嗰類。
+
+**結果:個測試冇區分度。**
+
+| case | 錯誤碼 |
+|---|---|
+| 真 redirect_uri + 真 secret | `AADSTS9002313` |
+| **對照 A** 故意錯 redirect_uri | `AADSTS9002313` |
+| **對照 B** 故意錯 client_secret | `AADSTS9002313` |
+
+三個一模一樣 ⇒ 假 code 令 Entra 喺檢查 redirect_uri / secret **之前**就 reject 咗 ⇒ **呢個測試證明唔到任何嘢,已棄用。**
+
+🔴 **值得記低嘅唔係個風險,係我差啲又做咗同一件事** —— 如果我只跑第一個 case,我會見到一個「唔係 9002327」嘅結果,然後好可能寫成「唔係 SPA 問題」。**兩個對照組一跑就見到個方法本身無效。** 呢個係本 phase 第四次靠對照組接住,亦係第二次喺同一日發生(上一次係 `localStorage` 嗰個診斷)。
+
+⇒ 呢個風險**只可以靠 F9-8 一次真登入拆**。好消息係若真係撞到,錯誤碼好明確,而修法對 infra 嚟講係一句好具體嘅嘢:「把 redirect URI 由 SPA platform 搬去 Web platform」。
+
 ### Blockers
 
-🟢 **B9 由「卡 infra」變「卡部署驗證」** —— code 齊,但 **F9-7(PATCH 四個 env)+ F9-8(SSO 通 + break-glass 通)未做**。
-🔴 **未 live 驗證過任何一次真 SSO 登入。** 本日全部係 unit test + build,冇一個 tool result 證到真人登入得到。
+🟢 **B9 code + 部署齊,剩返一次真登入。**
+🔴 **F9-8 未做,而且做唔到 —— 要喺公司網。** build host 喺 Azure 段,`rapo-uop-web-dev.rci-t.com` → **`No such host is known`**(符合 B8:企業內部 DNS 記錄,只有公司網解析到)。
+🔴 **仍然未有任何一次真人 SSO 登入嘅證據。** 本日全部係 unit test + build + container log + bundle grep,冇一樣係「有人真係撳咗個掣然後入到去」。
 
 ### Commits
 
-- `<pending>` — `feat(auth): SSO 改行 server-side code exchange(ADR-0028),移除 MSAL`
+- `3971ad3` — `feat(auth): SSO 改行 server-side code exchange(ADR-0028),移除 MSAL`
+- `<pending>` — `chore(deploy): patch-deploy-dev 加四個 ENTRA_* env;DEV 部署 #2`
 
 ---
 

@@ -434,8 +434,10 @@ ERROR: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
 >
 > 🔴 **另一個作廢咗嘅前提:`VITE_ENTRA_*` build-time**。四個 `ENTRA_*` 而家全部由 **API runtime** 讀 ⇒ 改配置**唔使重 build web image**,亦即下面幾處講「估錯要重 build」嘅風險已經冇咗。
 >
-> **部署要設嘅 env**(F9-7,未做):`ENTRA_TENANT_ID` · `ENTRA_CLIENT_ID` · `ENTRA_CLIENT_SECRET` · `ENTRA_REDIRECT_URI=https://rapo-uop-web-dev.rci-t.com`。範本見 `apps/api/.env.example` 認證段。
-> **仍未做**:F9-7 + **F9-8(驗 SSO 通 兼且 break-glass 仍然通)** ⇒ **未有任何一次真人 SSO 登入嘅證據。**
+> **部署要設嘅 env**:`ENTRA_TENANT_ID` · `ENTRA_CLIENT_ID` · `ENTRA_CLIENT_SECRET`(走 secretRef,唔係明文 env)· `ENTRA_REDIRECT_URI=https://rapo-uop-web-dev.rci-t.com`。範本見 `apps/api/.env.example` 認證段。
+> 🟢 **F9-7 已做(2026-08-07 部署 #2,`dev-3971ad3`)** —— container log 原文 `[EntraSsoService] Entra SSO is configured (server-side code exchange).` ⇒ 四個 env 真係到位。詳見下面「部署記錄」。
+> 🔴 **F9-8 仍未做** —— 要**喺公司網**驗(build host 喺 Azure 段,解析唔到 `rapo-uop-web-dev.rci-t.com`)⇒ **未有任何一次真人 SSO 登入嘅證據。**
+> 🔴 **一個未拆嘅風險**:infra 當初被要求把 redirect URI 加喺 **SPA** platform,而 ADR-0028 要 **Web**。若真係 SPA,exchange 會撞 **`AADSTS9002327`**。試過用假 code 提前拆,但**測試冇區分度**(真/錯 redirect_uri/錯 secret 三個都返 `AADSTS9002313`)⇒ 只可以靠一次真登入。修法好具體:叫 infra 把 redirect URI 搬去 **Web** platform。
 
 ### 🔴 B9 —— infra 交嘅 SSO app registration **淨係配咗程式對程式,用戶登入三樣缺晒**
 
@@ -508,6 +510,38 @@ this.issuer = [
 `App-N8N-LicenseManagement`(appId `27d329e5-…`)`roles` = **`LicenseAssignment.Read.All` · `User.Read.All` · `LicenseAssignment.ReadWrite.All`** ⇒ **正好係 LicenseOps 要嘅**,F3-7 接真 Graph **冇權限障礙**。
 
 ## 部署記錄
+
+### 2026-08-07 · 部署 #2(`dev-3971ad3`)— **ADR-0028 SSO 上線,但仍未有真登入證據**
+
+**內容**:ADR-0028(SSO server-side code exchange)+ 四個 `ENTRA_*` env。走同一條 raw ARM PATCH 路。
+
+| 步 | 結果 |
+|---|---|
+| ACR 存取 | ⚠️ **`az acr login` 用錯身份就死** —— 部署 SP `d2f094a3` 冇 registry 權限,az CLI 會 **fallback 去互動式問 username** 然後 `EOFError: EOF when reading a line`。🔴 呢個錯誤訊息**完全唔提權限**,好易讀成「CLI 壞咗」。改用 `docker login` 配 `aca.params.dev.json` 入面嗰組 ACR 憑證(`4a6e1474`)⇒ `Login Succeeded` |
+| Build | api + web 兩個 `exit 0`。**零 build arg** —— Entra 嗰四個 `ARG VITE_ENTRA_*` 已由 Dockerfile 拆走 |
+| Push | 🟢 api `sha256:eecd2521…` · web `sha256:070c4967…` |
+| PATCH | 兩個 `exit 0`。dry-run 先核對:`has environmentId: False` · `has workloadProfile: False` · web 唔送 `external`/`customDomains` |
+| Revision | api `--0000003` `RunningAtMaxScale`/`Healthy` · web `--0000002` `Running`/`Healthy` |
+| infra 配置 | 🟢 完好:`customDomains` + **`SniEnabled`** · `external:true` · `workloadProfileName:Consumption` · `environmentId` |
+
+🟢 **決定性證據係 container log,唔係 `Healthy`**:
+
+```
+[EntraSsoService] Entra SSO is configured (server-side code exchange).
+19 migrations found in prisma/migrations
+Seeded 24 OpCos + admin + RHK OPCO_IT user.
+Nest application successfully started
+```
+
+零 `WARN: … failed`。**第一行係關鍵** —— `EntraSsoService` 個 constructor 要**四個 env 齊晒**先會 log 呢句,所以佢直接證到配置到位。(`Healthy` 本身仍然證明唔到嘢 —— entrypoint fail-soft,呢個陷阱冇變。)
+
+🟢 **bundle 實證**:`dist/assets/*.js` grep `msal|login.microsoftonline|VITE_ENTRA|acquireTokenSilent|PublicClientApplication|access_as_user` ⇒ **零命中**;**對照組**(grep 三條新 endpoint)⇒ **全部搵到** ⇒ 方法有效,零命中係真嘅零。
+
+🔴 **仍未做 = F9-8(真登入)**,而且**喺 build host 做唔到** —— 佢喺 Azure 段,`rapo-uop-web-dev.rci-t.com` → `No such host is known`(企業內部 DNS,符合 B8)。⇒ **要喺公司網做。**
+
+🔴 **一個試過拆但拆唔到嘅風險**:見上面認證節頂部嘅 `AADSTS9002327` blockquote。
+
+---
 
 ### 2026-08-06 · 部署 #1(raw ARM PATCH)— **配置全部落到,但下游三樣未驗證**
 
