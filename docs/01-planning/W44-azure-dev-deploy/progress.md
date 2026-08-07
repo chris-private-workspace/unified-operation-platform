@@ -885,6 +885,48 @@ web 係 nginx,佢個 access log 記低**每一個**請求。抓落嚟見到**三
 
 **診斷用法記入 checklist**:access log 尾段個 `"10.160.x.x"` 係 X-Forwarded-For ⇒ 分得清企業用戶瀏覽器 vs **n8n UAT `10.160.71.243`**。冇呢樣就分唔清「n8n 未打」同「n8n 打咗但 401」,而呢兩個下一步完全唔同。
 
+### 🟢🟢 n8n 第一次真係打到平台(2026-08-07 `06:05`)—— 但 401
+
+n8n owner 改用新 URL 之後打,收到 `401 Invalid or missing intake key`。
+
+**nginx access log 三條**(`06:05:12` / `:15` / `:18`,n8n 自己 retry):
+
+```
+POST /api/requests/intake HTTP/1.1  401  "-"  "axios/1.15.0"  "10.160.71.230"
+```
+
+⇒ User-Agent `axios/1.15.0`(n8n 個 HTTP node)· XFF `10.160.71.230`(n8n 網段)**⇒ 唔係我哋嘅瀏覽器,係 n8n 本尊。**
+
+🔴 **點解呢個 401 係好消息**:個訊息 `Invalid or missing intake key` 就係 `intake-key.guard.ts:31` 逐字嗰句 ⇒ **URL 啱、企業網通、TLS 通、nginx proxy 通、請求真係去到 guard**。**W36–W42 一路做唔到嘅「n8n → 平台」呢一段,今日第一次真正接通。** 剩返嘅只係一個 credential 值。
+
+**payload 本身睇落完全啱**(`mode` 係數字 `1` 唔係字串、六個 required 欄齊、仲有 ADR-0024 嗰兩個 task 欄):
+```json
+{"mode":1,"targetUpn":"…","targetDisplayName":"…","opcoCode":"RAPO",
+ "requesterEmail":"…","source":"1001-immediate","requestId":"REQ0043934",
+ "serviceNowTaskSysId":"26f0959a…","serviceNowTaskNumber":"SCTASK0071709"}
+```
+
+### 401 診斷:兩個本地成因已排除,最可能係「交咗一條已作廢嘅 key」
+
+| 檢查 | 結果 |
+|---|---|
+| `Set-Clipboard` 會唔會加尾隨字元 | 🟢 **唔會**(byte 級實測:`abc123` → 6 bytes,完全相等) |
+| params 檔嗰條 key 有冇雜質 | 🟢 **乾淨** —— 64 字元、純 `[0-9a-f]`、零空白 |
+
+⇒ 問題喺 n8n 側。**最可能:交出去嗰條係第一次 rotate 後嗰條**(即 `05:47` 探針 2 用嗰條),而我喺 **`05:48` 第二次 rotate** 咗佢 ⇒ n8n 手上嗰條已經作廢。
+
+⚠️ **呢個係我溝通上嘅缺口**:我 rotate 完只喺當時嗰段講咗「舊嗰條已經冇效」,但冇喺「交 key 畀 n8n」嗰步再強調一次「你手上如果有舊嗰條,即刻作廢」。rotate 同交付之間隔咗幾個回合,好易接駁唔上。
+
+### 🔴 提前拆下一個必然會撞嘅點:`opcoCode: "RAPO"` 唔喺 seed 之內
+
+`prisma/seed.ts` 24 個 OpCo code 入面**冇單獨嘅 `RAPO`**。有 `RAP`,有 **`RAPO/APTC`** / `RAPO/ASPC` / `RAPO/FNA` / `RAPO/IT` / `RAPO/IT (RBS)` / `RAPO/IT (RDC2)` / `RAPO/SCM`,但冇頂層 `RAPO`。
+
+⇒ **key 一修好,下一個回應就會係 `400 OpCo 'RAPO' is not present on this environment`**(`intake-adapter.service.ts:133-139`),除非有人喺 UI 手加過。
+
+呢個唔係 bug,係**業務資料落差**:n8n 認為 OpCo 係 `RAPO`,而平台個 OpCo 表用緊部門級 `RAPO/xxx`。屬 F7-3~F7-8「對 W42 retro n8n 側缺口」嘅實際內容,要 Chris 決定:**(a)** 平台加一個 `RAPO` OpCo,定 **(b)** n8n 送更精確嘅 code。
+
+🟢 **再下一個點已經提前排除**:`REQ0043934` 實測**存在**於 `sc_request`(sys_id `26e0119a3b73f6d0c4e41a44c3e45a89`,`state=3`)⇒ `resolveReqSysId` 唔會 400。
+
 ### Blockers
 
 🟢 **B9 完成 —— SSO 真登入通咗。**
