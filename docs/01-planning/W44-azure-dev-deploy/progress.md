@@ -927,7 +927,59 @@ POST /api/requests/intake HTTP/1.1  401  "-"  "axios/1.15.0"  "10.160.71.230"
 
 🟢 **再下一個點已經提前排除**:`REQ0043934` 實測**存在**於 `sc_request`(sys_id `26e0119a3b73f6d0c4e41a44c3e45a89`,`state=3`)⇒ `resolveReqSysId` 唔會 400。
 
+### 🔍 直讀 1001 workflow JSON(2026-08-07 14:20 版)—— payload 完美對上,但 `RAPO` 唔係打錯字
+
+Chris 要求直接檢查 `docs/06-reference/03-n8n-workflow/phase 1/1001 - AD Management Workflow.json`。
+
+**先確認呢份就係佢跑緊嗰版**(三個獨立交叉點):
+1. `WF1 - Call UOP Intake` 個 `url` = `https://rapo-uop-web-dev.rci-t.com/api/requests/intake`(已改對)
+2. 最終 payload 逐欄同 Chris 貼嘅實際請求對得上
+3. 🔴 `maxTries: 3` + `waitBetweenTries: 3000` **啱好解釋咗 nginx log 嗰三條相隔 3 秒嘅記錄**(`06:05:12` / `:15` / `:18`)
+
+**payload 組裝路徑**:`WF1 - Prepare UOP Intake`(砌 `_uopPayload`)→ 查 `sc_task` → `WF1 - Attach Task Id`(摺入 `serviceNowTaskSysId`/`Number`)→ `IF - UOP needed?` → `WF1 - Call UOP Intake`。
+
+#### ✅ 格式逐欄核對 `N8nFlatIntakeDto` —— 全中,零多餘欄位
+
+| n8n 送 | DTO 要求 | |
+|---|---|---|
+| `mode: 1`(**數字字面量**) | `@IsIn([1])`,冇 `@Type` | ✅ 唔會撞「字串 `"1"`」個坑 |
+| `targetUpn` / `opcoCode` / `requestId` | `@IsString @MinLength(1)` | ✅ |
+| `targetDisplayName` / `requesterEmail` / `source` | optional | ✅ |
+| `serviceNowTaskSysId` / `serviceNowTaskNumber` | optional(ADR-0024 D1 traceability) | ✅ |
+
+`whitelist: true` 唔會剝走任何嘢,亦冇多餘欄位會被靜靜丟掉。
+
+#### 🔴 `RAPO` 係 hardcoded 喺 `resolveOpco()`,唔係一次性輸入錯
+
+```js
+function resolveOpco(jobFunction, department, email) {
+  const s = String(jobFunction || department || '').trim().toUpperCase();
+  if (s.indexOf('RHK') === 0) return 'RHK';
+  if (s.indexOf('RAPO') === 0) return 'RAPO';        // ← 前綴命中
+  if (s.indexOf('PEOPLE & CULTURE') === 0) return 'RHK'; // 註釋自認 (OPEN - confirm rule)
+  const d = String(email || '').split('@')[1] || '';
+  if (d === 'ricoh.com.hk') return 'RHK';
+  if (d === 'rapo.com.hk') return 'RAPO';            // ← 今次命中呢條
+  return '';
+}
+```
+
+⇒ **n8n 個模型只有兩個 OpCo:`RHK` / `RAPO`。** 平台有 24 個,包括 **7 個 `RAPO/xxx`** 但**冇頂層 `RAPO`**。
+
+🔴 **仲有一個更微妙嘅問題**:`s.indexOf('RAPO') === 0` 係**前綴**比對 ⇒ 就算 `department` 本身已經係 `RAPO/IT` 呢種精確值,佢都會被**塌縮成 `RAPO`**。即係 n8n 主動丟失咗精度,而唔係「攞唔到精確值」。
+
+⇒ **「叫佢換返正確嘅 code」唔係改一個值** —— 要改個函數,而且要先決定 mapping 規則。三條路,要 Chris 揀(見下面 Blockers)。
+
+#### 順帶兩個唔影響運作但會誤導人嘅位
+
+- **sticky note 過時**(line 1529):仲寫住「**DISABLED** until Chris gives endpoint/auth」同埋「Builds curated licence payload」,但 node 實際**已 enabled**,而且 payload 30 Jul 已經由 nested-curated 改成 flat。讀 workflow 嗰個人會攞錯前提 —— **同我哋 `08-n8n-integration-go-live.md` 過時嗰件事一模一樣**。
+- **credential 名叫 `UOP UAT Auth Key`**(id `3NtRXuuRpzorEDw0`)—— 個名帶「UAT」,而我哋今日 rotate 咗兩次。名唔代表值,但佢係 401 最值得先查嗰度。
+
 ### Blockers
+
+🔴 **F7-1 卡住,兩個 blocker,第二個要 Chris 拍板:**
+1. **credential 值** —— `UOP UAT Auth Key` 要更新成當前 key(nginx log 證實請求到咗 guard,payload 完全啱,淨係差呢個)
+2. **OpCo mapping** —— n8n 只識 `RHK`/`RAPO`,平台冇頂層 `RAPO`。三條路:**(a)** 平台加一個 `RAPO` OpCo(最快,唔觸發 H1,但會同 7 個 `RAPO/xxx` 語意重疊)· **(b)** n8n 改 `resolveOpco` 送精確 code(要先知 `conf.department` 實際值域)· **(c)** 平台側加 alias mapping(🔴 **改 intake 契約行為 = H1,要 ADR**)
 
 🟢 **B9 完成 —— SSO 真登入通咗。**
 🟢 **F3-7b 完成 —— Chris 實測 Graph + ServiceNow 兩個 connector 都連得到。** ⇒ 順帶證咗 outbound 對 `graph.microsoft.com` 同 `ricohapdev.service-now.com` 都通(先前只證到 `login.microsoftonline.com`,而我特別標明過唔可以由此推論)。
