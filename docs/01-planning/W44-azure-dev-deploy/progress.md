@@ -710,9 +710,52 @@ Nest application successfully started
 
 ⇒ 呢個風險**只可以靠 F9-8 一次真登入拆**。好消息係若真係撞到,錯誤碼好明確,而修法對 infra 嚟講係一句好具體嘅嘢:「把 redirect URI 由 SPA platform 搬去 Web platform」。
 
+### 🟢 SSO 真登入通咗(Chris,公司網)—— 順帶拆咗 `AADSTS9002327` 個風險
+
+Chris 喺公司網開站,撳「Continue with Microsoft Entra ID」→ 跳到 Microsoft 登入頁 → **入到系統**。
+
+⇒ **F9-18 個風險冇兌現** —— infra 條 redirect URI 係 **Web** platform 唔係 SPA,所以 server-side exchange 行得通。(呢個係我試過用假 code 提前拆但拆唔到嗰個。)
+
+🟢 **順帶證咗一樣本來未知嘅嘢:DEV 個 ACA 出得到公網。** SSO 要成功,api container 必須打得通 `login.microsoftonline.com` **兩次**(換 token + 攞 JWKS)。呢個之前完全未驗過 —— B3 只證咗 ACA → private endpoint PG,而「PG 通 ⇒ 公網通」係一個唔成立嘅推論。
+
+### 🔴 Chris 跟住發現 Graph / ServiceNow 連唔到 —— 而對照組證咗**唔係今次整壞**
+
+部署 #1 個 revision `--0000002` 仲喺度,啱啱好做對照組:
+
+| env | `--0000002`(部署 #1,今次冇碰過) | `--0000003`(今次) |
+|---|---|---|
+| `GRAPH_TENANT_ID` | `PLACEHOLDER-not-connected` | `PLACEHOLDER-not-connected` |
+| `SERVICENOW_INSTANCE_URL` | `https://placeholder.service-now.com` | `https://placeholder.service-now.com` |
+
+⇒ **兩個一模一樣。唔係「斷咗」,係 F3-6 當初拍板「先 placeholder,部署成功再接」而一直未接。** Chris 今次先第一次真正入到 DEV 系統,所以先見到。
+
+### ✅ 部署 #3 —— 接真 Graph + ServiceNow(Chris 拍板「兩個都接」)
+
+我先講咗風險(SyncSweep `@Cron` 會打真 Graph · gate ② 會打真 SN · UOP 同 n8n 共用 SN 帳號 R7 分唔到邊個做),Chris 重申兩個都接 ⇒ 照做。
+
+🟢 **查 `.env` 之後風險比我講嗰個細** —— `SERVICENOW_INSTANCE_URL` = `https://ricohapdev.service-now.com`,係 **dev instance 唔係 prod**。
+
+**順帶執返一個一直冇部署過嘅洞**:`SERVICENOW_O365_CATALOG_ITEM_SYS_ID` / `SERVICENOW_D365_CATALOG_ITEM_SYS_ID` 兩個 env **腳本由頭到尾都冇送過**。佢哋走 `config.get` 唔係 `getOrThrow` ⇒ 唔設照 boot,**但一建單就 throw**「catalog item is not configured」⇒ 會變成「ServiceNow 接咗但建單壞」,而且只有人試建單先發現。值取自 `.env.example`(明文標註 = ricohapdev 實測值,同 instance 對得上)。
+
+**結果**:PATCH 兩個 `exit 0` · revision `--0000004` `RunningAtMaxScale`/`Healthy` · log `19 migrations found` / `Seeded 24 OpCos…` / `Entra SSO is configured` / `Nest application successfully started`,零 ERROR。
+
+### 🔴 一個 guard 接住咗嘅 parse bug —— 而佢令我一個已經講咗出口嘅結論變成「啱得好彩」
+
+寫 params 嗰陣我加咗個 guard:任何一個值攞唔到就 `throw` 停手。佢真係 fire 咗 —— `servicenowO365CatalogItemSysId` 攞唔到值。
+
+**原因**:我 parse `.env` 用嘅 regex 係 `^\s*[A-Za-z_]+\s*=` —— **唔含數字**,而啲 key 叫 `SERVICENOW_O365_…` / `D365_…`。
+
+🔴 **即係我早前同 Chris 講「`.env` 缺三個 catalog key」嗰句,係用一個有缺陷嘅方法得出嚟。** 用 `Grep` 重查證實 `.env` **真係**冇 —— 結論啱,但**啱只係好彩**,方法本身會漏任何含數字嘅 key。
+
+順手用修正 regex(`[A-Za-z_][A-Za-z0-9_]*`)掃埋成個 `.env`,睇有冇其他一直被我漏咗嘅 key ⇒ 只有 `N8N_OUTBOUND_WEBHOOK_KEY`(空值,而 DEV 行 `direct` provider,用唔著)。
+
+**教訓唔係「regex 寫錯咗」,係「一個唔啱嘅方法可以連續畀出啱嘅答案」** —— 若果嗰兩個 sys_id 啱啱好喺 `.env` 入面,我個 guard 就唔會 fire,我會靜靜咁部署咗兩個空值上去,然後「建單壞」呢件事會喺幾日後先浮面。
+
 ### Blockers
 
-🟢 **B9 code + 部署齊,剩返一次真登入。**
+🟢 **B9 完成 —— SSO 真登入通咗。**
+🔴 **F9-8 仲爭一半:break-glass 未驗**(Chris 話等陣試)。ADR-0028 明文要求「兩邊都要通先算數」。
+🔴 **F3-7b:Graph / SN 真連通未驗** —— 啟動 log 證明唔到(connector lazy;`SyncSweepService` 因為新 seed 冇 pending request 亦唔會自動打 Graph)⇒ 要喺 UI 撳 test connection。最可能失敗點 = outbound 去 `graph.microsoft.com` / `ricohapdev.service-now.com` 被 VNet route / firewall 擋。⚠️ SSO 只證咗 `login.microsoftonline.com` 通,**唔可以由此推論另外兩個 host**。
 🔴 **F9-8 未做,而且做唔到 —— 要喺公司網。** build host 喺 Azure 段,`rapo-uop-web-dev.rci-t.com` → **`No such host is known`**(符合 B8:企業內部 DNS 記錄,只有公司網解析到)。
 🔴 **仍然未有任何一次真人 SSO 登入嘅證據。** 本日全部係 unit test + build + container log + bundle grep,冇一樣係「有人真係撳咗個掣然後入到去」。
 

@@ -62,7 +62,8 @@ last_updated: 2026-08-04
 - [x] F3-4 其餘 secret 用 `RandomNumberGenerator` 生成(intakeApiKey hex-32B · authJwtSecret base64-48B · break-glass 密碼 19 字元 ≥3 類,符合 AUTH-4c-A policy)
 - [x] F3-5 verify:`git check-ignore -v` → **`.gitignore:7:deploy/azure/*.params.*.json`**(H4 硬要求)
 - [x] F3-6 ✅ **Chris 2026-08-04 拍板:先 placeholder,部署成功之後再逐個接** ⇒ params 檔現狀就啱,唔使改。理由:①B1 未解,部署都未得,呢個決定隨時改得 ②先驗 boot / migration / seed / 前端 / break-glass 登入,再接 vendor 係更小步,壞咗分得清邊層 ③接真 SN 會喺真 instance 開單,而手上已有 5 張測試單等 cancel。UAT 當初同樣先 placeholder 後補
-- [ ] F3-7 🚧 接真 vendor(**部署成功之後先做**)—— 逐個接,每個接完即驗;`ConnectorConfig` DB 值優先於 env(ADR-0013 Model C),改完要新 revision(C2 `onModuleInit`)
+- [x] F3-7 🟢 **接真 vendor 配置已落(2026-08-07 部署 #3,Chris 拍板「兩個都接」)** —— revision `--0000004`。Graph:`GRAPH_TENANT_ID=d1ea071a-…` / `GRAPH_CLIENT_ID=27d329e5-…` / secret 走 secretRef。ServiceNow:`https://ricohapdev.service-now.com`(🟢 **dev instance 唔係 prod**)/ `n8napiservice1` / password secretRef。⚠️ **順帶補返兩個一直冇部署過嘅 env** —— `SERVICENOW_O365_CATALOG_ITEM_SYS_ID` + `SERVICENOW_D365_CATALOG_ITEM_SYS_ID`(走 `config.get` 唔係 `getOrThrow` ⇒ 唔設照 boot,但**一建單就 throw**「catalog item is not configured」,即「接咗但建單壞」)。值取自 `.env.example`(明文標註 = ricohapdev 實測值,同 `SERVICENOW_INSTANCE_URL` 指嘅 instance 一致)。🟢 `ConnectorConfig` 表**係空**(seed 唔寫佢,已查證)⇒ DB-then-env fallback 會用 env,唔會靜靜蓋過
+- [ ] F3-7b 🔴 **驗真連通(未做)** —— 啟動 log **證明唔到** Graph / SN 連得通(connector 係 lazy,`SyncSweepService` 亦因為新 seed 冇 pending request 而唔會自動打 Graph)。要喺 UI **Settings › Integrations 撳 test connection**(ADR-0010 唯讀主動探針)。⚠️ 最可能嘅失敗點係 **outbound 去 `graph.microsoft.com` / `ricohapdev.service-now.com` 被 VNet route / firewall 擋** —— 🟢 SSO 已證 `login.microsoftonline.com` 通(唔通就換唔到 token),但**唔可以由此推論另外兩個 host 通**,佢哋可能有唔同 allowlist
 
 ## F4 — web 建構調整 ✅ **零改動**(Option A 令本 deliverable 消失,plan changelog v1.2)
 

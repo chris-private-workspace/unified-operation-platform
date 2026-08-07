@@ -102,6 +102,13 @@ $apiBody = @{
           @{ name = 'SERVICENOW_INSTANCE_URL';      value = $p.servicenowInstanceUrl.value }
           @{ name = 'SERVICENOW_USER';              value = $p.servicenowUser.value }
           @{ name = 'SERVICENOW_DEFAULT_TABLE';     value = $p.servicenowDefaultTable.value }
+          # ADR-0025 D2 / BUG-010 — the catalog items the platform orders through.
+          # config.get, NOT getOrThrow: leaving these unset still boots, but the
+          # first attempt to raise a ticket throws "catalog item is not
+          # configured". Instance-specific sys_ids — these are the ricohapdev
+          # values, which is the instance SERVICENOW_INSTANCE_URL points at.
+          @{ name = 'SERVICENOW_O365_CATALOG_ITEM_SYS_ID'; value = $p.servicenowO365CatalogItemSysId.value }
+          @{ name = 'SERVICENOW_D365_CATALOG_ITEM_SYS_ID'; value = $p.servicenowD365CatalogItemSysId.value }
           # The operator cannot reach the private-endpoint DB, so the container
           # self-migrates. NOTE: entrypoint treats failure as non-fatal.
           @{ name = 'RUN_MIGRATIONS_ON_START';      value = 'true' }
