@@ -751,9 +751,42 @@ Chris 喺公司網開站,撳「Continue with Microsoft Entra ID」→ 跳到 Mic
 
 **教訓唔係「regex 寫錯咗」,係「一個唔啱嘅方法可以連續畀出啱嘅答案」** —— 若果嗰兩個 sys_id 啱啱好喺 `.env` 入面,我個 guard 就唔會 fire,我會靜靜咁部署咗兩個空值上去,然後「建單壞」呢件事會喺幾日後先浮面。
 
+### 🔴 我洩漏咗 DEV 嘅 `INTAKE_API_KEY`,已 rotate
+
+比對「本機 `.env` 同 DEV 部署嘅 intake key 係咪同一條」嗰陣,我寫咗個叫 **`H`** 嘅 PowerShell 函數做 hash。`H` 撞正 `Get-History` 嘅內建 alias(PowerShell 唔分大小寫)⇒ 佢冇 hash,反而把**原值**塞入 error message。
+
+**DEV 個 64-hex intake key 因此出現喺 tool output。** 按 H4 一律當已洩漏處理。
+
+🟢 **rotate 成本啱好係零** —— n8n 仲未用過佢,而我哋正正要交條 key 畀 n8n owner。Chris 即刻批,一次過畀新嗰條。
+
+**教訓**:遮蔽 secret 嘅**輔助工具本身**都要當 secret-handling code 咁審。單字母 / 常見縮寫做函數名喺 PowerShell 好易撞內建 alias,而失敗模式係「靜靜咁改為印原值」。
+
+### 🔴 而 rotate 過程揭到一個更值得記嘅陷阱:**改 secret 唔會令佢生效**
+
+PATCH `exit 0`,ACA 側 secret 一查(比 hash)**確實已經係新值**。睇落完成。
+
+**但 revision 完全冇動過** —— 仲係 `03:11:33` 嗰個。原因:**ACA 嘅 secret 住喺 `configuration`,唔係 `template`**,所以改佢**唔會產生新 revision**,而跑緊嘅容器係啟動嗰刻注入 env 嘅 ⇒ **佢仲攞住舊 key**。
+
+⇒ 「PATCH 成功 + ACA 側值已更新」**兩個都真,但 rotate 仍然未生效**。要 `az containerapp revision restart` 逼佢重起。
+
+呢個係 checklist F3-7 一直寫住嗰句「改完要新 revision」嘅實測版本,今次係喺 secret 而唔係 `ConnectorConfig` 上面兌現。已把成段寫入 `patch-deploy-dev.ps1` 收尾提示。
+
+### 🔴 同一段入面,一個**假陽性收貨條件**險啲收咗貨
+
+輪詢「舊 replica 走咗未」嗰陣,我個條件係 `$_.c -like '*T03:11*'`。但 `ConvertFrom-Json` 已經把 `createdTime` 轉成 **`DateTime` 物件**,所以個字串比對**永遠唔會匹配** ⇒ 條件形同虛設,第一次輪詢就印咗 `✅ 舊 replica 已走`。
+
+**而嗰刻舊 replica 其實仲喺度跑緊。**
+
+改用 `[datetime]` 比較重跑,先真係見到只剩一個 `04:37:52` 嘅 Running replica。
+
+⇒ **本 phase 第 N 次同一個模式**:一個「睇落合理嘅檢查」實際上冇檢查到嘢,而佢報嘅係**成功**。呢次冇對照組接住 —— 接住佢嘅係「個結果嚟得太快、太乾淨」呢種唔安樂感。
+
+**收貨後 log 實證**(`04:38` 時間戳):`19 migrations found` · `Seeded 24 OpCos…` · `Entra SSO is configured` · `Nest application successfully started`,零 WARN。
+
 ### Blockers
 
 🟢 **B9 完成 —— SSO 真登入通咗。**
+🟢 **F3-7b 完成 —— Chris 實測 Graph + ServiceNow 兩個 connector 都連得到。** ⇒ 順帶證咗 outbound 對 `graph.microsoft.com` 同 `ricohapdev.service-now.com` 都通(先前只證到 `login.microsoftonline.com`,而我特別標明過唔可以由此推論)。
 🔴 **F9-8 仲爭一半:break-glass 未驗**(Chris 話等陣試)。ADR-0028 明文要求「兩邊都要通先算數」。
 🔴 **F3-7b:Graph / SN 真連通未驗** —— 啟動 log 證明唔到(connector lazy;`SyncSweepService` 因為新 seed 冇 pending request 亦唔會自動打 Graph)⇒ 要喺 UI 撳 test connection。最可能失敗點 = outbound 去 `graph.microsoft.com` / `ricohapdev.service-now.com` 被 VNet route / firewall 擋。⚠️ SSO 只證咗 `login.microsoftonline.com` 通,**唔可以由此推論另外兩個 host**。
 🔴 **F9-8 未做,而且做唔到 —— 要喺公司網。** build host 喺 Azure 段,`rapo-uop-web-dev.rci-t.com` → **`No such host is known`**(符合 B8:企業內部 DNS 記錄,只有公司網解析到)。
