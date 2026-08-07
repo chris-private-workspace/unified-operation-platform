@@ -139,6 +139,20 @@ last_updated: 2026-08-04
 > **24 個 seed OpCo code**(`prisma/seed.ts`):`PFU-Asia` · `PFU-HK` · `RAP` · `RAPO/APTC` · `RAPO/ASPC` · `RAPO/FNA` · `RAPO/IT` · `RAPO/IT (RBS)` · `RAPO/IT (RDC2)` · `RAPO/SCM` · `RAPP` · `RBS` · `RCN` · `RHK` · `RKR` · `RMS` · `RNZ` · `RPH` · `RSP` · `RTH` · `RTMAP` · `RTMEAP` · `RTW` · `RVN`
 >
 > ⚠️ **成功之後仲要驗 DB,唔可以只睇 201**(F7-2):要見到 `Request` **同埋** 一行 `RequestLineItem`,而嗰行嘅 SKU 應該係 `06ebc4ee-…`(`SPE_E5`,ADR-0020 default 注入,因為 flat payload 一行 licence 都冇送)。
+>
+> ### 🔴 觀測盲點 + 補救:**唔好淨係睇 api log**
+>
+> **`IntakeKeyGuard` 拒絕嗰陣一個字都唔 log**(`intake-key.guard.ts:31` 直接 throw,冇 logger,而且係刻意 —— H4「key 只可以比對,永遠唔 log」)。連帶大部分 4xx(OpCo 唔存在 / REQ 搵唔到 / DTO validation)都係 throw 而唔 log。
+>
+> ⇒ **api log 空白 ≠ 冇人打過。** 只有兩種情況會喺 api log 見到嘢:成功(`n8n flat intake: REQ … → opco …, N line item(s)`)或者 ServiceNow 掛(`ServiceNow lookup failed for REQ …`)。
+>
+> 🟢 **補救 = 睇 web container 個 nginx access log**,佢記低**每一個**請求同 status code:
+> ```
+> az containerapp logs show -n aca-rapo-uop-web-dev -g RG-RAPO-UOP-DEV --tail 200
+> ```
+> 格式尾段個 `"10.160.x.x"` 係 **X-Forwarded-For** ⇒ 分得清邊個打:企業用戶瀏覽器 vs **n8n UAT `10.160.71.243`**。User-Agent 亦分得到(瀏覽器 vs n8n 個 HTTP node)。
+>
+> ⚠️ **呢個唔止係「多一個地方睇」** —— 冇佢就分唔清「n8n 未打」同「n8n 打咗但 401」,而呢兩個嘅下一步完全唔同(等佢 vs 查 key 傳遞)。
 
 - [ ] F7-1 n8n UAT 打 `POST /requests/intake` → **真 201**
 - [ ] F7-2 verify:DB 真 row(Request + line item),唔可以只睇 HTTP code

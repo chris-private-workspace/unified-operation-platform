@@ -855,6 +855,36 @@ let K = 'PASTE_KEY_HERE';                    // 呢句唔使貼返
 
 ⇒ **交 key 畀 n8n 唔可以再經任何要貼 output 嘅步驟。** 用 `Set-Clipboard`(值永不上螢幕)或者直接開檔案複製。而且**唔需要再跑探針 2** —— 佢要證嘅機制(params 檔嗰條 key 就係 api 認嗰條)已經證咗,對新 key 重複一次只會製造第三次洩漏機會。
 
+### 🔴 差啲又用「api log 空白」推論「n8n 未打」—— 而嗰個推論唔成立
+
+Chris 叫 n8n owner 改用新 URL 再打,我抓 api log:**零 intake 記錄**。
+
+**差啲就報「n8n 未打」。** 但落結論之前查咗一件事:**guard 拒絕嗰陣到底有冇 log?**
+
+`intake-key.guard.ts:31` —— **冇**。直接 `throw new UnauthorizedException`,零 logger,而且**係刻意**(H4:key 只可以比對,永遠唔 log)。連帶大部分 4xx(OpCo 唔存在 / REQ 搵唔到 / DTO validation)都係 throw 而唔 log。
+
+⇒ **api log 空白同「冇人打過」係兩件事。** 只有成功同「ServiceNow 掛」先會喺 api log 見到。
+
+### 🟢 補返觀測:web container 個 nginx access log
+
+web 係 nginx,佢個 access log 記低**每一個**請求。抓落嚟見到**三條** `/api/requests/intake`:
+
+| 時間 | 碼 | 來源 |
+|---|---|---|
+| `05:40:52` | **401** | Chrome · XFF `10.160.92.194` |
+| `05:43:11` | **401** | Chrome · 同一 IP |
+| `05:47:12` | **400** | Chrome · 同一 IP |
+
+**三條全部係我哋自己嘅探針**(User-Agent 係 Chrome,Referer 仲寫住 `/settings?tab=integrations` 同 `/requests`),時序亦逐個對得上:探針 1(401)· 探針 2 貼咗 placeholder(401)· 探針 2 用真 key(400)。
+
+⇒ **n8n 一次都未打過。**
+
+🔴 **點解呢個陰性結果可信**:因為同一份 log 入面,**我哋知道應該出現嘅嘢真係出現咗**(三條探針)。即係觀測手段本身已經被證明有效,所以「n8n 冇出現」係真嘅冇出現,唔係「我睇唔到」。**冇呢三條做對照,「log 冇嘢」乜都證明唔到。**
+
+⚠️ 順帶:嗰三條全部喺 `05:48` rotate **之前**,所以嗰個 400 用嘅係舊 key。新 key 未被任何人用過。
+
+**診斷用法記入 checklist**:access log 尾段個 `"10.160.x.x"` 係 X-Forwarded-For ⇒ 分得清企業用戶瀏覽器 vs **n8n UAT `10.160.71.243`**。冇呢樣就分唔清「n8n 未打」同「n8n 打咗但 401」,而呢兩個下一步完全唔同。
+
 ### Blockers
 
 🟢 **B9 完成 —— SSO 真登入通咗。**
