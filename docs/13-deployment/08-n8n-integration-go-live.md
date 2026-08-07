@@ -187,6 +187,23 @@ psql "$DATABASE_URL" -f docs/05-usage/sql/opco-budget-gate-preflight.sql
 
 兩個 node 已經係 `={{ $env.UOP_INTAKE_URL }}` ⇒ **唔使郁 node,改 n8n 環境變數就得**。
 
+> ## 🔴 2026-08-07 更正:下面個值**兩處都過時**,照抄會打錯
+>
+> 本段寫於舊環境時期。**唔改佢**(改咗 git history 對唔返),但落手之前請用呢個表:
+>
+> | | 本段舊值 | **而家應該用** |
+> |---|---|---|
+> | **hostname** | `ca-uop-web.lemonhill-2df17b88.eastasia.azurecontainerapps.io` | **`rapo-uop-web-dev.rci-t.com`** |
+> | **route** | `/api/requests/intake/**n8n**` | **`/api/requests/intake`**(冇 `/n8n`) |
+>
+> ⇒ **`https://rapo-uop-web-dev.rci-t.com/api/requests/intake`**
+>
+> **點解 hostname 變**:`ca-uop-web` / `lemonhill-…` 係 W32/W33 嗰個**自建測試環境**(`07-uat-as-built.md:53,63`),佢**同企業網絡零連繫**,亦冇部署過現行 code。真正接得通企業網嘅係 `RG-RAPO-UOP-DEV`,對外 hostname 只有 custom domain 一個(ADR-0027 Option A)。**2026-08-07 由公司網實測過:錯 key → 401、啱 key + `mode:2` → 400,兩級都對。**
+>
+> **點解 route 變**:下面「打錯去 canonical route 會 400」嗰句,前提係 n8n 送**含 licence 名**嘅 nested payload,所以要 adapter route 幫手 resolve 名 → GUID。**但 n8n 喺 2026-07-26 已經改成 flat payload**(`{mode:1, targetUpn, opcoCode, requestId, …}`,**一行 licence 都唔送**,由平台用 default SKU 補 —— ADR-0020)。flat payload 要打 **`/requests/intake`**,controller 見到有 `mode` 就會 dispatch 去 flat 合約(ADR-0024 D2)。⚠️ **flat payload 打去 `/intake/n8n` 會 400** —— 啱啱調轉。
+>
+> 🟢 **仍然有效嘅**:下面「**有 `/api` 前綴**」嗰點一個字唔變,而且理由一樣(對外只有 web 一個 hostname,佢 proxy `/api/*` 去 internal api)。ADR-0027 Option A 令 DEV 同 UAT 呢方面完全同形。
+
 UAT 值:
 
 ```
