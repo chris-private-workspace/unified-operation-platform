@@ -120,6 +120,26 @@ last_updated: 2026-08-04
 - [x] F7-0 🟢🟢 **企業網 → DEV intake endpoint 真係打得通(2026-08-07,探針 1)** —— 由公司網瀏覽器 console 打 `POST /api/requests/intake` 帶**故意錯**嘅 `X-Intake-Key` ⇒ **401**。一個回應同時證五樣:①企業 DNS 解析到 `rapo-uop-web-dev.rci-t.com` ②TLS ③web nginx `/api` proxy ④internal api 收到 ⑤`IntakeKeyGuard` 正確 fail-closed。🔴 **呢個就係 W36–W42 一路做唔到嗰件事** —— 唔係漏做,係舊環境結構上冇入口。**零寫入**
 - [x] F7-0b 🟢 **探針 2 過 = 400**(2026-08-07)—— 啱 key + `mode:2`,`@IsIn([1])` 擋住,**零寫入** ⇒ 證咗 key 啱兼且 body 到達 controller。⚠️ 途中兩個坑,兩個都同服務無關:①header placeholder 用咗中文,而 HTTP header 係 **ISO-8859-1** ⇒ `fetch` 喺送出去之前就 throw,錯誤讀落似伺服器問題但 request 根本未發出 ②🔴 **key 第二次入咗對話記錄**(見 F7-0c)
 - [x] F7-0c 🔴 **`INTAKE_API_KEY` 第二次 rotate(2026-08-07)** —— 探針 2 個 snippet 把 key inline 喺 `fetch` 裡面,而我又叫 Chris 報結果 ⇒ 佢好自然咁連指令一齊貼返。**呢個係指令設計錯,唔係佢做錯**:一個 snippet 若果**既要 secret 又要你報 output**,secret 一定會跟住走。已把探針 2 拆成兩句(`let K = '…'` 一句、`fetch` 用 `K` 一句),要報嘅嗰句唔含 key。rotate 流程同上:新 key → params → PATCH → **restart** → 驗「所有 Running replica 都新過 restart」+ ACA secret hash 一致。⇒ **交 key 畀 n8n 唔好再經任何要貼 output 嘅步驟**;用 `Set-Clipboard` 或者直接開檔案複製
+> ### 📋 F7 診斷表 —— n8n 打完之後,一個回應碼即刻分得清邊邊要改
+>
+> 由 `intake.controller.ts` / `n8n-flat-intake.dto.ts` / `intake-adapter.service.ts:128-148,545-565` 逐條讀出嚟,唔係估。
+>
+> | HTTP | 訊息特徵 | 真正原因 | 邊邊改 |
+> |---|---|---|---|
+> | **401** | (冇 body) | `X-Intake-Key` 冇送 / 送錯 / 送咗舊 key | **n8n** |
+> | **400** | `mode must be one of the following values: 1` | `mode` 送咗**字串 `"1"`** 或者其他值。🔴 DTO 刻意冇 `@Type(() => Number)`,所以 `"1"` 一定失敗 | **n8n** |
+> | **400** | `OpCo 'XXX' is not present on this environment` | `opcoCode` 唔喺 24 個 seed 之內 | **n8n** |
+> | **400** | `OpCo 'XXX' is inactive` | code 啱但個 OpCo 停用咗 | **平台**(admin 啟用) |
+> | **400** | `ServiceNow request 'REQ…' was not found, so it cannot be mirrored` | 個 REQ number 喺 `sc_request` 搵唔到。🔴 **一定要真 REQ** —— 平台會攞佢去 SN 反查 sysId 做 idempotency key | **n8n**(送真 REQ) |
+> | **503** | `ServiceNow is unavailable…` | SN 連唔到 / 逾時 | **平台** |
+> | **400** | `targetUpn should not be empty` 等 | 缺 required 欄(`mode` / `targetUpn` / `opcoCode` / `requestId`) | **n8n** |
+> | **409 / 200** | 返返已存在嗰張 | 同一個 REQ 重推 —— **正常**,intake 對 `Request.serviceNowSysId` 冪等 | — |
+> | **201** | 新 request | ✅ **成功** | — |
+>
+> **24 個 seed OpCo code**(`prisma/seed.ts`):`PFU-Asia` · `PFU-HK` · `RAP` · `RAPO/APTC` · `RAPO/ASPC` · `RAPO/FNA` · `RAPO/IT` · `RAPO/IT (RBS)` · `RAPO/IT (RDC2)` · `RAPO/SCM` · `RAPP` · `RBS` · `RCN` · `RHK` · `RKR` · `RMS` · `RNZ` · `RPH` · `RSP` · `RTH` · `RTMAP` · `RTMEAP` · `RTW` · `RVN`
+>
+> ⚠️ **成功之後仲要驗 DB,唔可以只睇 201**(F7-2):要見到 `Request` **同埋** 一行 `RequestLineItem`,而嗰行嘅 SKU 應該係 `06ebc4ee-…`(`SPE_E5`,ADR-0020 default 注入,因為 flat payload 一行 licence 都冇送)。
+
 - [ ] F7-1 n8n UAT 打 `POST /requests/intake` → **真 201**
 - [ ] F7-2 verify:DB 真 row(Request + line item),唔可以只睇 HTTP code
 - [ ] F7-3 對 W42 retro 五個 n8n 側缺口:URL `/api` 前綴
