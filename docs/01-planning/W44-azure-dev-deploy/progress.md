@@ -821,6 +821,40 @@ PATCH `exit 0`,ACA 側 secret 一查(比 hash)**確實已經係新值**。睇落
 
 **呢個錯誤訊息讀落似伺服器問題,但佢連 request 都未發出。** 教訓同今日早前個 PowerShell 5.1 編碼問題**同源**:我一路喺一個容許非 ASCII 嘅環境寫嘢畀一個唔容許嘅環境跑。⇒ **凡係交畀人跑嘅 snippet,placeholder 同註釋一律 ASCII。**
 
+### 🟢 F7-0b 探針 2 = 400 ⇒ 兩個探針都過
+
+啱 key + `mode:2` → **400**(flat DTO 個 `@IsIn([1])` 擋住),**零寫入**。⇒ key 啱、body 到達 controller、dispatch 邏輯正確。
+
+**⇒ 網絡層同認證層都證實可用,n8n 可以打真嘢。**
+
+### 🔴 但 key 第二次入咗對話記錄 —— 而今次係**指令設計**嘅錯
+
+我畀嘅探針 2 係咁:
+
+```js
+(await fetch('/api/requests/intake', {
+  headers: { 'X-Intake-Key': '<真 key inline 喺度>' }, ... })).status
+```
+
+然後我叫 Chris 報結果。佢好自然咁**連指令一齊貼返** —— 任何人都會咁做。
+
+🔴 **呢個唔係佢做錯,係我個 instruction 有結構性缺陷**:一個 snippet 若果**既需要 secret,又需要你報 output**,個 secret 就一定會跟住 output 一齊走。呢個唔靠提醒解決,要靠改個 snippet 嘅形狀。
+
+**已改成兩句**,要報嘅嗰句唔含 key:
+
+```js
+let K = 'PASTE_KEY_HERE';                    // 呢句唔使貼返
+(await fetch(..., {headers:{'X-Intake-Key':K}, ...})).status   // 貼呢句
+```
+
+**已第二次 rotate**(流程同早前一樣:新 key → params → PATCH → **restart** → 驗「所有 Running replica 都新過 restart」+ ACA secret hash 一致。實測 `05:48:24` 上場、`04:37:52` 退場)。
+
+⚠️ **兩次洩漏,兩次都係我嘅責任,而且係兩個唔同嘅成因**:
+1. 第一次 —— 遮蔽工具本身出事(`H` 撞 `Get-History` alias)⇒ 教訓係「遮蔽 secret 嘅 code 都要當 secret-handling code 咁審」
+2. 第二次 —— 遮蔽根本冇問題,係**工作流程**把 secret 同「要貼返嘅嘢」綁埋一齊 ⇒ 教訓係「唔好設計一個既要 secret 又要報 output 嘅步驟」
+
+⇒ **交 key 畀 n8n 唔可以再經任何要貼 output 嘅步驟。** 用 `Set-Clipboard`(值永不上螢幕)或者直接開檔案複製。而且**唔需要再跑探針 2** —— 佢要證嘅機制(params 檔嗰條 key 就係 api 認嗰條)已經證咗,對新 key 重複一次只會製造第三次洩漏機會。
+
 ### Blockers
 
 🟢 **B9 完成 —— SSO 真登入通咗。**

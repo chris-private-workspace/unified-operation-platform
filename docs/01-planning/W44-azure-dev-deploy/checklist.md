@@ -118,7 +118,8 @@ last_updated: 2026-08-04
 ## F7 — n8n UAT 接線驗證(前置 F6)
 
 - [x] F7-0 🟢🟢 **企業網 → DEV intake endpoint 真係打得通(2026-08-07,探針 1)** —— 由公司網瀏覽器 console 打 `POST /api/requests/intake` 帶**故意錯**嘅 `X-Intake-Key` ⇒ **401**。一個回應同時證五樣:①企業 DNS 解析到 `rapo-uop-web-dev.rci-t.com` ②TLS ③web nginx `/api` proxy ④internal api 收到 ⑤`IntakeKeyGuard` 正確 fail-closed。🔴 **呢個就係 W36–W42 一路做唔到嗰件事** —— 唔係漏做,係舊環境結構上冇入口。**零寫入**
-- [ ] F7-0b 探針 2:啱 key + `mode:2` → 期望 **400**(證 key 啱 + 到達 controller,`@IsIn([1])` 擋住,零寫入)。⚠️ 首次試撞到一個**唔關服務事**嘅坑:header placeholder 用咗中文,而 HTTP header 係 **ISO-8859-1** ⇒ `fetch` 喺送出去之前就 throw `String contains non ISO-8859-1 code point`,錯誤訊息讀落似伺服器問題但唔係。placeholder 一律用 ASCII
+- [x] F7-0b 🟢 **探針 2 過 = 400**(2026-08-07)—— 啱 key + `mode:2`,`@IsIn([1])` 擋住,**零寫入** ⇒ 證咗 key 啱兼且 body 到達 controller。⚠️ 途中兩個坑,兩個都同服務無關:①header placeholder 用咗中文,而 HTTP header 係 **ISO-8859-1** ⇒ `fetch` 喺送出去之前就 throw,錯誤讀落似伺服器問題但 request 根本未發出 ②🔴 **key 第二次入咗對話記錄**(見 F7-0c)
+- [x] F7-0c 🔴 **`INTAKE_API_KEY` 第二次 rotate(2026-08-07)** —— 探針 2 個 snippet 把 key inline 喺 `fetch` 裡面,而我又叫 Chris 報結果 ⇒ 佢好自然咁連指令一齊貼返。**呢個係指令設計錯,唔係佢做錯**:一個 snippet 若果**既要 secret 又要你報 output**,secret 一定會跟住走。已把探針 2 拆成兩句(`let K = '…'` 一句、`fetch` 用 `K` 一句),要報嘅嗰句唔含 key。rotate 流程同上:新 key → params → PATCH → **restart** → 驗「所有 Running replica 都新過 restart」+ ACA secret hash 一致。⇒ **交 key 畀 n8n 唔好再經任何要貼 output 嘅步驟**;用 `Set-Clipboard` 或者直接開檔案複製
 - [ ] F7-1 n8n UAT 打 `POST /requests/intake` → **真 201**
 - [ ] F7-2 verify:DB 真 row(Request + line item),唔可以只睇 HTTP code
 - [ ] F7-3 對 W42 retro 五個 n8n 側缺口:URL `/api` 前綴

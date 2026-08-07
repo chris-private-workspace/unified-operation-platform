@@ -32,11 +32,19 @@
 #         headers:{'Content-Type':'application/json','X-Intake-Key':'wrong'},
 #         body:'{"mode":1}'})).status
 #
-#       // probe 2 - expect 400. Replace PASTE_KEY_HERE with the real key.
+#       // probe 2 - expect 400. TWO statements on purpose, see below.
+#       let K = 'PASTE_KEY_HERE';
 #       (await fetch('/api/requests/intake', {method:'POST',
-#         headers:{'Content-Type':'application/json','X-Intake-Key':'PASTE_KEY_HERE'},
+#         headers:{'Content-Type':'application/json','X-Intake-Key':K},
 #         body:'{"mode":2,"targetUpn":"probe@example.com","opcoCode":"RHK","requestId":"REQ0000000"}'
 #       })).status
+#
+#     [!] Probe 2 is split in two ON PURPOSE. The first version inlined the key
+#         in the fetch call, and the operator - reasonably - pasted the whole
+#         statement back when reporting the result, putting a live secret into a
+#         transcript. That is a flaw in the instruction, not in what they did:
+#         if a snippet needs a secret AND you ask for its output, the secret
+#         will travel with it. Keep the secret on a line nobody needs to quote.
 #
 #     [!] Keep header placeholders ASCII. HTTP headers are ISO-8859-1, so a
 #         non-Latin-1 placeholder left in by accident makes fetch throw
