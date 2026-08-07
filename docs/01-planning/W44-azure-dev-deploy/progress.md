@@ -802,6 +802,25 @@ PATCH `exit 0`,ACA 側 secret 一查(比 hash)**確實已經係新值**。睇落
 
 **收貨後 log 實證**(`04:38` 時間戳):`19 migrations found` · `Seeded 24 OpCos…` · `Entra SSO is configured` · `Nest application successfully started`,零 WARN。
 
+### 🟢🟢 F7-0:企業網真係打得通 DEV 個 intake endpoint —— **W36–W42 一路做唔到嗰件事**
+
+由公司網瀏覽器 console 打,帶**故意錯**嘅 key:
+
+```js
+(await fetch('/api/requests/intake', {method:'POST',
+  headers:{'Content-Type':'application/json','X-Intake-Key':'deliberately-wrong-key'},
+  body:'{"mode":1}'})).status
+// -> 401
+```
+
+**一個 401 同時證五樣**:①企業 DNS 解析到 `rapo-uop-web-dev.rci-t.com` ②TLS ③web nginx `/api` proxy ④internal api 真係收到(ADR-0027 Option A 嘅形狀成立)⑤`IntakeKeyGuard` fail-closed 正常。**而且零寫入。**
+
+🔴 **點解呢個係里程碑**:W36–W42 每個 phase 都 carry 住「n8n 側零 live 驗證」,而 W44 Day 1 先搞清楚**唔係漏做,係舊環境結構上冇入口**(自建孤島,同企業網絡零連繫)。呢個 401 係第一次有證據顯示**入口存在而且行得通**。
+
+⚠️ **探針 2 首次試失敗,但同服務完全無關** —— 我畀嘅 console 範例用咗**中文** placeholder(`貼_params_檔嗰條_key`),而 HTTP header 係 **ISO-8859-1**,所以 `fetch` 喺送出任何嘢之前就 throw `String contains non ISO-8859-1 code point`。
+
+**呢個錯誤訊息讀落似伺服器問題,但佢連 request 都未發出。** 教訓同今日早前個 PowerShell 5.1 編碼問題**同源**:我一路喺一個容許非 ASCII 嘅環境寫嘢畀一個唔容許嘅環境跑。⇒ **凡係交畀人跑嘅 snippet,placeholder 同註釋一律 ASCII。**
+
 ### Blockers
 
 🟢 **B9 完成 —— SSO 真登入通咗。**

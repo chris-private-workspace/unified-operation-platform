@@ -24,11 +24,24 @@
 #     it, so running there gives "The remote name could not be resolved" for
 #     both probes - a DNS answer, not a verdict on the app. That machine also
 #     has no copy of the params file, so if you cannot run it there, use the
-#     browser-console equivalent instead (same two probes, no repo needed):
+#     browser-console equivalent instead (same two probes, no repo needed) from
+#     any page of the signed-in site:
 #
-#       await (await fetch('/api/requests/intake', {method:'POST',
+#       // probe 1 - expect 401. Needs no real key.
+#       (await fetch('/api/requests/intake', {method:'POST',
 #         headers:{'Content-Type':'application/json','X-Intake-Key':'wrong'},
-#         body:'{"mode":1}'})).status            // expect 401
+#         body:'{"mode":1}'})).status
+#
+#       // probe 2 - expect 400. Replace PASTE_KEY_HERE with the real key.
+#       (await fetch('/api/requests/intake', {method:'POST',
+#         headers:{'Content-Type':'application/json','X-Intake-Key':'PASTE_KEY_HERE'},
+#         body:'{"mode":2,"targetUpn":"probe@example.com","opcoCode":"RHK","requestId":"REQ0000000"}'
+#       })).status
+#
+#     [!] Keep header placeholders ASCII. HTTP headers are ISO-8859-1, so a
+#         non-Latin-1 placeholder left in by accident makes fetch throw
+#         "String contains non ISO-8859-1 code point" before any request is
+#         sent - which reads like a server problem and is not one.
 #
 # Usage:  ./deploy/azure/probe-intake-dev.ps1        (from the repo root)
 

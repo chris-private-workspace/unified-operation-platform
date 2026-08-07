@@ -117,6 +117,8 @@ last_updated: 2026-08-04
 
 ## F7 — n8n UAT 接線驗證(前置 F6)
 
+- [x] F7-0 🟢🟢 **企業網 → DEV intake endpoint 真係打得通(2026-08-07,探針 1)** —— 由公司網瀏覽器 console 打 `POST /api/requests/intake` 帶**故意錯**嘅 `X-Intake-Key` ⇒ **401**。一個回應同時證五樣:①企業 DNS 解析到 `rapo-uop-web-dev.rci-t.com` ②TLS ③web nginx `/api` proxy ④internal api 收到 ⑤`IntakeKeyGuard` 正確 fail-closed。🔴 **呢個就係 W36–W42 一路做唔到嗰件事** —— 唔係漏做,係舊環境結構上冇入口。**零寫入**
+- [ ] F7-0b 探針 2:啱 key + `mode:2` → 期望 **400**(證 key 啱 + 到達 controller,`@IsIn([1])` 擋住,零寫入)。⚠️ 首次試撞到一個**唔關服務事**嘅坑:header placeholder 用咗中文,而 HTTP header 係 **ISO-8859-1** ⇒ `fetch` 喺送出去之前就 throw `String contains non ISO-8859-1 code point`,錯誤訊息讀落似伺服器問題但唔係。placeholder 一律用 ASCII
 - [ ] F7-1 n8n UAT 打 `POST /requests/intake` → **真 201**
 - [ ] F7-2 verify:DB 真 row(Request + line item),唔可以只睇 HTTP code
 - [ ] F7-3 對 W42 retro 五個 n8n 側缺口:URL `/api` 前綴
