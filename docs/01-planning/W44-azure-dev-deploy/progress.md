@@ -751,6 +751,25 @@ Chris 喺公司網開站,撳「Continue with Microsoft Entra ID」→ 跳到 Mic
 
 **教訓唔係「regex 寫錯咗」,係「一個唔啱嘅方法可以連續畀出啱嘅答案」** —— 若果嗰兩個 sys_id 啱啱好喺 `.env` 入面,我個 guard 就唔會 fire,我會靜靜咁部署咗兩個空值上去,然後「建單壞」呢件事會喺幾日後先浮面。
 
+### 🔴 Default onboarding SKU 差啲揀錯咗一個「合法但唔啱」嘅 SKU
+
+Chris 為咗準備 F7,喺 UI 設咗 `ConnectorConfig.defaultOnboardingSkuId` = `18a4bd3f-0b5b-4887-b04f-61dd0ee15f5e`。
+
+我 grep 佢,喺 `docs/05-usage/N8N-INTAKE-HANDOFF.md:16-19` 撞正呢個表:
+
+| displayName | skuPartNumber | `skuId` | 係唔係要嘅? |
+|---|---|---|---|
+| **Microsoft 365 E5** | `SPE_E5` | `06ebc4ee-1bb5-47dd-8120-11324bc54e06` | ✅ **正常 onboarding 用呢個** |
+| Microsoft_365_E5_(no_Teams) | `Microsoft_365_E5_(no_Teams)` | **`18a4bd3f-…`** | ❌ 唔含 Teams 嘅歐盟變體 |
+
+⇒ 設咗嗰個係 **no-Teams 變體**。**Chris 已改回 `06ebc4ee-…`。**
+
+🔴 **點解值得記**:呢個失敗**完全冇錯誤訊息**。GUID 格式啱、SKU 真實存在、ADR-0020 嘅存在性驗證會**通過**、派 licence 會**成功**。後果係每一個經 n8n onboarding 入嚟嘅新同事攞到一個冇 Teams 嘅 E5,而**冇任何一層會出聲**。
+
+而且佢正正就係 §13 同 ADR-0020 一路強調「兩個都叫得 E5,所以一定要用 GUID」嗰件事本身 —— **GUID 冇打錯,係揀咗表入面標 ❌ 嗰個**。用 GUID 消除咗「靠名猜」呢種歧義,但消除唔到「揀錯個 GUID」。
+
+⇒ 教訓:**「用 GUID」係防手滑,唔係防揀錯。** 任何人手填 SKU GUID 嘅地方,填完應該對返 `N8N-INTAKE-HANDOFF.md §0` 個表。
+
 ### 🔴 我洩漏咗 DEV 嘅 `INTAKE_API_KEY`,已 rotate
 
 比對「本機 `.env` 同 DEV 部署嘅 intake key 係咪同一條」嗰陣,我寫咗個叫 **`H`** 嘅 PowerShell 函數做 hash。`H` 撞正 `Get-History` 嘅內建 alias(PowerShell 唔分大小寫)⇒ 佢冇 hash,反而把**原值**塞入 error message。

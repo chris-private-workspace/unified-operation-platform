@@ -132,6 +132,9 @@ last_updated: 2026-08-04
 - [ ] F7-10 verify:**n8n 側真收到**,唔可以只睇平台側冇 error —— B3 唔通嘅話呢個會**紅得靜**(provider fail 但 app 照起得身)
 - [ ] F7-11 三個接縫逐個確認:outbound webhook(`N8N_OUTBOUND_WEBHOOK_*`)· `LicenseOperationsProvider` · `TicketUpdateProvider`
 
+- [x] F3-7d 🔴 **Default onboarding SKU 揀錯咗又改返(2026-08-07)** —— Chris 為 F7 設咗 `defaultOnboardingSkuId` = `18a4bd3f-…`,即 `Microsoft_365_E5_(no_Teams)`(`N8N-INTAKE-HANDOFF.md §0` 個表標 ❌ 歐盟變體)。**已改回 `06ebc4ee-1bb5-47dd-8120-11324bc54e06`(`SPE_E5`)**。🔴 呢個失敗**零錯誤訊息** —— GUID 格式啱、SKU 真實存在、ADR-0020 存在性驗證通過、派 licence 成功,只係每個新同事攞到冇 Teams 嘅 E5。⇒ **「用 GUID」防手滑,防唔到揀錯**;人手填 SKU GUID 之後要對返 `N8N-INTAKE-HANDOFF.md §0` 個表
+- [ ] F3-7e 🆕 ⚠️ **`admin@uop.local` 密碼每次容器重啟都會被 seed 重設** —— `seed.ts:105` 個 `update` 無條件寫 `passwordHash`,所以喺 UI 改咗密碼之後,下一次 restart / 新 revision 就會變返 `LOCAL_ADMIN_INITIAL_PASSWORD` 個值。🟢 `mustChangePassword` **冇設**(default false)⇒ 首次登入唔會被強制改密碼。DEV 可接受(break-glass 本來就係應急路徑),但**上 prod 之前要處理** —— 記入 DEPLOY-harden
+
 ## F8 — doc sync + closeout
 
 - [ ] F8-1 `09-dev-as-built.md` 補實際部署結果
