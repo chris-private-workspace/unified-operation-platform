@@ -145,6 +145,17 @@
 > ⚠️ 仍未掂:**n8n 雙向**(base URL = `http://rapo-n8n-uat.rci-t.com/`,🔴 http 明文 = B6)。
 >
 > 🆕 **B6**:n8n base URL = `http://rapo-n8n-uat.rci-t.com/` —— **http 明文**,接 outbound 前要 Chris 明確接受(webhook key 會過線)。
+>
+> ### 🟢🟢🟢 **2026-08-07:B9 解封 + n8n inbound 真接通(F7-1)**
+>
+> **B9(SSO)** —— 唔再等 Application ID URI。查證揭到 infra 配嘅嘢**本身就係另一條路嘅完整形狀**(client secret + redirect URI + confidential client)⇒ **ADR-0028 Accepted**(server-side authorization code exchange,**supersedes ADR-0003**)。`ENTRA_*` 由 build-time 降做 **runtime API env** ⇒ 改 Entra 配置唔使重 build web image。**真人 SSO 登入已通。** 🔴 break-glass 仍未回驗(ADR-0028 要求兩邊都通)。
+>
+> 🔴🔴 **W36 / W39 / W40 / W42 四個 phase carry 咗嘅「n8n 側零 live 驗證」—— inbound 半邊今日兌現。** n8n UAT 打 `POST /api/requests/intake` 攞到**真 201**(`REQ0043934`),`Request` + 一行 `RequestLineItem`(ADR-0020 default SKU 注入)真係入咗 DB,`SCTASK0071709` 摺入。**冇改過任何 integration code** —— 印證咗根因判斷:唔係漏做,係舊環境結構上冇入口。順帶實證 **ACA → ServiceNow outbound 通**(`serviceNowSysId` 係平台自己反查返嚟嘅,n8n 送唔到)。
+>
+> 🔴 **仍未收:ADR-0025 D2(平台自己開 licence 單)** —— 回應個 `lineItems[0].serviceNowSysId: null` **證明唔到**佢失敗:`created` 喺 `raiseLicenceRequest` 之前就 snapshot,而嗰個 method 只 update DB 唔碰 object 亦冇 re-fetch ⇒ **成功同失敗喺回應裡面一模一樣**。要開 UI 睇(RITM 號 / Delivery failures 頁)。
+> 💡 **同 `docker-entrypoint.sh` NON-FATAL 嗰個陷阱同一形狀,一個禮拜內第二次** ⇒ **返嘅 object 喺副作用之前 snapshot,就唔可以攞佢做副作用嘅證據。**
+>
+> ⚠️ **n8n `resolveOpco()` 仍未修** —— 今次通咗只證「送嘅 code 存在」;個函數仍係 hardcode `RHK`/`RAPO` **兼且前綴比對**(`RAPO/IT` 會被塌縮成 `RAPO`,而平台 24 個 OpCo 冇頂層 `RAPO`)。⇒ **F7-5 唔跟 F7-1 一齊收。**
 
 ---
 

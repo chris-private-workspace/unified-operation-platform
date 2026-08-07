@@ -154,14 +154,29 @@ last_updated: 2026-08-04
 >
 > ⚠️ **呢個唔止係「多一個地方睇」** —— 冇佢就分唔清「n8n 未打」同「n8n 打咗但 401」,而呢兩個嘅下一步完全唔同(等佢 vs 查 key 傳遞)。
 
-- [ ] F7-1 n8n UAT 打 `POST /requests/intake` → **真 201**
-- [ ] F7-2 verify:DB 真 row(Request + line item),唔可以只睇 HTTP code
-- [ ] F7-3 對 W42 retro 五個 n8n 側缺口:URL `/api` 前綴
-- [ ] F7-4 對:`X-Intake-Key` 有冇送
-- [ ] F7-5 對:`resolveOpco` 只認 RHK/RAPO(其餘返 `''` → 404)
-- [ ] F7-6 對:`requestId` 係 REQ number 唔係冪等鍵 sysId
+- [x] F7-1 🟢🟢🟢 **n8n UAT 打 `POST /requests/intake` → 真 201(2026-08-07)** —— `REQ0043934` / request `cmsikku3b000kxp012bx3v17q`,一行 line item,`SCTASK0071709` 摺入。**W36–W42 一路 carry 嗰句「n8n 側零 live 驗證」到此兌現。**
+- [x] F7-2 verify:DB 真 row —— 🟢 **一半實證**。201 個 body **就係** `prisma.request.create({include:{lineItems:true}})` 返嘅 row(`intake.service.ts:102-132`)⇒ `Request` + 一行 `RequestLineItem` **真係寫咗落 DB**,唔係只有 HTTP code。🔴 **另一半未證**:回應個 `skuCatalogId` 係 DB **cuid**(`cmsidukof005tu501kqqsk73s`),同 `06ebc4ee-…`(`skuId` GUID)**兩個唔同 key,對唔到** ⇒ 「注入嗰行係咪 `SPE_E5`」仍要開 UI 睇 → **F7-12**
+- [x] F7-3 對:URL `/api` 前綴 —— ✅ 由 201 順帶證咗(`https://rapo-uop-web-dev.rci-t.com/api/requests/intake` 經 web nginx proxy 到 internal api)
+- [x] F7-4 對:`X-Intake-Key` —— ✅ 有送而且係新 key(`IntakeKeyGuard` 喺 controller 之前,401 就冇 body)
+- [ ] F7-5 對:`resolveOpco` 只認 RHK/RAPO —— ⚠️ **今次通咗 ≠ 修好咗**。`opcoId` 解析成功只證「今次送嘅 code 存在兼 active」;1001 個 `resolveOpco()` 仍係 hardcode `'RHK'`/`'RAPO'` **兼且用前綴比對**(`s.indexOf('RAPO')===0` 會把 `RAPO/IT` 塌縮成 `RAPO`)⇒ 要睇返改咗嘅 workflow JSON 先收得
+- [x] F7-6 對:`requestId` 係 REQ number 唔係冪等鍵 sysId —— 🟢 **最有力嗰格**:回應個 `serviceNowSysId: 26e0119a…` **唔係 n8n 送嘅**(flat DTO 冇呢欄),係 `resolveReqSysId()` 實時打 SN `sc_request` 反查返嚟 ⇒ 同時證咗 **ACA → ServiceNow outbound 通**(唔通會 503,唔會 201)
 - [ ] F7-7 對:2003 sticky 要求 assigner skip 已持有 E5 嘅 user
 - [ ] F7-8 逐項標明係 **n8n 側改** 定 **平台側改**
+- [ ] F7-12 🔴 **ADR-0025 D2 未驗 —— 而且個回應「證明唔到」,唔係「證明失敗」**。回應 `lineItems[0].serviceNowSysId: null` 睇落似 `raiseLicenceRequest` 掛咗,**但唔係**:`intake-adapter.service.ts:184-191` 先 `const created = await this.intake.intake(...)`(嗰一刻 RITM 本來就係 null),再 `raiseLicenceRequest` **只 update DB、唔碰 `created`、亦冇 re-fetch**,然後 `return created`。⇒ **開單成功同開單失敗,喺呢個 HTTP 回應裡面長得一模一樣。** 同 `docker-entrypoint.sh` NON-FATAL 嗰個陷阱**同一形狀**:唔係壞咗,係觀測唔到。**要開 UI 睇**(見下面驗證三合一)
+
+> ### 🟢 驗證三合一 —— 一個動作答埋 F7-2 / F7-5 / F7-12
+>
+> 由**公司網**登入 `https://rapo-uop-web-dev.rci-t.com/` → Requests → 開 **REQ0043934**(或 `cmsikku3b000kxp012bx3v17q`),一版嘢同時答三條:
+>
+> | 睇邊度 | 答邊條 | 收貨條件 |
+> |---|---|---|
+> | 個 request 個 **OpCo** 欄 | **F7-5** | 顯示嘅 code 就係 n8n 實際送嗰個 ⇒ 知唔知佢改咗做乜(`RHK`?`RAPO/IT`?定係有人喺平台加咗 `RAPO`?) |
+> | 個 line item 個 **SKU** | **F7-2** 另一半 | 應該係 **`SPE_E5`**。若見到 `Microsoft_365_E5_(no_Teams)` ⇒ F3-7d 個改動未生效 |
+> | 個 line item 有冇 **RITM 號** | **F7-12** | 有 `RITM…` ⇒ ADR-0025 D2 成功;冇 ⇒ 去 **Delivery failures** 頁睇有冇 `REQUEST_SUBMIT`(SN 拒收,repair 會重送)或 `REQUEST_MIRROR`(🔴 **真單已開咗**,repair 只補寫本地,絕不可重送) |
+>
+> 🔴 **兩個 kind 唔可以互換**(ADR-0011 D3)—— 揀錯會喺 ServiceNow 開第二張真單。
+>
+> 💡 順帶:要登入先入到 UI ⇒ 呢一步**同時兌現 F9-8** 嘅一半(SSO 或 break-glass,至少一邊真人登入過)。
 
 ### 🔴 F7 outbound 半邊(舊環境做唔到嗰樣 —— 唔驗呢半就係「接通」驗一半當全部)
 

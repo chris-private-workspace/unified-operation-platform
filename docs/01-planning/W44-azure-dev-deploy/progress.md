@@ -975,11 +975,48 @@ function resolveOpco(jobFunction, department, email) {
 - **sticky note 過時**(line 1529):仲寫住「**DISABLED** until Chris gives endpoint/auth」同埋「Builds curated licence payload」,但 node 實際**已 enabled**,而且 payload 30 Jul 已經由 nested-curated 改成 flat。讀 workflow 嗰個人會攞錯前提 —— **同我哋 `08-n8n-integration-go-live.md` 過時嗰件事一模一樣**。
 - **credential 名叫 `UOP UAT Auth Key`**(id `3NtRXuuRpzorEDw0`)—— 個名帶「UAT」,而我哋今日 rotate 咗兩次。名唔代表值,但佢係 401 最值得先查嗰度。
 
+### 🟢🟢🟢 F7-1 解封 —— n8n 真 201,`REQ0043934` 落咗地
+
+Chris 貼返 n8n 收到嘅回應:`201` + 完整 Request JSON(`cmsikku3b000kxp012bx3v17q`)。**兩個 blocker 同時解咗**(credential 更新 + OpCo code 改對)。
+
+🔴 **W36–W42 一路 carry 嗰句「n8n 側從未真接通,三個 seam 零 live 驗證」到此兌現。** 而佢兌現嘅方式印證咗根因判斷:唔使改任何 integration code,淨係換個**接得通企業網絡**嘅環境。
+
+#### 個回應逐格證明咗乜(每格 trace 得返 code)
+
+| 欄位 | 值 | 證明 |
+|---|---|---|
+| `serviceNowSysId` | `26e0119a…` | 🔴 **最有價值嗰格** —— flat DTO **冇呢一欄**,n8n 送唔到。係 `resolveReqSysId()`(`intake-adapter.service.ts:545-565`)實時打 SN `sc_request` 反查返嚟 ⇒ **ACA → ServiceNow outbound 真通**(唔通會 503) |
+| `opcoId` | `cmsh04xmi…` | OpCo code 存在 **兼且 active**(`intakeFlat` 兩樣都查) |
+| `lineItems` 一行 | `skuCatalogId: cmsidukof…` | **ADR-0020 default SKU 注入生效** —— 1001 一行 licence 都冇送 |
+| `serviceNowTaskSysId/Number` | `SCTASK0071709` | CH-020 / ADR-0024 D1 task ref 摺入成功 |
+| `stage` | `REQUESTED` | 正確初始 stage |
+| `azureSyncedAt` | `null` | 🟢 **正確,唔係甩漏** —— Phase 1 sync gate 保持關閉,冇由「n8n 打咗」推論「user 已 sync」(adapter 註釋明寫呢個唔可以推) |
+| `origin` | `onboarding-intake` | ✅ |
+
+**F7-2 一半實證**:201 個 body **就係** `prisma.request.create({include:{lineItems:true}})` 返嘅 row ⇒ `Request` + `RequestLineItem` 真係入咗 DB,唔係「只有 HTTP code」。
+
+#### 🔴 但有一格「證明唔到」,而佢**扮成**「證明失敗」
+
+`lineItems[0].serviceNowSysId` / `serviceNowNumber` 都係 `null`。讀落似 ADR-0025 D2 嘅 `raiseLicenceRequest` 掛咗 —— **但佢證明唔到呢件事**:
+
+```ts
+const created = await this.intake.intake(canonical, taskRef);  // ← 呢一刻 RITM 本來就係 null
+await this.raiseLicenceRequest(created.id, canonical);          // ← 只 update DB,唔碰 created,冇 re-fetch
+return created;                                                 // ← 送返一個 stale snapshot
+```
+
+⇒ **開單成功同開單失敗,喺呢個 HTTP 回應裡面長得一模一樣。**
+
+呢個同 `docker-entrypoint.sh` 令 migrate/seed 失敗 NON-FATAL **係同一形狀**:唔係壞咗,係**觀測唔到**。W44 一個禮拜內第二次撞同一類陷阱,值得寫低:**返嘅 object 喺副作用之前 snapshot,就唔可以攞佢做副作用嘅證據。**
+
+(唔即刻改 code:呢個回應係畀 n8n 嘅,而 n8n 唔讀呢兩欄;要改就係 re-fetch 一次,屬 CH 級改動,先驗證咗實際有冇失敗再講。)
+
+⇒ 開 **F7-12**,同 F7-2 另一半 + F7-5 併埋做「驗證三合一」(見 checklist)。
+
 ### Blockers
 
-🔴 **F7-1 卡住,兩個 blocker,第二個要 Chris 拍板:**
-1. **credential 值** —— `UOP UAT Auth Key` 要更新成當前 key(nginx log 證實請求到咗 guard,payload 完全啱,淨係差呢個)
-2. **OpCo mapping** —— n8n 只識 `RHK`/`RAPO`,平台冇頂層 `RAPO`。三條路:**(a)** 平台加一個 `RAPO` OpCo(最快,唔觸發 H1,但會同 7 個 `RAPO/xxx` 語意重疊)· **(b)** n8n 改 `resolveOpco` 送精確 code(要先知 `conf.department` 實際值域)· **(c)** 平台側加 alias mapping(🔴 **改 intake 契約行為 = H1,要 ADR**)
+🔴 **F7-12 未驗:ADR-0025 D2 有冇喺 SN 開到 licence 單** —— 上面講嘅 stale snapshot,要開 UI(Request detail 睇 RITM 號,冇就睇 Delivery failures 頁分 `REQUEST_SUBMIT` vs `REQUEST_MIRROR`,🔴 兩個 kind 唔可以互換,揀錯會開第二張真單)。
+⚠️ **F7-5 唔跟住 F7-1 一齊收** —— 今次通咗只證「呢個 code 存在」,1001 個 `resolveOpco()` 仍係 hardcode `RHK`/`RAPO` **兼且前綴比對**(`RAPO/IT` 會被塌縮成 `RAPO`)。要睇返改咗嘅 workflow JSON 先知係改咗函數定係改咗 test data。
 
 🟢 **B9 完成 —— SSO 真登入通咗。**
 🟢 **F3-7b 完成 —— Chris 實測 Graph + ServiceNow 兩個 connector 都連得到。** ⇒ 順帶證咗 outbound 對 `graph.microsoft.com` 同 `ricohapdev.service-now.com` 都通(先前只證到 `login.microsoftonline.com`,而我特別標明過唔可以由此推論)。
