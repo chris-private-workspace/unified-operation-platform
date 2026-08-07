@@ -7,6 +7,7 @@ import { LocalJwtService } from './local-jwt.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { PasswordResetService } from './password-reset.service';
 import { AuthService } from './auth.service';
+import { EntraSsoService } from './entra-sso.service';
 import { AuthController } from './auth.controller';
 import { MeController } from './me.controller';
 import { UserAdminService } from './user-admin.service';
@@ -48,6 +49,9 @@ import { PermissionsController } from './permissions.controller';
     // enumeration rule in one place at the HTTP edge.
     PasswordResetService,
     AuthService,
+    // ADR-0028 — Entra SSO by server-side code exchange. Optional: with no
+    // ENTRA_* config it reports enabled:false and the login button stays off.
+    EntraSsoService,
     UserAdminService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

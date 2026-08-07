@@ -9,9 +9,9 @@ import { useUiStore } from '@/store/ui';
 describe('app shell scaffold', () => {
   it('renders the sidebar brand + operations nav', () => {
     // Sidebar reads the live Drift badge via useDrift (TanStack Query) and the
-    // signed-in identity via useMsal — the query needs a client; msal-react's
-    // useMsal returns a safe stub without a provider (accounts: []), so a real
-    // MsalProvider is not required for this render smoke.
+    // signed-in identity via useCurrentUser — so the query client is the only
+    // provider needed. Since ADR-0028 there is no auth provider to wrap at all:
+    // the session is a cookie, not client-side library state.
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });

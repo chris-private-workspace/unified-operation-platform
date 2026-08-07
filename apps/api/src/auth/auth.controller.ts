@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Logger,
   Post,
@@ -13,6 +14,7 @@ import type { Request, Response } from 'express';
 import { ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from './public.decorator';
 import { AuthService } from './auth.service';
+import { EntraSsoService } from './entra-sso.service';
 import {
   PasswordResetService,
   RESET_TTL_MINUTES,
@@ -20,13 +22,28 @@ import {
 import { NotificationDispatchService } from '../fulfilment/notification-dispatch.service';
 import { LoginDto, SessionResponseDto } from './dto/login.dto';
 import { ForgotPasswordDto, ResetWithTokenDto } from './dto/password-reset.dto';
-import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from './cookie';
+import {
+  EntraCallbackDto,
+  EntraStartDto,
+  SsoStatusDto,
+} from './dto/entra-sso.dto';
+import {
+  setAuthCookies,
+  clearAuthCookies,
+  setSsoStateCookie,
+  clearSsoStateCookie,
+  REFRESH_COOKIE,
+  SSO_STATE_COOKIE,
+} from './cookie';
 
 /**
- * Local password session (ADR-0005 / ADR-0006 §7). All three routes are @Public
- * — they run before/without the JwtAuthGuard and manage the session cookies
- * themselves. The access + refresh tokens are set as httpOnly cookies; the body
- * only ever carries the identity. Entra SSO users authenticate via MSAL, not here.
+ * Session establishment for BOTH providers (ADR-0005 / ADR-0006 §7 / ADR-0028).
+ * Every route here is @Public — they run before/without the JwtAuthGuard and
+ * manage the session cookies themselves. The access + refresh tokens are set as
+ * httpOnly cookies; the body only ever carries the identity.
+ *
+ * Break-glass password login and Entra SSO differ only in how the user proves
+ * who they are — both converge on auth.grantSession() + setAuthCookies().
  */
 @ApiTags('auth')
 @Controller('auth')
@@ -35,6 +52,7 @@ export class AuthController {
 
   constructor(
     private readonly auth: AuthService,
+    private readonly entraSso: EntraSsoService,
     private readonly passwordReset: PasswordResetService,
     private readonly notifications: NotificationDispatchService,
     private readonly config: ConfigService,
@@ -49,6 +67,64 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<SessionResponseDto> {
     const grant = await this.auth.login(dto);
+    setAuthCookies(res, grant.accessToken, grant.refresh.rawToken);
+    return { user: grant.user };
+  }
+
+  /**
+   * Can this deployment offer SSO at all (ADR-0028)? The login screen asks
+   * before it enables the button. Side-effect free on purpose — it is called on
+   * every page load, and starting a sign-in attempt (which mints state) is a
+   * different thing from asking whether one is possible.
+   */
+  @Get('sso/status')
+  @Public()
+  @ApiOkResponse({ type: SsoStatusDto })
+  ssoStatus(): SsoStatusDto {
+    return { enabled: this.entraSso.enabled };
+  }
+
+  /**
+   * Step 1-2 of the SSO handshake (ADR-0028): mint state + PKCE, park them in a
+   * short-lived httpOnly cookie, and hand back the Entra URL for the browser to
+   * navigate to. Returning the URL rather than issuing a 302 keeps this a plain
+   * JSON API — the frontend's fetch layer never has to reason about redirects.
+   */
+  @Get('entra/start')
+  @Public()
+  @ApiOkResponse({ type: EntraStartDto })
+  entraStart(@Res({ passthrough: true }) res: Response): EntraStartDto {
+    const { authorizeUrl, stateCookieValue } =
+      this.entraSso.createAuthorizationRequest();
+    setSsoStateCookie(res, stateCookieValue);
+    return { authorizeUrl };
+  }
+
+  /**
+   * Step 5-6 (ADR-0028): the browser hands back what Entra gave it, and the api
+   * — holding the client secret — does the exchange, verifies the id_token, and
+   * issues the platform's own session. From here on an SSO user is
+   * indistinguishable from a break-glass one.
+   */
+  @Post('entra/callback')
+  @Public()
+  @HttpCode(200)
+  @ApiOkResponse({ type: SessionResponseDto })
+  async entraCallback(
+    @Body() dto: EntraCallbackDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<SessionResponseDto> {
+    const stateCookie = req.cookies?.[SSO_STATE_COOKIE] as string | undefined;
+    // Cleared BEFORE the exchange, unconditionally: one attempt, one shot. A
+    // failure must not leave a live verifier sitting in the browser.
+    clearSsoStateCookie(res);
+    const user = await this.entraSso.completeLogin(
+      dto.code,
+      dto.state,
+      stateCookie,
+    );
+    const grant = await this.auth.grantSession(user);
     setAuthCookies(res, grant.accessToken, grant.refresh.rawToken);
     return { user: grant.user };
   }

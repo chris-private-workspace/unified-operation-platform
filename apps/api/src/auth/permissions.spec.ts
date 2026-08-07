@@ -6,6 +6,14 @@ import { derivePermissions, REVIEWED_AUTHENTICATED } from './permissions';
 import { ROLES_KEY } from './roles.decorator';
 import { PermissionsController } from './permissions.controller';
 
+// AuthController now reaches jwks-rsa (via EntraSsoService, ADR-0028), and
+// globbing loads it for real — so the ESM problem described below arrives
+// through the controller too, not only through AppModule. Inert stub: this file
+// reads decorator metadata and never constructs anything.
+jest.mock('jwks-rsa', () => ({
+  JwksClient: jest.fn(() => ({ getSigningKey: jest.fn() })),
+}));
+
 /**
  * W28 F3 — drift protection for the permission matrix.
  *

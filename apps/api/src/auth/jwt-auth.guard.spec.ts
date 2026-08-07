@@ -182,8 +182,8 @@ describe('JwtAuthGuard', () => {
     });
   });
 
-  describe('local cookie path (ADR-0006 §7)', () => {
-    it('resolves the uop_access cookie by sub (authProvider=local, active)', async () => {
+  describe('platform session cookie path (ADR-0006 §7 / ADR-0028)', () => {
+    it('resolves the uop_access cookie by sub (active), regardless of provider', async () => {
       const findFirst = jest.fn().mockResolvedValue(LOCAL_ADMIN);
       const prisma = { appUser: { findFirst } } as unknown as PrismaService;
       const guard = new JwtAuthGuard(
@@ -197,12 +197,56 @@ describe('JwtAuthGuard', () => {
         headers: {},
       };
       await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      // 🔴 No authProvider filter (ADR-0028). The token is ours, so it proves
+      // "this user id authenticated"; which provider did it is no longer this
+      // guard's business. `active` still gates.
       expect(findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'u-local', active: true, authProvider: 'local' },
+          where: { id: 'u-local', active: true },
         }),
       );
       expect(req.user).toBe(LOCAL_ADMIN);
+    });
+
+    // The case that made the filter wrong: after ADR-0028 an SSO user carries an
+    // ordinary uop_access cookie. Pinned to 'local', every one of their requests
+    // would 401 while the cookie itself was perfectly valid.
+    it('accepts an Entra-provider user on the cookie path', async () => {
+      const entraUser = { ...(ADMIN as object), authProvider: 'entra' };
+      const findFirst = jest.fn().mockResolvedValue(entraUser);
+      const prisma = { appUser: { findFirst } } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        localJwt({ sub: 'u-admin', role: 'ADMIN' }),
+        config(PROD_CFG),
+      );
+      const req: Record<string, unknown> = {
+        cookies: { [ACCESS_COOKIE]: 'sso.tok' },
+        headers: {},
+      };
+      await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      expect(req.user).toBe(entraUser);
+    });
+
+    // The control case: a deactivated account must still lose its session, or
+    // the assertion above would only be proving that findFirst returns whatever
+    // it was told to.
+    it('401 when no active user matches the token subject', async () => {
+      const prisma = {
+        appUser: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        localJwt({ sub: 'u-gone', role: 'ADMIN' }),
+        config(PROD_CFG),
+      );
+      await expect(
+        guard.canActivate(
+          ctxWith({ cookies: { [ACCESS_COOKIE]: 'ok.tok' }, headers: {} }),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('401 when the access cookie fails verification', async () => {

@@ -594,4 +594,84 @@ this.issuer = [
 
 ---
 
+## Day 5 — 2026-08-07:**唔再堅持** —— SSO 改成配合 infra 已經配好嘅嘢
+
+### 🔴 決定性嘅一句唔係技術判斷,係 Chris 嘅
+
+> 「跟隨番 infra 那一邊的配置去改動本項目的 SSO auth 流程,不要再浪費時間去堅持原來的設計」
+
+之前四日,我哋一直做同一件事:**要求 infra 把一個已經配好嘅 app,改成 ADR-0003 需要嘅形狀**。三輪往返,佢哋三次答唔到「Application ID URI 係咩」(先後答「web portal 網址」/「OAuth authorization endpoint」/「Application ID = client id」)。
+
+我一直把呢個讀成溝通問題。**實際上佢係一個訊號** —— 呢個詞對唔熟 OAuth 嘅人根本讀成「應用程式嘅網址」,而佢哋每次答嘅都係一個**合理**嘅解讀。三次都答唔到同一條問題,值得懷疑嘅唔係對方,係「呢條問題係咪一定要問」。
+
+### 🔴 一查就見到:佢哋配嘅嘢,本身就係另一條路嘅完整形狀
+
+| infra 已配 | 對 MSAL SPA(ADR-0003) | 對 server-side code exchange |
+|---|---|---|
+| client **secret** | 用唔着(PKCE 唔要 secret) | **必需** ✅ |
+| redirect URI | 要,但要喺 SPA platform 下 | **必需** ✅ |
+| **冇**開 public client flows | ⇒ 唔係 SPA platform ❌ | **正常**(confidential client)✅ |
+| **冇** Application ID URI / scope | 🔴 **缺** | **唔需要** ✅ |
+
+⇒ **四項全中,零項要對方再做嘢。** 而同一個 tenant 已上線嘅 `ai-it-project-process-management-webapp` 行 NextAuth + AzureAD provider,走嘅正正係呢條路 —— 所以佢從來唔需要 Application ID URI。
+
+**⇒ ADR-0028,Chris Accepted。** supersedes ADR-0003;ADR-0002 唔推翻(驗證邏輯照用,只係由 guard 移去 callback endpoint)。
+
+### 落地
+
+| 層 | 改動 |
+|---|---|
+| API | 🆕 `entra-sso.service.ts` —— state + PKCE、code exchange(client secret 喺 server 側)、id_token 驗證(JWKS · aud = client id · **兩個 issuer**)· 🆕 `entra-user.ts` —— `oid` upsert,guard 同 SSO **共用一份** · 三條新 route:`GET /auth/sso/status` · `GET /auth/entra/start` · `POST /auth/entra/callback` |
+| Session | `auth.service.grantSession` 由 private 變 public ⇒ **SSO 同 break-glass 喺呢一點匯合**,落面全部一樣(cookie / guard / refresh / logout) |
+| 🔴 Guard | `resolveLocalUser` → `resolveSessionUser`,同 `refreshSession` 一齊拆走 `authProvider:'local'` 過濾 |
+| 前端 | 刪 `msal.ts` + 兩個 `@azure/msal-*` dep + `msal-vendor` chunk;`api.ts` 成個 `authHeader()` 拆走(cookie 自己會送)· 🆕 `sso.ts` / `dev-bypass.ts` · login 掣改由 `GET /auth/sso/status` **runtime** gate |
+
+### 🟢 一個落 plan 時冇預見嘅收穫:配置由 build-time 降做 runtime
+
+`VITE_*` 係 **vite 編譯期烘死落 bundle** 嘅。ADR-0003 之下,「改一個 client id」= 重 build image ≈ 10 分鐘,而且**估錯咗要重來一次** —— 呢個就係 F9-5b 嗰句「⚠️ 佢係 build-time 烘死,估錯要重 build」嘅實質風險。
+
+而家四個 `ENTRA_*` 全部由 **API runtime** 讀,`Dockerfile` 嗰四個 `ARG VITE_ENTRA_*` 已拆走。
+
+⇒ **一個 web image 通行所有環境;換 app registration / 改 redirect URI = 改 env + restart。**
+
+### ⚠️ 兩個「唔拆就會紅得靜」嘅位,值得記低
+
+1. **`authProvider:'local'` 過濾**(guard + `refreshSession`)。唔拆嘅話:SSO 登入**睇落完全成功**,cookie 都發咗,然後每一個 request 401,而錯誤訊息會指向 token 而唔係指向 provider 過濾。呢個同 B9 第 ③ 樣(v1 issuer)係**一模一樣嘅失敗形狀** —— 登入成功、之後全錯、訊息唔提真因。撞過一次,所以今次係搵出嚟嘅,唔係踩到嘅。
+2. **state cookie 喺 callback 驗證之前就清**。一次 attempt 一次機會 —— 失敗最有機會令人 reload,而 reload 帶住未清嘅 code 就係 replay 一個已經用過嘅 code。
+
+### ✅ 驗證
+
+- **api:900 test / 69 suite 全過**(之前 879 / 68)
+- **web:282 test**,新增 `sso.test.ts` 6 條全過;`npm run build`(含 `tsc --noEmit`)**exit 0**,`msal-vendor` chunk 已經冇咗
+- permission matrix snapshot **逐行核對**:淨係多咗三條新 public route,零其他改動
+- 每個新 test 都有**對照組**(state 對 vs 唔對 · SSO enabled vs disabled · 有 code 冇 state · 有 session vs 冇)—— 呢個而家係預設動作
+
+### 🔴 web 有 6 個既有失敗,**唔係本次造成**(有對照組)
+
+`local-profile.test.ts` ×5(`localStorage.clear is not a function`)+ `reset-password.test.tsx` ×1。**用 `git stash` 把本次全部改動撤走後重跑,6 個失敗一模一樣** ⇒ 因果排除。
+
+⚠️ **而我第一個診斷係錯嘅,值得記**:我推測係「vitest 把 window 屬性複製去 global 時漏咗原型方法」,聽落好合理。**但寫入 doc 之前真跑咗一次**(臨時 test 檔,跑完即刪),結果係 —— `window.localStorage` **一樣**冇 `getItem`/`setItem`/`clear`,而且同 `globalThis.localStorage` 係**同一個物件**。
+
+⇒ 真相係 vitest+jsdom 環境提供咗一個**無方法嘅空殼 Storage**,唔係 global 複製問題。**修法唔係一行**,要查 vitest 2.1 / jsdom 25 嘅組合 ⇒ 已入 BACKLOG,唔喺本次 commit 夾帶。
+
+呢個正正就係 phase 紅旗嗰個「由一個真觀察推去一個更強嘅結論」嘅模式 —— 分別只在於**今次喺寫低之前真跑咗**。
+
+### Decisions
+
+- **ADR-0028 Accepted**(Chris)。ADR-0003 → `Superseded by ADR-0028`,`adr/README.md` index 同步。
+- **guard 個 Entra Bearer 路徑保留唔刪** —— 有 test、零維護成本、ADR-0002 仍然成立,而且 m2m 將來要用就唔使重寫。新路徑係**加**一條,唔係換走一條。
+- **`local-profile.ts` 檔名同函數名唔改**,雖然佢而家承載兩個 provider。改名要動 8+ 個檔而零功能收益;改咗註釋講清楚就夠(§1.3)。
+- **唔做 federated sign-out**。登出只清平台 session,Entra session 唔掂 ⇒ 再撳「Continue with Microsoft」會即刻入返。呢個係正常 SSO 行為(同 tenant 其他 app 一樣),而 federated sign-out 會**順帶登出 Outlook / Teams** ⇒ 屬產品決定唔屬缺口,已寫入 `use-sign-out.ts`。
+
+### Blockers
+
+🟢 **B9 由「卡 infra」變「卡部署驗證」** —— code 齊,但 **F9-7(PATCH 四個 env)+ F9-8(SSO 通 + break-glass 通)未做**。
+🔴 **未 live 驗證過任何一次真 SSO 登入。** 本日全部係 unit test + build,冇一個 tool result 證到真人登入得到。
+
+### Commits
+
+- `<pending>` — `feat(auth): SSO 改行 server-side code exchange(ADR-0028),移除 MSAL`
+
+---
+
 **End of W44 progress**(進行中)

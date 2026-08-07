@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
-import { MsalProvider } from '@azure/msal-react';
 import { RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router } from './router';
-import { msalInstance } from './lib/auth/msal';
 import { useUiStore } from './store/ui';
 
 // Server state (later phases) = TanStack Query; provider set up now.
@@ -17,11 +15,11 @@ export function App() {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
+  // No auth provider wrapper since ADR-0028: the session is an httpOnly cookie,
+  // so there is no client-side auth library holding state for React to observe.
   return (
-    <MsalProvider instance={msalInstance}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </MsalProvider>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   );
 }

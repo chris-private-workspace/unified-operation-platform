@@ -149,13 +149,18 @@ last_updated: 2026-08-04
 - [x] F9-3 🔴 **B9 實測(三樣缺失,全部有錯誤碼)**:①**冇任何 redirect URI** → `AADSTS900971: No reply address provided` ②**冇 Expose an API scope** → `AADSTS500011: resource principal not found` ③**token 係 v1**(`ver: 1.0`)而 `jwt-auth.guard.ts:170-177` 精確比對 v2 issuer ⇒ 一定 401
 - [x] F9-4 交畀 infra 嘅三項要求已寫定(plan 附錄 C 第四輪)。⚠️ 第 ② 項問法係「**Application ID URI 係咩**」唔係「請設定」—— 因為佢可以叫另一個名,而我哋只證到 `api://<client-id>` 唔存在
 - [x] F9-5a 🟢 **① redirect URI —— infra 已補**(同一條 authorize URL 由 `AADSTS900971` 變正常 login 頁,**有前後對比**)
-- [ ] F9-5b 🔴 **② Application ID URI / scope —— 仍然差**。`api://<client-id>` 實測唔存在,但 infra 可能設咗**另一個名** ⇒ 要問「**係咩**」唔係叫佢「設定」。⚠️ 佢係 build-time 烘死落 image,估錯要重 build
+- [x] F9-5b 🟢 **② Application ID URI / scope —— 需求消失,唔係攞到答案**。三輪往返都問唔到(infra 先後答「web portal 網址」/「OAuth authorization endpoint」/「Application ID = client id」),**ADR-0028 令佢由必需品變成無關**:server-side code exchange 用標準 scope `openid profile email`,id_token 個 `aud` 本身就係 client id。⚠️ 誠實記低:呢項係**繞過**咗,唔係解決咗 —— 但繞過之後佢再唔係任何嘢嘅前置
 - [x] F9-5c 🟢 **③ token version —— 唔再需要 infra**(Chris 拍板走「路 B」,見 F9-11)
 - [x] F9-11 🆕 **`jwt-auth.guard.ts` 改成同時接受同一 tenant 嘅兩個 issuer**(`…/v2.0` + `https://sts.windows.net/{tid}/`)。🔴 **`audience` 保持單一精確值** —— 放寬佢先至係真窿。新增 test `verifies against BOTH tenant issuer forms`,同時 assert audience 冇被放寬。**879 test / 68 suite 全過**(之前 878)。⚠️ 型別陷阱:`@types/jsonwebtoken` 個 `issuer` 要**非空 tuple** 唔收 `string[]`。**唔開 ADR** —— 冇改 vendor / 邊界 / storage,亦冇推翻 ADR-0002,屬 §5.1 明文嘅「唔屬架構改動」
-- [ ] F9-6 重 build web image 傳 **3 個** build-arg(`VITE_ENTRA_CLIENT_ID` / `VITE_ENTRA_TENANT_ID` / `VITE_ENTRA_API_SCOPE`)—— 🔍 `VITE_ENTRA_REDIRECT_URI` **可以唔傳**:`msal.ts:29` 冇值時跌返 `window.location.origin`,而佢正好 = `https://rapo-uop-web-dev.rci-t.com`
-- [ ] F9-7 PATCH api 加 `ENTRA_TENANT_ID` + `ENTRA_API_AUDIENCE`。⚠️ **`AUTH_JWT_SECRET` 保留唔拆**(dual-provider,ADR-0005)
+- [x] F9-6 ~~重 build web image 傳 3 個 build-arg~~ → **web image 唔再需要任何 Entra build-arg**(ADR-0028)。`Dockerfile` 嗰四個 `ARG VITE_ENTRA_*` 已拆走,`.env.example` 亦改寫成「呢度冇嘢要填」。⇒ **一個 web image 通行所有環境**,改 Entra 配置唔使重 build。仍然要 build 一次,但係因為前端 code 變咗,唔係因為配置
+- [ ] F9-7 PATCH api 加 **四個** env:`ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` / `ENTRA_REDIRECT_URI`(= `https://rapo-uop-web-dev.rci-t.com`,要同 app registration 逐字一樣)。⚠️ **`AUTH_JWT_SECRET` 保留唔拆**(dual-provider,ADR-0005);`ENTRA_API_AUDIENCE` **唔使設**(Bearer 路徑保留但瀏覽器唔行佢)
 - [ ] F9-8 verify:**SSO 登入通 + break-glass 仍然通** —— 兩邊都要驗,唔可以只驗新嗰邊
 - [ ] F9-9 🔴 client secret **expiry 2028-07-28** 入 `RISK_REGISTER.md`(到期會**靜靜咁全部 401**)
+- [x] F9-12 🆕 **ADR-0028 Accepted**(Chris 2026-08-07:「跟隨番 infra 那一邊的配置去改動本項目的 SSO auth 流程」)。`ADR-0003` Status → `Superseded by ADR-0028`,`adr/README.md` index 同步
+- [x] F9-13 🆕 **API 側實作**:`entra-sso.service.ts`(state + PKCE + code exchange + id_token 驗證,scope 只用 `openid profile email`)· `entra-user.ts`(`oid` upsert,guard 同 SSO 共用,順帶處理 email 撞本地帳號嘅 P2002)· `GET /auth/sso/status` + `GET /auth/entra/start` + `POST /auth/entra/callback` · state cookie(httpOnly · SameSite=Strict · 10 分鐘 · callback **驗證之前**就清)
+- [x] F9-14 🆕 **cookie session 收返兩個 provider**:`jwt-auth.guard` 個 `resolveLocalUser` → `resolveSessionUser`、`auth.service.refreshSession` —— 兩處嘅 `authProvider:'local'` 過濾拆走(留住 `active`)。🔴 唔拆就會「SSO 登入睇落成功,15 分鐘後靜靜死」,而錯誤訊息會指向 token
+- [x] F9-15 🆕 **前端去 MSAL 化**:刪 `msal.ts` + `@azure/msal-browser`/`msal-react` 兩個 dep + `msal-vendor` chunk;`api.ts` 成個 `authHeader()`(silent acquire / interaction-required)拆走 —— cookie 自己會送。新 `sso.ts`(start + redirect 回程)· `dev-bypass.ts`(`AUTH_DEV_BYPASS` 搬屋)· login 掣改由 `GET /auth/sso/status` **runtime** gate
+- [x] F9-16 🆕 **測試**:api **900 test / 69 suite 全過**(之前 879/68)· web **282 test**,新增 `sso.test.ts` 6 條全過。permission matrix snapshot 只多咗三條新 public route(逐行核對過)。⚠️ web 有 **6 個既有失敗**(`local-profile.test.ts` ×5 + `reset-password.test.tsx` ×1),已用 `git stash` 對照證實**同 ADR-0028 無關**,見 BACKLOG
 - [ ] F9-10 🟢 順帶記低:Graph app `App-N8N-LicenseManagement` 有 `LicenseAssignment.Read.All` · `User.Read.All` · `LicenseAssignment.ReadWrite.All` ⇒ **F3-7 接真 Graph 冇權限障礙**
 
 ---

@@ -40,14 +40,13 @@
 > ```
 > **零 `WARN: migrate deploy failed` · 零 `WARN: seed failed` · 零 Error** ⇒ **B3(ACA 連 private endpoint PG)✅** · **PG v18 migration(G8)✅ 19 個全部 applied** · **seed ✅ 精確 24 個 OpCo**。
 > ⚠️ **陷阱以後仍然成立**:`docker-entrypoint.sh` 令 migrate/seed 失敗 **NON-FATAL** ⇒ revision `Healthy` **證明唔到 DB 通**,驗證一定要睇 log 或 HTTP。
-> 🔴 **B9 = SSO 未接得到(2026-08-06)。而家行緊 break-glass 本地登入 `admin@uop.local`。** infra 交嘅 app registration `08fa14bf-…`(tenant `d1ea071a-…` = **公司 M365 tenant**,同 Graph app `27d329e5-…` 同 tenant 但**唔同 app**)**只配咗 client-credentials**,用戶登入三樣缺晒,全部有錯誤碼:
-> ① **一條 redirect URI 都冇** → `AADSTS900971: No reply address provided`(🔴 唔係「登記咗但唔啱」嗰個 `AADSTS50011`,係**一條都冇**)
-> ② **冇 Expose an API scope** → `AADSTS500011: resource principal not found`
-> ③ **token 係 v1**(`ver: 1.0`)而 `apps/api/src/auth/jwt-auth.guard.ts:170-177` 用 `jwt.verify(…, { issuer })` **精確比對** `…/v2.0`;v1 issuer 係 `https://sts.windows.net/{tid}/` ⇒ **一定 401,而且登入會睇落完全成功**(典型「紅得靜」)
-> **📌 2026-08-06 尾狀態**:①redirect URI 🟢 **infra 已補**(同一條 authorize URL 由 `AADSTS900971` 變正常 login 頁)②Application ID URI / scope 🔴 **仍差** —— `api://<client-id>` 實測唔存在,**但 infra 可能設咗另一個名**,我哋窮舉唔到 ⇒ **要問「係咩」,唔係叫佢「設定」**(佢係 build-time 烘死落 image,估錯要重 build)③token v1 🟢 **我哋自己解咗** —— `jwt-auth.guard.ts` 改成同時接受同一 tenant 嘅**兩個** issuer(`…/v2.0` + `https://sts.windows.net/{tid}/`);🔴 **`audience` 保持單一精確值**(放寬佢先至係真窿,test 有 assert 守住);879 test / 68 suite 全過;**唔開 ADR**(§5.1「唔屬架構改動」,但因為掂認證,落手前有攞 Chris 拍板)。⚠️ 型別陷阱:`@types/jsonwebtoken` 個 `issuer` 要**非空 tuple**,用 `string[]` 會令 7 個 overload 全部唔匹配 + callback 變 implicit any(**一個型別錯偽裝成三個錯誤**)。
-> 🔴 **⇒ SSO 淨係差一個答案:確切嘅 Application ID URI。** **唔使 client secret**(PKCE)。
-> ⚠️ `VITE_ENTRA_*` 係 **build-time 烘死落 image** ⇒ 估錯個 Application ID URI 就要重 build(~10 分鐘),所以要問 infra 攞**確切值**,唔可以估。
-> 🟢 **接 SSO 可回退**:`api.ts:25` local profile 優先於 `msalConfigured` · `login.tsx:167-174` 本地登入表單永遠喺 ⇒ 最壞只係 SSO 按鈕報錯。
+> 🟢 **B9(SSO)—— 2026-08-07 靠改設計解封。code 齊,但仍未 live 驗過,而家仍然行緊 break-glass `admin@uop.local`。**
+> **舊前提已作廢,唔好照 W44 前四日嗰套做**:ADR-0003(MSAL SPA)嘅三個硬需求(SPA platform / Application ID URI / `access_as_user` scope)infra 個 app 三樣都冇,而**三輪往返都攞唔到 Application ID URI**。查證揭到重點:**佢哋配嘅嘢本身就係另一條路嘅完整形狀** —— client secret ✅ + redirect URI ✅ + confidential client ✅。**Chris 拍板** ⇒ **ADR-0028 Accepted**(server-side authorization code exchange,**supersedes ADR-0003**;ADR-0002 唔推翻,驗證邏輯移去 callback endpoint)。
+> **而家嘅 flow**:前端只送人去 Entra + 交返 `code` → **API 用 client secret 喺 server 側換 token** → 驗 `id_token`(aud = client id,**唔需要任何自訂 scope**)→ upsert `AppUser` → 發**平台自己**嘅 httpOnly cookie ⇒ **SSO 同 break-glass 由 `auth.service.grantSession` 開始完全一樣**。三條 route:`GET /auth/sso/status` · `GET /auth/entra/start` · `POST /auth/entra/callback`。
+> 🔴 **`VITE_ENTRA_*` 已經冇咗,MSAL 兩個 dep 已移除。** 四個 `ENTRA_TENANT_ID`/`ENTRA_CLIENT_ID`/`ENTRA_CLIENT_SECRET`/`ENTRA_REDIRECT_URI` 由 **API runtime** 讀 ⇒ **改配置唔使重 build web image**(舊設計嗰個「估錯要重 build 10 分鐘」嘅風險已消失)。範本喺 `apps/api/.env.example` 認證段。
+> ⚠️ **兩個「紅得靜」陷阱已處理,但形狀要記住**:①guard(`resolveSessionUser`)同 `refreshSession` 原本硬性 `authProvider:'local'` —— 唔拆嘅話 SSO **登入睇落成功**然後每個 request 401,錯誤指向 token 唔指向 provider 過濾 ②state cookie 喺 callback **驗證之前**就清,免得失敗後 reload replay 用過嘅 code。
+> 🔴 **仍未做 = F9-7(PATCH 四個 env)+ F9-8(驗 SSO 通 **兼且** break-glass 仍然通)。未有任何一次真人登入嘅證據。**
+> 🟢 **可回退**:`login.tsx` 本地表單永遠喺;SSO 未配置 → `/auth/sso/status` 返 `{enabled:false}`,個掣自動暗住。
 > 🟢 **Graph app 權限齊**(`LicenseAssignment.Read.All` / `User.Read.All` / `LicenseAssignment.ReadWrite.All`)⇒ F3-7 接真 Graph 冇障礙。🔴 client secret **exp 2028-07-28** 要入 RISK。
 > 💡 **測 Entra 一定要用真瀏覽器** —— 命令列打 authorize endpoint 會攞到「200 冇錯誤」嘅**假陽性**(現代登入頁係 SPA,錯誤由 JS 畫)。跑一個**故意錯**嘅對照 case 先信自己個測試。
 >
@@ -80,11 +79,11 @@
 
 **開發路線全鏈完成(詳細歷史 → `BACKLOG.md` + memory `MEMORY.md`,此處唔重複)**:
 - **後端業務層**:W02 C(catalog+對帳)/ W03 D-1(intake)/ W04 D-2(assign+ledger)✅ · **前端全鏈**:W05 scaffold / W06 FE-1(Overview+Catalog)/ W07 FE-2(Requests+detail 讀寫)/ W08 FE-3(Drift + BE-graph-harden)✅ · **BUG-002 ✅**(Graph error wrap→503)。
-- **AUTH 全鏈 ✅**:W09 AUTH-1(後端 Entra JWT + `@Roles` guard,ADR-0002)→ W10 AUTH-2a(FE MSAL scaffold + Login/Settings + token attach,ADR-0003)→ W11 AUTH-3a(OPCO_IT 後端 per-OpCo scope)→ W18-21 AUTH-4a/b/c(本地登入 / user 管理 / 密碼生命週期 / session hardening,ADR-0005/0006)→ W22 AUTH-3b(FE 真 role scope)。
+- **AUTH 全鏈 ✅**:W09 AUTH-1(後端 Entra JWT + `@Roles` guard,ADR-0002)→ W10 AUTH-2a(FE MSAL scaffold,ADR-0003 — ⚠️ **2026-08-07 已被 ADR-0028 推翻,MSAL 已由 `apps/web` 移除**)→ W11 AUTH-3a(OPCO_IT 後端 per-OpCo scope)→ W18-21 AUTH-4a/b/c(本地登入 / user 管理 / 密碼生命週期 / session hardening,ADR-0005/0006)→ W22 AUTH-3b(FE 真 role scope)→ **W44 F9 SSO server-side code exchange(ADR-0028)**。
 - **FE-Assets 鏈 ✅**:W13-17(allocation import[ADR-0004 curation-as-scope]+ ledger read/write + By-OpCo inline edit[ADR-0007])。
 - **ADR-0008 request 建單 rollout 全 4 階段 ✅**(2026-07-15):W24 **甲** inbound intake(n8n→平台 `POST /requests/intake` m2m)/ W25 **乙** outbound direct(平台→SN + 前端 `/requests/new`)/ W26 **丙** n8n outbound(`N8nWorkflowProvider` env 選路)/ W27 **丁** D365 scope(平台早 SKU-agnostic → confirm+test+doc)。
 
-**當前 pending(rolling JIT,待 Chris 揀)**:🔴 **AUTH-2b**(真 SSO e2e — 前端全就緒[readiness ✅ 2026-07-15]、**卡 IT 開 Entra SPA app reg**;handoff+runbook `W10/AUTH-2b-RUNBOOK.md`)· **DEPLOY**(生產部署 + 真數 curation)· honest-gap 三項(activity feed / Drift Resolve / AI-Assist)· 🟡 AUTH-4c-C(email reset)/ DD-2(npm vuln)。
+**當前 pending(rolling JIT,待 Chris 揀)**:🔴 **AUTH-2b**(真 SSO e2e — ⚠️ **唔再卡 IT 開 SPA app reg**:ADR-0028 之後現有 app registration 直接用得,code 亦已齊;剩返嘅係 **W44 F9-7 PATCH 四個 `ENTRA_*` env + F9-8 live 驗證**。`W10/AUTH-2b-RUNBOOK.md` 個 MSAL 前提**已過時**)· **DEPLOY**(生產部署 + 真數 curation)· honest-gap 三項(activity feed / Drift Resolve / AI-Assist)· 🟡 AUTH-4c-C(email reset)/ DD-2(npm vuln)。
 **Deploy-time carry(非 repo)**:真 SN/n8n 建單合約對齊(`docs/05-usage/SERVICENOW-CONTRACT-ALIGNMENT.md` 🅐–🅙 待 SN owner 填)· 真 D365 SKU curation(`W27/CURATION-D365.md` runbook)。
 
 **誠實資料原則**:缺 endpoint(handler name / AI parse / My queue …)一律 EmptyState/coming-soon/略去,絕不砌假數。前端 = **H6 保護**,token-only 唔 eyeball,**寫前對 prototype render 睇**(computed 查證,唔靠畫面名估),跑 `ui-design` skill,vite dev 5173 —— 見 [[ui-design-fidelity]]。
@@ -95,7 +94,7 @@
 - **起後端**:`docker compose up -d`(postgres **5433** + redis)→ `apps/api/.env`(gitignored)→ root `npm run start:dev` → `http://localhost:3100/docs/api`。
 - ⚠️ **Prisma engine CDN(`binaries.prisma.sh`)俾公司 proxy 封(503)**:clean reinstall(刪 node_modules)後要**轉流動網路**跑一次 `npm run prisma:generate` + `prisma migrate` cache engine。其他 TLS 用 `NODE_EXTRA_CA_CERTS=C:/Users/CLai03/ricoh-ca.pem`。
 - ⚠️ **Port**:3000 俾 Langfuse 佔 → 用 `PORT=3100`;5432 俾既有 Postgres 佔 → docker postgres host 5433。
-- **Auth(AUTH 鏈完成)**:controllers 全域 guard(`@Roles`);後端 Entra JWT(AUTH-1)+ FE MSAL(AUTH-2a)+ OPCO_IT per-OpCo scope(AUTH-3a/3b)+ 本地登入/密碼/session(AUTH-4a-c)。**本地要 `AUTH_DEV_BYPASS=true`**(api `.env`)+ **`VITE_AUTH_DEV_BYPASS=true`**(web)否則 `/api` 401 / FE gate 去 login。扮 OPCO_IT 加 `AUTH_DEV_USER_EMAIL=opco.it.rhk@rapo.com.hk`。**真 SSO token e2e = AUTH-2b(卡 IT 開 SPA app reg;前端已就緒,見 `W10/AUTH-2b-RUNBOOK.md`)**。ADR-0002/0003/0005/0006。
+- **Auth**:controllers 全域 guard(`@Roles`);OPCO_IT per-OpCo scope(AUTH-3a/3b)+ 本地登入/密碼/session(AUTH-4a-c)。🔴 **兩個 provider 只有一種 session** —— break-glass 同 Entra SSO 都發同一個 httpOnly `uop_access`/`uop_refresh` cookie(ADR-0028);guard 唔再按 `authProvider` 分流。**前端零 token、零 auth library**(MSAL 已移除)。**本地要 `AUTH_DEV_BYPASS=true`**(api `.env`)+ **`VITE_AUTH_DEV_BYPASS=true`**(web)否則 `/api` 401 / FE gate 去 login。扮 OPCO_IT 加 `AUTH_DEV_USER_EMAIL=opco.it.rhk@rapo.com.hk`。**真 SSO e2e 仍未驗**(W44 F9-8)。ADR-0002/**0028**/0005/0006(**ADR-0003 已 superseded**)。
 - **Request 建單(ADR-0008)**:inbound intake `POST /requests/intake`(m2m `X-Intake-Key`,`INTAKE_API_KEY`);outbound `POST /requests` provider 由 **`REQUEST_SUBMISSION_PROVIDER=direct|n8n`** 選(default direct→SN Table API / n8n→webhook `N8N_OUTBOUND_WEBHOOK_URL`+`_KEY`)。**代表性合約**,真上線待 `docs/05-usage/SERVICENOW-CONTRACT-ALIGNMENT.md`。
 - **Demo harness**:`apps/api/scripts/demo-harness/`(npm `demo:mock-sn`/`demo:mock-n8n`/`demo:cleanup`)—— dev-bypass + mock 底下 live 跑 ADR-0008 request 雙向閉環(甲/乙/丙 + assign 回寫),零新 dep;runbook 見該 folder README。
 - **SKU 一律用 `skuId`(GUID)唔靠名**;assign 前必過 `azureSyncedAt` sync gate(`findUser` null = 未 sync)。

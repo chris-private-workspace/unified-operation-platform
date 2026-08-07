@@ -412,8 +412,30 @@ ERROR: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
 
 ## 認證(as-built)
 
-**而家行緊 = break-glass 本地登入**(seeded `admin@uop.local`,`AUTH_JWT_SECRET` + `LOCAL_ADMIN_INITIAL_PASSWORD`)。SSO **未接**,原因見下面 B9。
+**而家行緊 = break-glass 本地登入**(seeded `admin@uop.local`,`AUTH_JWT_SECRET` + `LOCAL_ADMIN_INITIAL_PASSWORD`)。
 沿用 ADR-0012 D2 / ADR-0005 dual-provider:兩個 provider 並存,SSO 接通之後 break-glass **唔會拆**。
+
+> ## 🔴 2026-08-07 更正:SSO 設計已改,下面 B9 三樣缺失嘅**應對方式已經唔同**
+>
+> **`ADR-0028` Accepted(supersedes ADR-0003)** —— SSO 由 MSAL 前端 flow 改成 **server-side authorization code exchange**。
+>
+> **下面 B9 嗰三樣缺失,實測記錄全部仍然準確**(佢係點解要改設計嘅證據),但**結論變咗**:
+>
+> | # | 缺乜 | 舊設計(ADR-0003) | **新設計(ADR-0028)** |
+> |---|---|---|---|
+> | ① | redirect URI | 必需 | 必需(infra 已補 ✅) |
+> | ② | Application ID URI / scope | 🔴 **必需,而三輪都攞唔到** | 🟢 **完全唔需要** —— scope 只用 `openid profile email`,id_token 個 `aud` 本身就係 client id |
+> | ③ | token v1 issuer | 必需處理 | 已處理(dual-issuer),照用 |
+> | — | client **secret** | 「唔使畀」(PKCE) | 🔴 **必需** —— 而 infra 一開始就畀咗 |
+>
+> ⇒ **infra 配嗰個 app,啱啱好就係新設計要嘅完整形狀**,零項要對方再做嘢。
+>
+> 🔴 **下面第 442 行嗰句「唔使畀 client secret —— SPA 行 PKCE」已經作廢。** 而家 client secret 係必需品,而且係 SSO 唯一嘅 secret(`ENTRA_CLIENT_SECRET`,只喺 server 側用)。
+>
+> 🔴 **另一個作廢咗嘅前提:`VITE_ENTRA_*` build-time**。四個 `ENTRA_*` 而家全部由 **API runtime** 讀 ⇒ 改配置**唔使重 build web image**,亦即下面幾處講「估錯要重 build」嘅風險已經冇咗。
+>
+> **部署要設嘅 env**(F9-7,未做):`ENTRA_TENANT_ID` · `ENTRA_CLIENT_ID` · `ENTRA_CLIENT_SECRET` · `ENTRA_REDIRECT_URI=https://rapo-uop-web-dev.rci-t.com`。範本見 `apps/api/.env.example` 認證段。
+> **仍未做**:F9-7 + **F9-8(驗 SSO 通 兼且 break-glass 仍然通)** ⇒ **未有任何一次真人 SSO 登入嘅證據。**
 
 ### 🔴 B9 —— infra 交嘅 SSO app registration **淨係配咗程式對程式,用戶登入三樣缺晒**
 

@@ -1,15 +1,17 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
-import { initMsal } from './lib/auth/msal';
+import { completeSsoRedirect } from './lib/auth/sso';
 import './index.css';
 
-// msal-browser v3+ requires initialize() + handleRedirectPromise() before any other API
-// (ADR-0003). Init failure must not block the shell — dev-bypass still needs a usable app.
-void initMsal()
-  .catch((err) =>
-    console.error('MSAL init failed; continuing (dev-bypass path)', err),
-  )
+// A sign-in returning from Entra lands on '/', which is a guarded route — so the
+// code has to be spent BEFORE the router runs, or the auth gate bounces the user
+// to /login with it unused (ADR-0028). No-op on an ordinary page load.
+//
+// Never blocks the shell: completeSsoRedirect resolves either way, and .catch is
+// the backstop so an unexpected throw cannot leave a blank page.
+void completeSsoRedirect()
+  .catch((err) => console.error('SSO redirect handling failed', err))
   .finally(() => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>

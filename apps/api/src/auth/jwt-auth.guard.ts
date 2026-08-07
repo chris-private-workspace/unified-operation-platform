@@ -15,18 +15,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { LocalJwtService } from './local-jwt.service';
 import { ACCESS_COOKIE } from './cookie';
+import { upsertEntraUser } from './entra-user';
 
 /**
  * Validates the credential on every request (ADR-0002 + ADR-0005 + ADR-0006 §7).
  * Two transports:
- *  • an httpOnly `uop_access` cookie → a locally-signed HS256 token (local
- *    password session) → verify + resolve the AppUser by `sub` + force-change gate.
+ *  • an httpOnly `uop_access` cookie → a platform-signed HS256 token → verify +
+ *    resolve the AppUser by `sub` + force-change gate. Since ADR-0028 this is
+ *    how BOTH providers arrive: break-glass password AND Entra SSO.
  *  • otherwise an `Authorization: Bearer` header → an Entra token (v1 or v2 —
  *    both of the tenant's issuer forms are accepted) → RS256 via the tenant
- *    JWKS + aud / iss / exp → resolve/upsert the AppUser by `oid`.
- * `@Public()` routes skip validation (login / refresh / logout manage cookies
- * themselves). Entra config is optional (a local-only deployment need not set it);
- * the guard fails fast at boot only if NO provider is configured.
+ *    JWKS + aud / iss / exp → resolve/upsert the AppUser by `oid`. ADR-0028 kept
+ *    this path deliberately: ADR-0002 still holds, it costs nothing, and a
+ *    machine-to-machine caller with an Entra token needs no rewrite.
+ * `@Public()` routes skip validation (login / refresh / logout / the SSO
+ * handshake manage cookies themselves). Entra config is optional (a local-only
+ * deployment need not set it); the guard fails fast at boot only if NO provider
+ * is configured.
  *
  * Local dev can set AUTH_DEV_BYPASS=true to skip validation and run as the seed
  * ADMIN — never in production (ADR-0002 risk R-C). H4: tokens / signatures /
@@ -105,13 +110,14 @@ export class JwtAuthGuard implements CanActivate {
       return true;
     }
 
-    // Local session — the httpOnly access cookie (ADR-0006 §7). A cookie present
-    // means this is a local session: verify it, resolve the AppUser, and enforce
-    // the force-change gate. (Entra never sets this cookie.)
+    // Platform session — the httpOnly access cookie (ADR-0006 §7). Since
+    // ADR-0028 this carries BOTH providers: a break-glass password login and an
+    // Entra SSO sign-in both end at the same setAuthCookies(). Verify it,
+    // resolve the AppUser, and enforce the force-change gate.
     const accessCookie = req.cookies?.[ACCESS_COOKIE] as string | undefined;
     if (accessCookie) {
       const claims = this.localJwt.verify(accessCookie); // throws 401 on bad sig / exp
-      const user = await this.resolveLocalUser(claims.sub);
+      const user = await this.resolveSessionUser(claims.sub);
       this.ensurePasswordChanged(user, req);
       req.user = user;
       return true;
@@ -130,7 +136,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    req.user = await this.resolveUser(payload);
+    req.user = await upsertEntraUser(this.prisma, payload);
     return true;
   }
 
@@ -152,10 +158,19 @@ export class JwtAuthGuard implements CanActivate {
     }
   }
 
-  /** Resolve the AppUser a local token was issued for (by `sub` = AppUser.id). */
-  private async resolveLocalUser(id: string): Promise<AppUser> {
+  /**
+   * Resolve the AppUser a platform-issued token belongs to (`sub` = AppUser.id).
+   *
+   * Not filtered on `authProvider` (ADR-0028). The token is ours — HS256 over
+   * AUTH_JWT_SECRET, issued only by /auth/login or /auth/entra/callback — so
+   * what it proves is "this user id authenticated", and by which provider is no
+   * longer this guard's business. Keeping 'local' here would 401 every SSO
+   * request while the cookie itself was perfectly valid. `active` still gates:
+   * a deactivated account loses its session on the next request.
+   */
+  private async resolveSessionUser(id: string): Promise<AppUser> {
     const user = await this.prisma.appUser.findFirst({
-      where: { id, active: true, authProvider: 'local' },
+      where: { id, active: true },
     });
     if (!user) throw new UnauthorizedException('User not found');
     return user;
@@ -195,28 +210,6 @@ export class JwtAuthGuard implements CanActivate {
           resolve(decoded);
         },
       );
-    });
-  }
-
-  /**
-   * Resolve/upsert the AppUser from the token's `oid` claim. First-seen users
-   * auto-provision as REGIONAL (schema default); role elevation stays manual
-   * (Entra app-role → claim mapping is an AUTH-2/3 concern).
-   */
-  private resolveUser(payload: jwt.JwtPayload): Promise<AppUser> {
-    const entraOid = payload.oid as string | undefined;
-    if (!entraOid) throw new UnauthorizedException('Token missing oid claim');
-    const email =
-      (payload.email as string) ??
-      (payload.preferred_username as string) ??
-      (payload.upn as string) ??
-      entraOid;
-    const displayName = (payload.name as string) ?? email;
-    const now = new Date();
-    return this.prisma.appUser.upsert({
-      where: { entraOid },
-      create: { entraOid, email, displayName, lastLoginAt: now },
-      update: { email, displayName, lastLoginAt: now },
     });
   }
 

@@ -118,13 +118,20 @@ export class AuthService {
   /**
    * Exchange a valid refresh token for a fresh session (ADR-0006 §7). Rotation
    * (revoke old + mint new) happens in RefreshTokenService; any bad token is a
-   * generic 401. The account must still be an active local user — a deactivated
-   * account can't refresh its way back in.
+   * generic 401. The account must still be active — a deactivated account can't
+   * refresh its way back in.
+   *
+   * Deliberately NOT filtered on `authProvider` (ADR-0028): since SSO ends at
+   * the same platform session, an Entra user holds an ordinary refresh token and
+   * must be able to rotate it. Pinning 'local' here would log every SSO user out
+   * 15 minutes after they signed in — and would look like a token bug, not a
+   * provider filter. What the token proves is unchanged either way: it was
+   * issued by us, to this user id, and has not been rotated or revoked.
    */
   async refreshSession(rawRefresh: string): Promise<SessionGrant> {
     const rotated = await this.refreshTokens.rotate(rawRefresh); // 401 if invalid
     const user = await this.prisma.appUser.findFirst({
-      where: { id: rotated.userId, active: true, authProvider: 'local' },
+      where: { id: rotated.userId, active: true },
     });
     if (!user) throw new UnauthorizedException('Invalid refresh token');
 
@@ -132,7 +139,7 @@ export class AuthService {
       id: user.id,
       role: user.role,
     });
-    this.logger.log(`Local session refreshed: userId=${user.id}`);
+    this.logger.log(`Session refreshed: userId=${user.id}`);
     return {
       accessToken,
       refresh: { rawToken: rotated.rawToken, expiresAt: rotated.expiresAt },
@@ -197,17 +204,24 @@ export class AuthService {
     this.logger.log(`Password changed: userId=${user.id}`);
   }
 
-  /** Mint an access token + a fresh refresh token and assemble the session identity. */
-  private async grantSession(user: AppUser): Promise<SessionGrant> {
+  /**
+   * Mint an access token + a fresh refresh token and assemble the session
+   * identity.
+   *
+   * Public since ADR-0028: the Entra SSO callback ends here too. That is the
+   * point of the decision — one session mechanism, whichever way the user
+   * proved who they are — so this is the seam where the two providers meet, and
+   * everything downstream of it (cookies, guard, refresh, logout) sees no
+   * difference between them.
+   */
+  async grantSession(user: AppUser): Promise<SessionGrant> {
     const { accessToken } = this.localJwt.sign({
       id: user.id,
       role: user.role,
     });
     const refresh = await this.refreshTokens.issue(user.id);
     // H4: log the outcome only — never email / password / token.
-    this.logger.log(
-      `Local session granted: userId=${user.id} role=${user.role}`,
-    );
+    this.logger.log(`Session granted: userId=${user.id} role=${user.role}`);
     return { accessToken, refresh, user: await this.buildSessionUser(user) };
   }
 

@@ -2,9 +2,17 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EntraSsoService } from './entra-sso.service';
 import { PasswordResetService } from './password-reset.service';
 import { NotificationDispatchService } from '../fulfilment/notification-dispatch.service';
-import { ACCESS_COOKIE, REFRESH_COOKIE } from './cookie';
+import { ACCESS_COOKIE, REFRESH_COOKIE, SSO_STATE_COOKIE } from './cookie';
+
+// The controller reaches EntraSsoService, which reaches jwks-rsa → jose (ESM-only
+// since v6, so jest cannot parse it). Same inert stub jwt-auth.guard.spec uses;
+// nothing here goes near a real key anyway.
+jest.mock('jwks-rsa', () => ({
+  JwksClient: jest.fn(() => ({ getSigningKey: jest.fn() })),
+}));
 
 // Verifies the transport wiring: tokens go out as httpOnly cookies, the body only
 // carries the identity, and refresh / logout clear cookies on the right paths.
@@ -15,11 +23,12 @@ function fakeRes() {
 }
 
 /**
- * The controller now has four collaborators; building it through here keeps each
+ * The controller now has five collaborators; building it through here keeps each
  * test naming only the one it cares about.
  */
 function makeController(parts: {
   auth?: Partial<AuthService>;
+  entraSso?: Partial<EntraSsoService>;
   passwordReset?: Partial<PasswordResetService>;
   notifications?: Partial<NotificationDispatchService>;
   appBaseUrl?: string;
@@ -29,6 +38,7 @@ function makeController(parts: {
   } as unknown as ConfigService;
   return new AuthController(
     (parts.auth ?? {}) as AuthService,
+    (parts.entraSso ?? {}) as EntraSsoService,
     (parts.passwordReset ?? {}) as PasswordResetService,
     (parts.notifications ?? {
       send: jest.fn().mockResolvedValue({ status: 'sent', messageId: 'm1' }),
@@ -75,6 +85,101 @@ describe('AuthController', () => {
         'refresh.raw',
         expect.objectContaining({ httpOnly: true }),
       );
+    });
+  });
+
+  // ADR-0028 — the SSO handshake. What is under test here is the TRANSPORT: the
+  // attempt cookie is set on start, spent exactly once on callback, and an SSO
+  // sign-in ends at the very same two session cookies a password login does.
+  // The exchange + token verification themselves live in EntraSsoService's spec.
+  describe('SSO handshake', () => {
+    it('GET /auth/sso/status reports whether SSO is configured', () => {
+      expect(
+        makeController({ entraSso: { enabled: true } }).ssoStatus(),
+      ).toEqual({ enabled: true });
+      // The control case: an unconfigured deployment must say so rather than
+      // present a button that dead-ends at the last step.
+      expect(
+        makeController({ entraSso: { enabled: false } }).ssoStatus(),
+      ).toEqual({ enabled: false });
+    });
+
+    it('GET /auth/entra/start parks the attempt in an httpOnly cookie', () => {
+      const entraSso = {
+        createAuthorizationRequest: jest.fn().mockReturnValue({
+          authorizeUrl:
+            'https://login.microsoftonline.com/t/oauth2/v2.0/authorize?x=1',
+          stateCookieValue: 'opaque.attempt',
+        }),
+      };
+      const res = fakeRes();
+
+      const out = makeController({ entraSso }).entraStart(res as never);
+
+      expect(out).toEqual({
+        authorizeUrl:
+          'https://login.microsoftonline.com/t/oauth2/v2.0/authorize?x=1',
+      });
+      expect(res.cookie).toHaveBeenCalledWith(
+        SSO_STATE_COOKIE,
+        'opaque.attempt',
+        expect.objectContaining({ httpOnly: true, sameSite: 'strict' }),
+      );
+    });
+
+    it('POST /auth/entra/callback issues the SAME session cookies as a password login', async () => {
+      const user = { id: 'u1', role: 'ADMIN' };
+      const entraSso = { completeLogin: jest.fn().mockResolvedValue(user) };
+      const auth = { grantSession: jest.fn().mockResolvedValue(GRANT) };
+      const res = fakeRes();
+
+      const out = await makeController({ entraSso, auth }).entraCallback(
+        { code: 'c0de', state: 's7' },
+        { cookies: { [SSO_STATE_COOKIE]: 'opaque.attempt' } } as never,
+        res as never,
+      );
+
+      expect(entraSso.completeLogin).toHaveBeenCalledWith(
+        'c0de',
+        's7',
+        'opaque.attempt',
+      );
+      expect(auth.grantSession).toHaveBeenCalledWith(user);
+      expect(out).toEqual({ user: GRANT.user });
+      expect(res.cookie.mock.calls.map((c) => c[0])).toEqual([
+        ACCESS_COOKIE,
+        REFRESH_COOKIE,
+      ]);
+      // Spent, not left behind — one attempt, one shot.
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        SSO_STATE_COOKIE,
+        expect.anything(),
+      );
+    });
+
+    it('clears the attempt cookie even when the exchange fails', async () => {
+      const entraSso = {
+        completeLogin: jest
+          .fn()
+          .mockRejectedValue(new UnauthorizedException('Sign-in failed')),
+      };
+      const res = fakeRes();
+
+      await expect(
+        makeController({ entraSso }).entraCallback(
+          { code: 'bad', state: 's7' },
+          { cookies: { [SSO_STATE_COOKIE]: 'opaque.attempt' } } as never,
+          res as never,
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      // 🔴 The point of the test: a failed attempt must not leave a live PKCE
+      // verifier in the browser for a second try.
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        SSO_STATE_COOKIE,
+        expect.anything(),
+      );
+      expect(res.cookie).not.toHaveBeenCalled();
     });
   });
 

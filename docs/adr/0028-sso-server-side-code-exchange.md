@@ -1,7 +1,7 @@
 # ADR-0028: SSO 改用 server-side authorization code exchange
 
 **Date**: 2026-08-07
-**Status**: Proposed
+**Status**: **Accepted**(Chris Lai,2026-08-07)
 **Approver**: Chris Lai
 
 > **Supersedes ADR-0003**(MSAL 前端 SSO)。ADR-0002(Entra JWT 驗證)**唔推翻** —— 佢定嘅 JWKS / issuer / audience 驗證邏輯照用,只係使用點由「每個 request 嘅 guard」變成「一個 callback endpoint」。
