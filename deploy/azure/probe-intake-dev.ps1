@@ -18,6 +18,18 @@
 #
 # The key is read from the gitignored params file and is never printed.
 #
+# [!] MUST RUN FROM A MACHINE ON THE CORPORATE NETWORK.
+#     rapo-uop-web-dev.rci-t.com only resolves on the internal DNS. The build
+#     host this repo normally lives on sits in an Azure range and cannot resolve
+#     it, so running there gives "The remote name could not be resolved" for
+#     both probes - a DNS answer, not a verdict on the app. That machine also
+#     has no copy of the params file, so if you cannot run it there, use the
+#     browser-console equivalent instead (same two probes, no repo needed):
+#
+#       await (await fetch('/api/requests/intake', {method:'POST',
+#         headers:{'Content-Type':'application/json','X-Intake-Key':'wrong'},
+#         body:'{"mode":1}'})).status            // expect 401
+#
 # Usage:  ./deploy/azure/probe-intake-dev.ps1        (from the repo root)
 
 $ErrorActionPreference = 'Continue'
@@ -101,7 +113,10 @@ if ($p1 -and $p2) {
     Write-Host 'BOTH PROBES PASSED - network + key are good; hand the key to n8n.'
 } else {
     Write-Host 'AT LEAST ONE PROBE FAILED - do NOT hand off to n8n yet.'
-    Write-Host '  no HTTP response at all      -> DNS / route, not the app.'
+    Write-Host '  "could not be resolved"      -> WRONG MACHINE, not a real failure.'
+    Write-Host '                                  This host cannot see the internal DNS.'
+    Write-Host '                                  Re-run from the corporate network.'
+    Write-Host '  other no-HTTP-response       -> route / TLS.'
     Write-Host '  probe 1 gave 200/400 not 401 -> the guard is not doing its job.'
     Write-Host '  probe 2 gave 401             -> stale key; re-read the params file.'
 }
