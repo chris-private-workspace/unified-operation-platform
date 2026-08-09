@@ -177,6 +177,22 @@ last_updated: 2026-08-04
 > 🔴 **兩個 kind 唔可以互換**(ADR-0011 D3)—— 揀錯會喺 ServiceNow 開第二張真單。
 >
 > 💡 順帶:要登入先入到 UI ⇒ 呢一步**同時兌現 F9-8** 嘅一半(SSO 或 break-glass,至少一邊真人登入過)。
+>
+> ### 🔴 「回寫 RITM 唔係測試過咗咩?」—— 三層,證咗兩層(2026-08-09 Chris 問,查證結果)
+>
+> 呢個問題會**反覆出現**,因為「測試過」係真嘅,只係範圍細過個結論。
+>
+> | 層 | 狀態 | 證據 |
+> |---|---|---|
+> | ① **權限**:`sc_req_item` PATCH 寫唔寫得 | 🟢 **實測 200** | `BUG-010/report.md:41`(同一帳號 `sc_request` insert 403 但 RITM update 200)· CH-014 |
+> | ② **HOLD 路徑**(assign 被擋 → `markInProgress`) | 🟢 **live 驗過** | `ADR-0021:13` —— `REQ0044038` → 真 catalog task `SCTASK0071802` `state 1→2` |
+> | ③ **CLOSE 路徑**(assign 成功 → `closeComplete` 關 RITM) | 🔴 **未驗** | W43 明文遺留(下) |
+>
+> ⚠️ **②嘅證據唔完全轉移到③** —— ②驗嘅係 `sc_task`,而 ADR-0025 D1 之後平台**唔再掂 task**(`assign.service.ts:423-430` 已拆走嗰條 branch)。
+>
+> 🟢 **而 W43 已經留低咗③嘅完整開工條件**(`W43-onboarding-license-request/progress.md:423`):fixture **REQ0044072** ready · 🔴 **唔可以用 Power BI Free**(target 已持有)· 唯一合資格 SKU = **`POWERAUTOMATE_ATTENDED_RPA`**,而且**要先加 `allocated`**(否則撞 OpCo budget gate,佢喺 tenant seat 檢查之前)。
+>
+> ⚠️ 2026-08-07 測試撞嘅 `POWER_BI_PRO` 係**另一個坑**(tenant `prepaidEnabled=0`),同 Power BI Free 嗰個「已持有」坑唔同 —— 兩個都會令 assign 失敗,但訊息唔同。
 
 ### 🔴 F7 outbound 半邊(舊環境做唔到嗰樣 —— 唔驗呢半就係「接通」驗一半當全部)
 
