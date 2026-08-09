@@ -36,4 +36,4 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 
 ### Commits
 
-- `<pending>` — `docs(planning): W45 plan + ADR-0029 draft`
+- `6ed496b` — `docs(planning): W45 assign 過程可見性 plan + ADR-0029;CH-021 intake 通知 spec`(同一個 commit 帶埋 CH-021 spec,因為兩件都係 2026-08-09 同一輪端到端對帳揭出嚟)
