@@ -1091,7 +1091,7 @@ W44 Day 4 記低過「**部署權限 / 觀測權限 / metrics 係三套嘢**」�
 
 ### Commits
 
-- `<pending>` — `docs(w44): F7-12 收官 —— requester 喺 SN 搵唔到`
+- `6e7d748` — `docs(w44): F7-12 收官 — requester 喺 SN 搵唔到;開兩個新 backlog entry`
 
 ---
 
