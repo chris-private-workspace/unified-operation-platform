@@ -170,4 +170,65 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 
 ### Commits
 
-- `a13ba95` · `10cc83d` · `4efb608`(第 1 步收尾)· `ef7ca97`(分水嶺)
+- `a13ba95` · `10cc83d` · `4efb608`(第 1 步收尾)· `ef7ca97`(分水嶺)· `6ba1ce3`(本 Day-1 回填)
+
+---
+
+## Day 2 — 2026-08-10（`budget: overridden` + 兩條 fails-before + 前端 steps 畫面）
+
+### 🔴 開工第一件事係一個由回填揭出嚟嘅落差
+
+寫 Day 1 progress 嗰陣先發現 **plan §3 第 6 行寫明 `budget` 可以係 `overridden`,而 `ef7ca97` 一律出 `ok`** —— `ASSIGN_STEP_STATUSES` 只有三個值。⇒ G6 收唔到貨,而且**前端根本冇嘢可以顯示**。
+
+順帶揭到第二件:**ADR-0029 個檔一直寫住 `Proposed`**。handoff 講咗「Chris 2026-08-10 Accepted」,但**冇人改過檔**,README index 一樣。⇒ 打勾聲稱同真改檔係兩件事,呢次係後者一直缺。
+
+💡 **回填 progress 本身就係一種 audit** —— 呢兩個落差唔係寫 code 撞返出嚟,係逐項對 plan 打勾嗰陣先浮面。
+
+### 做咗乜
+
+**後端**
+- `ASSIGN_STEP_STATUSES` 加第四個值 `overridden`。理由同 `skipped` 一模一樣:gate **的確拒絕過**,係有人負責任咁行過去。報做 `ok` 會抹走 ADR-0016 R4 唯一靠住嘅事實 —— 「override used」必須代表 allocation 真係爆咗
+- 🔴 **H4**:`budget.detail` 只帶數字 + SKU,**唔回顯 `overrideReason`**。嗰句係 admin 打嘅 free text,已經有 timeline + audit 兩個更窄嘅 surface,冇理由再放上 API response
+- 順手修正兩處已經變成謊話嘅註釋:`failedAt` 唔再係「第一個非 ok 嘅 step」(成功路都可以帶 `skipped` / `overridden`),DTO 個「🔴 NOT wired to the controller yet」`ef7ca97` 已經接咗
+
+**前端**(`components/requests/assign-result-dialog.tsx`,新)
+- 十步 → UI 摺做 **Pre-flight(七道閘)+ 三個副作用逐個**(plan §3.2)。**API 永遠逐個報,摺疊純粹係顯示決定**
+- 🔴 **成功同失敗行同一個 dialog**。淨係失敗先開就會令 `ticket: skipped` 喺成功路睇唔到 —— 而嗰格正正係 W44 F7-12 追咗兩日嗰個問題
+- **失敗時 pre-flight 預設展開**:摺住就會冚住佢開嚟睇嗰一行
+- **步驟之後嘅步驟唔畫 placeholder row**。契約講明佢哋係「缺席」唔係 `skipped`,畫個灰 row 出嚟就等於話「評估過」
+
+### 三個對住 prototype 嘅刻意偏離(每個都係其他文件早就決定咗,唔係喺呢度新發明)
+
+| # | prototype | 我哋 | 出處 |
+|---|---|---|---|
+| 1 | 逐步 animate「running」 | 一次過連 response 返 | ADR-0029 A2 否決 SSE ⇒ 扮一個 server 從來冇報過嘅 timeline = 作嘢 |
+| 2 | 失敗有 `Retry` 掣 | 冇 | plan §2.2 明文 out-of-scope + DS-3 一 view 一 primary |
+| 3 | 五步、`precheck` 合併 budget/seats | 十步、兩層分開 | plan §3.1 —— 2026-08-07 DEV 兩層都撞過,補救完全唔同 |
+
+### `ui-design` skill 自檢(F3-6)
+
+DS-1 ✅(全部 token / Tailwind theme;`rounded-lg` = 8px **token**,冇跟 prototype 個未 tokenize 嘅 inline `9px`)· DS-2 ✅ 但要記低:`pl-[27px]` 係 **16px icon + 11px gap 兩個 handoff 值加出嚟**,唔係憑感覺;`max-h-[46vh]` 係 scroll 上限唔係設計值 · DS-3 ✅(有 test 數死一個 primary)· **DS-4 ❌** · DS-5 **本來 ❌ 已改**(「7 checks passed」個數字轉咗 mono,對齊既有 `Step 2/3` 同 OpCo budget 嘅做法)· DS-6 ✅ 全 lucide stroke · DS-7 ✅ 冇新陰影 / gradient · DS-8 ✅ 只用六個 semantic tint(step 用 icon 唔用 Badge = 跟 prototype) · DS-9 ✅ 零新 animation · DS-10 ✅ · **DS-11 ❌** · DS-12 N/A
+
+🔴 **兩條 ❌(DS-4 light+dark / DS-11 對住 prototype 睇)係同一件事 = F3-7,而佢做唔到**:本機 stack 冧咗,**port 5433 畀 `ai-doc-extraction-db` 佔返**(`docker ps` 實測)⇒ 要停另一個項目五個 container 先起得返,**呢個要 Chris 批**。
+
+### 兩條 fails-before,兩條都真跑過
+
+1. **G4(`scrubPii`)** —— 真拆走 `scrubPii` 跑一次:條 test 紅,而 received string 就係原本會外洩嗰句 `Resource '/users/new.user@rhk.com' …`。還原後綠
+2. **G5(前端)** —— 把 `AssignResultDialog` 整個 render 掉:**10 條入面 8 條紅**。剩低 2 條啱啱好係唯二**唔應該**依賴 dialog 嗰兩條(純負面斷言「冇畫未行到嘅步驟」+ 無 steps 走 toast fallback)⇒ 證明個 suite 唔係結構性空轉
+
+⚠️ 兩條都係**後補**,唔係 plan 要求嘅 test-先行。plan F1-1 / F1-2 寫明先寫 test —— 實際做成 code 先行,所以要用「拆走實作睇佢紅」補返實證。**下次同類 R1 風險應該真係先寫。**
+
+### 測試 / 檢查
+
+| | |
+|---|---|
+| api | **911 passed / 69 suites**(908 → 911) |
+| web | **286 passed**(276 → 286);⚠️ **6 條 pre-existing 紅**(`localStorage.clear is not a function`)—— `git stash` 實測 baseline 一模一樣 |
+| tsc | api `0` · web `0` |
+| lint | root(= api)`exit 0`;web 我改嗰 5 個檔 `exit 0` |
+
+⚠️ **兩個唔屬本 phase 但要講嘅事**:①`npm run lint`(root)**只 lint api** —— web 要另跑,而 web **本身就紅住 16 條 prettier**(`allocation-reset*` 15 + `sync-check.test` 1)。我只 `--fix` 咗自己嗰 5 個檔,無關嗰 16 條冇掂 ②嗰 16 條 prettier 同嗰 6 條紅 test 都指向同一個嫌疑:開工前就已經 modified 嘅 `package-lock.json`。**未查證,唔可以當結論。**
+
+### Commits
+
+- `6ba1ce3` — `docs(planning): W45 Day 1 — 後端契約落地回填 + ADR-0029 真改 Accepted`

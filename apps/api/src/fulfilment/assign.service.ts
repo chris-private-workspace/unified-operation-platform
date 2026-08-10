@@ -295,12 +295,27 @@ export class AssignService {
         'admin',
       );
     }
-    pass('budget');
     // An admin may send a reason on an assign that is comfortably within
     // budget; nothing was overridden then, so neither the timeline nor the
     // audit trail may claim one was. "Override used" must mean the gate
     // actually stopped this assign (R4 counts on that number being honest).
     const budgetOverridden = overBudget && !!overrideReason;
+    if (budgetOverridden) {
+      // Reported as `overridden`, not `ok` — the gate refused and a human went
+      // past it. H4: numbers and the SKU only; `overrideReason` is free text an
+      // admin typed and is deliberately NOT echoed here. It already lives on
+      // the request timeline and in the audit log, both of which are narrower
+      // surfaces than an API response.
+      steps.push({
+        key: 'budget',
+        status: 'overridden',
+        detail:
+          `OpCo budget exceeded for ${item.sku.skuPartNumber} ` +
+          `(${assignedBefore} assigned of ${allocated} allocated) — overridden by an admin.`,
+      });
+    } else {
+      pass('budget');
+    }
 
     const skus = await this.licenseOps.listTenantSkus();
     const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);

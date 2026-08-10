@@ -24,10 +24,10 @@ import { RequestLineItemDto } from './request-view.dto';
  * repeating the literals. A second hand-written list is the failure mode this
  * avoids: it compiles, it publishes, and it silently disagrees with the type.
  *
- * 🔴 NOT wired to the controller yet. Declaring the shape and returning it are
- * separate steps on purpose — returning it changes the response contract AND
- * the 400 body, which is where the real risk sits (a frontend `onError` that
- * still reads `message` renders an empty error). See W45 progress.
+ * Wired to the controller since `ef7ca97`. The risk that made declaring and
+ * returning two separate commits — a frontend `onError` still reading `message`
+ * and rendering an empty error — was closed by keeping `message` on the 400
+ * body rather than by changing the frontend first. See W45 progress Day 1.
  */
 export class AssignStepDto implements AssignStep {
   @ApiProperty({ enum: [...ASSIGN_STEP_KEYS] })
@@ -70,7 +70,8 @@ export class AssignResultDto implements AssignResult {
 
   @ApiPropertyOptional({
     enum: [...ASSIGN_STEP_KEYS],
-    description: 'The first non-ok step. Absent when outcome is "assigned".',
+    description:
+      'The step that STOPPED the assign — not merely the first non-"ok" one. A success can carry "skipped" and "overridden" steps and still leave this absent. Absent when outcome is "assigned".',
   })
   failedAt?: AssignStepKey;
 

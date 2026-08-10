@@ -954,6 +954,75 @@ describe('AssignService', () => {
         'Phase 1 sync gate not passed: azureSyncedAt is null',
       );
     });
+
+    /**
+     * W45 G4 / plan R3 — `detail` carries vendor error text, and vendor error
+     * text quotes UPNs (BUG-004's whole shape). A reviewer cannot see this: the
+     * scrub is one call inside a string that reads fine either way, so it needs
+     * a test that goes red when the call is removed.
+     */
+    it('scrubs email-shaped tokens out of `detail` before it leaves the service', async () => {
+      arrangeHappy();
+      // The realistic carrier: this line has no RITM, so the write-back goes to
+      // the parent REQ, and the failure text is ServiceNow's own.
+      snow.addWorkNote.mockRejectedValue(
+        new Error(
+          "Resource '/users/new.user@rhk.com' does not exist or one of its " +
+            'queried reference-property objects are not present',
+        ),
+      );
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      const ticket = res.steps.find((s) => s.key === 'ticket');
+      expect(ticket?.status).toBe('failed');
+      // Asserted as a PATTERN, not as "!== the UPN we sent": a regression that
+      // leaked a *different* address would still have to fail this.
+      expect(ticket?.detail).not.toMatch(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/);
+      // …and the diagnostic value survives — a scrub that ate the whole string
+      // would pass the line above while making the step useless.
+      expect(ticket?.detail).toContain('does not exist');
+    });
+
+    /**
+     * W45 G6 — an override is NOT an `ok` budget check. ADR-0016 R4 counts on
+     * "override used" meaning the allocation was actually busted.
+     */
+    it('reports `budget: overridden` when an admin goes past a busted allocation', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(3, 3));
+
+      const res = await service.assignLineItem(
+        'li1',
+        undefined,
+        ADMIN,
+        'urgent onboarding, CFO approved',
+      );
+
+      expect(res.outcome).toBe('assigned');
+      const budget = res.steps.find((s) => s.key === 'budget');
+      expect(budget?.status).toBe('overridden');
+      // The numbers that make the override auditable, and nothing else.
+      expect(budget?.detail).toContain('3 assigned of 3 allocated');
+      // 🔴 H4 — the reason is free text an admin typed. It belongs on the
+      // timeline and in the audit log, not in an API response.
+      expect(budget?.detail).not.toContain('CFO');
+    });
+
+    it('reports `budget: ok` when a reason is supplied but nothing was actually overridden', async () => {
+      arrangeHappy(); // ledgerRow() = 3 assigned of 10 — plenty of headroom
+
+      const res = await service.assignLineItem(
+        'li1',
+        undefined,
+        ADMIN,
+        'sent out of habit',
+      );
+
+      // Same rule as the timeline and the audit row: an override that did not
+      // happen must not be claimed anywhere, or R4's count stops being honest.
+      expect(res.steps.find((s) => s.key === 'budget')?.status).toBe('ok');
+    });
   });
 
   describe('markSynced', () => {

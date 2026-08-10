@@ -69,8 +69,19 @@ export type AssignStepKey = (typeof ASSIGN_STEP_KEYS)[number];
  * `skipped` is deliberately NOT a flavour of `ok`. "We did not need to do this"
  * and "we did this and it worked" are different facts, and collapsing them is
  * how a line item with no RITM ends up looking like a ticket that was closed.
+ *
+ * `overridden` is the same argument on the `budget` step: the gate DID refuse,
+ * and an admin took responsibility for going past it. Reporting that as `ok`
+ * would erase the one fact ADR-0016 R4 depends on being honest — that "override
+ * used" means the allocation was actually busted, not merely that a reason was
+ * typed. It only ever appears on `budget`; nothing else here is overridable.
  */
-export const ASSIGN_STEP_STATUSES = ['ok', 'failed', 'skipped'] as const;
+export const ASSIGN_STEP_STATUSES = [
+  'ok',
+  'failed',
+  'skipped',
+  'overridden',
+] as const;
 export type AssignStepStatus = (typeof ASSIGN_STEP_STATUSES)[number];
 
 /**
@@ -113,7 +124,12 @@ export type AssignOutcome = (typeof ASSIGN_OUTCOMES)[number];
 
 export interface AssignResult {
   outcome: AssignOutcome;
-  /** The first non-ok step. Absent when `outcome === 'assigned'`. */
+  /**
+   * The step that STOPPED the assign — not merely the first non-`ok` one. A
+   * successful run can carry `skipped` (`ticket`) and `overridden` (`budget`)
+   * steps and still leave this absent, which is the point: neither of those
+   * stopped anything. Absent when `outcome === 'assigned'`.
+   */
   failedAt?: AssignStepKey;
   /**
    * Every step reached, in run order — including on failure, so the reader can

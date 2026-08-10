@@ -630,6 +630,69 @@ export interface RequestLineItem {
   sku?: LineItemSkuRef;
 }
 
+// ── ADR-0029 / W45 — the assign step breakdown ──
+//
+// Mirrors apps/api/src/fulfilment/assign-step.ts by hand: this repo has no
+// OpenAPI codegen step, and every other type in this file is written the same
+// way. The backend derives its own from const arrays, so a drift here shows up
+// as a TS error at the point of use rather than as a wrong screen.
+
+export type AssignStepKey =
+  // The seven gates, in the order the backend runs them. Order is contract:
+  // it is what lets a reader say "it reached `budget`, so both syncs were fine".
+  | 'stage'
+  | 'sync-azure'
+  | 'sync-servicenow'
+  | 'directory'
+  | 'usage-location'
+  | 'budget'
+  | 'seats'
+  // …then the three side-effects.
+  | 'assign'
+  | 'ledger'
+  | 'ticket';
+
+/**
+ * `skipped` and `overridden` are NOT flavours of `ok` — see the backend's
+ * const array for why. The UI has to keep them apart too, or a line with no
+ * RITM renders identically to a ticket that was closed.
+ */
+export type AssignStepStatus = 'ok' | 'failed' | 'skipped' | 'overridden';
+
+/** Who unblocks a failed step (ADR-0029 D2) — people, not actions. */
+export type AssignStepOwner =
+  'operator' | 'admin' | 'identity' | 'servicenow' | 'procurement' | 'platform';
+
+export interface AssignStep {
+  key: AssignStepKey;
+  status: AssignStepStatus;
+  /** PII-scrubbed server-side. Absent when there was nothing to add. */
+  detail?: string;
+  /** Only meaningful on `failed`. */
+  retryable?: boolean;
+  /** Only meaningful on `failed`. */
+  whoFixes?: AssignStepOwner;
+}
+
+/** `blocked` = a gate refused and nothing was attempted; `failed` = broke partway. */
+export type AssignOutcome = 'assigned' | 'blocked' | 'failed';
+
+/**
+ * PATCH …/:lineItemId/assign → AssignResultDto.
+ *
+ * On a refusal this same shape arrives as the 400 BODY (plus the `message` the
+ * endpoint has always sent, kept on purpose), so both paths read alike.
+ */
+export interface AssignResult {
+  outcome: AssignOutcome;
+  /** The step that STOPPED it. Absent on a success, even one carrying a
+   *  `skipped` or `overridden` step — neither of those stopped anything. */
+  failedAt?: AssignStepKey;
+  steps: AssignStep[];
+  /** Absent on a refusal — nothing was assigned. */
+  lineItem?: RequestLineItem;
+}
+
 /** An operational-history event (detail view). */
 export interface RequestEvent {
   id: string;
