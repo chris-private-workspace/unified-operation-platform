@@ -37,6 +37,8 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 ### Commits
 
 - `6ed496b` — `docs(planning): W45 assign 過程可見性 plan + ADR-0029;CH-021 intake 通知 spec`(同一個 commit 帶埋 CH-021 spec,因為兩件都係 2026-08-09 同一輪端到端對帳揭出嚟)
+- `a13ba95` — `feat(fulfilment): ADR-0029 step 契約型別(純新增,零行為改動)`
+- `10cc83d` — `feat(fulfilment): ADR-0029 AssignResult DTO + OpenAPI shape(仍未接 controller)`
 
 ---
 
@@ -48,7 +50,7 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 |---|---|
 | **ADR-0029** | ✅ **Accepted**(Chris 2026-08-10)⇒ H1 gate 過 |
 | **W45 plan / checklist** | ✅ 已備(`6ed496b`) |
-| **Code** | 🟡 **只落咗契約型別**(`apps/api/src/fulfilment/assign-step.ts`)—— 純新增、零 import、冇被引用 ⇒ 零行為改動。**gate 邏輯 / DTO / OpenAPI / 前端全部未郁** |
+| **Code** | 🟡 **契約型別 + DTO 已落**(`assign-step.ts` · `dto/assign-result.dto.ts`)—— **兩個都刻意停喺「宣告」冇到「使用」**:冇任何 controller 返 `AssignResultDto` ⇒ **response contract 到而家一個字未變**。**gate 邏輯 / 前端全部未郁** |
 
 ### ✅ 已做:七道閘數清楚(handoff 講嘅起手點)
 
@@ -70,8 +72,9 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 
 ### 跟住做(次序有意義)
 
-1. `AssignResult` 落 DTO + OpenAPI(仍然唔郁 service)
-2. `assign.service.ts` 逐道閘改成 append step 而唔係即刻 throw ⇒ **呢一步先會令既有 test 紅**,亦係 H5 重點
+1. ✅ **已做**(`10cc83d`)—— `AssignResult` 落 DTO + OpenAPI。⚠️ 途中一個唔起眼但要記住嘅決定:三個 union type 改成 **const-derived**(`ASSIGN_STEP_STATUSES` / `ASSIGN_STEP_OWNERS` / `ASSIGN_OUTCOMES`),因為 Swagger 個 `enum:` 要一個 **runtime array**,手寫多一份 literal 就會同 type drift **而 TypeScript 完全捉唔到** ⇒ OpenAPI 會公佈一個同實際型別唔一致嘅 schema 而所有 test 照綠。**又一個「唔會紅嘅錯」。**
+   - 另外三個刻意決定:①**冇 class-validator decorator**(response-only DTO,加咗會讀成「有驗證跑緊」但實際冇)②`detail` 個 description 寫明 PII-scrubbed **但同時註明 schema 強制唔到**,免得下手以為安全 ③失敗之後嘅 step 係「**缺席**」唔係 `skipped` —— 佢哋從來冇被評估過
+2. 🔴 **分水嶺 —— 唔好喺 context 淺嘅時候開**。`assign.service.ts` 逐道閘改成 append step 而唔係即刻 throw。佢會**同時**改成功回應同 400 body,令既有 test 大批紅,而且要逐道閘補 step assertion(H5)。**唔係一個做一半停得低嘅單元** —— 前面兩步刻意停喺「宣告」就係為咗令呢一步之前嘅任何時刻都可以收手
 3. `detail` 經 `scrubPii` + test 守住(BUG-004 同形狀)
 4. 400 body 形狀變 → 前端 `onError` 同步改,否則錯誤訊息變空白
 5. 前端 steps 畫面
