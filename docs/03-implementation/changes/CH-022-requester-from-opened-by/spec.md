@@ -1,7 +1,7 @@
 # CH-022 — Requester sys_id 由 REQ 個 `opened_by` 攞(ADR-0030 落地)
 
-- **Status**:`draft`(待 Chris approve)
-- **ADR**:**ADR-0030**(Proposed — 🔴 **本 CH 唔可以喺 ADR Accepted 之前開工**,H1)
+- **Status**:`approved`(2026-08-10 — Chris)
+- **ADR**:**ADR-0030**(**Accepted** 2026-08-10 ⇒ H1 gate 已過)
 - **Owner**:Chris Lai
 - **BACKLOG**:`INTAKE-REQUESTER`
 
@@ -93,7 +93,15 @@ requesterSysId 冇  → resolveRequester(payload.requesterEmail)(outbound 路,�
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
-| 2026-08-10 | Initial draft | `INTAKE-REQUESTER` 診斷收晒,根因確認為接縫語意錯配;ADR-0030 提出修法 | _pending_ |
+| 2026-08-10 | Initial draft | `INTAKE-REQUESTER` 診斷收晒,根因確認為接縫語意錯配;ADR-0030 提出修法 | Chris |
+| 2026-08-10 | approved + 實作完成(A1–A6) | ADR-0030 Accepted ⇒ H1 gate 過 | Chris |
+
+### 實作實績(2026-08-10)
+
+- **`N8nWorkflowProvider` 唔使改** — ADR-0030 Consequences 預咗要跟改,實際上 `requesterSysId` 係 **optional** 欄,structural typing 下唔會 break。ADR 嗰句係保守估計,記低以免下手以為漏咗。
+- **api test 900 → 905**(69 suites 全綠)· root lint **exit 0** · `tsc --noEmit` **exit 0**
+- ⚠️ **途中撞到一條假綠**:A3 嗰條 test(`opened_by` 缺 → 唔准 submit)第一版**冇 mock line items**,而 `raiseLicenceRequest` 喺冇 line 嗰陣本來就 early-return ⇒ `submit` 冇被 call 係「因為錯嘅理由」而通過。已補 `findMany` mock,個 assert 先真係守到 D3。**同 W44 Day 6 嗰句同源:斷言通過唔等於斷言有意義。**
+- 🔴 **A7 仍然未做**(live:DEV 收一次真 intake → SN 出到 RITM)⇒ 本 CH **未算完成**
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-0030 — Requester sys_id 由 REQ 自己個 `opened_by` 攞,唔再靠 n8n 送 email 反查
 
-- **Status**:Proposed(2026-08-10)
+- **Status**:**Accepted**(2026-08-10 — Chris approve;H1 gate 過)
 - **Owner**:Chris Lai
 - **Supersedes**:ADR-0025 **D1** 嘅「requester 來源」呢一格(D1 其餘部分 — `target_user` 係 placeholder、真 target 睇 `target_users_email` — **不變**,見 ADR-0026)
 - **關聯**:ADR-0025(onboarding licence request creation)· ADR-0026(placeholder 永久化 + 逐表開權)· ADR-0008 D6(一個 request 一個 sysId)· DD-5

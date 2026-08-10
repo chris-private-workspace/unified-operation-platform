@@ -282,7 +282,49 @@ describe('DirectServiceNowProvider', () => {
     });
   });
 
+  /**
+   * ADR-0030 D3 — two callers, two ways of naming the requester.
+   *
+   * The assertion that matters is NOT "a ticket was raised" — a fallback chain
+   * would satisfy that too. It is that the e-mail lookup is never reached when
+   * a sysId was supplied, because that lookup is the path W44 measured at 0%
+   * for intake and a silent revival would hide the next failure.
+   */
+  describe('requester resolution (ADR-0030 D3)', () => {
+    it('uses a supplied requesterSysId and never touches the e-mail lookup', async () => {
+      arrangeHappy();
+
+      await provider.submit({
+        ...payload(),
+        requesterSysId: 'opened-by-sys-id',
+      });
+
+      expect(snow.findUserSysIdByEmail).not.toHaveBeenCalled();
+      expect(snow.orderNow).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          requester_name: 'opened-by-sys-id',
+          target_user: 'opened-by-sys-id',
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('still resolves by e-mail when no sysId is supplied (outbound path unchanged)', async () => {
+      arrangeHappy();
+
+      await provider.submit(payload());
+
+      expect(snow.findUserSysIdByEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('fail-closed guards', () => {
+    /**
+     * ⚠️ These two now guard the OUTBOUND path only (IT raising a request from
+     * the platform, which has no REQ to read an `opened_by` off). The intake
+     * path supplies a sysId and never reaches here — see ADR-0030 D3.
+     */
     it('does not write anything when the requester is not in ServiceNow', async () => {
       arrangeHappy();
       snow.findUserSysIdByEmail.mockResolvedValue(null);
