@@ -1145,7 +1145,7 @@ Chris 原本要求「順手填埋 `GRAPH_TENANT_ID`」(基於今日早些時候�
 
 - `81d5bf1` — `feat(fulfilment): requester sysId 由 REQ 個 opened_by 攞(ADR-0030 / CH-022)`
 - `31d5970` — `docs(backlog): 更正 DEV-GRAPH-PLACEHOLDER`
-- `<pending>` — `docs(w44): DEV 部署 #3 —— ADR-0030 上機`
+- `6aa03e8` — `docs(w44): DEV 部署 #3 — ADR-0030 / CH-022 上機`
 
 ---
 
