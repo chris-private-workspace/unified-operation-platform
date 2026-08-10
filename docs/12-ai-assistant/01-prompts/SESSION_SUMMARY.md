@@ -5,7 +5,19 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-04,W43 收官)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api ~878 test(68 suites)· web ~281 test(31 files)**。ADR 到 **0027** · CH 到 **020**。⚠️ **W43 未部署**。**W44 進行中 = 部署上新 Azure DEV 環境**(見下)。
+**當前座標(2026-08-10)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 917 test(69 suites)· web 288 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0030** · CH 到 **022**。
+
+**兩個 phase 同時未收**(rolling JIT 破例,Chris 2026-08-10 批):
+- **W44 = 部署上新 Azure DEV 環境** —— 已部署三次,🔴 **卡環境**(F6 卡 `B8` private DNS · F9 卡 `B9` SSO 真人驗)。詳見下面整段。
+- **W45 = assign 過程可見性(ADR-0029)** —— 🟢 **實作全部收晒**(後端十步回傳 `{outcome, failedAt?, steps[]}` · 前端 `AssignResultDialog` · light+dark 真 render 驗過)。🔴 **淨低 F4-4 live 驗,卡同一個 `B8`**。branch 仍係 `feat/w44-azure-dev-deploy`(W44 未 merge,唔另開)。
+
+> 🔴 **2026-08-10 撞到一個所有 test 層都捉唔到嘅 bug,形狀要記住**:`apiPatch` 由頭到尾 hand-roll `new ApiError(status, message)`,**冇第三個參數** ⇒ error body 永遠唔會落 `ApiError.detail`(只有 `errorFrom` 會,而 `apiPatch` 從來冇用過佢)。ADR-0029 個 steps 就係擺喺 400 body,所以**喺瀏覽器永遠到唔到前端,dialog 一世開唔到** —— 而 **api test 917 綠 / web test 綠 / tsc 0 / lint 0**,因為 UI test **自己手砌 `ApiError` 連 detail 落去**。⇒ **教訓唔係「漏咗一條 test」,係「條 test 放錯層」**:一條手砌自己期望嘅 error 嘅 UI test,永遠唔可能喺 transport 層失敗。已修(`d43b7a9`)+ 補 transport 層 test。⚠️ **`apiGet` 一樣冇 detail,刻意冇改**(現時冇 caller 需要)。
+>
+> ⚠️ **本機 `apps/web` 有 6 條 test 一直紅**(`local-profile.test.ts` 5 條 `localStorage.clear is not a function` + `reset-password.test.tsx` 1 條 timeout)。**`git stash` 實測 baseline 一模一樣 = pre-existing**,已登 BACKLOG `WEB-TEST-JSDOM`。⇒ 見到 `6 failed` **唔好當係自己搞壞咗**,但亦唔好當佢唔存在。
+>
+> ⚠️ **`npm run lint`(root)只 lint api**。web 要 `-w @uop/web` 另跑,而佢**本身紅住 16 條 prettier**(全部同 W45 無關,見 BACKLOG `LINT-web`)。
+>
+> ⚠️ **本機 5433 有 port 衝突**:`ai-doc-extraction-db` 同 `uop-postgres` 搶同一個 host port,**只可以二揀一**。W45 借用過一次(Chris 批)之後已還原 = `ai-doc-extraction` 五個 container 跑緊、UOP stack 停咗。要起 UOP 就要再停佢哋一次。
 > ## 🔴 環境:「Azure UAT」係誤名(2026-08-04 Chris 更正)—— 呢格睇漏會用錯前提開始
 >
 > **W32/W33 部署嗰個唔係企業 UAT,只係一個自建測試 Azure 環境**:自建 RG(`RG-RCITest-RAPO-N8N`)/ ACR / ACA env(**冇 VNet 整合**)+ PG public,住喺 Azure 公網,**同企業網絡零連繫**。

@@ -52,5 +52,5 @@
 - [x] F4-2 root lint exit 0 · api + web tsc 0(G9)—— ⚠️ **`npm run lint`(root)只 lint api**;web 要另跑 `-w @uop/web`,而佢 **本身就已經紅 16 條 prettier**(`allocation-reset*` 15 + `sync-check.test` 1,全部同本 phase 無關)⇒ 我只 `--fix` 咗自己嗰 5 個檔,無關嗰 16 條**冇掂**
 - [x] F4-3 既有 test 一條唔跌(G9)—— api **911 / 69 suites**(908 → 911)· web **286 passed**(276 → 286)。⚠️ web 另有 **6 條 pre-existing 紅**(`localStorage.clear is not a function`),`git stash` 實測 baseline 一模一樣
 - [ ] F4-4 🔴 **live 驗**:DEV 真撳一次失敗 + 一次成功(G11)—— SKU 用 `POWERAUTOMATE_ATTENDED_RPA`(W43 查證,要先加 `allocated`)
-- [ ] F4-5 BACKLOG `ASSIGN-PROGRESS` 標完成(R7)
-- [ ] F4-6 CLAUDE.md §0/§9 座標掃一次 + `SESSION_SUMMARY.md` 同步
+- [x] F4-5 BACKLOG `ASSIGN-PROGRESS` 標完成(R7)—— 標 🟢「實作完成 · 淨低 live 驗(卡 B8)」而**唔標 ✅ closed**(G11 未做)。順帶:`LINT-web` 更新真實數字(16 條)+ **新登 `WEB-TEST-JSDOM`**(6 條 pre-existing 紅 test,一直冇人追)
+- [x] F4-6 CLAUDE.md §0/§9 座標掃一次 + `SESSION_SUMMARY.md` 同步 —— §0 Phase 行由「W43 收官」改成「W44 + W45 兩個同時未收」(舊值已 stale 六日);§9 加 W45 一格 + **三個本機避坑**(5433 硬衝突 · `nest --watch` build-cache 假綠燈 · **本機 Graph 通 ⇒ 真 assign 會派真 licence,fixture 要先用唯讀 sync-check 探**);`SESSION_SUMMARY` 座標由 2026-08-04 推到 2026-08-10,加 `apiPatch` 教訓 + 6 條 pre-existing 紅 test + web lint 16 條

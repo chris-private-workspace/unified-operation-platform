@@ -319,3 +319,24 @@ Graph 喺本機係**通**嘅(`catalog/sync` 真 create 咗 101 個 SKU),即係�
 ⚠️ **`ai-doc-extraction` 五個 container 仍然停住**(`docker stop`,compose / volume 一個字冇郁)。還原 = `docker start ai-doc-extraction-db ai-doc-extraction-mapping ai-doc-extraction-ocr ai-doc-extraction-pgadmin ai-doc-extraction-azurite`,但佢一起身就會搶返 **5433**,UOP 個 api 會即刻斷 —— **兩個項目搶同一個 port,只可以二揀一**(長遠解法:搬其中一邊嘅 host port)。
 
 ⚠️ 本機 DB 而家有:`catalog/sync` 真 create 嘅 **101 個 SkuCatalog**(純 Graph read)+ 一張標住「W45 F3-7 local render fixture」嘅 request。兩樣都係本機 dev 資料。
+
+**2026-08-10 收工時已還原**:`ai-doc-extraction` 五個 container 全部 `Up`/`healthy`、拎返 5433;UOP stack 停咗(同 session 開始時一樣)。(`itpm-pgadmin` 由頭到尾都係 `Restarting`,唔關今次事。)
+
+---
+
+## Day 2(續三)— F4-5 / F4-6 文件收尾
+
+### F4-5 BACKLOG(R7)
+
+- `ASSIGN-PROGRESS` 標 🟢「**實作完成 · 淨低 live 驗**」—— **刻意唔標 ✅ closed**,因為 G11 未做而且卡 `B8`
+- `LINT-web` 更新真實數字:**16 條**(唔係原本記嘅 25),逐個檔列清;寫明 W45 只 `--fix` 自己掂過嗰 5 個
+- 🆕 **新登 `WEB-TEST-JSDOM`** —— 6 條 pre-existing 紅 test 一直冇人追。**點解值得開一張單**:一個長期紅住嘅 suite 會令下手以為「本來就係咁」,真 regression 就混得入去;而家每次跑都要人手數「呢 6 條係舊嘅」先講得出結論
+
+### F4-6 CLAUDE.md §0/§9 + SESSION_SUMMARY
+
+🔴 **兩份都 stale 咗六日** —— §0 Phase 行仲寫住「W43 收官(2026-08-04)」,`SESSION_SUMMARY` 座標一樣。正正係 CLAUDE.md §14 自己寫低嗰個風險:**呢兩份係唯一會被無條件讀入每個新 session 嘅文件,佢哋一過時就令下一個 session 用錯前提開始**。
+
+改咗:
+- **§0 Phase** → 「W44 + W45 **兩個同時未收**」(rolling JIT 破例,Chris 批)
+- **§9** 加 W45 一格 + `apiPatch` 教訓 + **三個本機避坑**:①5433 同 `ai-doc-extraction-db` 硬衝突,二揀一 ②`nest --watch` build-cache 假綠燈(`Found 0 errors` + `MODULE_NOT_FOUND` 一齊出),兼記低 **`Test-Path dist/main.js` 要喺 watch 起身之後 check 先有意義** ③🔴 **本機 Graph 通 ⇒ 真 assign 會喺公司 tenant 真派 licence**,fixture 要先用唯讀 `sync-check` 探
+- **`SESSION_SUMMARY`** 座標推到 2026-08-10 + `apiPatch` 教訓 + 6 條紅 test + web lint 16 條 + 5433 衝突
