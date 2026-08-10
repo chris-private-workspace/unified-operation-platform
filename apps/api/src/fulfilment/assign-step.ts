@@ -70,20 +70,23 @@ export type AssignStepKey = (typeof ASSIGN_STEP_KEYS)[number];
  * and "we did this and it worked" are different facts, and collapsing them is
  * how a line item with no RITM ends up looking like a ticket that was closed.
  */
-export type AssignStepStatus = 'ok' | 'failed' | 'skipped';
+export const ASSIGN_STEP_STATUSES = ['ok', 'failed', 'skipped'] as const;
+export type AssignStepStatus = (typeof ASSIGN_STEP_STATUSES)[number];
 
 /**
  * Who unblocks a failed step. Present so the UI never has to infer it from
  * message text — the whole point of ADR-0029 is that "what do I do now" stops
  * being tribal knowledge.
  */
-export type AssignStepOwner =
-  | 'operator' // fixable right here (e.g. supply a usageLocation)
-  | 'admin' // needs an override or an allocation change
-  | 'identity' // Entra Connect / directory sync
-  | 'servicenow' // the SN user import
-  | 'procurement' // buy more seats
-  | 'platform'; // a bug or an outage on our side
+export const ASSIGN_STEP_OWNERS = [
+  'operator', // fixable right here (e.g. supply a usageLocation)
+  'admin', // needs an override or an allocation change
+  'identity', // Entra Connect / directory sync
+  'servicenow', // the SN user import
+  'procurement', // buy more seats
+  'platform', // a bug or an outage on our side
+] as const;
+export type AssignStepOwner = (typeof ASSIGN_STEP_OWNERS)[number];
 
 export interface AssignStep {
   key: AssignStepKey;
@@ -105,7 +108,8 @@ export interface AssignStep {
  * (nothing was attempted, nothing changed) versus something broke partway. It
  * is NOT the same axis as `retryable`.
  */
-export type AssignOutcome = 'assigned' | 'blocked' | 'failed';
+export const ASSIGN_OUTCOMES = ['assigned', 'blocked', 'failed'] as const;
+export type AssignOutcome = (typeof ASSIGN_OUTCOMES)[number];
 
 export interface AssignResult {
   outcome: AssignOutcome;
