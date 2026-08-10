@@ -34,7 +34,8 @@
 - [x] F3-1 G6 零 schema 改動 · 零前端改動 —— `git status --short` 淨係 2 個 `apps/api/src` 檔 + 4 個 doc
 - [x] F3-2 G8 `npm run lint`(root)**exit 0** · api tsc **exit 0**
 - [x] F3-3 BACKLOG 標完成(R7)+ W45 `progress.md` 寫一段
-- [ ] F3-4 🔴 **live 驗**(G9)—— ⚠️ **卡 `B8`,同 W45 F4-4b 一齊做**
+- [x] F3-4 CLAUDE.md §0 / §9 + `SESSION_SUMMARY.md` 座標掃一次(§14 規矩:呢兩份係唯一無條件讀入每個新 session 嘅文件)
+- [ ] F3-5 🔴 **live 驗**(G9)—— ⚠️ **卡 `B8`,同 W45 F4-4b 一齊做**
 
 ---
 

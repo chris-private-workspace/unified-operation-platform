@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029 —— 實作收晒,淨低 live 驗卡同一個 B8)兩個同時未收**(2026-08-10);pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標 |
+| Phase | **W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029)+ CH-023(ServiceNow 結果留 timeline)三個同時未收**(2026-08-10)—— 後兩個**實作都收晒,淨低 live 驗,卡同一個 B8**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標 |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -295,6 +295,9 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
 - 💡 **方法論**:直接路封死唔等於冇路 —— **部署權限 / 觀測權限 / metrics 係三套嘢**,而 metrics 一直喺手上,四日冇人諗過用。詳見 `docs/13-deployment/09-dev-as-built.md`。
 - 🟢 **W45(ADR-0029 assign 過程可見性)實作收晒**(2026-08-10):後端十步真回傳 `{outcome, failedAt?, steps[]}`;前端 `AssignResultDialog`(pre-flight 摺七道閘 + 三個副作用逐個 + `whoFixes`)。**light + dark 真 render 驗過。🔴 淨低 F4-4 live 驗,卡同一個 B8。**
   - 🔴 **順帶揭咗一個所有 test 層都捉唔到嘅 bug,形狀要記住**:`apiPatch` 由頭到尾 hand-roll `new ApiError(status, message)` **冇第三個參數** ⇒ error body 永遠唔會落 `ApiError.detail`(只有 `errorFrom` 會,而 `apiPatch` 從來冇用過佢)。ADR-0029 個 steps 擺喺 400 body ⇒ **喺瀏覽器永遠到唔到前端**,而 api/web test/tsc/lint **全綠** —— 因為 UI test **自己手砌 `ApiError` 連 detail**。⇒ **唔係「漏咗一條 test」,係「條 test 放錯層」**。已修 + 補 transport 層 test。⚠️ `apiGet` 一樣冇 detail(冇 caller 需要,刻意冇改)。
+- 🟢 **CH-023(assign 之後 ServiceNow 側結果寫落 timeline)實作收晒**(2026-08-10,`f219676`):assign 成功後多寫一條 `RequestEvent` NOTE `ServiceNow {status}: {detail}`,**message 由 `steps` 個 ticket step 推導**(唔另寫文案,否則 dialog 同 timeline 各自漂)。零 schema / 零 migration / **零前端**。🔴 淨低 G9 live 驗,卡同一個 B8。
+  - 🔴 **`ADR-0031`(`AssignAttempt` 新表)= Rejected —— 呢個「提案被自己嘅代價否決」嘅形狀值得記住**:D4「refusal 路開始寫狀態」係全份提案入面**唯一推翻既有約束**嘅位(第二次軟化 `ADR-0016 D6`「a block changes no state」),而佢**淨係為 refusal 路存在**;但 refusal「邊道閘擋住」係操作員撳嗰刻見到、改完即刻再撳嘅嘢,**本身唔係「三日後要翻查」嗰種事實** ⇒ **覆蓋面大過需求**。揀 Option A 換返嚟嘅就係「唔使軟化任何約束」。ADR 全文保留唔改寫,將來真係要翻查每次嘗試由 D1-D6 重開。
+  - ⚠️ **「由 step 推導」嘅 test 自己有個陷阱**:`toBe(\`ServiceNow ${step.status}: ${step.detail}\`)` 防到 drift,**但係 tautology**(code 同 test 由同一個 step 攞值,永遠 pass)⇒ 一定要同時配一條 hardcode 期望字嘅 assert,兩條夾埋先有意義。
 - **本機 runtime 避坑**:Prisma engine CDN 被公司 proxy 封(RISK R1);port 3000→Langfuse 佔用 ⇒ api 用 **3100**、5432→既有 Postgres 佔用 ⇒ docker **5433**;web **5173**。起 / 重啟一律用 `restart-stack` skill。
   - 🔴 **5433 同 `ai-doc-extraction-db` 硬衝突,只可以二揀一** —— 起 UOP 前要 `docker stop` 佢(**要 Chris 批**,係另一個項目),用完 `docker start` 還原。
   - 🔴 **`nest start --watch` 個 build-cache 假綠燈會再撞**:見到 **`Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出**,就係佢 —— 刪 `apps/api/*.tsbuildinfo` **同** `dist/`,然後**直接起 stack,中間唔可以插 `npm run build`**。⚠️ `Test-Path dist/main.js` 要喺 watch **起身之後**check 先有意義(watch 一起身就清 `dist/`,喺之前 check 會見到上一次 build 剩低嘅檔而誤判)。
