@@ -23,6 +23,7 @@ import { UpdateRequestDto } from './dto/update-request.dto';
 import { AdvanceStageDto } from './dto/advance-stage.dto';
 import { AssignLineItemDto } from './dto/assign.dto';
 import { RequestDto, RequestLineItemDto } from './dto/request-view.dto';
+import { AssignResultDto } from './dto/assign-result.dto';
 import { SyncCheckResultDto } from './dto/sync-check.dto';
 
 /**
@@ -135,13 +136,20 @@ export class FulfilmentController {
     return this.syncCheckService.check(id, user);
   }
 
+  /**
+   * ADR-0029 — returns the per-step breakdown, not just the line item.
+   *
+   * A refused gate still answers 400; what changed is that its body now carries
+   * `{outcome, failedAt, steps}` as well as the `message` it always had. Both
+   * shapes are present on purpose so a caller reading either one keeps working.
+   */
   @Patch(':id/line-items/:lineItemId/assign')
-  @ApiOkResponse({ type: RequestLineItemDto })
+  @ApiOkResponse({ type: AssignResultDto })
   assignLineItem(
     @Param('lineItemId') lineItemId: string,
     @Body() dto: AssignLineItemDto,
     @CurrentUser() user: AuthUser,
-  ): Promise<RequestLineItemDto> {
+  ): Promise<AssignResultDto> {
     return this.assign.assignLineItem(
       lineItemId,
       dto.usageLocation,

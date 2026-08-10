@@ -849,8 +849,110 @@ describe('AssignService', () => {
 
       const res = await service.assignLineItem('li1', undefined, ADMIN);
 
-      expect(res).toEqual({ id: 'li1', stage: 'ASSIGNED' });
+      // ADR-0029 — the line item moved to `lineItem`; the response itself is
+      // now the step breakdown.
+      expect(res.lineItem).toEqual({ id: 'li1', stage: 'ASSIGNED' });
+      expect(res.outcome).toBe('assigned');
       expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled(); // assign committed
+
+      /**
+       * The point of this test is failure ISOLATION, and ADR-0029 makes that
+       * visible rather than inferable: the assign succeeded, but the operator
+       * can now see that the mirror note did not land — previously the only
+       * trace was a swallowed warn and a queue row nobody was looking at.
+       */
+      const ticket = res.steps.find((s) => s.key === 'ticket');
+      expect(ticket).toMatchObject({
+        status: 'failed',
+        retryable: true,
+        whoFixes: 'platform',
+      });
+      expect(res.steps.find((s) => s.key === 'assign')?.status).toBe('ok');
+      expect(res.steps.find((s) => s.key === 'ledger')?.status).toBe('ok');
+    });
+  });
+
+  /**
+   * ADR-0029 — one assertion per gate. Written as its own block rather than
+   * folded into the existing gate tests on purpose: those assert the MESSAGE
+   * (and still do, unchanged), while these assert the STEP contract. Changing
+   * the old ones to check steps would have quietly dropped the message
+   * coverage that ADR-0029 explicitly promised to keep.
+   */
+  describe('assignLineItem — step breakdown (ADR-0029)', () => {
+    /** Runs an assign expected to be blocked, and returns the 400 body. */
+    const blockedBody = async () => {
+      try {
+        await service.assignLineItem('li1', undefined, ADMIN);
+      } catch (err) {
+        return (
+          err as { getResponse: () => Record<string, unknown> }
+        ).getResponse();
+      }
+      throw new Error('expected the assign to be blocked, but it succeeded');
+    };
+
+    it('reports every gate it passed, in run order, on a full success', async () => {
+      arrangeHappy();
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.steps.map((s) => s.key)).toEqual([
+        'stage',
+        'sync-azure',
+        'sync-servicenow',
+        'directory',
+        'usage-location',
+        'budget',
+        'seats',
+        'assign',
+        'ledger',
+        'ticket',
+      ]);
+      expect(res.failedAt).toBeUndefined();
+    });
+
+    it('stops at the failing gate and names who fixes it', async () => {
+      arrangeHappy();
+      // Gate ② — the ServiceNow side, chased through a different team than the
+      // Azure one. Telling them apart is the whole reason ADR-0025 D5 kept two
+      // messages, and ADR-0029 makes it machine-readable.
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { serviceNowUserSyncedAt: null } }),
+      );
+
+      const body = await blockedBody();
+
+      expect(body.outcome).toBe('blocked');
+      expect(body.failedAt).toBe('sync-servicenow');
+      const steps = body.steps as { key: string; status: string }[];
+      // Everything before it passed, nothing after it was evaluated.
+      expect(steps.map((s) => s.key)).toEqual([
+        'stage',
+        'sync-azure',
+        'sync-servicenow',
+      ]);
+      expect(steps[2]).toMatchObject({
+        status: 'failed',
+        whoFixes: 'servicenow',
+        retryable: true,
+      });
+    });
+
+    it('keeps `message` alongside the new shape so an unchanged caller still renders an error', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { azureSyncedAt: null } }),
+      );
+
+      const body = await blockedBody();
+
+      // ADR-0029 Consequences named "the error message goes blank" as the risk
+      // of changing this body. This is the assertion that keeps it from
+      // happening — it must fail if anyone drops `message`.
+      expect(body.message).toBe(
+        'Phase 1 sync gate not passed: azureSyncedAt is null',
+      );
     });
   });
 

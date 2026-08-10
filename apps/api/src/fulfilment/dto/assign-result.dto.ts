@@ -11,6 +11,7 @@ import {
   type AssignStepOwner,
   type AssignStepStatus,
 } from '../assign-step';
+import { RequestLineItemDto } from './request-view.dto';
 
 /**
  * ADR-0029 — the OpenAPI face of the assign step contract.
@@ -79,4 +80,14 @@ export class AssignResultDto implements AssignResult {
       'Every step reached, in run order. Steps after a failure are absent rather than reported as skipped — they were never evaluated.',
   })
   steps!: AssignStepDto[];
+
+  /**
+   * The assigned line item, kept ALONGSIDE the ADR-0029 shape rather than
+   * replaced by it. Callers that read the line item keep working, so no moment
+   * exists where this response is well-formed but useless to them.
+   *
+   * Absent on a blocked/failed outcome — nothing was assigned.
+   */
+  @ApiPropertyOptional({ type: RequestLineItemDto })
+  lineItem?: RequestLineItemDto;
 }

@@ -28,6 +28,13 @@ import {
   type TicketTransition,
 } from './outbound-failure-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
+import { scrubPii } from '../integration/scrub-pii';
+import {
+  type AssignResult,
+  type AssignStep,
+  type AssignStepKey,
+  type AssignStepOwner,
+} from './assign-step';
 
 /**
  * Module D-2 — fulfilment actions (the hardest critical path).
@@ -105,6 +112,44 @@ export class AssignService {
     });
     if (!item) throw new NotFoundException(`Line item ${lineItemId} not found`);
 
+    /**
+     * ADR-0029 — every gate now records a step as well as failing closed.
+     *
+     * Local rather than a field: this service is a singleton, and two
+     * concurrent assigns sharing instance state would interleave their steps.
+     *
+     * `fail` returns `never` so TypeScript keeps narrowing after it exactly as
+     * the bare `throw` did — the gates below read the same as before.
+     */
+    const steps: AssignStep[] = [];
+    const pass = (key: AssignStepKey) => {
+      steps.push({ key, status: 'ok' });
+    };
+    const fail = (
+      key: AssignStepKey,
+      detail: string,
+      whoFixes: AssignStepOwner,
+      retryable = false,
+    ): never => {
+      // BUG-004 shape: `directory` and `sync-*` details can embed the target
+      // UPN, so it is scrubbed on the way out — `message` included, since that
+      // is the same string.
+      const safe = scrubPii(detail);
+      steps.push({ key, status: 'failed', detail: safe, retryable, whoFixes });
+      throw new BadRequestException({
+        outcome: 'blocked',
+        failedAt: key,
+        steps,
+        /**
+         * Kept ALONGSIDE the new shape, not replaced by it. ADR-0029
+         * Consequences named the risk: a caller still reading `message` would
+         * render an empty error. Keeping it costs one field and means no
+         * moment exists where the UI silently loses its error text.
+         */
+        message: safe,
+      });
+    };
+
     // ── Gates (fail closed, in order) ──
     // AUTH-3a scope gate first: an OPCO_IT actor may only assign within its OpCo.
     assertOpcoScope(actor, item.request.opcoId);
@@ -127,16 +172,25 @@ export class AssignService {
       );
     }
     if (item.stage !== LineItemStage.READY) {
-      throw new BadRequestException(
+      fail(
+        'stage',
         `Line item must be READY to assign (currently ${item.stage})`,
+        'operator',
       );
     }
+    pass('stage');
     const request = item.request;
     if (!request.azureSyncedAt) {
-      throw new BadRequestException(
+      // retryable: nothing is broken — the sweep opens this gate on its own
+      // once Entra Connect has the user (ADR-0015).
+      fail(
+        'sync-azure',
         'Phase 1 sync gate not passed: azureSyncedAt is null',
+        'identity',
+        true,
       );
     }
+    pass('sync-azure');
     /**
      * ADR-0025 D5 — gate ②. The line above is deliberately UNTOUCHED, wording
      * and all: its meaning has not changed, and it has tests pinned to it.
@@ -153,10 +207,17 @@ export class AssignService {
      * no such thing as knowingly assigning a licence to someone who does not.
      */
     if (!request.serviceNowUserSyncedAt) {
-      throw new BadRequestException(
+      // Distinct owner from sync-azure on purpose — this is the whole reason
+      // ADR-0025 D5 kept them as two messages: the two are chased through
+      // different teams, and "sync gate not passed" alone says neither.
+      fail(
+        'sync-servicenow',
         'ServiceNow sync gate not passed: the target user is not in ServiceNow yet',
+        'servicenow',
+        true,
       );
     }
+    pass('sync-servicenow');
     // findUser returns null for a genuine 404 (not synced yet) but *throws* on
     // an auth / network / throttle failure. The provider wraps that into the
     // same 503 this service used to build itself (BUG-002: a raw Graph error
@@ -165,17 +226,29 @@ export class AssignService {
       request.targetUpn,
     );
     if (!user) {
-      throw new BadRequestException(
+      fail(
+        'directory',
         'Target user not found in Azure AD (not synced yet)',
+        'identity',
+        true,
       );
     }
+    pass('directory');
     const usageLocation =
-      usageLocationOverride ?? user.usageLocation ?? undefined;
+      // `user` cannot be null here — `fail` above throws — but TypeScript does
+      // not treat a `never`-returning arrow const as a narrowing point, so the
+      // optional chain is for the compiler, not for a case that can happen.
+      usageLocationOverride ?? user?.usageLocation ?? undefined;
     if (!usageLocation) {
-      throw new BadRequestException(
+      // The only gate the operator can clear on the spot — the assign dialog
+      // takes an override.
+      fail(
+        'usage-location',
         'User has no usageLocation; provide one to assign',
+        'operator',
       );
     }
+    pass('usage-location');
     // ── OpCo budget gate (ADR-0016) ──
     // Placed BEFORE the Graph inventory read (D5): a request that busts the
     // OpCo's own budget must not cost a vendor round-trip, and "your OpCo has no
@@ -215,11 +288,14 @@ export class AssignService {
       // W40 / ADR-0017 D3 (OQ-E) — tell ServiceNow this item is waiting on
       // procurement. Non-fatal and at most once; see holdTicket.
       await this.holdTicket(item, request.id);
-      throw new BadRequestException(
+      fail(
+        'budget',
         `OpCo budget exceeded for ${item.sku.skuPartNumber}: ${assignedBefore} assigned of ${allocated} allocated. ` +
           'Raise the allocation or ask an admin to override.',
+        'admin',
       );
     }
+    pass('budget');
     // An admin may send a reason on an assign that is comfortably within
     // budget; nothing was overridden then, so neither the timeline nor the
     // audit trail may claim one was. "Override used" must mean the gate
@@ -229,10 +305,19 @@ export class AssignService {
     const skus = await this.licenseOps.listTenantSkus();
     const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
     if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
-      throw new BadRequestException(
+      /**
+       * 🔴 A SEPARATE step from `budget`, and this is the whole argument for
+       * not folding them the way the mockup does. 2026-08-07 on DEV hit BOTH
+       * layers on real traffic. The remedies do not overlap: this one is "buy
+       * more tenant seats", `budget` is "raise this OpCo's allocation".
+       */
+      fail(
+        'seats',
         `No available seats for SKU ${item.sku.skuPartNumber}`,
+        'procurement',
       );
     }
+    pass('seats');
 
     // ── The assignment itself (external side-effect, BEFORE the DB transaction) ──
     // A transport failure throws (503) exactly as before; what comes back here
@@ -265,6 +350,10 @@ export class AssignService {
         `License provider returned an outcome this path does not handle: ${outcome.status}`,
       );
     }
+    // 'already_assigned' counts as ok here for the same reason it counts for
+    // the ledger (W39 OQ-1): the provider distinction must not leak into
+    // platform semantics.
+    pass('assign');
 
     // ── Atomic domain writes (OD2) — only assignedQuantity moves (DESIGN §5) ──
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -334,6 +423,7 @@ export class AssignService {
       });
       return li;
     });
+    pass('ledger');
 
     // ── ServiceNow write-back (mirror only, non-fatal — OD4) ──
     const note = `License ${item.sku.skuPartNumber} assigned via platform.`;
@@ -360,6 +450,18 @@ export class AssignService {
         note,
         request.id,
       );
+      /**
+       * "requested", not "closed". `writeTicket` is non-fatal by design
+       * (ADR-0011 I1): a refused close is queued and execution still returns
+       * here. Claiming a confirmed close would be the same overstatement W44
+       * F7-12 spent two days disproving — Delivery failures stays the source of
+       * truth for whether it actually landed.
+       */
+      steps.push({
+        key: 'ticket',
+        status: 'ok',
+        detail: 'RITM close requested',
+      });
     } else if (request.serviceNowSysId) {
       // Legacy rows with no per-line RITM keep the behaviour they have always
       // had: a work note on the parent mirror, direct (OQ-A — 2004 has no
@@ -379,6 +481,11 @@ export class AssignService {
       const snTable = 'sc_request';
       try {
         await this.snow.addWorkNote(snTarget, note, snTable);
+        steps.push({
+          key: 'ticket',
+          status: 'ok',
+          detail: 'Work note added to the parent REQ (this line has no RITM)',
+        });
       } catch (err) {
         this.logger.warn(
           `ServiceNow write-back failed for request ${request.id}: ${
@@ -395,14 +502,44 @@ export class AssignService {
           error: err,
           requestId: request.id,
         });
+        // Recorded as failed even though it is swallowed. The assign itself
+        // succeeded, so the outcome stays 'assigned' — but the operator can now
+        // see that the mirror note did not land, instead of having to notice
+        // its absence in ServiceNow.
+        steps.push({
+          key: 'ticket',
+          status: 'failed',
+          detail: scrubPii((err as Error).message),
+          retryable: true,
+          whoFixes: 'platform',
+        });
       }
+    } else {
+      /**
+       * ADR-0029 — `skipped`, deliberately not `ok`. This is the line that
+       * answers "did anything get closed on the ServiceNow side" without anyone
+       * having to query ServiceNow: W44 F7-12 needed two days and a live SN
+       * query to establish exactly this fact for one request.
+       */
+      steps.push({
+        key: 'ticket',
+        status: 'skipped',
+        detail:
+          'This line has no RITM and the request has no ServiceNow mirror',
+      });
     }
 
     // H4: never log the target UPN (PII) — sku + ids only.
     this.logger.log(
       `Assigned line item ${lineItemId} (${item.sku.skuPartNumber}, request ${request.id})`,
     );
-    return updated;
+    const result: AssignResult = { outcome: 'assigned', steps };
+    /**
+     * `lineItem` is kept ALONGSIDE the ADR-0029 shape rather than replacing the
+     * old return value. Callers that read the line item keep working, and no
+     * moment exists where the response is valid-but-useless to them.
+     */
+    return { ...result, lineItem: updated };
   }
 
   // ── seam ④ helpers (W40) ────────────────────────────────────────────────

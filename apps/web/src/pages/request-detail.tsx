@@ -121,8 +121,38 @@ export function RequestDetail() {
     setToast({ message, tone });
     window.setTimeout(() => setToast(null), 2600);
   }
-  const onError = (e: unknown) =>
-    flash(e instanceof ApiError ? e.message : 'Something went wrong', 'danger');
+  /**
+   * ADR-0029 D2 — say who unblocks it, not just what stopped.
+   *
+   * Keyed by the backend's `whoFixes`; an unknown key falls through to the bare
+   * message rather than rendering a raw enum at an operator.
+   */
+  const WHO_FIXES: Record<string, string> = {
+    admin: 'an admin can override or raise the allocation',
+    identity: 'chased through Entra Connect / directory sync',
+    servicenow: 'chased through the ServiceNow user import',
+    procurement: 'more tenant seats have to be bought',
+    platform: 'this one is ours — raise it with the platform team',
+  };
+
+  /**
+   * ADR-0029 — a blocked assign now answers with `{outcome, failedAt, steps}`
+   * AND the `message` it always had (kept on purpose), so this never lost its
+   * text. `ApiError.detail` already carries the whole parsed body, so no
+   * change to `api.ts` was needed to reach the steps.
+   *
+   * `operator` gets no suffix: those messages already say what to do ("provide
+   * a usageLocation"), and "the operator fixes it" adds nothing.
+   */
+  const onError = (e: unknown) => {
+    if (!(e instanceof ApiError)) return flash('Something went wrong', 'danger');
+    const steps = e.detail?.steps as
+      | { status?: string; whoFixes?: string }[]
+      | undefined;
+    const who = steps?.find((s) => s.status === 'failed')?.whoFixes;
+    const hint = who ? WHO_FIXES[who] : undefined;
+    flash(hint ? `${e.message} — ${hint}` : e.message, 'danger');
+  };
 
   // One timeout per second rather than a re-armed interval: the effect already
   // re-runs on every tick, and a stale interval outliving the countdown is the
