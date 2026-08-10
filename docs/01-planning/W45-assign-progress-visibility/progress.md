@@ -340,3 +340,82 @@ Graph 喺本機係**通**嘅(`catalog/sync` 真 create 咗 101 個 SKU),即係�
 - **§0 Phase** → 「W44 + W45 **兩個同時未收**」(rolling JIT 破例,Chris 批)
 - **§9** 加 W45 一格 + `apiPatch` 教訓 + **三個本機避坑**:①5433 同 `ai-doc-extraction-db` 硬衝突,二揀一 ②`nest --watch` build-cache 假綠燈(`Found 0 errors` + `MODULE_NOT_FOUND` 一齊出),兼記低 **`Test-Path dist/main.js` 要喺 watch 起身之後 check 先有意義** ③🔴 **本機 Graph 通 ⇒ 真 assign 會喺公司 tenant 真派 licence**,fixture 要先用唯讀 `sync-check` 探
 - **`SESSION_SUMMARY`** 座標推到 2026-08-10 + `apiPatch` 教訓 + 6 條紅 test + web lint 16 條 + 5433 衝突
+
+---
+
+## Day 2(續四)— F4-4a:部署 #4 上 DEV
+
+### 🟢 第一層開咗:build host 原來就係開發嗰台機
+
+F4-4 一直被當成「卡 B8」,但 **B8 唔係第一道閘** —— 真正第一道係「**W45 根本未部署**」(DEV 跑緊嘅係部署 #3 = ADR-0030 / CH-022)。就算 B8 明日通咗,撳落去都係舊 code。
+
+而呢道閘**唔使等任何人**:實測呢台機 egress IP = **`52.187.129.166`**,同 §9 記低嗰個 B1 解封 host **逐字一樣**;ACR `/v2/` 返 `401`(= 打得通,要 auth)。
+
+💡 **同 W44 Day 4 嗰句同源**:「直接路封死唔等於冇路」。呢次係**一件早就喺手嘅嘢冇人認出嚟** —— 「build host」一直被寫成一個抽象嘅第三方,冇人試過問「係咪就係我而家坐緊嗰台」。
+
+### 做咗乜
+
+image `dev-211001e`,走同一條 raw ARM PATCH 路,**零流程改動**。
+
+| | |
+|---|---|
+| Push | 🟢 兩個都 exit 0 + digest(api `sha256:b2429458…` / web `sha256:412c5b4f…`)。⚠️ **`Login Succeeded` 之後仍然冇當 push 得** —— W44 Day 7 就係咁錯過一次 |
+| Dry-run | 四個 sanity 全過;**順帶查空值** —— 九個 secret 冇一個 `<len 0>`,唯一空 env = `ACS_SENDER_ADDRESS`(已知 CH-021 blocker) |
+| Revision | api `--0000006` / web `--0000003` 都 `Healthy` **traffic 100**,舊 revision 已退場 |
+| infra 配置 | 🟢 `customDomains: rapo-uop-web-dev.rci-t.com` + `external: true` 完好 —— **再一次印證 PATCH 唔 unset 冇送嘅 property** |
+
+🟢 **決定性證據係 container log 唔係 `Healthy`**:`19 migrations found` → `No pending migrations to apply.` → `Seeded 24 OpCos + admin + RHK OPCO_IT user.` → `Nest application successfully started`,零 `failed`。
+
+### 🔴 我證到咩、證唔到咩
+
+**證到**:帶住 W45 code 嗰個 container **起到身、連到 DB、schema 最新、seed 行到**。
+
+🔴 **證唔到**:**ADR-0029 個 dialog 喺 DEV 出唔出到 —— 到此刻零證據。** F4-4b 仍然卡 `B8`,而且**一定要喺公司網做**(build host 喺 Azure 段,解析唔到 custom domain)。
+
+### 順帶
+
+`aca.params.dev.json` 兩個 image tag 已更新(gitignored,唔入 commit)。az 操作全程用獨立 `AZURE_CONFIG_DIR` 登入部署 SP `d2f094a3-…`(§9 講明呢台機 az session 唔穩定,一日撞過 4 個 SP)。
+
+---
+
+## Day 2（續五）— CH-023:Chris 揀 Option A,ADR-0031 個新表冇起
+
+> ⚠️ 唔屬 W45 scope,但同日、同一條 assign 路、同一個 `B8` 卡住,所以記喺呢度(**CH-023** 有自己嘅 spec + checklist)。
+
+### 拍板結果:提案被自己嘅代價否決
+
+Chris 答「**想先做 Option A**」⇒ `ADR-0031` 由 `Proposed` → **`Rejected`**,**全文一個字唔改寫**,加咗一段 `§Outcome` 記低點解反轉。留全文係因為佢本身有價值:將來若果真係要「翻查每次嘗試」,由 D1-D6 開始睇,唔使重新推一次。
+
+**點解 Option A 贏**——三點,第一點係決定性:
+
+1. **D4 係全份提案入面唯一推翻既有約束嘅位,而佢淨係為 refusal 路存在。** 要存「被擋嗰次」就一定要喺 `fail()` throw 之前寫一行 ⇒ 第二次軟化 `ADR-0016 D6`「a block changes no state」(第一次 = W40 `ticketHeldAt`),要配三條保護先敢做。Option A 唔掂 refusal 路 ⇒ **W45 plan §2.2「只改點講,唔改擋唔擋」一個字都唔使改**。
+2. **Context 個表真正紅嗰行只有一行** = ServiceNow 回寫結果。refusal「邊道閘擋住」係操作員撳嗰刻見到、改完即刻再撳嘅嘢,**本身唔係「三日後要翻查」嗰種事實** ⇒ D1 覆蓋面大過需求。
+3. **落點更啱**:Chris 原話係「應該要能夠重新打開」,而佢已經有一個為「呢單發生過咩」而存在嘅 surface = Operational history。
+
+### 做咗乜（一個檔,37 行）
+
+`assign.service.ts` ServiceNow 分支之後,由 `steps` 攞返個 `ticket` step,寫一條 `RequestEvent`(`NOTE` + `lineItemId` + `actorId`),message = **`ServiceNow {status}: {detail}`**。
+
+🔴 **message 由 step 推導,唔另寫一套文案。** 兩處各自維護同一句就會出現「dialog 見到 A、timeline 見到 B」——「**第二份清單**」呢族錯誤喺本 repo 已經數到第六次(W42 BUG-009),同 ADR-0031 D1 唔用 Prisma enum、D3 重用同一個 dialog 係同一條理由。
+
+### 兩條保護,兩條都攞到硬證據
+
+- **P1 non-fatal** —— falsification **真跑過**:喺 `catch` 暫時加 `throw err`,結果 **淨係嗰一條紅、其餘 70 條全綠** ⇒ 有區分度兼且冇誤傷,之後還原。
+  ⚠️ 呢個 P1 **唔係抄 ADR-0031 嗰個**:嗰個保護「乾淨嘅 400 唔好變 500」,呢個保護「**已經真派咗 licence** 嘅一次 assign 唔好因為一條 note 報錯」。後果更重 —— licence 已落喺人身上、ledger 已 +1,呢一刻報 500 會叫操作員**再派一次**。
+- **P2 位置** —— `git diff --numstat` = **37 insertions / 0 deletions**。呢個比人手 diff 硬:**冇任何一行被改或刪**,gate 條件式同 transaction 三寫結構上逐字不變。
+
+### ⚠️ 一條「推導 assert」自己嘅陷阱
+
+`expect(message).toBe(\`ServiceNow ${ticket.status}: ${ticket.detail}\`)` 防到 drift,**但佢係 tautology** —— code 同 test 由同一個 step 攞值,永遠 pass。所以同一條 test 內配一條 `toBe('ServiceNow ok: RITM close requested')`(呢串字唔係由 step 攞)。兩條夾埋先有意義,單獨任何一條都唔夠。
+
+### 測試 / 檢查
+
+api **917 → 921 passed / 69 suites**(新 4 條)· root `npm run lint` **exit 0**(修咗一個 prettier)· api `tsc --noEmit` **exit 0** · `git status --short` 證 **零 `apps/api/prisma/` 改動 · 零 `apps/web/` 改動**。
+
+### 🔴 未做
+
+**G9 live 驗** —— 撳一次 assign,閂咗 dialog 之後喺 Operational history 睇返 ServiceNow 嗰行。**卡同一個 `B8`,同 W45 F4-4b 一齊做。**
+
+### 順帶:需求本身喺同一日再實證一次
+
+問 Chris 佢朝早喺 DEV 派嗰個 `FORMS_PRO` 條 line 有冇 RITM 號,答「**沒有印象了**」—— 即係呢個缺口喺提出之後**幾個鐘之內**又犯一次。(另:嗰個 `FORMS_PRO` **決定留低唔收**。)

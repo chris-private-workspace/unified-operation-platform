@@ -511,6 +511,40 @@ this.issuer = [
 
 ## 部署記錄
 
+> ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
+
+### 2026-08-10 · 部署 #4(`dev-211001e`)— **W45 / ADR-0029 assign step breakdown 上機**
+
+**內容**:W45 全部(ADR-0029 十步 breakdown · `budget: overridden` · 前端 `AssignResultDialog` · `apiPatch` 帶 `detail` 修復)。走同一條 raw ARM PATCH 路,零流程改動。
+
+| 步 | 結果 |
+|---|---|
+| Build host | 🟢 **就係開發嗰台機** —— egress IP 實測 `52.187.129.166`,同 B1 解封記低嗰個逐字一樣;ACR `/v2/` 返 `401`(= 打得通,要 auth) |
+| ACR login | `Login Succeeded`(`docker login --password-stdin`,ACR 憑證 `4a6e1474`)。⚠️ **仍然唔可以由 login 推 push** —— W44 Day 7 就係咁錯過一次 |
+| Build | api + web 兩個成功;api 過咗 BUG-008 嗰道 `RUN test -f dist/main.js` 硬閘 |
+| Push | 🟢 **兩個都 exit 0 + 有 digest** —— api `sha256:b2429458…` · web `sha256:412c5b4f…` |
+| Dry-run | `has environmentId: False` · `has workloadProfile: False` · web `sends external?: False` / `sends customDomains?: False` · api 9 secret / 25 env · web 1 secret / 1 env。**順帶查咗空值**:九個 secret 冇一個 `<len 0>`;唯一空 env = `ACS_SENDER_ADDRESS`(= 已知 CH-021 blocker,唔係新嘢) |
+| PATCH | 兩個 `exit 0` |
+| Revision | api `--0000006` `Healthy`/`RunningAtMaxScale` · web `--0000003` `Healthy`/`Running`,**兩個都 traffic 100 兼舊 revision 已退場** |
+| infra 配置 | 🟢 完好:`customDomains: rapo-uop-web-dev.rci-t.com` · `external: true`。**再一次印證 PATCH 唔 unset 冇送嘅 property** |
+
+🟢 **決定性證據仍然係 container log**(`Healthy` 證明唔到 DB 通,呢個陷阱冇變):
+
+```
+[entrypoint] prisma migrate deploy
+19 migrations found in prisma/migrations
+No pending migrations to apply.
+[entrypoint] seeding (idempotent upserts)
+Seeded 24 OpCos + admin + RHK OPCO_IT user.
+Nest application successfully started
+```
+
+零 `WARN: … failed`(唯一 stderr = Prisma 個 `package.json#prisma` deprecation warn,唔係失敗)。⇒ **DB 通 · schema 已係最新 · seed 行到**。
+
+🔴 **未驗到嘅嘢 —— 唔可以當 W45 收官**:
+- **W45 G11(live 撳一次)仍然做唔到**,卡 `B8`(private DNS 完全冇配)。呢台 build host 喺 Azure 段,`rapo-uop-web-dev.rci-t.com` 解析唔到 ⇒ **一定要喺公司網做**。
+- 所以「ADR-0029 個 dialog 喺 DEV 出唔出到」到此刻**零證據** —— 證到嘅只係「帶住嗰個 code 嘅 container 起到身兼連到 DB」。
+
 ### 2026-08-07 · 部署 #2(`dev-3971ad3`)— **ADR-0028 SSO 上線,但仍未有真登入證據**
 
 **內容**:ADR-0028(SSO server-side code exchange)+ 四個 `ENTRA_*` env。走同一條 raw ARM PATCH 路。

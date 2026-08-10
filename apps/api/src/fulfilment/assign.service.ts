@@ -544,6 +544,43 @@ export class AssignService {
       });
     }
 
+    /**
+     * CH-023 / ADR-0031 §Outcome — the ServiceNow line of the step list is the
+     * one fact with no home once the dialog closes. A FAILED write-back already
+     * has one (OutboundFailure / Delivery failures); a successful close and a
+     * `skipped` do not, and `skipped` is exactly the question W44 F7-12 spent
+     * two days and a live ServiceNow query answering for a single request.
+     *
+     * Derived from the step rather than phrased again here: two copies of the
+     * same sentence would eventually say different things about the same call,
+     * which is the whole reason the dialog is reused rather than reimplemented.
+     * No `detail` means there is nothing this note could say.
+     *
+     * Non-fatal, and for a heavier reason than the write-back it describes: by
+     * this point the licence IS on the user and the ledger HAS moved. Throwing
+     * over a note would tell the operator to retry something already done.
+     */
+    const ticketStep = steps.find((s) => s.key === 'ticket');
+    if (ticketStep?.detail) {
+      try {
+        await this.prisma.requestEvent.create({
+          data: {
+            requestId: request.id,
+            lineItemId: item.id,
+            type: EventType.NOTE,
+            actorId: actor.id,
+            message: `ServiceNow ${ticketStep.status}: ${ticketStep.detail}`,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to record the ServiceNow outcome for request ${
+            request.id
+          }: ${(err as Error).message}`,
+        );
+      }
+    }
+
     // H4: never log the target UPN (PII) — sku + ids only.
     this.logger.log(
       `Assigned line item ${lineItemId} (${item.sku.skuPartNumber}, request ${request.id})`,
