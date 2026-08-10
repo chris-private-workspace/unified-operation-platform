@@ -232,3 +232,41 @@ DS-1 ✅(全部 token / Tailwind theme;`rounded-lg` = 8px **token**,冇跟 proto
 ### Commits
 
 - `6ba1ce3` — `docs(planning): W45 Day 1 — 後端契約落地回填 + ADR-0029 真改 Accepted`
+- `f358886` — `feat(fulfilment): ADR-0029 前端 steps 畫面 + budget: overridden`
+
+---
+
+## Day 2(續)— F2-12:七道閘逐個一條 test
+
+### 做法
+
+共用一個 `expectBlockedAt(key, whoFixes, retryable)`,**每條 assert 四件事**,因為淨係 assert `failedAt` 係三者之中最弱嗰個:
+
+1. body **點名**嗰道閘
+2. 之前每一道報 `ok` —— **呢個先令個 list 變成證據**(「行到 budget,即係兩個 sync 都冇事」)
+3. 之後**一個都唔出現** —— 從來冇被評估過嘅 step 必須缺席,唔可以報 `skipped`
+4. `detail` 非空 + 冇 email pattern(BUG-004 個網)
+
+🔴 **七條全部由 `arrangeHappy()` 起手,再只閂一樣嘢。** 唔咁做嘅話斷言會因為**早一道閘擋咗**而通過 —— 就係 CH-022 撞過嗰種假綠。
+
+### 兩個 falsification,兩個都真跑過
+
+我喺 helper 註釋寫咗一個**具體 claim**:「expected prefix 由 `ASSIGN_GATE_KEYS` 推導唔係 tautology,因為 `assign.service.ts` 從來冇讀過嗰個 array —— 佢係手寫順序跑閘,所以 contract order 同 runtime order 一唔夾就會紅」。呢句唔可以就咁寫落去:
+
+| 改咗乜 | 結果 |
+|---|---|
+| `ASSIGN_GATE_KEYS` 對調 `directory` / `usage-location` | **4 條紅**(對調嗰對 + 之後全部,因為 prefix 變咗)⇒ claim 成立 |
+| `fail('directory', …)` 個 owner 由 `identity` 改做 `platform` | **只有 1 條紅**,正正係 `directory` 嗰條 ⇒ 每條 test 真係只認自己嗰道閘,冇互相蓋住 |
+
+兩個都已還原。
+
+### 順帶:`seats` 嗰條專登寫成「budget 綠但 seats 紅」
+
+`arrangeHappy()` 留咗 headroom,所以嗰條 test 入面 **budget step 係 `ok` 而 seats 先失敗** —— 呢個就係 **2026-08-07 DEV 實際撞到嗰個形狀**,亦正正係 mockup 個合併 `precheck` 講唔出嘅嘢。
+
+### 測試
+
+| | |
+|---|---|
+| api | **917 passed / 69 suites**(911 → 917,+6) |
+| tsc / lint | api tsc `0` · root lint `exit 0` |

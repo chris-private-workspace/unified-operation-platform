@@ -31,7 +31,7 @@
 - [x] F2-9 `ledger`
 - [x] F2-10 `ticket` —— 含 `skipped`(冇 RITM 又冇 parent mirror)同 work-note fallback 嘅 `ok`
 - [x] F2-11 🔴 **`detail` 全部經 `scrubPii`** —— code(`fail()` + ticket 失敗路)+ test(= F1-1)齊
-- [ ] F2-12 🔴 **逐個 gate 一條 test assert `failedAt`**(H5,唔可以一條 test 覆蓋多個)—— 🟡 而家得 `sync-servicenow` 一條,其餘六道閘只有舊嘅 message assert。**唯一仍然開住嘅 F2 項**
+- [x] F2-12 🔴 **逐個 gate 一條 test assert `failedAt`**(H5,唔可以一條 test 覆蓋多個)—— 七道閘七條,共用 `expectBlockedAt(key, whoFixes, retryable)`。**每條 assert 四件事**:①body 點名嗰道閘 ②之前每一道報 `ok`(呢個先令個 list 變成證據)③之後**一個都唔出現** ④`detail` 非空 + 冇 email pattern。🔴 **全部由 `arrangeHappy()` 起手再只閂一樣嘢** —— 唔咁做嘅話斷言會因為早一道閘擋咗而通過(CH-022 撞過)
 - [x] F2-13 🔴 **G2:成功路徑 assert provider 呼叫次數同改動前一模一樣**(證冇多做副作用)—— 成功路徑 step 順序 test 涵蓋;既有 `arrangeHappy` 系列一條唔跌 = 呼叫次數不變嘅實證
 - [x] F2-14 🔴 **R4 檢查:對 `assign.service.ts` gate 段落做 diff,確認擋唔擋嘅邏輯零改動** —— 每道閘只係 `throw new BadRequestException(str)` → `fail(key, str, who)`,條件式一個字未郁
 

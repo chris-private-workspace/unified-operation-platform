@@ -21,6 +21,12 @@ import {
   pickAuditMetadata,
 } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
+import {
+  ASSIGN_GATE_KEYS,
+  type AssignStep,
+  type AssignStepKey,
+  type AssignStepOwner,
+} from './assign-step';
 
 // Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
 // `role` matters from W36 on: the budget override is ADMIN-only (ADR-0016 D3).
@@ -892,6 +898,52 @@ describe('AssignService', () => {
       throw new Error('expected the assign to be blocked, but it succeeded');
     };
 
+    /**
+     * One gate, checked three ways at once, because `failedAt` on its own is
+     * the weakest of the three:
+     *
+     *  1. the body NAMES the gate,
+     *  2. every gate BEFORE it is reported `ok` — that is what turns the list
+     *     into evidence ("it reached budget, so both syncs were fine"),
+     *  3. nothing AFTER it appears at all — steps that were never evaluated
+     *     must be absent, not reported as skipped.
+     *
+     * 🔴 The expected prefix is derived from `ASSIGN_GATE_KEYS` rather than
+     * retyped. That is a real cross-check, not a tautology: `assign.service.ts`
+     * never reads that array — it runs the gates in hand-written order — so
+     * this fails the moment the declared contract order and the runtime order
+     * disagree, which is exactly the drift nothing else would catch.
+     */
+    const expectBlockedAt = async (
+      key: AssignStepKey,
+      whoFixes: AssignStepOwner,
+      retryable: boolean,
+    ) => {
+      const body = await blockedBody();
+      expect(body.outcome).toBe('blocked');
+      expect(body.failedAt).toBe(key);
+
+      const steps = body.steps as AssignStep[];
+      const expected = ASSIGN_GATE_KEYS.slice(
+        0,
+        ASSIGN_GATE_KEYS.indexOf(key as never) + 1,
+      );
+      expect(steps.map((s) => s.key)).toEqual(expected);
+      expect(steps.slice(0, -1).map((s) => s.status)).toEqual(
+        steps.slice(0, -1).map(() => 'ok'),
+      );
+      expect(steps[steps.length - 1]).toMatchObject({
+        status: 'failed',
+        whoFixes,
+        retryable,
+      });
+      // Non-empty, and free of anything email-shaped (BUG-004 net).
+      expect(steps[steps.length - 1].detail).toBeTruthy();
+      expect(steps[steps.length - 1].detail).not.toMatch(
+        /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/,
+      );
+    };
+
     it('reports every gate it passed, in run order, on a full success', async () => {
       arrangeHappy();
 
@@ -912,31 +964,103 @@ describe('AssignService', () => {
       expect(res.failedAt).toBeUndefined();
     });
 
-    it('stops at the failing gate and names who fixes it', async () => {
+    /**
+     * F2-12 — one test per gate, never one test covering several.
+     *
+     * 🔴 Every one of these starts from `arrangeHappy()` and then shuts exactly
+     * ONE thing. Without that the assertion can pass for the wrong reason: an
+     * unarranged mock makes the run die at some earlier gate, and the test then
+     * proves nothing about the gate it is named after. (CH-022 hit precisely
+     * this — an assert that held because the code early-returned for an
+     * unrelated reason.)
+     */
+    it('names `stage` when the line item is not READY', async () => {
       arrangeHappy();
-      // Gate ② — the ServiceNow side, chased through a different team than the
-      // Azure one. Telling them apart is the whole reason ADR-0025 D5 kept two
-      // messages, and ADR-0029 makes it machine-readable.
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ stage: 'QUOTING' }),
+      );
+
+      // `operator`, and NOT retryable: pressing again changes nothing — the
+      // line has to be moved through its stages first.
+      await expectBlockedAt('stage', 'operator', false);
+    });
+
+    it('names `sync-azure` when the Phase 1 gate has not opened', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { azureSyncedAt: null } }),
+      );
+
+      // retryable: nothing is broken — the ADR-0015 sweep opens this on its own
+      // once Entra Connect has the user.
+      await expectBlockedAt('sync-azure', 'identity', true);
+    });
+
+    /**
+     * Gate ② — the ServiceNow side, chased through a different team than the
+     * Azure one. Telling them apart is the whole reason ADR-0025 D5 kept two
+     * messages, and ADR-0029 makes it machine-readable.
+     */
+    it('names `sync-servicenow` when gate ② has not opened', async () => {
+      arrangeHappy();
       prisma.requestLineItem.findUnique.mockResolvedValue(
         readyItem({ request: { serviceNowUserSyncedAt: null } }),
       );
 
-      const body = await blockedBody();
+      // 🔴 A DIFFERENT owner from sync-azure, on identical-looking symptoms.
+      // Collapsing the two would send the operator to the wrong team.
+      await expectBlockedAt('sync-servicenow', 'servicenow', true);
+    });
 
-      expect(body.outcome).toBe('blocked');
-      expect(body.failedAt).toBe('sync-servicenow');
-      const steps = body.steps as { key: string; status: string }[];
-      // Everything before it passed, nothing after it was evaluated.
-      expect(steps.map((s) => s.key)).toEqual([
-        'stage',
-        'sync-azure',
-        'sync-servicenow',
-      ]);
-      expect(steps[2]).toMatchObject({
-        status: 'failed',
-        whoFixes: 'servicenow',
-        retryable: true,
+    it('names `directory` when Graph cannot find the user yet', async () => {
+      arrangeHappy();
+      graph.findUser.mockResolvedValue(null);
+
+      await expectBlockedAt('directory', 'identity', true);
+    });
+
+    it('names `usage-location` when the user has none and none was supplied', async () => {
+      arrangeHappy();
+      graph.findUser.mockResolvedValue({
+        id: 'aad-1',
+        userPrincipalName: 'new.user@rhk.com',
+        displayName: 'New User',
+        usageLocation: null,
+        accountEnabled: true,
       });
+
+      // The one gate the operator clears on the spot — the assign dialog takes
+      // an override — so `operator`, and retrying the same call is pointless.
+      await expectBlockedAt('usage-location', 'operator', false);
+    });
+
+    it('names `budget` when the OpCo allocation is used up', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(5, 5));
+
+      await expectBlockedAt('budget', 'admin', false);
+    });
+
+    /**
+     * 🔴 The pair that must never be folded together. `budget` above is green
+     * here (arrangeHappy leaves headroom) and `seats` still refuses — which is
+     * exactly the 2026-08-07 DEV shape, and exactly what the mockup's single
+     * `precheck` step could not have said. Different owner, different remedy.
+     */
+    it('names `seats` when the tenant has none left, with budget green', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'guid-1',
+          skuPartNumber: 'SPE_E3',
+          prepaidEnabled: 100,
+          consumedUnits: 100, // full
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      await expectBlockedAt('seats', 'procurement', false);
     });
 
     it('keeps `message` alongside the new shape so an unchanged caller still renders an error', async () => {
