@@ -8,6 +8,7 @@ import {
   type ConnectorKey,
 } from './connectors';
 import { IntegrationStatusService } from './integration-status.service';
+import { SeamRuntimeRegistry } from './seam-runtime.registry';
 
 const SYNCED = new Date('2026-07-20T03:00:00.000Z');
 const CAPTURED = new Date('2026-07-21T03:00:00.000Z');
@@ -35,6 +36,12 @@ describe('IntegrationStatusService', () => {
   const build = (
     overrides: Record<string, string> = {},
     db: Record<string, string> = {},
+    /**
+     * BUG-011 — what each seam's factory resolved AT BOOT, keyed by connector.
+     * Defaults to empty = "no factory has run in this process", which is what
+     * every pre-existing test below assumes and why none of them change.
+     */
+    boot: Partial<Record<ConnectorKey, boolean>> = {},
   ) => {
     env = { ...overrides };
     prisma = {
@@ -57,9 +64,14 @@ describe('IntegrationStatusService', () => {
         return field ? env[field.envKey] : undefined;
       }),
     };
+    const seamRuntime = new SeamRuntimeRegistry();
+    for (const [seam, isN8n] of Object.entries(boot)) {
+      seamRuntime.record(seam as ConnectorKey, isN8n);
+    }
     service = new IntegrationStatusService(
       prisma as unknown as PrismaService,
       connectorConfig as unknown as ConnectorConfigService,
+      seamRuntime,
     );
   };
 
@@ -276,6 +288,84 @@ describe('IntegrationStatusService', () => {
       build({ REQUEST_SUBMISSION_PROVIDER: 'n8n' });
 
       expect(byKey(await service.list(), 'n8n-outbound').state).toBe('active');
+    });
+  });
+
+  /**
+   * BUG-011 — `state` says what is CONFIGURED; `pendingRestart` says whether the
+   * running process has it yet.
+   *
+   * They have to be separate because ADR-0013 C2 has the factories read their
+   * switch once, at boot. Between Save and restart the two disagree, and this
+   * panel used to show only the first — so it announced a provider switch that
+   * had not happened. BUG-005 fixed the mirror image of this and left the rule
+   * "ask the same call the runtime asks"; the rule was followed, but it never
+   * said WHEN, and the same call answers differently at boot and at now.
+   */
+  describe('pendingRestart — configured vs running (BUG-011)', () => {
+    it('is false when the running provider is the configured one', async () => {
+      build({}, { licenseOpsProvider: 'n8n' }, { 'n8n-license': true });
+
+      const row = byKey(await service.list(), 'n8n-license');
+      expect(row.state).toBe('active');
+      expect(row.pendingRestart).toBe(false);
+    });
+
+    it('flags a switch as saved-but-not-live until the API restarts', async () => {
+      // The exact DEV situation: an admin flipped it to n8n, while the factory
+      // in this process resolved Graph at boot.
+      build({}, { licenseOpsProvider: 'n8n' }, { 'n8n-license': false });
+
+      const row = byKey(await service.list(), 'n8n-license');
+      // Still `active`: that IS what is configured, and ADR-0010 D3 keeps
+      // `state` describing deployment shape rather than what is loaded.
+      expect(row.state).toBe('active');
+      // …and the row now says outright that the process has not picked it up.
+      expect(row.pendingRestart).toBe(true);
+    });
+
+    it('flags switching BACK too — the direction that was reported', async () => {
+      build({}, { licenseOpsProvider: 'graph' }, { 'n8n-license': true });
+
+      const row = byKey(await service.list(), 'n8n-license');
+      expect(row.state).toBe('inactive');
+      expect(row.pendingRestart).toBe(true);
+    });
+
+    it('covers all three seams, not only the one this was reported against', async () => {
+      build(
+        {},
+        {
+          requestSubmissionProvider: 'n8n',
+          licenseOpsProvider: 'n8n',
+          ticketUpdateProvider: 'n8n',
+        },
+        { 'n8n-outbound': false, 'n8n-license': false, 'n8n-ticket': false },
+      );
+
+      const rows = await service.list();
+      expect(byKey(rows, 'n8n-outbound').pendingRestart).toBe(true);
+      expect(byKey(rows, 'n8n-license').pendingRestart).toBe(true);
+      expect(byKey(rows, 'n8n-ticket').pendingRestart).toBe(true);
+    });
+
+    it('claims nothing when no factory has run in this process', async () => {
+      // Reporting "pending" here would be a guess — there is no boot answer for
+      // the configured value to disagree with.
+      build({}, { licenseOpsProvider: 'n8n' });
+
+      const row = byKey(await service.list(), 'n8n-license');
+      expect(row.pendingRestart).toBe(false);
+    });
+
+    it('never flags a connector that has no switchable seam', async () => {
+      build();
+
+      const rows = await service.list();
+      const seamless = ['graph', 'servicenow', 'n8n-inbound', 'email'] as const;
+      for (const key of seamless) {
+        expect(byKey(rows, key).pendingRestart).toBe(false);
+      }
     });
   });
 

@@ -24,6 +24,21 @@ export interface ResolvedField {
   label: string;
   value: string | null; // non-secret only — a secret value never reaches this type
   source: FieldSource;
+  /**
+   * BUG-011 — a field's SHAPE now travels with its value.
+   *
+   * Without it the admin UI can only render a free-text box, and the operator
+   * has to guess the allowed values. That guess is wrong in the one place it
+   * matters most: two seams take `direct`, seam ② takes `graph`, so "switch it
+   * back to the direct integration" is naturally typed as `direct` and rejected
+   * with a 400 — which reads as "it cannot be switched back".
+   *
+   * H4 / ADR-0013 D2 unaffected: both are public static constants in
+   * `connectors.ts`, not configuration, and `secrets[]` is untouched.
+   */
+  kind: EditableField['kind'];
+  /** Present only for `kind: 'enum'` — the exact set `validate()` will accept. */
+  enumValues?: readonly string[];
 }
 
 export interface SecretStatus {
@@ -84,14 +99,23 @@ export class ConnectorConfigService {
     const rec = (row as Record<string, unknown> | null) ?? null;
 
     const editable: ResolvedField[] = spec.editable.map((f) => {
+      // BUG-011 — carried on ALL THREE branches, not just the one that has a
+      // value. An enum whose override is currently cleared is exactly when the
+      // operator most needs to be told what the allowed values are.
+      const shape = {
+        column: f.column,
+        label: f.label,
+        kind: f.kind,
+        enumValues: f.enumValues,
+      };
       const dbVal = rec?.[f.column];
       if (typeof dbVal === 'string' && dbVal !== '') {
-        return { column: f.column, label: f.label, value: dbVal, source: 'db' };
+        return { ...shape, value: dbVal, source: 'db' };
       }
       const envVal = this.config.get<string>(f.envKey);
       return envVal
-        ? { column: f.column, label: f.label, value: envVal, source: 'env' }
-        : { column: f.column, label: f.label, value: null, source: 'unset' };
+        ? { ...shape, value: envVal, source: 'env' }
+        : { ...shape, value: null, source: 'unset' };
     });
 
     const secrets: SecretStatus[] = spec.secrets.map((s) => ({

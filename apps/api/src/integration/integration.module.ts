@@ -7,6 +7,7 @@ import { IntegrationController } from './integration.controller';
 import { IntegrationStatusService } from './integration-status.service';
 import { IntegrationProbeService } from './integration-probe.service';
 import { ConnectorConfigService } from './connector-config.service';
+import { SeamRuntimeRegistry } from './seam-runtime.registry';
 import { LicenseOperationsProvider } from './license-ops/license-ops.provider';
 import { GraphLicenseProvider } from './license-ops/graph-license.provider';
 import { N8nLicenseProvider } from './license-ops/n8n-license.provider';
@@ -34,12 +35,18 @@ export async function licenseOpsProviderFactory(
   graph: GraphLicenseProvider,
   n8n: N8nLicenseProvider,
   connectorConfig: ConnectorConfigService,
+  seamRuntime: SeamRuntimeRegistry,
 ): Promise<LicenseOperationsProvider> {
   const choice = await connectorConfig.resolve(
     'n8n-license',
     'licenseOpsProvider',
   );
-  return choice === 'n8n' ? n8n : graph;
+  const usingN8n = choice === 'n8n';
+  // BUG-011 — record the decision, do not change it. The panel needs to know
+  // what THIS process resolved, because C2 means a later config change does not
+  // reach the provider until a restart.
+  seamRuntime.record('n8n-license', usingN8n);
+  return usingN8n ? n8n : graph;
 }
 
 /**
@@ -65,12 +72,16 @@ export async function ticketUpdateProviderFactory(
   direct: DirectTicketProvider,
   n8n: N8nTicketProvider,
   connectorConfig: ConnectorConfigService,
+  seamRuntime: SeamRuntimeRegistry,
 ): Promise<TicketUpdateProvider> {
   const choice = await connectorConfig.resolve(
     'n8n-ticket',
     'ticketUpdateProvider',
   );
-  return choice === 'n8n' ? n8n : direct;
+  const usingN8n = choice === 'n8n';
+  // BUG-011 — same as seam ② above: observe the boot decision, change nothing.
+  seamRuntime.record('n8n-ticket', usingN8n);
+  return usingN8n ? n8n : direct;
 }
 
 /**
@@ -95,6 +106,9 @@ export async function ticketUpdateProviderFactory(
     IntegrationStatusService,
     IntegrationProbeService,
     ConnectorConfigService,
+    // BUG-011 — observation only: what each factory below resolved at boot, so
+    // the panel can distinguish "configured" from "running".
+    SeamRuntimeRegistry,
     // ADR-0017 seam ② — both implementations are instantiable; the factory
     // below picks one. Consumers inject the abstract class, never a concrete
     // one, so nothing downstream can tell which it got (D0).
@@ -107,6 +121,7 @@ export async function ticketUpdateProviderFactory(
         GraphLicenseProvider,
         N8nLicenseProvider,
         ConnectorConfigService,
+        SeamRuntimeRegistry,
       ],
     },
     // ADR-0017 seam ④ — same arrangement as seam ② above. Consumers inject the
@@ -116,7 +131,12 @@ export async function ticketUpdateProviderFactory(
     {
       provide: TicketUpdateProvider,
       useFactory: ticketUpdateProviderFactory,
-      inject: [DirectTicketProvider, N8nTicketProvider, ConnectorConfigService],
+      inject: [
+        DirectTicketProvider,
+        N8nTicketProvider,
+        ConnectorConfigService,
+        SeamRuntimeRegistry,
+      ],
     },
     // CH-011 / ADR-0019 — NOT a seam. There is one transport, so this is a plain
     // alias rather than a factory: consumers depend on the abstract class purely
@@ -128,6 +148,9 @@ export async function ticketUpdateProviderFactory(
     ServiceNowService,
     ServiceNowLookupService,
     ConnectorConfigService,
+    // BUG-011 — exported for the same reason ConnectorConfigService is: seam ①'s
+    // factory lives in FulfilmentModule and has to record its boot decision too.
+    SeamRuntimeRegistry,
     LicenseOperationsProvider,
     TicketUpdateProvider,
     NotificationService,

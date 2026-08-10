@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { IntegrationModule } from '../integration/integration.module';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { ConnectorConfigService } from '../integration/connector-config.service';
+import { SeamRuntimeRegistry } from '../integration/seam-runtime.registry';
 import { RequestService } from './request.service';
 import { StageService } from './stage.service';
 import { AssignService } from './assign.service';
@@ -39,6 +40,7 @@ export async function requestSubmissionProviderFactory(
   config: ConfigService,
   snow: ServiceNowService,
   connectorConfig: ConnectorConfigService,
+  seamRuntime: SeamRuntimeRegistry,
 ): Promise<RequestSubmissionProvider> {
   // Provider selection is non-secret and resolved DB-then-env (C2 / ADR-0013):
   // unset → direct, so existing behaviour never changes.
@@ -47,9 +49,15 @@ export async function requestSubmissionProviderFactory(
       'n8n-outbound',
       'requestSubmissionProvider',
     )) ?? 'direct';
+  // BUG-011 — record what THIS process resolved, so the Integrations panel can
+  // tell "saved" apart from "running". Named once and reused below: two spellings
+  // of the same condition is how the panel and the runtime drifted apart in the
+  // first place.
+  const usingN8n = provider === 'n8n';
+  seamRuntime.record('n8n-outbound', usingN8n);
   // ADR-0025 D2 — the direct provider now reads catalog item ids + the D365
   // prefix list from env, so it needs ConfigService (already injected here).
-  if (provider !== 'n8n') return new DirectServiceNowProvider(snow, config);
+  if (!usingN8n) return new DirectServiceNowProvider(snow, config);
 
   // n8n selected: the webhook URL is non-secret (DB-then-env); the key stays in
   // env (getOrThrow inside the provider). A missing URL fails the boot.
@@ -125,7 +133,12 @@ export async function requestSubmissionProviderFactory(
     {
       provide: RequestSubmissionProvider,
       useFactory: requestSubmissionProviderFactory,
-      inject: [ConfigService, ServiceNowService, ConnectorConfigService],
+      inject: [
+        ConfigService,
+        ServiceNowService,
+        ConnectorConfigService,
+        SeamRuntimeRegistry,
+      ],
     },
   ],
   exports: [
