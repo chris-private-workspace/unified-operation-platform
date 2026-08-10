@@ -1032,4 +1032,67 @@ return created;                                                 // ← 送返一
 
 ---
 
+## Day 6 — 2026-08-10:F7-12 收官 —— 三格全收,而 root cause 唔喺環境
+
+### 點收嘅:兩側夾證,一次 UI 都冇開
+
+原本 F7-12 寫死咗「**要開 UI 睇**」。而呢台機**開唔到** —— `aca-rapo-uop-web-dev.…azurecontainerapps.io` 解析係 `DNS name does not exist`(ACA env internal,只喺 hub VNet 解析;本機出口喺 Azure 段,唔喺公司網)。
+
+改用兩個都繞得過 VNet 嘅來源:
+
+**① ServiceNow(公網 SaaS,直連)** — `ricohapdev` 查 `sc_req_item`,2026-08-01 之後全部 RITM。
+UOP 建嘅 O365 單**最後一張停喺 08-04**(RITM0047366 / 0047367 / 0047368),**08-07 一整日零新 RITM**。
+🟢 順帶 cross-check:DEV 個 `SERVICENOW_INSTANCE_URL` 正正就係 `ricohapdev` ⇒ 我查嘅同 DEV 寫入嘅係同一個 instance,結論唔靠推論。
+
+**② DEV container log(Log Analytics REST API)** — `az monitor log-analytics query` 要裝 extension 兼 interactive 確認,喺 non-interactive session 直接 EOF ⇒ 改用 `api.loganalytics.io` REST + SP token,**唔使裝嘢**。workspace `4a54368b-…` 由 `properties.environmentId` → `appLogsConfiguration` 攞。SP(`d2f094a3`)有 read。
+
+### 🎯 Root cause:唔係環境、唔係配置、唔係 code path 冇行
+
+```
+06:34:32  LOG  [IntakeAdapterService] n8n flat intake: REQ REQ0043934 → opco RAPO/IT, 1 line item(s), task SCTASK0071709
+06:34:31  LOG  [IntakeAdapterService] REQ REQ0043934 carried no licence line — injecting default SKU SPE_E5
+06:34:31  WARN [IntakeAdapterService] Could not raise the ServiceNow licence request for cmsikku3b…:
+                                      The requester was not found in ServiceNow, so the request cannot be raised
+```
+
+**08-07 三次 intake(REQ0043934 / REQ0044049 / REQ0044057),三次全部同一句。**
+
+⇒ **ADR-0025 D1 有一個當時冇人留意嘅硬依賴**:`target_user` 係 mandatory reference 去 `sys_user`,**收 sys_id 唔收 email**,所以一定要攞 `requesterEmail` 反查一個 `sys_user`。**反查唔到 requester,成張單就開唔到。**
+
+### 驗證三合一 — 三格答案
+
+| 格 | 答案 | 出處 |
+|---|---|---|
+| **F7-5** OpCo | `RAPO/IT` —— 解析出嚟**冇**塌縮成 `RAPO` | `→ opco RAPO/IT` |
+| **F7-2** 另一半 SKU | **`SPE_E5`** ✅ ADR-0020 default 注入生效 | `injecting default SKU SPE_E5` |
+| **F7-12** RITM | **冇**,`raiseLicenceRequest` fail-soft 掛咗 | 三行 WARN + SN 側零 RITM |
+
+### 🟢 可補救,唔使重新 intake
+
+`raiseLicenceRequest` 刻意 fail-soft 兼且 `failures.record(REQUEST_SUBMIT)`(`intake-adapter.service.ts:255-268`)⇒ **Delivery failures 應該有三行**,而 `REQUEST_SUBMIT` 嘅 repair 語意就係**重新 submit**(唔似 `REQUEST_MIRROR` 嗰種「真單已開,絕不可重送」)。修好 requester 之後撳 retry 就補得返。
+⚠️ 「應該有三行」係由 code path 推,**未真眼見過** —— 要打得到 DEV UI 先算證實。
+
+### 順帶撈到三件事(都唔喺計劃內)
+
+1. 🔴 **`GRAPH_TENANT_ID = 'placeholder-not-connected'`** —— `AADSTS900023`。`[CatalogService]` 讀唔到 tenant inventory,`[SyncSweepService] Sync sweep failed unexpectedly` **每 10 分鐘一次**(17:10→18:00 連續六次)。⇒ **步驟 6 嘅 Azure 閘喺 DEV 開唔到,步驟 7 assign 亦行唔到。**
+   ⚠️ 陷阱形狀值得記:`az containerapp show` 睇個 env **係 `[inline-value]`**(有值),要睇 log 先知**個值係 placeholder**。「有設定」同「設定啱」係兩件事。
+2. ⚠️ **default SKU 中途變過**:`REQ0043934` 注入 `SPE_E5`,但 `REQ0044049` / `REQ0044057` 注入 **`POWER_BI_PRO`**。
+3. 🟢 **W36 OpCo budget gate 第一次 live 生效**:`OpCo budget gate blocked line item … (POWER_BI_PRO): 0/0` 同 `… : 100/90`(超額)⇒ 有人真係撳過 assign,而 gate 擋到。W36 當時寫低「gate 400 本身 dev 驗唔到」,呢度算補到一半。
+
+### 方法論
+
+W44 Day 4 記低過「**部署權限 / 觀測權限 / metrics 係三套嘢**」。今日係同一句嘅延伸:**「打唔到個 UI」唔等於「驗唔到」** —— F7-12 本身寫死咗「要開 UI」,而真正答到問題嘅兩個來源(SN 公網 API + Log Analytics REST)**兩個都唔喺 VNet 入面**,亦兩個都一早喺手。
+⚠️ 亦有反面教訓:頭兩次 log 查詢**都 miss 咗答案** —— 搜 `fail` 但訊息係「**Could not** raise」,搜 `REQ00` 但失敗訊息帶嘅係 cuid。**關鍵字對唔上唔等於冇事發生**,差啲就收咗個「冇 error」嘅錯結論。
+
+### Blockers
+
+🔴 **requester 喺 SN 搵唔到,要決定修邊一邊** —— n8n 送錯 email,定 SN 真係冇呢個 user?本機打唔到 DEV DB,睇唔到實際送咗咩(log 依 H4 唔會印 UPN)。⇒ **要 Chris 喺公司網睇 Request detail / Delivery failures,或者直接對 n8n workflow。**
+🔴 **`GRAPH_TENANT_ID` 要換真值** —— 唔換,步驟 6/7 喺 DEV 永遠行唔到。
+
+### Commits
+
+- `<pending>` — `docs(w44): F7-12 收官 —— requester 喺 SN 搵唔到`
+
+---
+
 **End of W44 progress**(進行中)
