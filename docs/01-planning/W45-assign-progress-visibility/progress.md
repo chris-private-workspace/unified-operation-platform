@@ -37,3 +37,53 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 ### Commits
 
 - `6ed496b` — `docs(planning): W45 assign 過程可見性 plan + ADR-0029;CH-021 intake 通知 spec`(同一個 commit 帶埋 CH-021 spec,因為兩件都係 2026-08-09 同一輪端到端對帳揭出嚟)
+
+---
+
+## Handoff — 2026-08-10(寫畀下一個 session,直接開工用)
+
+### 而家喺邊
+
+| | |
+|---|---|
+| **ADR-0029** | ✅ **Accepted**(Chris 2026-08-10)⇒ H1 gate 過 |
+| **W45 plan / checklist** | ✅ 已備(`6ed496b`) |
+| **Code** | 🔴 **零行** —— 一個字都未寫 |
+
+⚠️ 2026-08-10 嗰日全日做咗**另一條線**(INTAKE-REQUESTER → ADR-0030 → CH-022 → DEV 部署 #3),W45 一直冇動過。唔好以為有半成品。
+
+### 起手點:step 清單要先喺 plan 定死
+
+**ADR-0029 只 lock 咗一條原則:「一步一 gate,唔合併」。** 佢初版點名七個 gate key(`stage` · `sync-azure` · `sync-servicenow` · `directory` · `usage-location` · `budget` · `seats`)加副作用三個(`assign` · `ledger` · `ticket`),但明文寫住**最終清單喺 W45 plan 定死**。
+
+⇒ **第一件事係對住 `assign.service.ts:129-235` 逐道閘數返**,確認七個 key 同實際 gate 一一對應,唔好照抄 ADR 個初版清單。
+
+### 🔴 兩個「紅得靜」陷阱(ADR Consequences 已列,呢度重申因為佢哋唔會令 test 紅)
+
+1. **400 body 形狀變** —— 今日前端 `onError` 直接讀 `message`(`request-detail.tsx:763-772`)。改完契約如果冇同步處理兩種形狀,**錯誤訊息會變成空白**:畫面睇落「失敗咗但唔講點解」,而 test 全綠。
+2. **step `detail` 會夾帶 PII** —— `sync` / `directory` 兩步嘅底層 vendor error 可能含 UPN(**BUG-004 同一形狀**)。`detail` **必須經 `scrubPii`**,而且要有 test 守住。
+
+### ⚠️ 既有 test 唔可以「順手改 assert 就當過」
+
+`assign.service.spec.ts` 大量 assert exception message。契約一改佢哋會紅 —— 但**逐條改到綠唔等於守住咗新契約**。H5 critical path:**每道 gate 都要有對應嘅 step assertion**。
+
+💡 今日 CH-022 撞過一條**假綠**值得記住:我寫嘅 test assert「`submit` 冇被 call」,但當時冇 mock line items,而條 code 喺冇 line 嗰陣本來就 early-return ⇒ **斷言因為錯嘅理由通過**。改契約嘅 test 特別容易出呢種。
+
+### 本地環境現況(2026-08-10 起返,可以即刻驗)
+
+- postgres **5433** / redis **6379** / api **3100** / web **5173** —— 全部跑緊,三個 endpoint 真 200 驗過
+- ⚠️ **本地 DB 係當日新建**(舊 volume 連 container 一齊冇咗),19 migration + seed 24 OpCos 已跑
+- ⚠️ **`LOCAL_ADMIN_INITIAL_PASSWORD` 未設** ⇒ 登入表單登唔到,靠 `.env` 個 `AUTH_DEV_BYPASS=true` 頂住。要驗 per-user 行為就要 `start-detached.ps1 -DisableAuthBypass`
+- ⚠️ **port 5433 同 `ai-doc-extraction-db` 有衝突** —— 當日停咗佢五個 container 先起到 UOP。佢一 `docker start` 就會再搶 5433。長遠解法見當日討論(搬佢個 host port)
+
+### 相關檔案
+
+- `apps/api/src/fulfilment/assign.service.ts:129-235`(七道閘)· `:338-363`(SN 回寫兩條路)
+- `apps/web/src/pages/request-detail.tsx:763-772`(現況一個 toast)· `apps/web/src/hooks/mutations.ts`(唯一 caller)
+- `design_handoff_licenseops/prototype/IT Ops Platform.dc.html:1343-1355, 1443-1452`(mockup 五步 + 七場景)
+- 🔴 **mockup 同實際對唔齊**:mockup 個 `precheck` 把 **OpCo budget** 同 **tenant seat** 合併成一步,實際係兩層兩道 gate。2026-08-07 DEV 實測**兩層都撞過**(log:`OpCo budget gate blocked … 0/0` 同 `… 100/90`)⇒ 合併就講唔出係邊層擋住,而兩者下一步完全唔同(叫採購買 vs 加 allocation)
+
+### 唔屬 W45 但會一齊見到嘅事
+
+- **CH-021**(intake 通知)同屬 W45 範圍,但 **`ACS_SENDER_ADDRESS` 喺 DEV 仍然係空** ⇒ 寫完驗唔到。建議 ADR-0029 先行
+- **CH-022 A7** 仍然欠 live 驗證,而佢卡喺 **B8**(private DNS 完全冇配,兩個 hostname 都打唔到 —— 2026-08-10 更正)
