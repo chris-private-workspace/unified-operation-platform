@@ -1,12 +1,12 @@
 # W45 — Assign 過程可見性
 
-**Status**: `draft`(待 Chris approve;ADR-0029 亦要同批由 Proposed → Accepted)
+**Status**: `active`(2026-08-10;ADR-0029 同日 Proposed → **Accepted**)
 **Created**: 2026-08-09
 **Owner**: Chris Lai
-**Branch**: `feat/w45-assign-progress`(未建)
+**Branch**: 🚧 `feat/w45-assign-progress` **未建** —— commit 落緊 `feat/w44-azure-dev-deploy`(W44 未 merge,另開 branch 會起喺一個未落地嘅 base);見 checklist F0-5
 **決策 SSOT**: **ADR-0029**
 
-> ⚠️ **W44 仍然 active。** 本 plan 係 rolling JIT 嘅「下一個 draft」(PROCESS §2),W44 收官前唔開工。
+> ⚠️ **W44 未收官,但已卡環境**(F6 卡 B8 private DNS · F9 卡 B9),而 W45 係純 code、零部署依賴 ⇒ Chris 2026-08-10 直接指示開工。W44 一解封即收官。
 
 ## 1. Why
 
@@ -97,3 +97,7 @@ mockup 真係有完整設計(五步 + 七個失敗場景),而現況係 `assign.m
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-09 | Initial draft | Chris 端到端對帳;方案同日拍板 = ADR-0029 D1 | _pending_ |
+| 2026-08-10 | status `draft` → `active`;W44 收官前置改成「已卡環境 ⇒ 平行開工」 | ADR-0029 Accepted;W45 零部署依賴 | Chris |
+| 2026-08-10 | **400 body 保留 `message`**(ADR JSON 例子只有 `{outcome, failedAt, steps}`) | 直接消除 R1「錯誤訊息變空白」。成本一個欄,收益 = 冇任何一刻 UI 靜靜地失去錯誤文字;順帶保住幾十條 `toThrow(/…/)` 嘅覆蓋 | Chris(2026-08-10 口頭) |
+| 2026-08-10 | **200 body 保留 `lineItem`**(ADR 講 return `AssignResult`) | 同上:讀 line item 嘅 caller 繼續行得,冇「response 合規但對佢冇用」嘅中間狀態 | Chris(2026-08-10 口頭) |
+| 2026-08-10 | `whoFixes` enum 由 `procurement`/`admin`/`entra-admin`/`wait`/`none` 改成 `operator`/`admin`/`identity`/`servicenow`/`procurement`/`platform` | 原本嗰組**撈埋咗兩個軸**:`entra-admin` / `procurement` 係「邊隊人」,`wait` / `none` 係「做咩」。ADR-0029 D2 要答嘅係「**搵邊個**」,而 `wait` 答唔到。新組全部係人,而且 `sync-azure`(identity)同 `sync-servicenow`(servicenow)分得開 —— 呢個正正係 ADR-0025 D5 保留兩句訊息嘅理由 | Chris(2026-08-10 口頭) |

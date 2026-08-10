@@ -1,7 +1,7 @@
 # ADR-0029: Assign 回傳每步結果(step results),唔拆 atomic call
 
 **Date**: 2026-08-09
-**Status**: **Proposed**(待 Chris 拍板 approve;方案已由 Chris 2026-08-09 選定)
+**Status**: **Accepted**(Chris 2026-08-10 拍板;方案已由 Chris 2026-08-09 選定)
 **Approver**: Chris Lai
 
 > **擴充,唔推翻**:ADR-0016(OpCo budget gate)· ADR-0017(三個接縫)· ADR-0011(outbound 失敗佇列)嘅決策一個字唔改。本 ADR 只改**呢啲 gate 嘅結果點樣講畀 caller 聽**。

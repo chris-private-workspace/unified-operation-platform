@@ -116,3 +116,58 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 
 - **CH-021**(intake 通知)同屬 W45 範圍,但 **`ACS_SENDER_ADDRESS` 喺 DEV 仍然係空** ⇒ 寫完驗唔到。建議 ADR-0029 先行
 - **CH-022 A7** 仍然欠 live 驗證,而佢卡喺 **B8**(private DNS 完全冇配,兩個 hostname 都打唔到 —— 2026-08-10 更正)
+
+---
+
+## Day 1 — 2026-08-10（後端契約落地:F1 + F2 大部分）
+
+### 做咗乜
+
+| Commit | 內容 | Checklist |
+|---|---|---|
+| `a13ba95` | `assign-step.ts` —— 契約型別,**純新增零行為改動** | F1-3 · F1-5 |
+| `10cc83d` | `dto/assign-result.dto.ts` + OpenAPI shape,**仍未接 controller** | F1-4 |
+| `ef7ca97` | 七道閘 + 三個副作用改成 append step;controller 返 `AssignResultDto` | F2-1…F2-10 |
+
+**分三個 commit 唔係為咗靚**:前兩個停喺「宣告」⇒ response contract 一個字未變,任何一刻收手都唔會留低半成品。真正嘅分水嶺淨係 `ef7ca97` 一個。
+
+### 三個途中發現,每個都改咗做法
+
+**① 保留 `message` 令既有 test 只紅一條(預期係「大批紅」)。** 原因:所有 `toThrow(/…/)` 嘅 assert 都靠 `message`,而我冇攞走佢。ADR-0029 Consequences 把「錯誤訊息變空白」列為**最大風險**,而保留一個欄就直接消除咗 —— 順帶保住幾十條 test 嘅覆蓋。**呢個決定嘅性價比高過預期一個數量級。**
+
+**② `ApiError.detail` 一早就載住成個 parsed body** ⇒ 前端攞 `steps` / `whoFixes` **唔使改 `api.ts` 一行**。開工前我以為要改 transport 層。
+
+**③ 唯一真正紅嗰條(`toEqual({id, stage})`),紅得啱。** 佢係「SN 回寫失敗仍然成功」嗰條 —— 主題正正係 **failure isolation**,而 ADR-0029 令佢由「靠推理」變成「睇得見」。⇒ 冇淨係改到綠,而係**加咗 step assertion**(`ticket: failed` + `assign`/`ledger: ok`)。
+
+### 一個刻意收窄嘅宣稱
+
+`ticket` step 成功路徑寫 **`RITM close requested`**,唔係 `closed`。因為 `writeTicket` 係 non-fatal(ADR-0011 I1):被拒會入 Delivery failures 但照樣返到嚟。講成「已 close」就係 **W44 F7-12 花咗兩日推翻嘅嗰種過度宣稱**,Delivery failures 先係真相。
+
+### 🔴 R3 Deviation —— 兩個保守補充(相對 ADR-0029 / plan 原文)
+
+| # | Deviation | Reason |
+|---|---|---|
+| D-a | **400 body 保留 `message`** —— ADR 個 JSON 例子只有 `{outcome, failedAt, steps}` | 消除 plan R1(錯誤訊息變空白)。成本 = 一個欄;收益 = 冇任何一刻 UI 靜靜地失去錯誤文字 |
+| D-b | **200 body 保留 `lineItem`** —— ADR 講 return `AssignResult` | 同上理由:讀 line item 嘅 caller 繼續行得,冇「response 合規但對佢冇用」嘅中間狀態 |
+
+兩個都係 **加欄唔係改欄**,向前兼容,唔影響 ADR-0029 D1 嘅原則。
+
+### 🔴 未做完(帶落 Day 2)
+
+- **F2-11 嘅 test 部分** —— `scrubPii` **code 已落**(`fail()` 同 ticket 失敗路都經咗),但 **G4 專屬 test 未寫**。⚠️ plan 要求 test 先行,實際做成 code 先行 ⇒ **fails-before 已經證唔到**,Day 2 補嗰條 test 要用**故意拆走 `scrubPii` 睇佢紅**嘅方式補回實證
+- **`budget: overridden` 未實作** —— plan §3 第 6 行寫明 status 可以係 `overridden`,但 `ef7ca97` 一律 `pass('budget')` 出 `ok`,`ASSIGN_STEP_STATUSES` 亦只有三個值 ⇒ **G6 而家收唔到貨**,而且前端根本冇嘢可以顯示。Day 2 第一件事
+- **F0-5 branch `feat/w45-assign-progress` 冇建** 🚧 —— 全部 W45 commit 落咗 `feat/w44-azure-dev-deploy`。理由:W44 未 merge,另開 branch 會令 W45 起喺一個未落地嘅 base 上面。**唔追溯改**(rebase 會令上面三個 hash 全部失效),W44 merge 之後再處理
+
+### 測試
+
+| | |
+|---|---|
+| api | **908 passed / 69 suites**(905 → 908,新增 3 條守 step 契約) |
+| lint / tsc | root lint `exit 0` · api + web tsc 都 `0` |
+| web | ⚠️ **6 failed** —— `localStorage.clear is not a function`。**已用 `git stash` 實測 baseline 一模一樣 ⇒ pre-existing,唔係本 phase 造成** |
+
+⚠️ 嗰 6 條係一個**真問題**,只係唔屬 W45:`package-lock.json` 喺開工前就已經 modified,今早 `npm install` 套用咗 —— 高度懷疑係嗰次 dependency 更新嘅副作用。**未查證,唔可以當結論。**
+
+### Commits
+
+- `a13ba95` · `10cc83d` · `4efb608`(第 1 步收尾)· `ef7ca97`(分水嶺)
