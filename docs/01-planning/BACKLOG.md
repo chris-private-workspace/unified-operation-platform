@@ -136,7 +136,9 @@
 > ⚠️ **build host 嘅 az session 唔穩定**(一日撞過 4 個 SP)⇒ az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP,否則 403 error 會誤導。
 > 💡 **測 Entra 一定要用真瀏覽器** —— 命令列打 authorize endpoint 會攞到假陽性(錯誤由 JS 畫)。跑一個故意錯嘅對照 case 先信自己個測試。
 > 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**:公司網絡實測 `rapo-n8n-uat.rci-t.com` → `10.160.71.243` ✅ / `rapo-uop-web-dev.rci-t.com` → **NXDOMAIN** ⇒ infra 漏咗建,custom domain 連企業網都訪問唔到。
-> 🟢 **但唔 block 驗證** —— 由公司網絡打 **ACA 預設 FQDN**(`aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io`)⇒ F6-4/5/6 即刻收得。
+> 🔴 **範圍更正(2026-08-10):上面呢句「唔 block 驗證」係錯,而且一直被當成事實用咗四日。** 原文寫「打 ACA 預設 FQDN ⇒ F6-4/5/6 即刻收得」,理由係「internal env 喺 hub VNet private DNS **一定**有記錄」—— 嗰個「一定」係**推論唔係實測**。Chris 2026-08-10 實測 **ACA 預設 FQDN 一樣訪問唔到**。查證:web ingress `external: true` **但** env `vnetConfiguration.internal = true` 且 `staticIp = **10.160.71.70**`(私有 IP)⇒ 要靠 private DNS zone `nicesea-c3849dba.eastasia.azurecontainerapps.io` → `10.160.71.70` 先解析到,而嗰個 zone 冇 link 到企業網。
+> ⇒ **B8 唔係「custom domain 冇記錄」,係「private DNS 完全冇配」——兩個 hostname 都打唔到。** 🔴 **F6-4/5/6 · F9-8(真人 SSO)· CH-022 A7 全部一直寫住「隨時做得」,實際上冇路。**
+> 💡 **繞路(未驗證,但有同網段實測支持)= hosts 檔**:`10.160.71.70  rapo-uop-web-dev.rci-t.com`。同一段嘅 `10.160.71.243` 公司網實測通(見上一行),缺嘅淨係 DNS 一行。**用 custom domain 唔好用 ACA FQDN** —— infra 綁咗 SNI cert 喺 custom domain,而且 `ENTRA_REDIRECT_URI` 就係佢 ⇒ 連 SSO 都用得返。
 > 🔴 **仍要一次直接驗證收尾**(row count / admin 帳號 / API 200):最快 = 上面條 FQDN;其次 ①infra 畀 `managedEnvironments/read` ②Chris 個人帳號睇 Portal log。
 > 💡 **方法論**:部署權限 / 觀測權限 / **metrics** 係三套嘢,而 metrics 一直喺手上 —— 四日冇人諗過用。
 >
