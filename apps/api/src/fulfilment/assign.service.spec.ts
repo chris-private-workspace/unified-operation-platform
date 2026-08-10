@@ -1149,6 +1149,100 @@ describe('AssignService', () => {
     });
   });
 
+  /**
+   * CH-023 / ADR-0031 §Outcome — ADR-0029 made the ServiceNow outcome visible;
+   * this makes it survive the dialog being closed. Chris asked for it hours
+   * after using ADR-0029 for real, then immediately demonstrated why: asked
+   * whether that morning's FORMS_PRO line had a RITM, the answer was "沒有印象".
+   */
+  describe('assignLineItem — ServiceNow outcome on the timeline (CH-023)', () => {
+    /** The note this change adds — NOT the ASSIGN event written inside the tx. */
+    const noteCall = () =>
+      prisma.requestEvent.create.mock.calls.find(
+        (c: any) => c[0].data.type === 'NOTE',
+      )?.[0].data;
+
+    it('records the RITM close, so the fact outlives the dialog', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ serviceNowSysId: 'ritm-1' }),
+      );
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      const ticket = res.steps.find((s) => s.key === 'ticket');
+      expect(noteCall()).toEqual({
+        requestId: 'r1',
+        lineItemId: 'li1',
+        type: 'NOTE',
+        actorId: 'admin',
+        // 🔴 G5 — derived, not re-phrased. If someone edits the step's wording
+        // and not the timeline's, this still passes, which is the point: there
+        // is only one sentence to edit.
+        message: `ServiceNow ${ticket?.status}: ${ticket?.detail}`,
+      });
+      // …and the line below is why the one above is not a tautology: THIS text
+      // comes from neither the step nor the service, so a message derived from
+      // the wrong step (or an empty one) fails here.
+      expect(noteCall().message).toBe('ServiceNow ok: RITM close requested');
+    });
+
+    /**
+     * The expensive one. `skipped` is the exact question W44 F7-12 spent two
+     * days and a live ServiceNow query answering for one request — and until
+     * now, answering it again a week later meant querying ServiceNow again.
+     */
+    it('records that NOTHING was written back when the line has no RITM and no mirror', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({
+          serviceNowSysId: null,
+          request: { serviceNowSysId: null },
+        }),
+      );
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(noteCall().message).toBe(
+        'ServiceNow skipped: This line has no RITM and the request has no ' +
+          'ServiceNow mirror',
+      );
+    });
+
+    it('records a failed write-back too, without displacing the Delivery failures row', async () => {
+      arrangeHappy(); // no RITM on the line → work note on the parent REQ
+      snow.addWorkNote.mockRejectedValue(new Error('SN down'));
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(noteCall().message).toContain('ServiceNow failed:');
+      expect(noteCall().message).toContain('SN down');
+      // The existing surface for a failure is unchanged — the timeline note is
+      // additional, not a replacement (ADR-0009 D1: coexist, don't supersede).
+      expect(failures.record).toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 CH-023 P1 / G4. Heavier than the non-fatal write-back it describes: by
+     * the time this note is written the licence IS on the user and the ledger
+     * HAS moved. A 500 here would tell an operator to retry something already
+     * done — and on this path "retry" means a second licence assignment.
+     */
+    it('never turns a completed assign into a failure when the note cannot be written', async () => {
+      arrangeHappy();
+      prisma.requestEvent.create.mockRejectedValue(new Error('db gone'));
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.outcome).toBe('assigned');
+      expect(res.lineItem).toBeDefined();
+      // The response shape is unchanged down to the steps — a swallowed error
+      // must not quietly truncate what the caller renders.
+      expect(res.steps.map((s) => s.key)).toContain('ticket');
+      expect(res.steps.every((s) => s.status !== 'failed')).toBe(true);
+    });
+  });
+
   describe('markSynced', () => {
     it('sets azureSyncedAt + accountCreatedAt and writes a SYNC event', async () => {
       prisma.request.findUnique.mockResolvedValue({

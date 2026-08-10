@@ -1,11 +1,12 @@
 # ADR-0031: Assign 每次嘗試都存低,操作員事後翻查得返
 
 **Date**: 2026-08-10
-**Status**: **Proposed**(待 Chris 拍板;方向已由 Chris 2026-08-10 選定 = 「每次嘗試都存(新表)」)
+**Status**: **Rejected**(Chris 2026-08-10 拍板改行 **Option A**;見 §Outcome)
 **Approver**: Chris Lai
 
-> **擴充 ADR-0029,唔推翻。** ADR-0029 定咗 assign 回傳咩(`{outcome, failedAt?, steps[]}`);本 ADR 只加一件事 —— **嗰個回傳唔再係一次性**。
-> 🔴 **但佢確實推翻咗一條既有約束**,見 Decision **D4**。
+> 🔴 **本 ADR 提出嘅方案(D1 新表)冇被採納。** Chris 睇完取捨之後揀咗 Alternatives 入面嘅 **Option A**(timeline NOTE),落地 = 同一單 **CH-023**。
+> **本文全文保留、一個字唔改寫** —— 佢記錄咗當時真係考慮過乜、代價喺邊。將來若果「翻查每次嘗試」再被要求,由呢度開始,唔使重新推一次。
+> 實際採納咗嘅決定 → **§Outcome**。
 
 ## Context
 
@@ -99,10 +100,27 @@ model AssignAttempt {
 
 ## Alternatives Considered
 
-- **Option A —— 寫一條 `RequestEvent` NOTE,只記 ServiceNow 側結果**:零 schema 改動、唔觸發 H1、落喺用戶本來就預期嘅 Operational history。**rejected**:Chris 2026-08-10 揀咗完整版。⚠️ 但佢**解決咗最貴嗰行**(`ticket` 結果)而成本細一個數量級 —— 若果將來覺得 D1 太重,呢個係退返去嘅落點。
+- **Option A —— 寫一條 `RequestEvent` NOTE,只記 ServiceNow 側結果**:零 schema 改動、唔觸發 H1、落喺用戶本來就預期嘅 Operational history。🟢 **ACCEPTED(Chris 2026-08-10)** —— 見 §Outcome。佢**解決咗最貴嗰行**(`ticket` 結果)而成本細一個數量級。
 - **Option B —— `RequestLineItem` 加一個 `Json` column,只存最後一次**:一行一個 JSON、零行數增長、gate 路可以完全唔郁(只喺成功路寫)。**rejected**:睇唔到「試過三次都被 budget 擋住」呢類過程。
 - **Option C —— 前端 `localStorage` 存返最後一次**:零後端改動。**rejected**:換部機 / 換個人就冇,而「邊個都翻查得到」正正係需求本身。呢個係**扮持久化**。
-- **Chosen —— D1 新表**:唯一答得到「每次嘗試」嘅做法。代價(D4 refusal 寫入 · D5 retention)已明文列出並各自有對策。
+- **D1 新表(本 ADR 提出嘅方案)**:唯一答得到「**每次**嘗試」嘅做法。代價(D4 refusal 寫入 · D5 retention · migration + 一組 test)已明文列出並各自有對策。**Rejected** —— 見 §Outcome。
+
+## Outcome（2026-08-10,Chris 拍板）
+
+**採納 Option A,唔起新表。** 呢個決定值得記低點解,因為佢反轉咗同日稍早嘅方向:
+
+1. **D4 係整個提案入面唯一一個「推翻既有約束」嘅位** —— 而佢完全係為咗 refusal 路而存在。Option A 唔掂 refusal 路 ⇒ **`ADR-0016 D6`「a block changes no state」唔使第二次軟化,W45 plan §2.2 一個字都唔使改。** 一個要三條保護(P1/P2/P3)先敢做嘅改動,同一個**根本唔需要保護**嘅改動,唔係同一個數量級嘅風險。
+2. **Context 個表入面真正紅嗰行只有一行**:「ServiceNow 回寫成功 / 或者根本冇 RITM」。refusal 邊道閘擋住 —— 操作員撳嗰刻見到、改完即刻再撳,**佢本身就唔係「三日後要翻查」嗰種事實**。⇒ D1 嘅覆蓋面大過需求。
+3. **落點更啱**:Chris 原話係「應該要能夠重新打開」,而佢已經有一個為「呢單發生過咩」而存在嘅 surface = **Operational history**。加一行落去,唔使教任何人多一個新地方要睇。
+
+**Option A 唔覆蓋而 D1 覆蓋嘅**(明文記低,唔扮冇):
+- ❌ refusal(邊道閘擋住)—— 完全唔記
+- ❌ 「試過三次都被 budget 擋住」呢類**過程**
+- ❌ 十步逐步嘅 `steps[]` 結構(timeline 得一句人話)
+
+⇒ **若果將來真係要翻查 refusal / 多次嘗試,由 D1-D6 開始睇,唔使重新設計。** 觸發訊號:有人問「點解嗰次派唔到」而 timeline 答唔到。
+
+**落地**:CH-023(folder 名 `CH-023-assign-attempt-history` **刻意保留** —— 改名會令 git history 同已 commit 嘅 `5a8e8ee` 永久對唔上,同 CLAUDE.md §9「Azure UAT 誤名」同一判斷)。
 
 ## Consequences
 

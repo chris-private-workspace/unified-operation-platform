@@ -375,3 +375,47 @@ image `dev-211001e`,走同一條 raw ARM PATCH 路,**零流程改動**。
 ### 順帶
 
 `aca.params.dev.json` 兩個 image tag 已更新(gitignored,唔入 commit)。az 操作全程用獨立 `AZURE_CONFIG_DIR` 登入部署 SP `d2f094a3-…`(§9 講明呢台機 az session 唔穩定,一日撞過 4 個 SP)。
+
+---
+
+## Day 2（續五）— CH-023:Chris 揀 Option A,ADR-0031 個新表冇起
+
+> ⚠️ 唔屬 W45 scope,但同日、同一條 assign 路、同一個 `B8` 卡住,所以記喺呢度(**CH-023** 有自己嘅 spec + checklist)。
+
+### 拍板結果:提案被自己嘅代價否決
+
+Chris 答「**想先做 Option A**」⇒ `ADR-0031` 由 `Proposed` → **`Rejected`**,**全文一個字唔改寫**,加咗一段 `§Outcome` 記低點解反轉。留全文係因為佢本身有價值:將來若果真係要「翻查每次嘗試」,由 D1-D6 開始睇,唔使重新推一次。
+
+**點解 Option A 贏**——三點,第一點係決定性:
+
+1. **D4 係全份提案入面唯一推翻既有約束嘅位,而佢淨係為 refusal 路存在。** 要存「被擋嗰次」就一定要喺 `fail()` throw 之前寫一行 ⇒ 第二次軟化 `ADR-0016 D6`「a block changes no state」(第一次 = W40 `ticketHeldAt`),要配三條保護先敢做。Option A 唔掂 refusal 路 ⇒ **W45 plan §2.2「只改點講,唔改擋唔擋」一個字都唔使改**。
+2. **Context 個表真正紅嗰行只有一行** = ServiceNow 回寫結果。refusal「邊道閘擋住」係操作員撳嗰刻見到、改完即刻再撳嘅嘢,**本身唔係「三日後要翻查」嗰種事實** ⇒ D1 覆蓋面大過需求。
+3. **落點更啱**:Chris 原話係「應該要能夠重新打開」,而佢已經有一個為「呢單發生過咩」而存在嘅 surface = Operational history。
+
+### 做咗乜（一個檔,37 行）
+
+`assign.service.ts` ServiceNow 分支之後,由 `steps` 攞返個 `ticket` step,寫一條 `RequestEvent`(`NOTE` + `lineItemId` + `actorId`),message = **`ServiceNow {status}: {detail}`**。
+
+🔴 **message 由 step 推導,唔另寫一套文案。** 兩處各自維護同一句就會出現「dialog 見到 A、timeline 見到 B」——「**第二份清單**」呢族錯誤喺本 repo 已經數到第六次(W42 BUG-009),同 ADR-0031 D1 唔用 Prisma enum、D3 重用同一個 dialog 係同一條理由。
+
+### 兩條保護,兩條都攞到硬證據
+
+- **P1 non-fatal** —— falsification **真跑過**:喺 `catch` 暫時加 `throw err`,結果 **淨係嗰一條紅、其餘 70 條全綠** ⇒ 有區分度兼且冇誤傷,之後還原。
+  ⚠️ 呢個 P1 **唔係抄 ADR-0031 嗰個**:嗰個保護「乾淨嘅 400 唔好變 500」,呢個保護「**已經真派咗 licence** 嘅一次 assign 唔好因為一條 note 報錯」。後果更重 —— licence 已落喺人身上、ledger 已 +1,呢一刻報 500 會叫操作員**再派一次**。
+- **P2 位置** —— `git diff --numstat` = **37 insertions / 0 deletions**。呢個比人手 diff 硬:**冇任何一行被改或刪**,gate 條件式同 transaction 三寫結構上逐字不變。
+
+### ⚠️ 一條「推導 assert」自己嘅陷阱
+
+`expect(message).toBe(\`ServiceNow ${ticket.status}: ${ticket.detail}\`)` 防到 drift,**但佢係 tautology** —— code 同 test 由同一個 step 攞值,永遠 pass。所以同一條 test 內配一條 `toBe('ServiceNow ok: RITM close requested')`(呢串字唔係由 step 攞)。兩條夾埋先有意義,單獨任何一條都唔夠。
+
+### 測試 / 檢查
+
+api **917 → 921 passed / 69 suites**(新 4 條)· root `npm run lint` **exit 0**(修咗一個 prettier)· api `tsc --noEmit` **exit 0** · `git status --short` 證 **零 `apps/api/prisma/` 改動 · 零 `apps/web/` 改動**。
+
+### 🔴 未做
+
+**G9 live 驗** —— 撳一次 assign,閂咗 dialog 之後喺 Operational history 睇返 ServiceNow 嗰行。**卡同一個 `B8`,同 W45 F4-4b 一齊做。**
+
+### 順帶:需求本身喺同一日再實證一次
+
+問 Chris 佢朝早喺 DEV 派嗰個 `FORMS_PRO` 條 line 有冇 RITM 號,答「**沒有印象了**」—— 即係呢個缺口喺提出之後**幾個鐘之內**又犯一次。(另:嗰個 `FORMS_PRO` **決定留低唔收**。)
