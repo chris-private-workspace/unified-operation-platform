@@ -513,6 +513,36 @@ this.issuer = [
 
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 
+### 2026-08-10 · 部署 #5(`dev-86ed450`)— **CH-023 ServiceNow 結果留 timeline 上機**
+
+**內容**:CH-023(`f219676`)+ merge 咗嘅 `main`(PR #77 + #78)。走同一條 raw ARM PATCH 路,零流程改動。
+
+> 🔴 **點解要有呢次部署 —— 一個差啲漏咗嘅前提**:準備做 live 驗嗰陣先發現 **DEV 跑緊 `dev-211001e`,而 CH-023 個 code 喺 `f219676`,即係部署 #4 之後三個 commit** ⇒ **G9 根本驗唔到**。`git log 211001e..f219676` 實測確認,唔係靠記憶。**教訓**:「code 已 merge 入 main」同「code 已經喺 DEV」係兩件事,而 live 驗計劃只寫「去撳」嗰陣好易當咗係一件事。
+
+| 步 | 結果 |
+|---|---|
+| az 身份 | `az account show` 實測 = SP **`d2f094a3-…`**(部署 SP,sub `rcitest`)—— §9 講明呢台機一日撞過 4 個 SP,所以做嘢前先驗身份,唔靠「應該係啱嗰個」 |
+| ACR login | `Login Succeeded`(`docker login --password-stdin`,憑證由 `aca.params.dev.json` 讀入變數,冇印出) |
+| Build | api + web 兩個 `exit 0`;api 過咗 BUG-008 嗰道 `RUN test -f dist/main.js` 硬閘 |
+| Push | 🟢 **兩個都 exit 0 + 有 digest** —— api `sha256:68faaa7d…` · web `sha256:90a69728…` |
+| Dry-run | `has environmentId: False` · `has workloadProfile: False` · web `sends external?: False` / `sends customDomains?: False` · api 9 secret / 25 env · web 1 secret / 1 env · 零 `<len 0>` secret |
+| PATCH | 兩個 `exit 0` |
+| Revision | api **`--0000007`** · web **`--0000004`**,兩個都 `Healthy` / traffic 100,舊 revision 退到 traffic 0。⚠️ api 第一次查係 `Activating`(要行 migration + seed),**第二次查先 `RunningAtMaxScale`** —— 查一次就下結論會誤判成部署失敗 |
+
+🟢 **決定性證據仍然係 container log**(`Healthy` 證明唔到 DB 通,呢個陷阱冇變):
+
+```
+19 migrations found in prisma/migrations
+No pending migrations to apply.
+Seeded local admin (admin@uop.local).
+Seeded 24 OpCos + admin + RHK OPCO_IT user.
+Nest application successfully started
+```
+
+零 `WARN: … failed`。**`No pending migrations` 正正係 CH-023 應有嘅樣** —— 本單零 schema 改動,所以「冇新 migration」係預期而唔係漏做。
+
+🔴 **未驗到**:CH-023 **G9**(閂咗 dialog 之後喺 Operational history 睇返 ServiceNow 嗰行)同 W45 **F4-4b**,兩個都卡 `B8`,**一定要喺公司網做**。到此刻證到嘅只係「帶住嗰個 code 嘅 container 起到身兼連到 DB」。
+
 ### 2026-08-10 · 部署 #4(`dev-211001e`)— **W45 / ADR-0029 assign step breakdown 上機**
 
 **內容**:W45 全部(ADR-0029 十步 breakdown · `budget: overridden` · 前端 `AssignResultDialog` · `apiPatch` 帶 `detail` 修復)。走同一條 raw ARM PATCH 路,零流程改動。

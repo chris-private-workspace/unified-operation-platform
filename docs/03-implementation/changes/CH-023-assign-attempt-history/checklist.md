@@ -36,6 +36,7 @@
 - [x] F3-3 BACKLOG 標完成(R7)+ W45 `progress.md` 寫一段
 - [x] F3-4 CLAUDE.md §0 / §9 + `SESSION_SUMMARY.md` 座標掃一次(§14 規矩:呢兩份係唯一無條件讀入每個新 session 嘅文件)
 - [ ] F3-5 🔴 **live 驗**(G9)—— ⚠️ **卡 `B8`,同 W45 F4-4b 一齊做**
+  - 🟢 **前提已補**(2026-08-10 **部署 #5** `dev-86ed450`):本單個 code 之前**唔喺 DEV**(部署 #4 個 tag `dev-211001e` 早 `f219676` 三個 commit)⇒ G9 當時根本驗唔到。而家 api `--0000007` / web `--0000004` 兩個 `Healthy` traffic 100,container log 證 DB 通 + seed 行到。**唔好當「已 merge 入 main」= 「已喺 DEV」。**
 
 ---
 
