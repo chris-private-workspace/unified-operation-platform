@@ -1,5 +1,22 @@
 # 07 — UAT As-Built(實際部署記錄)
 
+> ## 🔴 2026-08-04 命名更正 —— **本檔講嘅「UAT」唔係真正嘅 UAT**
+>
+> Chris 2026-08-04 更正:呢個環境**唔係企業 UAT,只係一個測試用嘅 Azure 環境** —— 我哋自己喺 `rcitest` subscription 由零建起嘅**孤島**(自建 RG + 自建 ACR + 自建 ACA env **冇 VNet 整合** + PG 開 public `0.0.0.0`),住喺 Azure 公網上,**同企業網絡冇任何連繫**。
+>
+> **後果(而且係雙向嘅)**:佢**接唔到 n8n**。
+>
+> | 方向 | 用途 | 點解唔通 |
+> |---|---|---|
+> | n8n → UOP | `POST /requests/intake` | n8n 喺**企業內網**,而本環境只有 `azurecontainerapps.io` 公網 FQDN,冇企業 domain 入口 |
+> | UOP → n8n | outbound webhook · license provider · ticket provider(ADR-0017 三接縫) | 🔴 ACA env **冇 VNet 整合** ⇒ **打唔入企業內網**,無論 n8n 個 URL 係咩 |
+>
+> ⇒ 呢個就係 W36/W39/W40/W42 一路 carry 嗰句「**n8n 側從未真接通,三個 seam 零 live 驗證**」嘅**根本原因**。唔係漏做,係環境上做唔到。
+>
+> **點解唔改檔名**:commit message / PR 標題 / 舊 progress 全部寫死咗「UAT」,改檔名只會令 git history 同文檔引用永久對唔上(W36 同一判斷)。⇒ **保留檔名,靠本 blockquote 更正**。Chris 2026-08-04 拍板。
+>
+> **真正接得通企業網絡嘅環境** = `RG-RAPO-UOP-DEV`(infra team provision)⇒ 見 [`09-dev-as-built.md`](./09-dev-as-built.md) · ADR-0027 · `W44-azure-dev-deploy/`。
+
 > 實際跑緊嘅環境快照。**最後核實 2026-08-03**(首次部署 W33 / 2026-07-22)。**唔含任何 secret**(值喺 running env / gitignored persistent params 檔)。
 >
 > 🔴 **本檔已經過時咗兩次,而兩次都唔自知**:2026-08-02 發現佢寫住 `uat-1bc7cdb` 而真實係 `uat-7e1f00b`(W41 冇更新);**2026-08-03 再犯** —— 佢寫住 `uat-629d018` / api `--0000011`,而真實係 **`uat-8646f79` / api `--0000012`**(CH-019 部署完又冇更新)。⇒ **每次部署完必須即刻更新呢個 section**,而**開工第一步一律 `az containerapp revision list` 實測,唔信本檔**。同 `CLAUDE.md §14` 嗰條座標紀律同源。

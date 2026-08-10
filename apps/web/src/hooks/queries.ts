@@ -61,6 +61,25 @@ export function useMe() {
   });
 }
 
+/**
+ * GET /auth/sso/status — can this deployment offer SSO (ADR-0028)? Public and
+ * side-effect free, so the login screen can ask before any session exists.
+ *
+ * 🔴 A RUNTIME answer. Under ADR-0003 this was a build-time constant baked into
+ * the bundle (`msalConfigured`), which meant every Entra config change needed a
+ * rebuild. `staleTime: Infinity` because deployment config cannot change while
+ * the page is open; `retry: false` because an unreachable API should leave the
+ * button off, not stall the login screen behind three attempts.
+ */
+export function useSsoStatus() {
+  return useQuery({
+    queryKey: ['auth', 'sso-status'],
+    queryFn: () => apiGet<{ enabled: boolean }>('/auth/sso/status'),
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 /** GET /license/catalog — SKU dictionary. */
 export function useCatalog() {
   return useQuery({

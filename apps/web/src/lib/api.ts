@@ -2,43 +2,20 @@
 // to the NestJS API by vite in dev (vite.config.ts) and by a reverse proxy in
 // prod. Override the base with VITE_API_BASE_URL if the API is on another origin.
 
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
-import {
-  msalInstance,
-  msalConfigured,
-  API_SCOPE,
-  AUTH_DEV_BYPASS,
-} from './auth/msal';
 import { getLocalProfile, clearLocalProfile } from './auth/local-profile';
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 /**
- * Authorization header for an API call (ADR-0003 + ADR-0005 + ADR-0006 §7). A
- * local password session now rides in an httpOnly cookie → no header (the cookie
- * is sent automatically with credentials:'include'). Otherwise: dev-bypass or
- * unconfigured MSAL (pre-app-reg) → no header; else acquire an Entra token
- * silently, and on interaction-required kick a redirect and send unauthenticated
- * once. H4: never log the token. Exported for unit testing.
+ * No Authorization header, ever (ADR-0028). Both providers — break-glass
+ * password and Entra SSO — end at the same httpOnly platform session cookie,
+ * which `credentials:'include'` sends automatically. The browser never holds a
+ * token, so there is nothing for page JS to attach, leak, or refresh.
+ *
+ * This replaced an async authHeader() that acquired Entra tokens through MSAL,
+ * along with the silent-acquire / interaction-required dance ADR-0003 listed as
+ * its own main source of complexity.
  */
-export async function authHeader(): Promise<Record<string, string>> {
-  if (getLocalProfile()) return {}; // local session → httpOnly cookie carries it
-  if (AUTH_DEV_BYPASS || !msalConfigured) return {};
-  const account = msalInstance.getActiveAccount();
-  if (!account) return {}; // not signed in — the auth gate sends the user to Login
-  try {
-    const { accessToken } = await msalInstance.acquireTokenSilent({
-      scopes: [API_SCOPE],
-      account,
-    });
-    return { Authorization: `Bearer ${accessToken}` };
-  } catch (err) {
-    if (err instanceof InteractionRequiredAuthError) {
-      void msalInstance.acquireTokenRedirect({ scopes: [API_SCOPE], account });
-    }
-    return {};
-  }
-}
 
 export class ApiError extends Error {
   constructor(
@@ -91,11 +68,12 @@ function tryRefresh(): Promise<boolean> {
 }
 
 /**
- * fetch with the session cookie + a one-shot refresh-retry for local sessions
- * (ADR-0006 §7). On a 401 for a local session we rotate via /auth/refresh once
- * and replay the request; if refresh fails we drop the profile so the auth gate
- * sends the user back to Login. Entra 401s are left to MSAL (no refresh here);
- * login itself has no profile yet, so a bad-credentials 401 is returned as-is.
+ * fetch with the session cookie + a one-shot refresh-retry (ADR-0006 §7). On a
+ * 401 for an established session we rotate via /auth/refresh once and replay the
+ * request; if refresh fails we drop the profile so the auth gate sends the user
+ * back to Login. Login itself has no profile yet, so a bad-credentials 401 is
+ * returned as-is. Since ADR-0028 this covers SSO sessions too — they hold the
+ * same refresh token, so they rotate the same way.
  */
 async function doFetch(path: string, init: RequestInit): Promise<Response> {
   const withCreds: RequestInit = { ...init, credentials: 'include' };
@@ -113,7 +91,7 @@ async function doFetch(path: string, init: RequestInit): Promise<Response> {
 /** GET a JSON resource; throws ApiError on a non-2xx response. */
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await doFetch(path, {
-    headers: { Accept: 'application/json', ...(await authHeader()) },
+    headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
     /**
@@ -148,7 +126,6 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     method: 'POST',
     headers: {
       Accept: 'application/json',
-      ...(await authHeader()),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -164,27 +141,25 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
  * PATCH with an optional JSON body. On a non-2xx the server's `message` (NestJS
  * error shape) is surfaced so callers can toast the real reason (seat exhausted,
  * sync gate, …) rather than a generic string.
+ *
+ * 🔴 W45 — this used to build the ApiError by hand and pass only `message`, so
+ * `detail` was ALWAYS undefined on a PATCH. ADR-0029 puts the assign step
+ * breakdown in the 400 body, and it was silently unreachable: every layer was
+ * green (api tests, web tests, tsc, lint) because the UI tests construct their
+ * own ApiError with a detail, so nothing exercised the real transport. Routed
+ * through `errorFrom` like apiPost, which has carried the body since CH-019.
  */
 export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   const res = await doFetch(path, {
     method: 'PATCH',
     headers: {
       Accept: 'application/json',
-      ...(await authHeader()),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    let message = `PATCH ${path} failed (${res.status})`;
-    try {
-      const data = await res.json();
-      const m = (data as { message?: string | string[] }).message;
-      if (m) message = Array.isArray(m) ? m.join(', ') : m;
-    } catch {
-      // non-JSON error body — keep the generic message
-    }
-    throw new ApiError(res.status, message);
+    throw await errorFrom(res, `PATCH ${path} failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T; // No Content (e.g. change password)
   return res.json() as Promise<T>;
@@ -197,7 +172,7 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
 export async function apiDelete<T>(path: string): Promise<T> {
   const res = await doFetch(path, {
     method: 'DELETE',
-    headers: { Accept: 'application/json', ...(await authHeader()) },
+    headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
     let message = `DELETE ${path} failed (${res.status})`;

@@ -21,6 +21,12 @@ import {
   pickAuditMetadata,
 } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
+import {
+  ASSIGN_GATE_KEYS,
+  type AssignStep,
+  type AssignStepKey,
+  type AssignStepOwner,
+} from './assign-step';
 
 // Actors (AUTH-3a). readyItem's request.opcoId = 'o1'.
 // `role` matters from W36 on: the budget override is ADMIN-only (ADR-0016 D3).
@@ -849,8 +855,297 @@ describe('AssignService', () => {
 
       const res = await service.assignLineItem('li1', undefined, ADMIN);
 
-      expect(res).toEqual({ id: 'li1', stage: 'ASSIGNED' });
+      // ADR-0029 — the line item moved to `lineItem`; the response itself is
+      // now the step breakdown.
+      expect(res.lineItem).toEqual({ id: 'li1', stage: 'ASSIGNED' });
+      expect(res.outcome).toBe('assigned');
       expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled(); // assign committed
+
+      /**
+       * The point of this test is failure ISOLATION, and ADR-0029 makes that
+       * visible rather than inferable: the assign succeeded, but the operator
+       * can now see that the mirror note did not land — previously the only
+       * trace was a swallowed warn and a queue row nobody was looking at.
+       */
+      const ticket = res.steps.find((s) => s.key === 'ticket');
+      expect(ticket).toMatchObject({
+        status: 'failed',
+        retryable: true,
+        whoFixes: 'platform',
+      });
+      expect(res.steps.find((s) => s.key === 'assign')?.status).toBe('ok');
+      expect(res.steps.find((s) => s.key === 'ledger')?.status).toBe('ok');
+    });
+  });
+
+  /**
+   * ADR-0029 — one assertion per gate. Written as its own block rather than
+   * folded into the existing gate tests on purpose: those assert the MESSAGE
+   * (and still do, unchanged), while these assert the STEP contract. Changing
+   * the old ones to check steps would have quietly dropped the message
+   * coverage that ADR-0029 explicitly promised to keep.
+   */
+  describe('assignLineItem — step breakdown (ADR-0029)', () => {
+    /** Runs an assign expected to be blocked, and returns the 400 body. */
+    const blockedBody = async () => {
+      try {
+        await service.assignLineItem('li1', undefined, ADMIN);
+      } catch (err) {
+        return (
+          err as { getResponse: () => Record<string, unknown> }
+        ).getResponse();
+      }
+      throw new Error('expected the assign to be blocked, but it succeeded');
+    };
+
+    /**
+     * One gate, checked three ways at once, because `failedAt` on its own is
+     * the weakest of the three:
+     *
+     *  1. the body NAMES the gate,
+     *  2. every gate BEFORE it is reported `ok` — that is what turns the list
+     *     into evidence ("it reached budget, so both syncs were fine"),
+     *  3. nothing AFTER it appears at all — steps that were never evaluated
+     *     must be absent, not reported as skipped.
+     *
+     * 🔴 The expected prefix is derived from `ASSIGN_GATE_KEYS` rather than
+     * retyped. That is a real cross-check, not a tautology: `assign.service.ts`
+     * never reads that array — it runs the gates in hand-written order — so
+     * this fails the moment the declared contract order and the runtime order
+     * disagree, which is exactly the drift nothing else would catch.
+     */
+    const expectBlockedAt = async (
+      key: AssignStepKey,
+      whoFixes: AssignStepOwner,
+      retryable: boolean,
+    ) => {
+      const body = await blockedBody();
+      expect(body.outcome).toBe('blocked');
+      expect(body.failedAt).toBe(key);
+
+      const steps = body.steps as AssignStep[];
+      const expected = ASSIGN_GATE_KEYS.slice(
+        0,
+        ASSIGN_GATE_KEYS.indexOf(key as never) + 1,
+      );
+      expect(steps.map((s) => s.key)).toEqual(expected);
+      expect(steps.slice(0, -1).map((s) => s.status)).toEqual(
+        steps.slice(0, -1).map(() => 'ok'),
+      );
+      expect(steps[steps.length - 1]).toMatchObject({
+        status: 'failed',
+        whoFixes,
+        retryable,
+      });
+      // Non-empty, and free of anything email-shaped (BUG-004 net).
+      expect(steps[steps.length - 1].detail).toBeTruthy();
+      expect(steps[steps.length - 1].detail).not.toMatch(
+        /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/,
+      );
+    };
+
+    it('reports every gate it passed, in run order, on a full success', async () => {
+      arrangeHappy();
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.steps.map((s) => s.key)).toEqual([
+        'stage',
+        'sync-azure',
+        'sync-servicenow',
+        'directory',
+        'usage-location',
+        'budget',
+        'seats',
+        'assign',
+        'ledger',
+        'ticket',
+      ]);
+      expect(res.failedAt).toBeUndefined();
+    });
+
+    /**
+     * F2-12 — one test per gate, never one test covering several.
+     *
+     * 🔴 Every one of these starts from `arrangeHappy()` and then shuts exactly
+     * ONE thing. Without that the assertion can pass for the wrong reason: an
+     * unarranged mock makes the run die at some earlier gate, and the test then
+     * proves nothing about the gate it is named after. (CH-022 hit precisely
+     * this — an assert that held because the code early-returned for an
+     * unrelated reason.)
+     */
+    it('names `stage` when the line item is not READY', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ stage: 'QUOTING' }),
+      );
+
+      // `operator`, and NOT retryable: pressing again changes nothing — the
+      // line has to be moved through its stages first.
+      await expectBlockedAt('stage', 'operator', false);
+    });
+
+    it('names `sync-azure` when the Phase 1 gate has not opened', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { azureSyncedAt: null } }),
+      );
+
+      // retryable: nothing is broken — the ADR-0015 sweep opens this on its own
+      // once Entra Connect has the user.
+      await expectBlockedAt('sync-azure', 'identity', true);
+    });
+
+    /**
+     * Gate ② — the ServiceNow side, chased through a different team than the
+     * Azure one. Telling them apart is the whole reason ADR-0025 D5 kept two
+     * messages, and ADR-0029 makes it machine-readable.
+     */
+    it('names `sync-servicenow` when gate ② has not opened', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { serviceNowUserSyncedAt: null } }),
+      );
+
+      // 🔴 A DIFFERENT owner from sync-azure, on identical-looking symptoms.
+      // Collapsing the two would send the operator to the wrong team.
+      await expectBlockedAt('sync-servicenow', 'servicenow', true);
+    });
+
+    it('names `directory` when Graph cannot find the user yet', async () => {
+      arrangeHappy();
+      graph.findUser.mockResolvedValue(null);
+
+      await expectBlockedAt('directory', 'identity', true);
+    });
+
+    it('names `usage-location` when the user has none and none was supplied', async () => {
+      arrangeHappy();
+      graph.findUser.mockResolvedValue({
+        id: 'aad-1',
+        userPrincipalName: 'new.user@rhk.com',
+        displayName: 'New User',
+        usageLocation: null,
+        accountEnabled: true,
+      });
+
+      // The one gate the operator clears on the spot — the assign dialog takes
+      // an override — so `operator`, and retrying the same call is pointless.
+      await expectBlockedAt('usage-location', 'operator', false);
+    });
+
+    it('names `budget` when the OpCo allocation is used up', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(5, 5));
+
+      await expectBlockedAt('budget', 'admin', false);
+    });
+
+    /**
+     * 🔴 The pair that must never be folded together. `budget` above is green
+     * here (arrangeHappy leaves headroom) and `seats` still refuses — which is
+     * exactly the 2026-08-07 DEV shape, and exactly what the mockup's single
+     * `precheck` step could not have said. Different owner, different remedy.
+     */
+    it('names `seats` when the tenant has none left, with budget green', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'guid-1',
+          skuPartNumber: 'SPE_E3',
+          prepaidEnabled: 100,
+          consumedUnits: 100, // full
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      await expectBlockedAt('seats', 'procurement', false);
+    });
+
+    it('keeps `message` alongside the new shape so an unchanged caller still renders an error', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({ request: { azureSyncedAt: null } }),
+      );
+
+      const body = await blockedBody();
+
+      // ADR-0029 Consequences named "the error message goes blank" as the risk
+      // of changing this body. This is the assertion that keeps it from
+      // happening — it must fail if anyone drops `message`.
+      expect(body.message).toBe(
+        'Phase 1 sync gate not passed: azureSyncedAt is null',
+      );
+    });
+
+    /**
+     * W45 G4 / plan R3 — `detail` carries vendor error text, and vendor error
+     * text quotes UPNs (BUG-004's whole shape). A reviewer cannot see this: the
+     * scrub is one call inside a string that reads fine either way, so it needs
+     * a test that goes red when the call is removed.
+     */
+    it('scrubs email-shaped tokens out of `detail` before it leaves the service', async () => {
+      arrangeHappy();
+      // The realistic carrier: this line has no RITM, so the write-back goes to
+      // the parent REQ, and the failure text is ServiceNow's own.
+      snow.addWorkNote.mockRejectedValue(
+        new Error(
+          "Resource '/users/new.user@rhk.com' does not exist or one of its " +
+            'queried reference-property objects are not present',
+        ),
+      );
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      const ticket = res.steps.find((s) => s.key === 'ticket');
+      expect(ticket?.status).toBe('failed');
+      // Asserted as a PATTERN, not as "!== the UPN we sent": a regression that
+      // leaked a *different* address would still have to fail this.
+      expect(ticket?.detail).not.toMatch(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/);
+      // …and the diagnostic value survives — a scrub that ate the whole string
+      // would pass the line above while making the step useless.
+      expect(ticket?.detail).toContain('does not exist');
+    });
+
+    /**
+     * W45 G6 — an override is NOT an `ok` budget check. ADR-0016 R4 counts on
+     * "override used" meaning the allocation was actually busted.
+     */
+    it('reports `budget: overridden` when an admin goes past a busted allocation', async () => {
+      arrangeHappy();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(3, 3));
+
+      const res = await service.assignLineItem(
+        'li1',
+        undefined,
+        ADMIN,
+        'urgent onboarding, CFO approved',
+      );
+
+      expect(res.outcome).toBe('assigned');
+      const budget = res.steps.find((s) => s.key === 'budget');
+      expect(budget?.status).toBe('overridden');
+      // The numbers that make the override auditable, and nothing else.
+      expect(budget?.detail).toContain('3 assigned of 3 allocated');
+      // 🔴 H4 — the reason is free text an admin typed. It belongs on the
+      // timeline and in the audit log, not in an API response.
+      expect(budget?.detail).not.toContain('CFO');
+    });
+
+    it('reports `budget: ok` when a reason is supplied but nothing was actually overridden', async () => {
+      arrangeHappy(); // ledgerRow() = 3 assigned of 10 — plenty of headroom
+
+      const res = await service.assignLineItem(
+        'li1',
+        undefined,
+        ADMIN,
+        'sent out of habit',
+      );
+
+      // Same rule as the timeline and the audit row: an override that did not
+      // happen must not be claimed anywhere, or R4's count stops being honest.
+      expect(res.steps.find((s) => s.key === 'budget')?.status).toBe('ok');
     });
   });
 

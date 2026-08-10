@@ -67,6 +67,11 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
     requestLineItem: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
+  // ADR-0030 D1 — the REQ's own `opened_by`, which is what now becomes the
+  // licence request's requester. ServiceNow returns reference fields as
+  // `{ link, value }`, so the sysId sits on `.value`.
+  const OPENED_BY_SYS_ID = 'sys-opened-by';
+
   let snow: { getRecordByNumber: jest.Mock };
   let connectorConfig: { resolve: jest.Mock };
   let audit: { log: jest.Mock };
@@ -138,7 +143,10 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
       skuId: 'guid-e5',
       active: true,
     });
-    snow.getRecordByNumber.mockResolvedValue({ sys_id: REQ_SYS_ID });
+    snow.getRecordByNumber.mockResolvedValue({
+      sys_id: REQ_SYS_ID,
+      opened_by: { value: OPENED_BY_SYS_ID },
+    });
     prisma.request.create.mockImplementation(({ data }: any) => ({
       id: 'r1',
       ...data,
@@ -356,7 +364,10 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
         code: 'RHK',
         active: true,
       });
-      snow.getRecordByNumber.mockResolvedValue({ sys_id: REQ_SYS_ID });
+      snow.getRecordByNumber.mockResolvedValue({
+        sys_id: REQ_SYS_ID,
+        opened_by: { value: OPENED_BY_SYS_ID },
+      });
       // The created request echoes back the line it was told to create, so the
       // audit step has a real line-item id to point at.
       prisma.request.create.mockImplementation(({ data }: any) => ({
@@ -759,6 +770,51 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
        * vanished". The ticket is recoverable from the queue, a lost intake is
        * not (same reasoning as ADR-0020 D6).
        */
+      it('hands the REQ own opened_by over as the requester sysId (ADR-0030 D1)', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+
+        await adapter.intakeFlat(flatPayload());
+
+        expect(submission.submit).toHaveBeenCalledWith(
+          expect.objectContaining({ requesterSysId: OPENED_BY_SYS_ID }),
+        );
+      });
+
+      it('raises the ticket whatever requesterEmail says, because it is no longer consulted (ADR-0030 D2)', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+
+        // The address n8n actually sends is the Outlook trigger's sender, which
+        // is not a ServiceNow user — that is what killed three live intakes.
+        await adapter.intakeFlat({
+          ...flatPayload(),
+          requesterEmail: 'someone-not-in-servicenow@example.com',
+        });
+
+        expect(submission.submit).toHaveBeenCalledWith(
+          expect.objectContaining({ requesterSysId: OPENED_BY_SYS_ID }),
+        );
+      });
+
+      it('refuses when the REQ carries no opened_by instead of falling back to the e-mail lookup (ADR-0030 D3)', async () => {
+        flatMocks();
+        // Lines DO exist — otherwise raiseLicenceRequest early-returns and the
+        // "never submitted" assertion below would pass for the wrong reason.
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+        snow.getRecordByNumber.mockResolvedValue({ sys_id: REQ_SYS_ID });
+
+        await expect(adapter.intakeFlat(flatPayload())).rejects.toThrow(
+          BadRequestException,
+        );
+        // The point of D3: nothing may be raised on a guess. A fallback here
+        // would revive the 0% path and hide the next failure.
+        expect(submission.submit).not.toHaveBeenCalled();
+      });
+
       it('keeps the request and queues a SUBMIT failure when ServiceNow refuses', async () => {
         flatMocks();
         prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);

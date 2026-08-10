@@ -16,6 +16,21 @@ export interface SubmitRequestPayload {
   targetUpn: string; // the user the licenses are for
   opcoCode: string;
   requesterEmail?: string;
+  /**
+   * ADR-0030 D1/D3 — a `sys_user` sysId the caller ALREADY holds, so the
+   * requester never has to be looked up by e-mail.
+   *
+   * Only the intake path can supply it: it resolves the incoming REQ anyway
+   * (`resolveReqSysId`) and that record carries its own `opened_by`. The
+   * outbound path (IT raising a request from the platform) has no REQ yet —
+   * the ticket IS what it is about to create — so it leaves this undefined and
+   * keeps using `requesterEmail`.
+   *
+   * 🔴 Present-but-wrong must fail, not fall back: a lookup revived behind a
+   * supplied sysId would be a 0%-measured path (W44 — three consecutive n8n
+   * intakes died in it) quietly pretending to be a repair mechanism.
+   */
+  requesterSysId?: string;
   remark?: string;
   lineItems: SubmitLineItem[];
 }

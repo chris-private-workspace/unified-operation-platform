@@ -68,7 +68,11 @@ export class IntakeAdapterService {
       resolved,
       dto.request.requestId,
     );
-    const serviceNowSysId = await this.resolveReqSysId(dto.request.requestId);
+    // Native path does not raise a licence request (ADR-0025 D2 lives on the
+    // flat path only), so `openedBySysId` has no consumer here.
+    const { sysId: serviceNowSysId } = await this.resolveReqSysId(
+      dto.request.requestId,
+    );
 
     const canonical: N8nIntakeRequestDto = {
       targetUpn: dto.targetUser.email.trim(),
@@ -145,7 +149,8 @@ export class IntakeAdapterService {
       [],
       dto.requestId,
     );
-    const serviceNowSysId = await this.resolveReqSysId(dto.requestId);
+    const { sysId: serviceNowSysId, openedBySysId } =
+      await this.resolveReqSysId(dto.requestId);
 
     const canonical: N8nIntakeRequestDto = {
       targetUpn: dto.targetUpn.trim(),
@@ -187,7 +192,7 @@ export class IntakeAdapterService {
     }
     // ADR-0025 D2 — the licence request the platform owns, raised immediately
     // (Chris 2026-08-04). Fail-soft and once-only; see the method.
-    await this.raiseLicenceRequest(created.id, canonical);
+    await this.raiseLicenceRequest(created.id, canonical, openedBySysId);
     return created;
   }
 
@@ -216,6 +221,7 @@ export class IntakeAdapterService {
   private async raiseLicenceRequest(
     requestId: string,
     canonical: N8nIntakeRequestDto,
+    requesterSysId: string,
   ): Promise<void> {
     const lines = await this.prisma.requestLineItem.findMany({
       where: { requestId },
@@ -246,6 +252,10 @@ export class IntakeAdapterService {
       targetDisplayName: canonical.targetDisplayName,
       opcoCode: canonical.opcoCode,
       requesterEmail: canonical.requesterEmail,
+      // ADR-0030 D1 — the REQ's own `opened_by`. Kept alongside requesterEmail
+      // rather than replacing it: the address stays useful for display and
+      // audit, it just no longer decides whether a ticket can be raised.
+      requesterSysId,
       lineItems: submitLines,
     };
 
@@ -542,7 +552,9 @@ export class IntakeAdapterService {
    * is ours (503) — same split as BUG-003, so a retry is obviously worthwhile
    * in one case and pointless in the other.
    */
-  private async resolveReqSysId(requestNumber: string): Promise<string> {
+  private async resolveReqSysId(
+    requestNumber: string,
+  ): Promise<{ sysId: string; openedBySysId: string }> {
     const number = requestNumber.trim();
     let record: Awaited<ReturnType<ServiceNowService['getRecordByNumber']>>;
     try {
@@ -561,7 +573,34 @@ export class IntakeAdapterService {
         `ServiceNow request '${number}' was not found, so it cannot be mirrored`,
       );
     }
-    return sysId;
+    /**
+     * ADR-0030 D1 — the requester for the licence request this onboarding will
+     * need. `getRecordByNumber` puts no `sysparm_fields` on the query, so the
+     * whole REQ record is already in hand and `opened_by` has simply never been
+     * read.
+     *
+     * Reference fields come back as `{ link, value }` unless display values were
+     * asked for, so the sysId lives on `.value` — reading the field itself gives
+     * an object, not an id.
+     *
+     * 🔴 Fail-loud instead of falling back to the e-mail lookup. That lookup is
+     * the path W44 measured at 0%: n8n sends the Outlook trigger's sender as
+     * `requesterEmail`, which is not a ServiceNow user, so three consecutive
+     * intakes died in it while every response still looked fine. Reviving it
+     * behind a miss would hide the next failure the same way (ADR-0030 D3).
+     */
+    const openedByRaw = (record as Record<string, unknown> | null)?.opened_by;
+    const openedByValue =
+      typeof openedByRaw === 'string'
+        ? openedByRaw
+        : (openedByRaw as { value?: unknown } | undefined)?.value;
+    if (typeof openedByValue !== 'string' || !openedByValue) {
+      throw new BadRequestException(
+        `ServiceNow request '${number}' carries no opened_by, so no requester can be attached to the licence request`,
+      );
+    }
+
+    return { sysId, openedBySysId: openedByValue };
   }
 
   // ── small mappings ───────────────────────────────────────────

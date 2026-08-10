@@ -1,21 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
-// Mutable mock state, toggled per test. vi.hoisted runs before the vi.mock factory,
-// so the factory can close over it. authHeader reads AUTH_DEV_BYPASS / msalConfigured
-// / the local profile at call time, so the getters reflect live state.
+// Mutable mock state, toggled per test. vi.hoisted runs before the vi.mock
+// factory, so the factory can close over it. The profile is read at call time,
+// so the getter reflects live state.
 const m = vi.hoisted(() => ({
-  devBypass: false,
-  configured: true,
-  account: null as { username: string } | null,
   localProfile: null as Record<string, unknown> | null,
   cleared: false,
-  acquireTokenSilent: vi.fn(),
-  acquireTokenRedirect: vi.fn(),
 }));
 
-// Local password session (ADR-0006 §7) — the profile is present iff a local
-// session exists; the tokens live in httpOnly cookies (not visible to JS).
+// The platform session (ADR-0006 §7 / ADR-0028) — the profile is present iff a
+// session exists, whichever provider established it; the tokens live in httpOnly
+// cookies (not visible to JS).
 vi.mock('@/lib/auth/local-profile', () => ({
   getLocalProfile: () => m.localProfile,
   clearLocalProfile: () => {
@@ -23,26 +18,8 @@ vi.mock('@/lib/auth/local-profile', () => ({
   },
 }));
 
-vi.mock('@/lib/auth/msal', () => ({
-  API_SCOPE: 'api://uop-test/access',
-  get AUTH_DEV_BYPASS() {
-    return m.devBypass;
-  },
-  get msalConfigured() {
-    return m.configured;
-  },
-  msalInstance: {
-    getActiveAccount: () => m.account,
-    acquireTokenSilent: (args: unknown) => m.acquireTokenSilent(args),
-    acquireTokenRedirect: (args: unknown) => m.acquireTokenRedirect(args),
-  },
-}));
+import { apiGet, apiPatch, apiPost, ApiError } from './api';
 
-// InteractionRequiredAuthError is the REAL class (not mocked) so the `instanceof`
-// check in authHeader matches — that is the whole point of the interactive branch.
-import { apiGet, authHeader, ApiError } from './api';
-
-const ACCOUNT = { username: 'alice@ricoh.com' };
 const PROFILE = {
   id: 'u1',
   email: 'a@x',
@@ -61,73 +38,49 @@ function jsonRes(status: number, body: unknown) {
 }
 
 beforeEach(() => {
-  m.devBypass = false;
-  m.configured = true;
-  m.account = null;
   m.localProfile = null;
   m.cleared = false;
-  m.acquireTokenSilent.mockReset();
-  m.acquireTokenRedirect.mockReset();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('authHeader (token attach)', () => {
-  it('local session → no header (httpOnly cookie carries it), no MSAL call (ADR-0006 §7)', async () => {
+/**
+ * ADR-0028 replaced an async authHeader() (MSAL silent acquire + Bearer attach)
+ * with nothing at all: the session is a cookie the browser sends itself. These
+ * tests lock that in — they are what the old "token attach" suite became.
+ */
+describe('credential transport', () => {
+  it('sends the session cookie and NEVER an Authorization header', async () => {
     m.localProfile = PROFILE;
-    m.devBypass = true; // even dev-bypass yields to a real local session
-    m.account = ACCOUNT;
-    expect(await authHeader()).toEqual({});
-    expect(m.acquireTokenSilent).not.toHaveBeenCalled();
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes(200, { value: 1 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiGet('/x');
+    await apiPost('/y', { a: 1 });
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.credentials).toBe('include');
+      expect(init.headers).not.toHaveProperty('Authorization');
+    }
   });
 
-  it('dev-bypass → no header, no token acquired (backend AUTH_DEV_BYPASS carries it)', async () => {
-    m.devBypass = true;
-    m.account = ACCOUNT; // even with an account present, dev-bypass wins
-    expect(await authHeader()).toEqual({});
-    expect(m.acquireTokenSilent).not.toHaveBeenCalled();
-  });
+  it('sends no Authorization header when signed out either', async () => {
+    m.localProfile = null;
+    const fetchMock = vi.fn().mockResolvedValue(jsonRes(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
 
-  it('MSAL unconfigured (pre-app-reg) → no header', async () => {
-    m.configured = false;
-    m.account = ACCOUNT;
-    expect(await authHeader()).toEqual({});
-    expect(m.acquireTokenSilent).not.toHaveBeenCalled();
-  });
+    await apiGet('/x');
 
-  it('configured but not signed in → no header (the auth gate handles login)', async () => {
-    m.account = null;
-    expect(await authHeader()).toEqual({});
-    expect(m.acquireTokenSilent).not.toHaveBeenCalled();
-  });
-
-  it('signed in → Bearer header from a silent token', async () => {
-    m.account = ACCOUNT;
-    m.acquireTokenSilent.mockResolvedValue({ accessToken: 'tok-abc' });
-    expect(await authHeader()).toEqual({ Authorization: 'Bearer tok-abc' });
-  });
-
-  it('silent interaction-required → kicks a redirect, sends no header this once', async () => {
-    m.account = ACCOUNT;
-    m.acquireTokenSilent.mockRejectedValue(
-      new InteractionRequiredAuthError('interaction_required', 'silent failed'),
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty(
+      'Authorization',
     );
-    expect(await authHeader()).toEqual({});
-    expect(m.acquireTokenRedirect).toHaveBeenCalledTimes(1);
-  });
-
-  it('other silent failure → no header, and no redirect (avoids a redirect loop)', async () => {
-    m.account = ACCOUNT;
-    m.acquireTokenSilent.mockRejectedValue(new Error('network'));
-    expect(await authHeader()).toEqual({});
-    expect(m.acquireTokenRedirect).not.toHaveBeenCalled();
   });
 });
 
 describe('refresh-retry on 401 (ADR-0006 §7)', () => {
-  it('local 401 → /auth/refresh → retry once → success', async () => {
+  it('401 → /auth/refresh → retry once → success', async () => {
     m.localProfile = PROFILE;
     const fetchMock = vi
       .fn()
@@ -142,7 +95,7 @@ describe('refresh-retry on 401 (ADR-0006 §7)', () => {
     expect(m.cleared).toBe(false);
   });
 
-  it('local 401 → refresh fails → clears profile and throws 401 (no retry)', async () => {
+  it('401 → refresh fails → clears profile and throws 401 (no retry)', async () => {
     m.localProfile = PROFILE;
     const fetchMock = vi
       .fn()
@@ -155,7 +108,10 @@ describe('refresh-retry on 401 (ADR-0006 §7)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2); // no retry
   });
 
-  it('401 without a local profile is not refreshed (Entra path is MSAL’s job)', async () => {
+  // The control case: without a session there is nothing to rotate, and the 401
+  // is the honest answer (this is what /auth/login itself gets on bad
+  // credentials — refreshing there would be a pointless round trip).
+  it('401 without a session is not refreshed', async () => {
     m.localProfile = null;
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonRes(401, {}));
     vi.stubGlobal('fetch', fetchMock);
@@ -163,5 +119,58 @@ describe('refresh-retry on 401 (ADR-0006 §7)', () => {
     await expect(apiGet('/x')).rejects.toBeInstanceOf(ApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(m.cleared).toBe(false);
+  });
+});
+
+/**
+ * 🔴 W45 — the regression that every other layer missed.
+ *
+ * `apiPatch` built its ApiError by hand and passed only `message`, so `detail`
+ * was ALWAYS undefined on a PATCH. ADR-0029 puts the assign step breakdown in
+ * the 400 body, and it was unreachable: the api tests were green (the body is
+ * correct), the UI tests were green (they construct their OWN ApiError with a
+ * detail), tsc and lint were green — and the dialog never opened in a browser.
+ *
+ * The lesson is where the test belongs, not that one was missing: a UI test
+ * that hand-builds the error it expects can never fail on the transport.
+ */
+describe('error body reaches the caller (ADR-0029)', () => {
+  it('PATCH carries the parsed body on `detail`, not just `message`', async () => {
+    const body = {
+      outcome: 'blocked',
+      failedAt: 'directory',
+      steps: [{ key: 'directory', status: 'failed', whoFixes: 'identity' }],
+      message: 'Target user not found in Azure AD (not synced yet)',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes(400, body)));
+
+    const err = (await apiPatch('/x', { a: 1 }).catch((e) => e)) as ApiError;
+
+    expect(err).toBeInstanceOf(ApiError);
+    // Both, not either: `message` is what an unchanged caller renders, `detail`
+    // is what the step breakdown needs. Losing either one is a silent failure.
+    expect(err.message).toBe(
+      'Target user not found in Azure AD (not synced yet)',
+    );
+    expect(err.detail).toEqual(body);
+  });
+
+  it('PATCH with a non-JSON error body still throws a usable ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new Error('not json');
+        },
+      }),
+    );
+
+    const err = (await apiPatch('/x').catch((e) => e)) as ApiError;
+
+    expect(err.status).toBe(502);
+    expect(err.message).toContain('502');
+    expect(err.detail).toBeUndefined();
   });
 });

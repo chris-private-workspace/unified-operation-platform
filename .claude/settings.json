@@ -1,5 +1,4 @@
 {
-  "_comment": "Claude Code 本機設定。hooks = 自動行為(SessionStart 注入 context / UserPromptSubmit 注入紀律提醒)。",
   "hooks": {
     "SessionStart": [
       {
@@ -40,6 +39,8 @@
   "enabledPlugins": {
     "claude-api@anthropic-agent-skills": true,
     "document-skills@anthropic-agent-skills": true,
-    "andrej-karpathy-skills@karpathy-skills": true
-  }
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "skill-creator@claude-plugins-official": true
+  },
+  "_comment": "Claude Code 本機設定。hooks = 自動行為(SessionStart 注入 context / UserPromptSubmit 注入紀律提醒)。"
 }

@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useMsal } from '@azure/msal-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { API_SCOPE, msalConfigured } from '@/lib/auth/msal';
+import { startSso } from '@/lib/auth/sso';
+import { useSsoStatus } from '@/hooks/queries';
 import { apiPost, ApiError } from '@/lib/api';
 import { setLocalProfile } from '@/lib/auth/local-profile';
 import type { SessionResponse } from '@/lib/api-types';
@@ -22,22 +22,36 @@ function MicrosoftLogo() {
 }
 
 // Login screen (handoff README §0): two panels. Left ~52% is the brand panel — the
-// system's one gradient (DS-7). Right is the sign-in form. Real SSO goes through
-// "Continue with Microsoft Entra ID" (loginRedirect, ADR-0003); the email/password
-// fields are the mockup's visual — reproduced but never wired (no fake password form).
+// system's one gradient (DS-7). Right is the sign-in form. SSO goes through
+// "Continue with Microsoft Entra ID" (ADR-0028: the api builds the Entra URL and
+// we navigate to it); the local form below it is the break-glass path (ADR-0005).
 export function Login() {
-  const { instance } = useMsal();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sso = useSsoStatus();
+  const ssoEnabled = sso.data?.enabled === true;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [ssoStarting, setSsoStarting] = useState(false);
+  // main.tsx puts ?sso=failed here when a redirect came back but the exchange
+  // did not work out. The reason itself stays in the api log (H4) — from here
+  // the only useful thing to say is "that did not work, try again".
+  const [error, setError] = useState<string | null>(
+    searchParams.get('sso') === 'failed'
+      ? 'Microsoft sign-in did not complete. Please try again.'
+      : null,
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const signIn = () => {
-    // Scope empty until the app registration exists; msalConfigured gates the button.
-    void instance
-      .loginRedirect({ scopes: API_SCOPE ? [API_SCOPE] : [] })
-      .catch(() => {});
+    setError(null);
+    setSsoStarting(true);
+    // startSso navigates away on success, so there is no success branch to
+    // write — only the case where the api could not even hand us a URL.
+    void startSso().catch(() => {
+      setSsoStarting(false);
+      setError('Could not reach Microsoft sign-in. Please try again.');
+    });
   };
 
   // Local password login (ADR-0005): POST /auth/login → store the session → app.
@@ -153,12 +167,17 @@ export function Login() {
             size="lg"
             icon={<MicrosoftLogo />}
             onClick={signIn}
-            disabled={!msalConfigured}
+            disabled={!ssoEnabled || ssoStarting}
             className="mt-[22px] w-full"
           >
-            Continue with Microsoft Entra ID
+            {ssoStarting
+              ? 'Redirecting to Microsoft…'
+              : 'Continue with Microsoft Entra ID'}
           </Button>
-          {!msalConfigured && (
+          {/* Only once the answer is in — saying "not configured" while the
+              status call is still in flight would be a guess, and it would flash
+              on every load of a perfectly working deployment. */}
+          {!sso.isPending && !ssoEnabled && (
             <p className="mt-[8px] text-[11.5px] text-fg-subtle">
               Single sign-on isn’t configured in this environment yet.
             </p>

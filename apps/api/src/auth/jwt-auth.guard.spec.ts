@@ -182,8 +182,8 @@ describe('JwtAuthGuard', () => {
     });
   });
 
-  describe('local cookie path (ADR-0006 §7)', () => {
-    it('resolves the uop_access cookie by sub (authProvider=local, active)', async () => {
+  describe('platform session cookie path (ADR-0006 §7 / ADR-0028)', () => {
+    it('resolves the uop_access cookie by sub (active), regardless of provider', async () => {
       const findFirst = jest.fn().mockResolvedValue(LOCAL_ADMIN);
       const prisma = { appUser: { findFirst } } as unknown as PrismaService;
       const guard = new JwtAuthGuard(
@@ -197,12 +197,56 @@ describe('JwtAuthGuard', () => {
         headers: {},
       };
       await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      // 🔴 No authProvider filter (ADR-0028). The token is ours, so it proves
+      // "this user id authenticated"; which provider did it is no longer this
+      // guard's business. `active` still gates.
       expect(findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'u-local', active: true, authProvider: 'local' },
+          where: { id: 'u-local', active: true },
         }),
       );
       expect(req.user).toBe(LOCAL_ADMIN);
+    });
+
+    // The case that made the filter wrong: after ADR-0028 an SSO user carries an
+    // ordinary uop_access cookie. Pinned to 'local', every one of their requests
+    // would 401 while the cookie itself was perfectly valid.
+    it('accepts an Entra-provider user on the cookie path', async () => {
+      const entraUser = { ...(ADMIN as object), authProvider: 'entra' };
+      const findFirst = jest.fn().mockResolvedValue(entraUser);
+      const prisma = { appUser: { findFirst } } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        localJwt({ sub: 'u-admin', role: 'ADMIN' }),
+        config(PROD_CFG),
+      );
+      const req: Record<string, unknown> = {
+        cookies: { [ACCESS_COOKIE]: 'sso.tok' },
+        headers: {},
+      };
+      await expect(guard.canActivate(ctxWith(req))).resolves.toBe(true);
+      expect(req.user).toBe(entraUser);
+    });
+
+    // The control case: a deactivated account must still lose its session, or
+    // the assertion above would only be proving that findFirst returns whatever
+    // it was told to.
+    it('401 when no active user matches the token subject', async () => {
+      const prisma = {
+        appUser: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prisma,
+        localJwt({ sub: 'u-gone', role: 'ADMIN' }),
+        config(PROD_CFG),
+      );
+      await expect(
+        guard.canActivate(
+          ctxWith({ cookies: { [ACCESS_COOKIE]: 'ok.tok' }, headers: {} }),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('401 when the access cookie fails verification', async () => {
@@ -347,6 +391,37 @@ describe('JwtAuthGuard', () => {
           ctxWith({ headers: { authorization: 'Bearer x.y.z' } }),
         ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    // W44 B9: which issuer Entra stamps is a property of the app registration
+    // (accessTokenAcceptedVersion), not of our code. Pinning only the v2.0 form
+    // makes a v1 registration fail in the most expensive way there is — sign-in
+    // succeeds, then every request is 401 and nothing in the error names the
+    // token version. Both values derive from the same tenantId, so accepting the
+    // pair widens nothing across tenants.
+    it('verifies against BOTH tenant issuer forms (v2.0 and legacy v1)', async () => {
+      let seen: jwt.VerifyOptions | undefined;
+      (jwt.verify as unknown as jest.Mock).mockImplementation(
+        (_t, _k, o: jwt.VerifyOptions, cb) => {
+          seen = o;
+          cb(null, { oid: 'oid-123', email: 'x@y', name: 'X' });
+        },
+      );
+      const guard = new JwtAuthGuard(
+        reflectorFor(false),
+        prismaWith(jest.fn().mockResolvedValue(ADMIN)),
+        localJwt(null),
+        config(PROD_CFG),
+      );
+      await guard.canActivate(
+        ctxWith({ headers: { authorization: 'Bearer x.y.z' } }),
+      );
+      expect(seen?.issuer).toEqual([
+        `https://login.microsoftonline.com/${PROD_CFG.ENTRA_TENANT_ID}/v2.0`,
+        `https://sts.windows.net/${PROD_CFG.ENTRA_TENANT_ID}/`,
+      ]);
+      // audience stays a single exact value — widening it would be a real hole.
+      expect(seen?.audience).toBe(PROD_CFG.ENTRA_API_AUDIENCE);
     });
 
     it('401 when an Entra token arrives but SSO is not configured', async () => {

@@ -1,8 +1,14 @@
 # ADR-0003: 前端 Entra ID SSO 策略（MSAL — AUTH-2）
 
 **Date**: 2026-07-10
-**Status**: Accepted
+**Status**: **Superseded by ADR-0028**(2026-08-07)
 **Approver**: Chris Lai
+
+> 🔴 **本 ADR 已被 `docs/adr/0028-sso-server-side-code-exchange.md` 取代。** 內容保留作歷史記錄,**唔再係現行設計** —— MSAL(`@azure/msal-browser` / `@azure/msal-react`)已由 `apps/web` 移除,前端唔再持有 Entra token。
+>
+> **點解推翻**:本 ADR 對 app registration 有三個硬需求 —— SPA platform、Application ID URI(`api://…`)、delegated scope `access_as_user`。W44 實測 infra 交嘅 registration **三樣都冇**,而佢有嘅嘢(client secret + redirect URI + confidential client)啱啱好係 server-side authorization code exchange 嘅完整配置。詳見 ADR-0028 Context。
+>
+> **仍然有效嘅部分**:ADR-0002 嘅 JWT 驗證邏輯照用(移去 callback endpoint);第 5 點 `VITE_AUTH_DEV_BYPASS` 保留。
 
 ## Context
 

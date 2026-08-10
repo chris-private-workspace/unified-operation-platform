@@ -5,6 +5,7 @@ import type {
   AdminUser,
   AllocationResetBody,
   AllocationResetResult,
+  AssignResult,
   ChangePasswordBody,
   ConnectorConfig,
   CreateOpcoBody,
@@ -63,6 +64,10 @@ export function useAdvanceStage(requestId: string) {
  * backend). `budgetOverrideReason` is ADMIN-only (W36 / ADR-0016 D3): a
  * non-admin sending it gets a 403 rather than a silently ignored field, so the
  * UI must only ever put it on the wire for an admin.
+ *
+ * ADR-0029 — answers `AssignResult`, not the bare line item. The line item is
+ * still in there as `.lineItem`; what is new is the per-step breakdown that
+ * comes with it, on success AND (as the 400 body) on a refusal.
  */
 export function useAssignLineItem(requestId: string) {
   const qc = useQueryClient();
@@ -81,7 +86,7 @@ export function useAssignLineItem(requestId: string) {
           budgetOverrideReason: vars.budgetOverrideReason,
         }),
       };
-      return apiPatch<RequestLineItem>(
+      return apiPatch<AssignResult>(
         `${base}/${requestId}/line-items/${vars.lineItemId}/assign`,
         Object.keys(body).length > 0 ? body : undefined,
       );

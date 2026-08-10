@@ -19,19 +19,11 @@ COPY apps/web ./apps/web
 # Read-only design tokens the web build @imports (NOT copied at dev time either).
 COPY design_handoff_licenseops ./design_handoff_licenseops
 WORKDIR /app/apps/web
-# VITE_* are build-time — vite bakes them into the bundle. Azure UAT uses Entra
-# SSO (ADR-0012 D2), so pass the app-registration values as --build-args; they are
-# public identifiers (SPA has NO client secret), safe to bake (H4). VITE_API_BASE_URL
-# defaults to '/api' (same-origin via nginx) so it is left unset. Leaving the ENTRA
-# args empty falls back to the break-glass local-login flow.
-ARG VITE_ENTRA_CLIENT_ID=""
-ARG VITE_ENTRA_TENANT_ID=""
-ARG VITE_ENTRA_API_SCOPE=""
-ARG VITE_ENTRA_REDIRECT_URI=""
-ENV VITE_ENTRA_CLIENT_ID=$VITE_ENTRA_CLIENT_ID \
-    VITE_ENTRA_TENANT_ID=$VITE_ENTRA_TENANT_ID \
-    VITE_ENTRA_API_SCOPE=$VITE_ENTRA_API_SCOPE \
-    VITE_ENTRA_REDIRECT_URI=$VITE_ENTRA_REDIRECT_URI
+# 🔴 No VITE_ENTRA_* build args since ADR-0028. SSO configuration (client id /
+# tenant / redirect URI / secret) is read by the API from its own environment at
+# RUNTIME, so this image is identical across every environment and an Entra
+# config change no longer means a rebuild. VITE_API_BASE_URL defaults to '/api'
+# (same-origin via nginx) so it is left unset too.
 RUN npm run build            # tsc --noEmit && vite build -> apps/web/dist
 
 # ---------- runtime ----------

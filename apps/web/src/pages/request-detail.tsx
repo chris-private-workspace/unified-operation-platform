@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Avatar } from '@/components/ui/avatar';
 import { Stepper } from '@/components/ui/stepper';
+import { AssignResultDialog } from '@/components/requests/assign-result-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Toast } from '@/components/ui/toast';
 import { Loading } from '@/components/ui/feedback-states';
@@ -60,6 +61,7 @@ import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { canOverrideBudget, canSeePlatform } from '@/lib/roles';
 import { formatDateTime } from '@/lib/format';
 import { ApiError } from '@/lib/api';
+import type { AssignResult, AssignStep } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -112,6 +114,13 @@ export function RequestDetail() {
     reason: string;
   } | null>(null);
 
+  // W45 / ADR-0029: null = no assign has reported back yet. Holds the step
+  // breakdown of the LAST assign, success or refusal — the subject fields are
+  // captured with it because the dialog outlives the click that produced it.
+  const [assignResult, setAssignResult] = useState<
+    (AssignResult & { skuLabel: string; targetUpn: string }) | null
+  >(null);
+
   // CH-015 — seconds left before another sync check is worth making. Seeded
   // from the server's retryAfterSeconds so the button and the backend cooldown
   // never disagree; the backend stays the authority either way.
@@ -121,8 +130,49 @@ export function RequestDetail() {
     setToast({ message, tone });
     window.setTimeout(() => setToast(null), 2600);
   }
-  const onError = (e: unknown) =>
-    flash(e instanceof ApiError ? e.message : 'Something went wrong', 'danger');
+  const onError = (e: unknown) => {
+    if (!(e instanceof ApiError))
+      return flash('Something went wrong', 'danger');
+    flash(e.message, 'danger');
+  };
+
+  /**
+   * ADR-0029 — a refused assign answers with `{outcome, failedAt, steps}` AND
+   * the `message` it always had (kept on purpose). `ApiError.detail` already
+   * carries the whole parsed body, so nothing in `api.ts` had to change to
+   * reach the steps.
+   *
+   * Falls back to the plain toast when there are no steps — a 403, a 500 or a
+   * dropped connection has nothing to break down, and G5's requirement is that
+   * the error text never goes blank, not that it always gets a dialog.
+   */
+  /** What the operator was assigning — the result dialog has no line context. */
+  const subjectOf = (lineItemId: string) => {
+    const line = detail.data?.lineItems.find((l) => l.id === lineItemId);
+    return {
+      skuLabel: line?.sku?.displayName ?? line?.skuCatalogId ?? 'Licence',
+      targetUpn: detail.data?.targetUpn ?? '',
+    };
+  };
+
+  const onAssignError = (e: unknown, lineItemId: string) => {
+    const body = e instanceof ApiError ? e.detail : undefined;
+    const steps = body?.steps as AssignStep[] | undefined;
+    if (!steps?.length) return onError(e);
+    setAssignResult({
+      // Read field by field rather than cast wholesale: `detail` is whatever
+      // came off the wire, and a blanket assertion would let a malformed body
+      // reach the dialog as though it had been checked.
+      //
+      // 'failed' is the fallback because it claims LESS than 'blocked' —
+      // "did not complete" is true either way, while "nothing was attempted"
+      // would be a statement we have no evidence for.
+      outcome: (body?.outcome as AssignResult['outcome']) ?? 'failed',
+      failedAt: body?.failedAt as AssignResult['failedAt'],
+      steps,
+      ...subjectOf(lineItemId),
+    });
+  };
 
   // One timeout per second rather than a re-armed interval: the effect already
   // re-runs on every tick, and a stale interval outliving the countdown is the
@@ -147,7 +197,10 @@ export function RequestDetail() {
           // 'ok', not 'danger' (spec R3). The check succeeded — the answer is
           // "not yet". A red toast reads as "this account is broken" and sends
           // an operator chasing AD when Entra Connect just has not run.
-          flash(`Not in Azure AD yet · retry in ${res.retryAfterSeconds}s`, 'ok');
+          flash(
+            `Not in Azure AD yet · retry in ${res.retryAfterSeconds}s`,
+            'ok',
+          );
         }
       },
       onError,
@@ -268,11 +321,14 @@ export function RequestDetail() {
         budgetOverrideReason: override.reason.trim(),
       },
       {
-        onSuccess: () => {
-          flash('Assigned — OpCo budget overridden', 'ok');
+        onSuccess: (res) => {
+          // The breakdown replaces the toast here: an override assign is
+          // exactly the case where "budget: overridden" has to be visible
+          // rather than asserted in a sentence that disappears in 2.6s.
+          setAssignResult({ ...res, ...subjectOf(override.lineItemId) });
           setOverride(null);
         },
-        onError,
+        onError: (e) => onAssignError(e, override.lineItemId),
       },
     );
   }
@@ -764,9 +820,17 @@ export function RequestDetail() {
                                 assign.mutate(
                                   { lineItemId: item.id },
                                   {
-                                    onSuccess: () =>
-                                      flash('License assigned', 'ok'),
-                                    onError,
+                                    // W45 — the toast is gone on purpose. It
+                                    // said "License assigned" whether or not
+                                    // the RITM was closed, which is precisely
+                                    // the fact W44 F7-12 needed two days and a
+                                    // live ServiceNow query to establish.
+                                    onSuccess: (res) =>
+                                      setAssignResult({
+                                        ...res,
+                                        ...subjectOf(item.id),
+                                      }),
+                                    onError: (e) => onAssignError(e, item.id),
                                   },
                                 )
                               }
@@ -898,13 +962,25 @@ export function RequestDetail() {
         </div>
       </div>
 
-      {override && (
+      {/* 🔴 Hidden, not unmounted, while a result is on screen. Two stacked
+          modals is the wrong answer, and so is discarding the override — the
+          reason the operator typed is the expensive part, and a refusal from a
+          DIFFERENT gate is no reason to make them write it again (ADR-0016 D3).
+          Closing the result puts them back on their own words. */}
+      {override && !assignResult && (
         <OverrideBudgetDialog
           state={override}
           pending={pending}
           onReason={(reason) => setOverride({ ...override, reason })}
           onClose={() => setOverride(null)}
           onConfirm={submitOverride}
+        />
+      )}
+
+      {assignResult && (
+        <AssignResultDialog
+          result={assignResult}
+          onClose={() => setAssignResult(null)}
         />
       )}
 

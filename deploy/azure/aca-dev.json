@@ -1,0 +1,173 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_comment": "Azure DEV (RG-RAPO-UOP-DEV) — topology = ADR-0027 D1 Option A (api ingress internal, single public origin). NOT a copy of aca.json: this template UPDATES two container apps that infra already created, and does NOT create the managed environment. Creating a new env here would put it outside the corporate hub VNet, so it could never reach the private-endpoint Postgres. See docs/13-deployment/09-dev-as-built.md.",
+    "_declarative_warning": "ARM does a full PUT. Anything infra configured but omitted here gets wiped — most importantly the web app's custom domain + SNI certificate binding, and workloadProfileName. Back up both apps (az resource show) before deploying and diff them after (W44 F2-1 / F6-9)."
+  },
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "[resourceGroup().location]" },
+
+    "managedEnvironmentId": {
+      "type": "string",
+      "metadata": { "description": "Full resource id of the SHARED env acaen-rapo-dev, which lives in another resource group (RG-RAPO-ContainerAPP-DEV). Passed as a parameter so no subscription id is hard-coded in git." }
+    },
+    "webCustomDomain": {
+      "type": "string",
+      "metadata": { "description": "e.g. rapo-uop-web-dev.rci-t.com — the single public entry point. Omitting this would DELETE the binding infra set up." }
+    },
+    "webCustomDomainCertificateId": {
+      "type": "string",
+      "metadata": { "description": "Full resource id of the SNI certificate on the shared env (…/managedEnvironments/acaen-rapo-dev/certificates/rcit)." }
+    },
+
+    "acrServer": { "type": "string", "metadata": { "description": "acrrci3ailanding1.azurecr.io — cross-tenant registry, see B1." } },
+    "acrUsername": { "type": "string", "metadata": { "description": "Service principal client id used for registry pull." } },
+    "acrPassword": { "type": "securestring" },
+    "apiImage": { "type": "string" },
+    "webImage": { "type": "string" },
+
+    "graphTenantId": { "type": "string" },
+    "graphClientId": { "type": "string" },
+    "servicenowInstanceUrl": { "type": "string" },
+    "servicenowUser": { "type": "string" },
+    "servicenowDefaultTable": { "type": "string", "defaultValue": "sc_req_item" },
+
+    "databaseUrl": { "type": "securestring" },
+    "graphClientSecret": { "type": "securestring" },
+    "servicenowPassword": { "type": "securestring" },
+    "intakeApiKey": { "type": "securestring" },
+    "authJwtSecret": { "type": "securestring" },
+    "localAdminInitialPassword": { "type": "securestring" },
+    "acsConnectionString": { "type": "securestring" },
+    "acsSenderAddress": { "type": "string", "defaultValue": "" },
+    "appBaseUrl": { "type": "string", "defaultValue": "" }
+  },
+  "variables": {
+    "apiName": "aca-rapo-uop-api-dev",
+    "webName": "aca-rapo-uop-web-dev",
+    "workloadProfile": "Consumption"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('apiName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "environmentId": "[parameters('managedEnvironmentId')]",
+        "workloadProfileName": "[variables('workloadProfile')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": false,
+            "targetPort": 3000,
+            "transport": "auto",
+            "allowInsecure": true
+          },
+          "registries": [
+            { "server": "[parameters('acrServer')]", "username": "[parameters('acrUsername')]", "passwordSecretRef": "acr-password" }
+          ],
+          "secrets": [
+            { "name": "acr-password", "value": "[parameters('acrPassword')]" },
+            { "name": "database-url", "value": "[parameters('databaseUrl')]" },
+            { "name": "graph-client-secret", "value": "[parameters('graphClientSecret')]" },
+            { "name": "servicenow-password", "value": "[parameters('servicenowPassword')]" },
+            { "name": "intake-api-key", "value": "[parameters('intakeApiKey')]" },
+            { "name": "auth-jwt-secret", "value": "[parameters('authJwtSecret')]" },
+            { "name": "local-admin-initial-password", "value": "[parameters('localAdminInitialPassword')]" },
+            { "name": "acs-connection-string", "value": "[parameters('acsConnectionString')]" }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "[variables('apiName')]",
+              "image": "[parameters('apiImage')]",
+              "resources": { "cpu": "[json('0.5')]", "memory": "1Gi" },
+              "env": [
+                { "name": "NODE_ENV", "value": "production" },
+                { "name": "PORT", "value": "3000" },
+                { "name": "REQUEST_SUBMISSION_PROVIDER", "value": "direct" },
+                { "name": "GRAPH_TENANT_ID", "value": "[parameters('graphTenantId')]" },
+                { "name": "GRAPH_CLIENT_ID", "value": "[parameters('graphClientId')]" },
+                { "name": "SERVICENOW_INSTANCE_URL", "value": "[parameters('servicenowInstanceUrl')]" },
+                { "name": "SERVICENOW_USER", "value": "[parameters('servicenowUser')]" },
+                { "name": "SERVICENOW_DEFAULT_TABLE", "value": "[parameters('servicenowDefaultTable')]" },
+                { "name": "RUN_MIGRATIONS_ON_START", "value": "true" },
+                { "name": "RUN_SEED_ON_START", "value": "true" },
+                { "name": "DATABASE_URL", "secretRef": "database-url" },
+                { "name": "LOCAL_ADMIN_INITIAL_PASSWORD", "secretRef": "local-admin-initial-password" },
+                { "name": "GRAPH_CLIENT_SECRET", "secretRef": "graph-client-secret" },
+                { "name": "SERVICENOW_PASSWORD", "secretRef": "servicenow-password" },
+                { "name": "INTAKE_API_KEY", "secretRef": "intake-api-key" },
+                { "name": "AUTH_JWT_SECRET", "secretRef": "auth-jwt-secret" },
+                { "name": "ACS_SENDER_ADDRESS", "value": "[parameters('acsSenderAddress')]" },
+                { "name": "APP_BASE_URL", "value": "[parameters('appBaseUrl')]" },
+                { "name": "ACS_CONNECTION_STRING", "secretRef": "acs-connection-string" }
+              ]
+            }
+          ],
+          "scale": { "minReplicas": 1, "maxReplicas": 1 }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('webName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.App/containerApps', variables('apiName'))]"
+      ],
+      "properties": {
+        "environmentId": "[parameters('managedEnvironmentId')]",
+        "workloadProfileName": "[variables('workloadProfile')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 8080,
+            "transport": "auto",
+            "customDomains": [
+              {
+                "name": "[parameters('webCustomDomain')]",
+                "bindingType": "SniEnabled",
+                "certificateId": "[parameters('webCustomDomainCertificateId')]"
+              }
+            ]
+          },
+          "registries": [
+            { "server": "[parameters('acrServer')]", "username": "[parameters('acrUsername')]", "passwordSecretRef": "acr-password" }
+          ],
+          "secrets": [
+            { "name": "acr-password", "value": "[parameters('acrPassword')]" }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "[variables('webName')]",
+              "image": "[parameters('webImage')]",
+              "resources": { "cpu": "[json('0.25')]", "memory": "0.5Gi" },
+              "env": [
+                { "name": "API_UPSTREAM", "value": "[concat('http://', reference(resourceId('Microsoft.App/containerApps', variables('apiName'))).configuration.ingress.fqdn)]" }
+              ]
+            }
+          ],
+          "scale": { "minReplicas": 1, "maxReplicas": 2 }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "webFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', variables('webName'))).configuration.ingress.fqdn]"
+    },
+    "apiInternalFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', variables('apiName'))).configuration.ingress.fqdn]"
+    }
+  }
+}

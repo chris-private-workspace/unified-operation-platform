@@ -67,7 +67,20 @@ export class DirectServiceNowProvider extends RequestSubmissionProvider {
     // 2. Somebody real for the two mandatory reference variables. Fail-closed:
     //    a request whose requester we cannot identify is one a human should
     //    look at, not one we quietly attach to a fallback account (ADR-0025 D3).
-    const requesterSysId = await this.resolveRequester(payload.requesterEmail);
+    //
+    //    ADR-0030 D3 — the intake path already holds a sysId (the REQ's own
+    //    `opened_by`) and hands it over, so it never reaches the e-mail lookup.
+    //    The outbound path has no REQ yet — the ticket IS what it is creating —
+    //    so it still resolves by address.
+    //
+    //    🔴 Deliberately NOT a fallback chain. `??` only covers a caller that
+    //    supplied nothing; it must never rescue a supplied-but-rejected id.
+    //    W44 measured the e-mail lookup at 0% for intake (n8n sends the Outlook
+    //    trigger's sender, which is not a ServiceNow user) — reviving it behind
+    //    a miss would hide the next failure exactly as it hid those three.
+    const requesterSysId =
+      payload.requesterSysId ??
+      (await this.resolveRequester(payload.requesterEmail));
 
     // 3. Place the order. One line orders directly; several go through the cart
     //    so they land under ONE request (ADR-0025 OQ-3).
