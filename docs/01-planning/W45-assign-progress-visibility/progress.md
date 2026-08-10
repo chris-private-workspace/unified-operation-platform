@@ -340,3 +340,38 @@ Graph 喺本機係**通**嘅(`catalog/sync` 真 create 咗 101 個 SKU),即係�
 - **§0 Phase** → 「W44 + W45 **兩個同時未收**」(rolling JIT 破例,Chris 批)
 - **§9** 加 W45 一格 + `apiPatch` 教訓 + **三個本機避坑**:①5433 同 `ai-doc-extraction-db` 硬衝突,二揀一 ②`nest --watch` build-cache 假綠燈(`Found 0 errors` + `MODULE_NOT_FOUND` 一齊出),兼記低 **`Test-Path dist/main.js` 要喺 watch 起身之後 check 先有意義** ③🔴 **本機 Graph 通 ⇒ 真 assign 會喺公司 tenant 真派 licence**,fixture 要先用唯讀 `sync-check` 探
 - **`SESSION_SUMMARY`** 座標推到 2026-08-10 + `apiPatch` 教訓 + 6 條紅 test + web lint 16 條 + 5433 衝突
+
+---
+
+## Day 2(續四)— F4-4a:部署 #4 上 DEV
+
+### 🟢 第一層開咗:build host 原來就係開發嗰台機
+
+F4-4 一直被當成「卡 B8」,但 **B8 唔係第一道閘** —— 真正第一道係「**W45 根本未部署**」(DEV 跑緊嘅係部署 #3 = ADR-0030 / CH-022)。就算 B8 明日通咗,撳落去都係舊 code。
+
+而呢道閘**唔使等任何人**:實測呢台機 egress IP = **`52.187.129.166`**,同 §9 記低嗰個 B1 解封 host **逐字一樣**;ACR `/v2/` 返 `401`(= 打得通,要 auth)。
+
+💡 **同 W44 Day 4 嗰句同源**:「直接路封死唔等於冇路」。呢次係**一件早就喺手嘅嘢冇人認出嚟** —— 「build host」一直被寫成一個抽象嘅第三方,冇人試過問「係咪就係我而家坐緊嗰台」。
+
+### 做咗乜
+
+image `dev-211001e`,走同一條 raw ARM PATCH 路,**零流程改動**。
+
+| | |
+|---|---|
+| Push | 🟢 兩個都 exit 0 + digest(api `sha256:b2429458…` / web `sha256:412c5b4f…`)。⚠️ **`Login Succeeded` 之後仍然冇當 push 得** —— W44 Day 7 就係咁錯過一次 |
+| Dry-run | 四個 sanity 全過;**順帶查空值** —— 九個 secret 冇一個 `<len 0>`,唯一空 env = `ACS_SENDER_ADDRESS`(已知 CH-021 blocker) |
+| Revision | api `--0000006` / web `--0000003` 都 `Healthy` **traffic 100**,舊 revision 已退場 |
+| infra 配置 | 🟢 `customDomains: rapo-uop-web-dev.rci-t.com` + `external: true` 完好 —— **再一次印證 PATCH 唔 unset 冇送嘅 property** |
+
+🟢 **決定性證據係 container log 唔係 `Healthy`**:`19 migrations found` → `No pending migrations to apply.` → `Seeded 24 OpCos + admin + RHK OPCO_IT user.` → `Nest application successfully started`,零 `failed`。
+
+### 🔴 我證到咩、證唔到咩
+
+**證到**:帶住 W45 code 嗰個 container **起到身、連到 DB、schema 最新、seed 行到**。
+
+🔴 **證唔到**:**ADR-0029 個 dialog 喺 DEV 出唔出到 —— 到此刻零證據。** F4-4b 仍然卡 `B8`,而且**一定要喺公司網做**(build host 喺 Azure 段,解析唔到 custom domain)。
+
+### 順帶
+
+`aca.params.dev.json` 兩個 image tag 已更新(gitignored,唔入 commit)。az 操作全程用獨立 `AZURE_CONFIG_DIR` 登入部署 SP `d2f094a3-…`(§9 講明呢台機 az session 唔穩定,一日撞過 4 個 SP)。
