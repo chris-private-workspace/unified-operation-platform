@@ -43,7 +43,8 @@
 - [x] F3-4 `ticket: skipped` 明確講出嚟 —— 獨立 `CircleMinus` + neutral tint + 原句 detail;`ok` 路寫 **`RITM close requested`** 唔係 `closed`
 - [x] F3-5 🔴 一個 view 一個 primary(H6)—— dialog 得一個 `Done`,有 test 數 `[role=dialog] button.bg-accent` === 1。**冇 Retry 掣**(plan §2.2 明文 out-of-scope)
 - [x] F3-6 跑 `ui-design` skill(H6)—— 12 條逐條行過,詳見 progress Day 2;唯一改到嘢係 DS-5(count 轉 mono),2 條 ❌ 全部係 F3-7 嗰件事
-- [ ] F3-7 🔴 light + dark 真 render 驗(G10)—— **做唔到,唔係漏做**:本機 stack 冧咗,而 **port 5433 畀 `ai-doc-extraction-db` 佔返**(handoff 早已記低嘅衝突)⇒ 起 UOP 要停另一個項目五個 container,**要 Chris 批先做**。DS-4 / DS-11 兩條 ❌ 全部掛喺呢度
+- [x] F3-7 🔴 light + dark 真 render 驗(G10)—— Chris 2026-08-10 批咗停 `ai-doc-extraction` 五個 container 放返 5433。**四張截圖**(blocked light / blocked dark / success dark / success light + 展開)。DS-4 / DS-11 收返 ✅。🔴 **而呢一驗即刻揭咗一個所有 test 都捉唔到嘅 bug —— 見 F3-8**
+- [x] F3-8 🆕 🔴 **`apiPatch` 從來冇帶 `detail`** —— 佢自己 hand-roll `new ApiError(status, message)`,冇第三個參數(只有 `errorFrom` 會帶 body,而 `apiPatch` 從來冇用過佢)⇒ **ADR-0029 個 steps 喺瀏覽器永遠到唔到前端,dialog 一世開唔到**。api test 綠 / web test 綠 / tsc 0 / lint 0 —— 因為 UI test **自己手砌 `ApiError` 連 detail**,永遠踩唔到真 transport。修:`apiPatch` 改行 `errorFrom`(同 `apiPost` 一樣,佢由 CH-019 起就帶住 body);補两條 **transport 層** test,並**真試過**改返舊寫法 → 新 test 紅
 
 ## F4 — 收尾
 

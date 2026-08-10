@@ -270,3 +270,52 @@ DS-1 ✅(全部 token / Tailwind theme;`rounded-lg` = 8px **token**,冇跟 proto
 |---|---|
 | api | **917 passed / 69 suites**(911 → 917,+6) |
 | tsc / lint | api tsc `0` · root lint `exit 0` |
+
+---
+
+## Day 2(續二)— F3-7 真 render,而佢即刻揭咗一個所有 test 都捉唔到嘅 bug
+
+### 🔴 F3-8(新)——`apiPatch` 從來冇帶 `detail`
+
+一撳落去,**dialog 冇開**。查:`apiPatch` 自己 hand-roll `throw new ApiError(res.status, message)` —— **冇第三個參數**。只有 `errorFrom` 會把 body 放落 `detail`,而 `apiPatch` **從來冇用過佢**(`apiPost` 由 CH-019 起就用;`apiGet` 同樣 hand-roll)。
+
+⇒ **ADR-0029 個 steps 喺瀏覽器永遠到唔到前端。**
+
+**點解冇一層捉到**:api test 917 綠(body 本身完全正確)· web test 288 綠 · tsc 0 · lint 0。因為我啲 UI test **自己手砌 `ApiError` 連 detail 落去** —— 一條手砌自己期望嘅 error 嘅 UI test,**永遠唔可能喺 transport 層失敗**。
+
+🔴 **而我 Day 1 寫低嗰句係錯嘅**:「`ApiError.detail` 一早就載住成個 parsed body ⇒ 前端攞 steps 唔使改 `api.ts` 一行」。嗰句對 `errorFrom` 啱,但 assign 行嘅係 `apiPatch`。**由一個 function 推去成個 module** —— 同 W44 Day 3(`az acr list` vs `show`)、Day 7(`docker login` vs `push`)、B8(private DNS「一定有」)完全同一族。**呢次係第五次。**
+
+**修**:`apiPatch` 改行 `errorFrom`。補**兩條 transport 層 test**(`api.test.ts`),並且**真試過**改返舊寫法 → 新 test 紅 → 還原。⚠️ `apiGet` 一樣 hand-roll 冇 detail,**冇改**(冇 caller 需要,唔喺本 request 範圍),但記低咗。
+
+💡 **教訓唔係「漏咗一條 test」,係「條 test 放錯層」。**
+
+### 🔴 途中另一個推論被實測推翻(呢次喺造成後果之前)
+
+我開 fixture 揀咗 `w45.render.check@rapo.com.hk`,理由係「個名咁假,tenant 一定冇」,打算靠 `directory` 閘擋住。**落 assign 之前用唯讀嘅 `POST /sync-check` 探一探 —— 返 `status: "FOUND"`。**
+
+Graph 喺本機係**通**嘅(`catalog/sync` 真 create 咗 101 個 SKU),即係話一個「應該會失敗」嘅 assign 隨時會喺**公司 tenant 真派一個 licence**。改用 allocation = 0 行 `budget` 閘(佢喺 tenant seat read 同 `assignLicense` **之前**,有 test `does not touch Graph at all when the budget is busted` 釘住)。
+
+實際跑出嚟仲早:停喺 **`directory`**(gate 4,喺 budget 之前),一樣零副作用。
+
+### 四張截圖(存喺 scratchpad,唔入 repo)
+
+| 狀態 | 睇到乜 |
+|---|---|
+| blocked · light / dark | pre-flight **自動展開**(因為係閘失敗)· 三個 ok 綠剔 · 失敗嗰步 danger + detail + 「Chased through Entra Connect / directory sync.」· danger banner · 一個 primary |
+| success · dark | pre-flight **摺住都見到** warn shield +「7 checks · OpCo allocation overridden」· `ServiceNow updated` 用 neutral minus + 原句,**一眼同 `ok` 分得出** |
+| success · light + 展開 | `OpCo allocation` 嗰行 warn shield + 數字 detail;`max-h-[46vh]` scroll container 正常 |
+
+🔴 **success / `skipped` / `overridden` 三個狀態係攔截 assign 嗰個 PATCH 造出嚟嘅**(本機唔可以行真 assign —— 會喺公司 tenant 真派 licence)。頁面其餘所有 request 照行真 API。**blocked 嗰兩張係 100% 真**:真 400、真 steps。
+
+### 測試
+
+| | |
+|---|---|
+| web | **288 passed**(286 → 288)· 6 條 pre-existing 紅不變 |
+| tsc / lint | web tsc `0` · 我改嗰啲檔 lint `0` |
+
+### 環境
+
+⚠️ **`ai-doc-extraction` 五個 container 仍然停住**(`docker stop`,compose / volume 一個字冇郁)。還原 = `docker start ai-doc-extraction-db ai-doc-extraction-mapping ai-doc-extraction-ocr ai-doc-extraction-pgadmin ai-doc-extraction-azurite`,但佢一起身就會搶返 **5433**,UOP 個 api 會即刻斷 —— **兩個項目搶同一個 port,只可以二揀一**(長遠解法:搬其中一邊嘅 host port)。
+
+⚠️ 本機 DB 而家有:`catalog/sync` 真 create 嘅 **101 個 SkuCatalog**(純 Graph read)+ 一張標住「W45 F3-7 local render fixture」嘅 request。兩樣都係本機 dev 資料。

@@ -18,7 +18,7 @@ vi.mock('@/lib/auth/local-profile', () => ({
   },
 }));
 
-import { apiGet, apiPost, ApiError } from './api';
+import { apiGet, apiPatch, apiPost, ApiError } from './api';
 
 const PROFILE = {
   id: 'u1',
@@ -119,5 +119,58 @@ describe('refresh-retry on 401 (ADR-0006 §7)', () => {
     await expect(apiGet('/x')).rejects.toBeInstanceOf(ApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(m.cleared).toBe(false);
+  });
+});
+
+/**
+ * 🔴 W45 — the regression that every other layer missed.
+ *
+ * `apiPatch` built its ApiError by hand and passed only `message`, so `detail`
+ * was ALWAYS undefined on a PATCH. ADR-0029 puts the assign step breakdown in
+ * the 400 body, and it was unreachable: the api tests were green (the body is
+ * correct), the UI tests were green (they construct their OWN ApiError with a
+ * detail), tsc and lint were green — and the dialog never opened in a browser.
+ *
+ * The lesson is where the test belongs, not that one was missing: a UI test
+ * that hand-builds the error it expects can never fail on the transport.
+ */
+describe('error body reaches the caller (ADR-0029)', () => {
+  it('PATCH carries the parsed body on `detail`, not just `message`', async () => {
+    const body = {
+      outcome: 'blocked',
+      failedAt: 'directory',
+      steps: [{ key: 'directory', status: 'failed', whoFixes: 'identity' }],
+      message: 'Target user not found in Azure AD (not synced yet)',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes(400, body)));
+
+    const err = (await apiPatch('/x', { a: 1 }).catch((e) => e)) as ApiError;
+
+    expect(err).toBeInstanceOf(ApiError);
+    // Both, not either: `message` is what an unchanged caller renders, `detail`
+    // is what the step breakdown needs. Losing either one is a silent failure.
+    expect(err.message).toBe(
+      'Target user not found in Azure AD (not synced yet)',
+    );
+    expect(err.detail).toEqual(body);
+  });
+
+  it('PATCH with a non-JSON error body still throws a usable ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new Error('not json');
+        },
+      }),
+    );
+
+    const err = (await apiPatch('/x').catch((e) => e)) as ApiError;
+
+    expect(err.status).toBe(502);
+    expect(err.message).toContain('502');
+    expect(err.detail).toBeUndefined();
   });
 });

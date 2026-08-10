@@ -141,6 +141,13 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
  * PATCH with an optional JSON body. On a non-2xx the server's `message` (NestJS
  * error shape) is surfaced so callers can toast the real reason (seat exhausted,
  * sync gate, …) rather than a generic string.
+ *
+ * 🔴 W45 — this used to build the ApiError by hand and pass only `message`, so
+ * `detail` was ALWAYS undefined on a PATCH. ADR-0029 puts the assign step
+ * breakdown in the 400 body, and it was silently unreachable: every layer was
+ * green (api tests, web tests, tsc, lint) because the UI tests construct their
+ * own ApiError with a detail, so nothing exercised the real transport. Routed
+ * through `errorFrom` like apiPost, which has carried the body since CH-019.
  */
 export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   const res = await doFetch(path, {
@@ -152,15 +159,7 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    let message = `PATCH ${path} failed (${res.status})`;
-    try {
-      const data = await res.json();
-      const m = (data as { message?: string | string[] }).message;
-      if (m) message = Array.isArray(m) ? m.join(', ') : m;
-    } catch {
-      // non-JSON error body — keep the generic message
-    }
-    throw new ApiError(res.status, message);
+    throw await errorFrom(res, `PATCH ${path} failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T; // No Content (e.g. change password)
   return res.json() as Promise<T>;
