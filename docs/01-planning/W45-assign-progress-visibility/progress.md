@@ -48,7 +48,33 @@ Chris 逐步對帳「n8n → onboarding → assign → SN complete」九步流�
 |---|---|
 | **ADR-0029** | ✅ **Accepted**(Chris 2026-08-10)⇒ H1 gate 過 |
 | **W45 plan / checklist** | ✅ 已備(`6ed496b`) |
-| **Code** | 🔴 **零行** —— 一個字都未寫 |
+| **Code** | 🟡 **只落咗契約型別**(`apps/api/src/fulfilment/assign-step.ts`)—— 純新增、零 import、冇被引用 ⇒ 零行為改動。**gate 邏輯 / DTO / OpenAPI / 前端全部未郁** |
+
+### ✅ 已做:七道閘數清楚(handoff 講嘅起手點)
+
+對住 `assign.service.ts` 逐行數,**ADR-0029 初版七個 key 同實際完全對得上**,唔使改:
+
+| # | line | 條件 | key |
+|---|---|---|---|
+| 1 | 129 | `stage !== READY` | `stage` |
+| 2 | 135 | `!azureSyncedAt` | `sync-azure` |
+| 3 | 155 | `!serviceNowUserSyncedAt` | `sync-servicenow` |
+| 4 | 167 | Graph `findUser` 返 null | `directory` |
+| 5 | 174 | `!usageLocation` | `usage-location` |
+| 6 | 204 | `overBudget && !overrideReason`(帶 override 分支 + `holdTicket` 副作用) | `budget` |
+| 7 | 231 | `!tenantSku \|\| consumed >= prepaid` | `seats` |
+
+⚠️ line 120-128 個 `budgetOverrideReason cannot be blank` **唔算 gate** —— 佢係輸入驗證,唔應該佔一個 step。
+
+🟢 **順帶實證咗 mockup 嗰個爭議**:gate 6 同 7 中間隔住 `budgetOverridden` 計算 **同一次 `listTenantSkus()` 網絡呼叫** ⇒ 兩層係實實在在分開,mockup 把佢哋合併成一個 `precheck` 就真係講唔出邊層擋住。型別檔已把「唔可以合併」寫成註釋鎖住。
+
+### 跟住做(次序有意義)
+
+1. `AssignResult` 落 DTO + OpenAPI(仍然唔郁 service)
+2. `assign.service.ts` 逐道閘改成 append step 而唔係即刻 throw ⇒ **呢一步先會令既有 test 紅**,亦係 H5 重點
+3. `detail` 經 `scrubPii` + test 守住(BUG-004 同形狀)
+4. 400 body 形狀變 → 前端 `onError` 同步改,否則錯誤訊息變空白
+5. 前端 steps 畫面
 
 ⚠️ 2026-08-10 嗰日全日做咗**另一條線**(INTAKE-REQUESTER → ADR-0030 → CH-022 → DEV 部署 #3),W45 一直冇動過。唔好以為有半成品。
 
