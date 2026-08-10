@@ -101,7 +101,28 @@ requesterSysId 冇  → resolveRequester(payload.requesterEmail)(outbound 路,�
 - **`N8nWorkflowProvider` 唔使改** — ADR-0030 Consequences 預咗要跟改,實際上 `requesterSysId` 係 **optional** 欄,structural typing 下唔會 break。ADR 嗰句係保守估計,記低以免下手以為漏咗。
 - **api test 900 → 905**(69 suites 全綠)· root lint **exit 0** · `tsc --noEmit` **exit 0**
 - ⚠️ **途中撞到一條假綠**:A3 嗰條 test(`opened_by` 缺 → 唔准 submit)第一版**冇 mock line items**,而 `raiseLicenceRequest` 喺冇 line 嗰陣本來就 early-return ⇒ `submit` 冇被 call 係「因為錯嘅理由」而通過。已補 `findMany` mock,個 assert 先真係守到 D3。**同 W44 Day 6 嗰句同源:斷言通過唔等於斷言有意義。**
-- 🔴 **A7 仍然未做**(live:DEV 收一次真 intake → SN 出到 RITM)⇒ 本 CH **未算完成**
+### 部署(2026-08-10,DEV 部署 #3)
+
+只 rebuild **api**(改動全部喺 `apps/api`),web 維持 `dev-3971ad3`。
+
+| 步驟 | 證據 |
+|---|---|
+| build `dev-31d5970` | `exit 0`(Dockerfile 有 BUG-008 `test -f dist/main.js` gate ⇒ artifact 確認存在) |
+| push | `digest: sha256:e8e0c48f…` |
+| PATCH | api + web 兩個 `exit 0` |
+| revision | `--0000005` `RunningAtMaxScale`,image `dev-31d5970` |
+| **DB 通** | `19 migrations found` · `No pending migrations to apply.` · **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** |
+| **app 起** | **`Nest application successfully started`** · 零 ERROR |
+
+🔴 **冇用 revision 狀態落結論** —— entrypoint 令 migrate/seed 失敗 NON-FATAL,`RunningAtMaxScale` 證明唔到 DB。真證據係 `Seeded 24 OpCos`。
+
+### A7 狀態
+
+🔴 **仍然未做 ⇒ 本 CH 未算完成**。code 已經喺 DEV 跑緊,兩條路都做得:
+1. 公司網撳 **Delivery failures** 個 `REQUEST_SUBMIT` retry(08-07 三行應該仲喺;`REQUEST_SUBMIT` 語意 = 外面乜都冇改過,repair 就係重新 submit)
+2. 或者觸發一次真 n8n onboarding
+
+🟢 **驗證唔使截圖** —— 撳完之後由本機直接查 `sc_req_item`(今日證過打得通 `ricohapdev`),見到一張新 O365 RITM(`cat_item = efe38ade…`)就等於 A7 過。
 
 ---
 

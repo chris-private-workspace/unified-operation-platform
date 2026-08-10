@@ -1095,4 +1095,58 @@ W44 Day 4 記低過「**部署權限 / 觀測權限 / metrics 係三套嘢**」�
 
 ---
 
+## Day 7 — 2026-08-10:**DEV 部署 #3** —— ADR-0030 / CH-022 上機
+
+### 做咗乜
+
+只 rebuild **api**(今次改動全部喺 `apps/api`),web 維持 `dev-3971ad3` ⇒ 省一個 1.3GB build。
+
+| 步驟 | 證據 |
+|---|---|
+| build `dev-31d5970` | `exit 0`。Dockerfile 有 BUG-008 嗰個 `RUN test -f dist/main.js` gate ⇒ **build 過即係 artifact 真係存在**(本機 `nest build` 冇呢道閘) |
+| push | `dev-31d5970: digest: sha256:e8e0c48f…` |
+| PATCH | api + web **兩個都 `exit 0`** |
+| revision | `--0000005` `RunningAtMaxScale`,image 確認 `dev-31d5970` |
+| **DB 真通** | `19 migrations found` · `No pending migrations to apply.` · **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** |
+| **app 真起** | **`Nest application successfully started`** |
+| error | **零** ERROR / 零 `failed` |
+
+🔴 **刻意冇用 `RunningAtMaxScale` 落結論** —— `docker-entrypoint.sh` 令 migrate/seed 失敗 NON-FATAL,revision 健康證明唔到 DB。真證據係 **`Seeded 24 OpCos`**(要寫得入 DB 先出到呢行)。
+
+### 🔴 一個我自己犯咗、被 Chris 一句問題揭穿嘅推論錯
+
+`az acr login` 用 `d2f094a3` 撞 401 + `could not be found in subscription`;跟住 `docker login` 用 `4a6e1474` + `azure_secret` 又 `Invalid clientid or client secret`。**我就收咗個結論**:「push 唔到,要 Chris 自己 login」,仲寫咗一段點樣安全交接。
+
+Chris 問「點解部署唔到?SP 唔對嗎?」⇒ 重新想一次先發現:**W44 當日 login 成功過,credential 一直 cache 喺 `~/.docker/config.json`**。`docker push` **直接就過**,一次都唔使 login。
+
+⇒ **`.env` 個 `azure_container_registry` 係 registry SP 嘅 client id `4a6e1474-…`(個 key 名誤導),而佢個 secret 從來冇入過 repo —— 但根本唔需要。**
+
+**呢個同 Day 3 嗰個一模一樣**(當時:一直用 `4a6e1474` 試 `az acr show`,而 `d2f094a3` 只跑過 `az acr list`,`list` 同 `show` 唔同)。同一族錯誤:**由一個相關但唔對位嘅觀察,推去一個更強嘅結論**。
+- Day 3 係 `az acr list` vs `show`
+- 今日係 `docker login` vs `push`
+
+**教訓要寫成可執行嘅:「登入失敗」唔等於「操作失敗」——「操作」本身先係要驗嘅嘢,唔好用前置條件嘅失敗去代替佢。**
+
+### 🟢 順帶擋咗一個會蓋走正確配置嘅動作
+
+Chris 原本要求「順手填埋 `GRAPH_TENANT_ID`」(基於今日早些時候由 08-07 log 開嘅 `DEV-GRAPH-PLACEHOLDER`)。**查證先發現佢已經係真值** `d1ea071a-…`,而且 `GRAPH_CLIENT_ID` 同本機 `.env` 完全一致 —— 08-07 之後(應該係部署 #2 加四個 `ENTRA_*` 嗰次)已經修好。
+
+⇒ 照填就會**用一個過時觀察蓋走一個已經啱咗嘅值**。
+⇒ `-Send` 之前特登 grep 咗 dry-run body 確認 params 檔載住嘅係真值,唔係 placeholder。
+
+⚠️ 但 **`DEV-GRAPH-PLACEHOLDER` 冇標綠** —— 08-08 之後零 `AADSTS` error **證明唔到 Graph 通**,因為 `SyncSweepService` 冇 pending request 就唔會打 Graph。同「revision Healthy 證明唔到 DB 通」同一形狀。
+
+### Blockers
+
+🔴 **A7 未做 ⇒ CH-022 未算完成** —— live:DEV 收一次真 intake → SN 真係出到一張 O365 RITM。code 而家已經喺 DEV 跑緊,所以隨時做得:①公司網撳 Delivery failures 個 `REQUEST_SUBMIT` retry(08-07 三行應該仲喺)②或者觸發一次真 n8n onboarding。
+🟢 **驗證唔使 Chris 截圖** —— 呢部機打得通 ServiceNow(今日證過),撳完之後直接查 `sc_req_item` 見唔見到新 O365 RITM 就知。
+
+### Commits
+
+- `81d5bf1` — `feat(fulfilment): requester sysId 由 REQ 個 opened_by 攞(ADR-0030 / CH-022)`
+- `31d5970` — `docs(backlog): 更正 DEV-GRAPH-PLACEHOLDER`
+- `<pending>` — `docs(w44): DEV 部署 #3 —— ADR-0030 上機`
+
+---
+
 **End of W44 progress**(進行中)
