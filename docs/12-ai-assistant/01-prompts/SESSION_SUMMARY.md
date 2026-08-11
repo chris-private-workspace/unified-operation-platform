@@ -7,7 +7,7 @@
 
 **當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 937 test(70 suites)· web 293 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0031**(🔴 **0031 = Rejected**,見下)· CH 到 **023** · BUG 到 **011**(✅ closed)。
 
-🟢 **`main` = `8f7711a`(2026-08-11,PR #79 merged)· working tree clean · 本地零 feature branch**(`fix/connector-provider-switch` / `chore/b8-live-verification` / `feat/w44-azure-dev-deploy` 三條已 merge 兼刪)。⇒ **下次開工由 `main` 開新 branch**。
+🟢 **本地零 feature branch**(2026-08-11:`fix/connector-provider-switch` / `chore/b8-live-verification` / `feat/w44-azure-dev-deploy` / `docs/bug-011-closeout` 全部已 merge 兼刪)⇒ **下次開工由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
 
 **兩個 phase 同時未收**(rolling JIT 破例,Chris 2026-08-10 批):
 - **W44 = 部署上新 Azure DEV 環境** —— 已部署三次,🔴 **卡環境**(F6 卡 `B8` private DNS · F9 卡 `B9` SSO 真人驗)。詳見下面整段。
