@@ -39,6 +39,8 @@ Logs ────────────▶ Log Analytics workspace
 | 上線前安全自檢 | [`06-prod-hardening-checklist.md`](./06-prod-hardening-checklist.md) |
 | **實際跑緊嘅 UAT 環境**(資源名 / URL / deferred) | [`07-uat-as-built.md`](./07-uat-as-built.md) |
 | **要 n8n 真係推到單入平台**(平台側前置 + n8n 三項接線 + SEC-001 rotate) | [`08-n8n-integration-go-live.md`](./08-n8n-integration-go-live.md) |
+| 🔴 **實際跑緊嘅 DEV 環境**(`RG-RAPO-UOP-DEV` —— **真正接得通企業網絡嗰個**;部署史 / B1-B9 樽頸 / raw ARM PATCH 繞路) | [`09-dev-as-built.md`](./09-dev-as-built.md) |
+| **喺公司網撳一次收晒三個 phase 嘅尾**(W44 `F6-5`/`F6-6`/`F9-8` · W45 `F4-4b` · CH-023 `F3-5`) | [`10-dev-live-verification-runbook.md`](./10-dev-live-verification-runbook.md) |
 
 ## 文件
 
