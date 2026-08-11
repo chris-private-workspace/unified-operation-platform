@@ -2,7 +2,7 @@
 bug_id: BUG-011
 title: "Integrations panel 轉唔返 provider —— enum 合法值從未顯示,而 badge 喺重啟之前就已經講咗新值"
 severity: Sev3          # Sev1 | Sev2 | Sev3 | Sev4 (per PROCESS.md §4.4)
-status: triaged         # triaged | investigating | fixing | verifying | done | wont-fix
+status: done            # triaged | investigating | fixing | verifying | done | wont-fix
 reported: 2026-08-10
 reporter: "Chris Lai —— Azure DEV 實際操作:把 license assign 轉去 n8n 之後,以為轉唔返去"
 affects_components: [integration/connector-config, integration/status, web/settings]
@@ -14,8 +14,9 @@ spec_refs:
 
 # BUG-011 — Integrations panel 嘅 provider 切換:值猜唔到,狀態又講得太早
 
-> **Report version**:1.0(initial)
+> **Report version**:1.0(initial)—— 本文 **triage 後 locked**(PROCESS §4.3)。修法途中揭出嘅**第三個**缺口(controller 逐欄砌回應,`pendingRestart` 到唔到街)寫喺 `progress.md` / `postmortem.md §6`,冇改寫本文。
 > **Triage approver**:**Chris Lai(2026-08-10)** —— DEV 實際操作後報告
+> **Closed**:2026-08-11 —— live 驗 + light/dark 真 render 全部收
 
 ## 1. Symptom
 

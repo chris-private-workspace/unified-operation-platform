@@ -1,6 +1,6 @@
 # BUG-011 — Checklist
 
-> **Status**: `verifying` —— code + test 全部收,🔴 淨低要起本機 stack 嗰兩項(DS-4 真 render / F5-6 live 驗)。
+> **Status**: `done` —— code + test + **live 驗 + light/dark 真 render 全部收**(2026-08-10/11)。
 > 決策依據 = `report.md`。🔴 **冇改 ADR-0013 C2 boot-once 語義**(嗰個係 H1)。
 
 ## F0 — 開單
@@ -15,7 +15,7 @@
 - [x] F1-1 `ResolvedField` 加 `kind` + `enumValues?`
 - [x] F1-2 `describe()` 三個分支(db / env / unset)都帶埋 —— **unset 嗰個最緊要**
 - [x] F1-3 🔴 **H4 覆核**:`kind` / `enumValues` 係 `connectors.ts` 嘅公開靜態常數 ⇒ 唔違反 ADR-0013 D2/D5。`secrets[]` 一個字冇郁
-- [x] F1-4 OpenAPI DTO —— **N/A**:controller 直接返 service type,`describe()` 冇對應 response DTO class
+- [x] F1-4 OpenAPI DTO —— 🔴 **我一開始標 N/A,係錯嘅**。`ConnectorFieldDto` **確實存在**,而佢一直冇宣告 `kind`/`enumValues`;兩個欄實際有出街只係因為 `config:` 嗰行直接用 service 結果 ⇒ **OpenAPI 一直講緊大話**。已補宣告(`enumValues` 用 `readonly string[]` 對齊 spec 常數)
 
 ## F2 — 缺陷 1 前端:enum render select
 
@@ -50,5 +50,21 @@
 - [x] F5-2 既有 test 一條冇跌 —— api **921 → 934** · web **288 → 293**(⚠️ 另 6 條 **pre-existing** 紅 = `WEB-TEST-JSDOM`)· web lint **16 problems = BACKLOG 記錄嘅同一批**,本單零新增
 - [x] F5-3 `postmortem.md` —— 🟡 Sev3 但 **recurring**(BUG-005 同族第二次)
 - [x] F5-4 BACKLOG(R7)+ `progress.md`
-- [ ] F5-5 RISK_REGISTER:「監控面同 runtime 講唔同嘢」係咪要提早升級成 risk —— **postmortem 已提出,等 Chris**(R5 先例係第三次先升級,但兩次都出喺同一個 panel 同一組 seam)
-- [ ] F5-6 🔴 **live 驗 + DS-4 真 render**(改 provider → 睇 badge → 重啟 → 再睇;light + dark)—— ⚠️ **唔卡 B8,但要起本機 stack,而 5433 同 `ai-doc-extraction-db` 硬衝突,要 Chris 批准借 port**
+- [x] F5-5 RISK_REGISTER **新增 `R9`** —— Chris 2026-08-10 拍板**提早升級**(冇跟 R5「第三次先升級」先例,因為兩次出喺同一個 panel / 同一組 seam / 同一個 method)
+- [x] F5-6 🔴 **live 驗 + DS-4 真 render 全部做完** —— Chris 批准借 5433。**而 live 第一個回應就揭咗 F6**
+
+## F6 — 🔴 live 揭出嘅第二個缺口（同 W45 `apiPatch` 同一日第二次）
+
+- [x] F6-1 `pendingRestart` **喺 API 回應根本唔存在** —— `IntegrationController.list()` 逐個欄砌、明文唔 spread(ADR-0013 D2),我加咗欄落 read-model 冇加落 controller
+- [x] F6-2 三層 test 全綠仍然捉唔到:service spec 打 service · UI test 自己砌 fixture · DTO 冇宣告嗰個欄 ⇒ tsc 唔返佢**完全合法**
+- [x] F6-3 修:DTO 加 `pendingRestart` + 補 `kind`/`enumValues` · controller 加一行
+- [x] F6-4 **新開 `integration.controller.spec.ts`** 守住 service → DTO 條縫
+- [x] F6-5 🔴 **第一版 guard 自己都係假嘅** —— `toHaveProperty(key)` 對 `undefined` 一樣 pass,falsification 一跑就穿(只 1 條紅)。改 `toHaveProperty(key, value)` 後再拆 ⇒ **2 條紅**。**今日第三次同族**
+- [x] F6-6 guard 靠 `row: ConnectorStatus` 嘅 type 標註自我維持(read-model 加 required 欄 → fixture tsc 紅 → 人被逼經過呢度)
+
+## F7 — 環境還原（有手尾，已修）
+
+- [x] F7-1 `docker stop ai-doc-extraction-db` 借 5433(Chris 批)
+- [x] F7-2 🔴 **還原一度失敗而且係「靜靜失敗」** —— `docker start` 撞正 `uop-postgres` 未停,之後即使停咗 UOP、`docker restart` 都唔會重新 attach port。container `healthy` · DB 內部 `accepting connections` · `inspect` 見到 `PortBindings` 仲喺 —— **但 host 5433 零 listener**。⇒ 正正係 restart-stack skill 硬規則 3 記低嗰個形狀,今次自己踩返落去
+- [x] F7-3 Chris 批准後 `docker compose up -d postgres` recreate 修好,**真 TCP connect 驗 = CONNECTED**(唔係睇 health flag)
+- [x] F7-4 UOP stack 已停(交返 5433);要再用打 `/restart`,但**兩個項目同時只可以有一個 5433**

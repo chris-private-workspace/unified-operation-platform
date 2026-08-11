@@ -61,9 +61,32 @@ BUG-005(panel 讀 env / runtime 讀 DB)修好之後,喺 code 入面留低一條�
 
 **教訓**:把一個 generic control 換成一個 specific control,會**靜靜咁刪走 generic control 附帶嘅能力**。呢啲能力通常冇人寫落 spec,因為佢哋係免費附送嘅。
 
-## 6. Action items
+## 6. 🔴 修法自己再中一次同族錯誤（live 驗揭）
+
+缺陷 2 改好、三層 test 全綠、tsc 0 之後,live 攞第一個 API 回應 —— **`pendingRestart` 整欄唔存在**。
+
+`IntegrationController.list()` **逐個欄砌回應,明文唔用 spread**(ADR-0013 D2)。我加咗欄落 read-model,冇加落 controller。而三層 test 全部睇唔到:service spec 打 service、UI test 自己砌 fixture、DTO 冇宣告嗰個欄所以 tsc 唔返佢**完全合法**。
+
+⇒ **同 W45 `apiPatch` 一模一樣,同一日第二次。** 兩單嘅共同形狀:
+
+> **每一層 test 都喺自己嗰層邊緣停低,而 bug 就住喺兩層之間。**
+> 冇任何一條 test 係錯嘅;佢哋加埋一齊嘅覆蓋面**睇落**係完整,實際上中間有條縫。
+
+⚠️ **值得記嘅係:呢個 D2 安全設計本身冇錯,而且應該保留。** 「逐個欄砌」正正係佢想要嘅效果 —— 擴大回應永遠要有人特登做。代價係**新欄唔會自己流出去**,而呢個代價之前冇人寫低過。而家寫低咗,並且有 `integration.controller.spec.ts` 守住。
+
+### 而第一版 guard 都係假嘅
+
+新 controller spec 寫咗「唔准 drop 任何 read-model 欄」,用 `expect(out).toHaveProperty(key)`。拆走 controller 嗰行做 falsification ⇒ **佢仍然綠**,因為 `pendingRestart: undefined` 一樣有嗰個 key。改成 `toHaveProperty(key, value)` 之後再拆 ⇒ 2 條紅。
+
+🔴 **今日第三次同族**(CH-023 tautology → status `expect(false)` 嗰批 → 呢個)。同一句話:
+
+> **一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事。唯一分辨方法係拆走實作睇佢紅唔紅。**
+
+## 7. Action items
 
 - [x] 三個 factory 嘅 fail-safe test 逐條保留,並各加一條「記 effective 唔記 raw」
 - [x] `describe()` 加一條**由 inventory derive** 嘅 test —— 新 enum 欄漏咗會自己紅
-- [ ] **RISK_REGISTER**:考慮加一條「監控面同 runtime 講唔同嘢」(同 BUG-004 三次同類升級成 R5 嘅判斷方式)。**呢個係第二次**,按 R5 先例要第三次先升級 —— 但兩次都出喺**同一個 panel 同一組 seam**,所以值得問 Chris 係咪提早
-- [ ] Live 驗(F5-6)+ light/dark 真 render(DS-4)—— 兩個都要起本機 stack
+- [x] **RISK_REGISTER → 新增 `R9`「監控面講嘅嘢同 runtime 實際做緊嘅唔同」**。🔴 **Chris 2026-08-10 拍板提早升級,冇跟 R5 個「第三次先升級」先例** —— 理由:R5 三次散落三個唔同 vendor 路徑,而呢兩次出喺**同一個 panel、同一組 seam、同一個 method**(`n8nLicenseSelected()` 本身就係 BUG-005 個修法)。同一個位置連續錯兩次,第三次唔值得等
+- [x] Live 驗 + light/dark 真 render —— 全部做完(見 progress)。**live 第一個回應就揭咗 §6 嗰個 controller 缺口**,證明呢一步唔可以省
+- [x] 新開 `integration.controller.spec.ts` 守住 service → DTO 之間條縫
+- [ ] ⚠️ **同族第三個接縫仲未有守門**:`apiGet` 一樣冇帶 `detail`(W45 刻意冇改,因為現時冇 caller 需要)。**「冇 caller 需要」係今日成立嘅事實,唔係結構保護** —— 下次有 caller 需要嗰陣,會係同一種靜默失敗
