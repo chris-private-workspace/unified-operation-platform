@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029)+ CH-023(ServiceNow 結果留 timeline)三個同時未收**(2026-08-11)—— 後兩個**實作都收晒,淨低 live 驗,卡同一個 B8**。**BUG-011 ✅ closed**(PR #79),**本地零 feature branch,下次由 `main` 開新條**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標。⚠️ **呢格刻意唔寫 `main` 嘅 commit hash** —— 寫 hash 嗰個 commit 本身就會令佢過時,而「有冇 feature branch」先係真正影響下手點開工嗰半 |
+| Phase | **CH-021 ✅ closed**(2026-08-11,onboarding intake 通知,A12 live 真送達)。**W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029)+ CH-023(ServiceNow 結果留 timeline)三個同時未收**(2026-08-11)—— 後兩個**實作都收晒,淨低 live 驗,卡同一個 B8**。**BUG-011 ✅ closed**(PR #79),**本地零 feature branch,下次由 `main` 開新條**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標。⚠️ **呢格刻意唔寫 `main` 嘅 commit hash** —— 寫 hash 嗰個 commit 本身就會令佢過時,而「有冇 feature branch」先係真正影響下手點開工嗰半 |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -306,7 +306,9 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
   - 🔴 **一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事** —— 同日中三次(CH-023 由 step 推導 = tautology · status 三條 `expect(false)` 喺 no-op 之下仍然綠 · guard 用 `toHaveProperty(key)` 對 `undefined` 一樣 pass)。**唯一分辨方法係拆走實作睇佢紅唔紅**,`toHaveProperty(key, value)` 先由 1 紅變 2 紅。
 - **本機 runtime 避坑**:Prisma engine CDN 被公司 proxy 封(RISK R1);port 3000→Langfuse 佔用 ⇒ api 用 **3100**、5432→既有 Postgres 佔用 ⇒ docker **5433**;web **5173**。起 / 重啟一律用 `restart-stack` skill。
   - 🔴 **5433 同 `ai-doc-extraction-db` 硬衝突,只可以二揀一** —— 起 UOP 前要 `docker stop` 佢(**要 Chris 批**,係另一個項目),用完 `docker start` 還原。⚠️ **還原會靜靜失敗**:`docker start` 撞正 `uop-postgres` 未停就搶唔到 port,而**之後即使停咗 UOP、`docker restart` 都唔會重新 attach** —— container `healthy` · `inspect` 見到 `PortBindings` 仲喺,**但 host 零 listener**(restart-stack 硬規則 3 嗰個形狀)。要 `docker compose up -d <svc>` recreate,**兼且真 TCP connect 驗,唔好睇 health flag**。
-  - 🔴 **`nest start --watch` 個 build-cache 假綠燈會再撞**:見到 **`Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出**,就係佢 —— 刪 `apps/api/*.tsbuildinfo` **同** `dist/`,然後**直接起 stack,中間唔可以插 `npm run build`**。⚠️ `Test-Path dist/main.js` 要喺 watch **起身之後**check 先有意義(watch 一起身就清 `dist/`,喺之前 check 會見到上一次 build 剩低嘅檔而誤判)。
+  - 🔴 **`nest start --watch` 個 build-cache 假綠燈會再撞**:見到 **`Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出**,就係佢 —— 刪 `apps/api/*.tsbuildinfo` **同** `dist/`,然後**直接起 stack,中間唔可以插 `npm run build`**。
+    - 🔴 **2026-08-11 更正:`Test-Path dist/main.js` 唔係可靠嘅 discriminator,呢度原本教錯咗。** 原文寫「要喺 watch **起身之後** check 先有意義」;CH-021 A12 實測**照做咗**,watch 已經跑咗 90 秒,佢**仍然返 `True`**(舊 build 剩低嘅檔)⇒ 我據此**排除**咗 build-cache,再白等 180 秒,而真兇就係佢。
+    - ⇒ **唯一可靠信號 = log 嗰兩句同時出現**。🔴 **但 `start-detached.ps1` 唔會 capture api stdout**,所以預設情況下你**睇唔到** —— 要 `Start-Process … -RedirectStandardOutput/-RedirectStandardError` 起一次先睇到。**呢個係目前呢個坑最貴嗰半**(兩次共 270 秒白等)。
   - 🔴 **本機 Graph 係通嘅** ⇒ 真跑一次成功 assign 會**喺公司 tenant 真派 licence**。要造「一定失敗」嘅 fixture,**先用唯讀 `POST /fulfilment/requests/:id/sync-check` 探**個 UPN 存唔存在 —— 2026-08-10 實測:一個砌出嚟嘅假 UPN 一樣返 `FOUND`,「個名睇落假」推論唔到「tenant 冇」。
 - 🔴 **ServiceNow 寫入係逐個 table 分開開權,唔可以由「某張表寫得」推論「另一張寫得」**:`sc_request` insert **403**(BUG-010)· `sc_item_option` update **403**(ADR-0026)· `sc_req_item` / `sc_task` update ✅ · catalog `order_now` ✅。⇒ `target_user` **永遠**指住 requester,真 target 睇 `target_users_email`(DD-5)。
 - 🔴 **UOP 同 n8n 共用 SN 帳號 `n8napiservice1`** ⇒ `sys_updated_by` 分唔到邊個系統做,唯一指紋係 `close_notes`(RISK **R7**)。查 SN 側「邊個做過乜」一律唔可以信 `sys_updated_by`。

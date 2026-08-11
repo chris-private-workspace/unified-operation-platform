@@ -200,6 +200,44 @@ v1 跟住三份 checklist 照搬,把 CH-023 `G9` 同 W45 成功路一齊掛喺 `
 
 ---
 
+# 🔴 CH-022 A7 —— 明文**唔喺**呢兩條 track 入面
+
+**唔好順路撳。** 2026-08-11 查證推翻咗兩份文件寫嘅做法。
+
+### 原本寫住嘅路唔通
+
+`CH-022/spec.md` 同 BACKLOG `INTAKE-REQUESTER` 都寫住「公司網撳 **Delivery failures** 個 `REQUEST_SUBMIT` retry 補返 08-07 三張」。**實讀 code:嗰條路一定會原封不動再失敗一次。**
+
+| 出處 | 事實 |
+|---|---|
+| `PAYLOAD_WHITELIST['request.submit']` | 只存 5 個欄,**冇 `requesterSysId`** |
+| `outbound-retry.service.ts:160-170` `repairSubmit` | **逐個欄明文重砌**,一樣冇送 |
+
+⇒ 去到 `direct-servicenow.provider.ts:81` 個 `payload.requesterSysId ?? resolveRequester(email)` 一定行右邊 = **W44 實測對 intake 路 0% 嘅 email 反查** ⇒ 同一句 `The requester was not found in ServiceNow` 再出一次。
+
+🔴 **唔係 bug** —— ADR-0030 D3 明文寫住個 `??` 刻意唔係 fallback 鏈。真相係 **ADR-0030 同 repair 路之間有條冇人接埋嘅縫**。
+
+⚠️ 撳咗**唔會整壞嘢**(row 維持 `open`、`attemptCount` 加一,I2),但係**白撳**。
+
+### A7 真正要嘅嘢
+
+**一張新 intake**,唔係補舊嗰三張。而且撳之前要齊**四個前提**:
+
+| # | 前提 | 唔滿足會點 |
+|---|---|---|
+| 1 | `SERVICENOW_O365_CATALOG_ITEM_SYS_ID` | step 1 throw(**掂 SN 之前**)⇒ 症狀同要修嗰個 bug 一樣,**只可以靠讀 message 分** |
+| 2 | `ConnectorConfig.defaultOnboardingSkuId` | 🔴 **靜靜 no-op** —— 零 line item ⇒ `raiseLicenceRequest` early-return ⇒ 零 SN 動作、零 failure row、零 log |
+| 3 | 真 REQ + `opened_by` 有值 | `resolveReqSysId` 400 |
+| 4 | submit provider = `direct` | unset → fail-safe 就係 `direct`,預設啱 |
+
+🔴 **DEV 側 ② 未查過** —— `patch-deploy-dev.ps1` 送嘅係 **env**,而 `defaultOnboardingSkuId` 係 **DB config**(`ConnectorConfig`),兩本帳。**撳之前喺 Settings → Integrations 睇一睇。**
+
+### 副作用
+
+catalog `order_now` ⇒ ServiceNow 開**一張全新 REQ + 一張 RITM**(唔止一張 RITM)。⚠️ 而且會觸發 **CH-021 通知** —— 揀個冇 `OPCO_IT` 用戶嘅 OpCo 就唔會寄信。
+
+---
+
 # 收尾（唔好省，呢部分先係「收得到 phase」嗰半）
 
 1. **證據貼返各自 `progress.md`** —— W44 / W45 / CH-023 三份,**貼真 output / 截圖,唔好寫「pass」**(§5.7 **H7**)
@@ -223,6 +261,8 @@ v1 跟住三份 checklist 照搬,把 CH-023 `G9` 同 W45 成功路一齊掛喺 `
 | A3 | SSO 登入 **+ break-glass 再登入** | 兩邊各成功一次 ← **唯一非 DEV 不可** |
 | A4 | Graph test connection | `active` |
 | A5 | allocated=0 撳 Assign | dialog 開到（= 400 body 過到 proxy）· DB 零改動 |
+
+🔴 **CH-022 A7 唔喺呢條 track** —— 唔好順路撳 Delivery failures retry，佢一定會再失敗一次。見上面「CH-022 A7」整段。
 
 ## Track B · 一次真 assign（🔴 真派 licence，本機做）
 
