@@ -118,11 +118,52 @@ requesterSysId 冇  → resolveRequester(payload.requesterEmail)(outbound 路,�
 
 ### A7 狀態
 
-🔴 **仍然未做 ⇒ 本 CH 未算完成**。code 已經喺 DEV 跑緊,兩條路都做得:
-1. 公司網撳 **Delivery failures** 個 `REQUEST_SUBMIT` retry(08-07 三行應該仲喺;`REQUEST_SUBMIT` 語意 = 外面乜都冇改過,repair 就係重新 submit)
-2. 或者觸發一次真 n8n onboarding
+🔴 **仍然未做 ⇒ 本 CH 未算完成**。
 
-🟢 **驗證唔使截圖** —— 撳完之後由本機直接查 `sc_req_item`(今日證過打得通 `ricohapdev`),見到一張新 O365 RITM(`cat_item = efe38ade…`)就等於 A7 過。
+> ## 🔴 2026-08-11 更正 —— 上面原本寫嘅「路 1」唔通，會白撳一次
+>
+> 原文寫住兩條路都做得,第一條係「公司網撳 **Delivery failures** 個 `REQUEST_SUBMIT` retry(08-07 三行應該仲喺;`REQUEST_SUBMIT` 語意 = 外面乜都冇改過,repair 就係重新 submit)」。
+>
+> **實讀 code 之後:嗰條路一定會原封不動再失敗一次。** 兩處各自獨立證實:
+>
+> | 出處 | 事實 |
+> |---|---|
+> | `outbound-failure-fields.ts` `PAYLOAD_WHITELIST['request.submit']` | 只存 **5 個欄**:`targetUpn` / `targetDisplayName` / `opcoCode` / `requesterEmail` / `remark`。**冇 `requesterSysId`** |
+> | `outbound-retry.service.ts:160-170` `repairSubmit` | **逐個欄明文重砌** submit payload,一樣**冇送 `requesterSysId`** |
+>
+> ⇒ retry 去到 `direct-servicenow.provider.ts:81` 嗰句 `payload.requesterSysId ?? await this.resolveRequester(payload.requesterEmail)` 一定行右邊 —— 即係 **W44 實測對 intake 路 0% 嘅 email 反查**(`n8napiservice1` 個 `email` 欄係空)⇒ **同一句 `The requester was not found in ServiceNow` 再出一次。**
+>
+> 🔴 **呢個唔係 bug。** ADR-0030 **D3** 明文寫住個 `??` **刻意唔係 fallback 鏈**、唔准救一個被拒絕嘅 id。真相係:**ADR-0030 同 repair 路之間有一條冇人接埋嘅縫** —— D3 只講咗 submit 嗰刻,冇講 repair 嗰刻。
+>
+> 📌 **錯法值得記**:原文由「`REQUEST_SUBMIT` 嘅 repair 語意 = 重新 submit」推去「所以補得返」,**冇查 payload 實際存咗乜**。BACKLOG `INTAKE-REQUESTER` 行有同一句,而佢自己仲寫住「嗰三行 failure row **未眼見過,由 code path 推**」—— **已經標明咗係推論,只係推得唔夠遠**。同一族第六次。
+
+**⇒ A7 剩返嘅路:**
+
+| 路 | 通唔通 | 備註 |
+|---|---|---|
+| ~~DEV 撳 Delivery failures retry 補 08-07 三張~~ | 🔴 **唔通** | 見上面。⚠️ **撳咗之後 `attemptCount` 會加一、row 維持 `open`**(I2),唔會整壞嘢,但係白撳 |
+| DEV 收一次**新**的 flat intake | 🟢 通 | 新 payload 行 `intakeFlat` → `raiseLicenceRequest` 直接帶住 `openedBySysId`,唔經 failure queue |
+| 本機造新單 | 🟢 通 | 但要補兩個配置,見下 |
+
+🔴 **⇒ A7 唔係「順路喺 Track A 撳一撳」。** 佢要一張**新** intake,唔係補舊嗰三張。
+
+### 🔴 撳之前要齊四個前提（2026-08-11 本機查證，兩個係缺嘅）
+
+| # | 前提 | 唔滿足會點 |
+|---|---|---|
+| 1 | `SERVICENOW_O365_CATALOG_ITEM_SYS_ID` | `resolveCatalogItem` 喺 **step 1** throw(**掂 SN 之前**),寫一行 `REQUEST_SUBMIT` failure ⇒ **症狀同本 CH 要修嘅 bug 一模一樣,原因完全唔同**,只可以靠讀 message 分(`catalog item is not configured` vs `requester was not found`) |
+| 2 | `ConnectorConfig.defaultOnboardingSkuId` | 🔴 **最陰濕** —— `intakeFlat` 永遠 `applyDefaultSku([], …)`,冇配就建**零 line item**,`raiseLicenceRequest` 見 `lines.length === 0` **early-return** ⇒ **零 SN 動作、零 failure row、零 log**。靜靜 no-op |
+| 3 | 一個真 REQ number 且 `opened_by` 有值 | `resolveReqSysId` 400 |
+| 4 | submit provider = `direct` | unset → fail-safe 落 `direct`(`fulfilment.module.ts:52`),✅ 預設就啱 |
+
+**本機實測(2026-08-11)**:①**冇設**(`.env` 得 4 個 `SERVICENOW_*` key)②**NULL** ③✅ `REQ0044067`(in_process)/ `REQ0044068`(closed)兩張都在兼有 `opened_by` ④✅。
+⇒ Chris 2026-08-11 拍板 **收手,留返 DEV 做**,理由:兩邊 SN 副作用一樣(**開一張全新 REQ + 一張 RITM**),而本機要先造兩個配置先撳得到 —— **配置得越多,驗到嘅嘢離真實路徑越遠**。
+
+### 副作用（比原文寫嘅大）
+
+`DirectServiceNowProvider.submit` 走 catalog `order_now` ⇒ ServiceNow 會開**一張全新 `sc_request`(REQ)+ 一張 `sc_req_item`(RITM)**,唔止一張 RITM。⚠️ **而且而家仲會觸發 CH-021 通知**(flat 路會寄信)—— 揀一個冇 `OPCO_IT` 用戶嘅 OpCo 就唔會寄。
+
+🟢 **驗證唔使截圖** —— 撳完之後由本機直接查 `sc_req_item`(今日證過打得通 `ricohapdev`),見到一張新 O365 RITM(`cat_item = efe38adedbef6f80a98e75868c961936`)就等於 A7 過。
 
 ---
 
