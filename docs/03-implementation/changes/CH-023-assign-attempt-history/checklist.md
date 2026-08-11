@@ -35,7 +35,10 @@
 - [x] F3-2 G8 `npm run lint`(root)**exit 0** · api tsc **exit 0**
 - [x] F3-3 BACKLOG 標完成(R7)+ W45 `progress.md` 寫一段
 - [x] F3-4 CLAUDE.md §0 / §9 + `SESSION_SUMMARY.md` 座標掃一次(§14 規矩:呢兩份係唯一無條件讀入每個新 session 嘅文件)
-- [ ] F3-5 🔴 **live 驗**(G9)—— ⚠️ **卡 `B8`,同 W45 F4-4b 一齊做**
+- [ ] F3-5 🔴 **live 驗**(G9)—— 🔴 **2026-08-11 更正:唔卡 `B8`**。全套步驟見 **`docs/13-deployment/10-dev-live-verification-runbook.md` Track B**
+  - ⚠️ **原本寫住「卡 `B8`,同 W45 F4-4b 一齊做」係錯嘅,而錯法值得記**:兩件嘢都係「live 驗」,就被推去「兩件都卡同一個環境」——**由一個相關但唔對位嘅觀察推去更強結論,同一族第五次**。
+  - 🔴 **真正卡住嘅係一個決定,唔係一個環境**:本 CH 條 NOTE **只喺 assign 成功之後先寫** ⇒ 要驗佢就要**真派一個 licence**。而 `BACKLOG` `DEV-GRAPH-PLACEHOLDER` 行(2026-08-10 查證)證實 **DEV 個 `GRAPH_TENANT_ID` = 公司 M365 tenant `d1ea071a-…`,`GRAPH_CLIENT_ID` 同本機 `.env` 完全一致** ⇒ **DEV 同本機同一個 tenant 同一個 Graph app,派出去嗰個 licence 一模一樣** ⇒ **去 DEV 換唔到任何嘢返嚟,本機做仲快**(唔使等公司網)。
+  - 🔴 **撳之前一定要 ServiceNow `Test connection` = `active`** —— 條 NOTE 個內容**由 ticket step 推導**,SN 唔通就只驗到 `failed` 分支,驗唔到 `ok`(`RITM close requested`)。💡 本機打得通真 SN 有前例(CH-020 V5d,2026-08-03,早過 DEV 存在),但**唔好由前例推論今日**。
   - 🟢 **前提已補**(2026-08-10 **部署 #5** `dev-86ed450`):本單個 code 之前**唔喺 DEV**(部署 #4 個 tag `dev-211001e` 早 `f219676` 三個 commit)⇒ G9 當時根本驗唔到。而家 api `--0000007` / web `--0000004` 兩個 `Healthy` traffic 100,container log 證 DB 通 + seed 行到。**唔好當「已 merge 入 main」= 「已喺 DEV」。**
 
 ---
