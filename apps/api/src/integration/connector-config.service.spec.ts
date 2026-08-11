@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ConnectorConfigService } from './connector-config.service';
+import { CONNECTOR_CONFIG, CONNECTOR_KEYS } from './connectors';
 
 /**
  * W34 / ADR-0013 (Model C). The two load-bearing guarantees are marked 🔴:
@@ -123,6 +124,64 @@ describe('ConnectorConfigService', () => {
       expect(
         view.editable.every((f) => f.source === 'unset' && f.value === null),
       ).toBe(true);
+    });
+
+    /**
+     * BUG-011 — the read-model used to send the VALUE without the SHAPE, so the
+     * admin UI could only render a free-text box and the operator had to guess.
+     */
+    it('carries the field shape so the UI can offer the allowed values', async () => {
+      build({
+        row: { connector: 'n8n-license', licenseOpsProvider: 'n8n' },
+        env: {},
+      });
+
+      const view = await service.describe('n8n-license');
+      const provider = view.editable.find(
+        (f) => f.column === 'licenseOpsProvider',
+      )!;
+
+      expect(provider.kind).toBe('enum');
+      /**
+       * 🔴 Asserted exactly, because the exact set is the bug. Seam ② takes
+       * `graph` while the other two seams take `direct`, so an operator
+       * switching "back to the direct integration" types `direct`, gets a 400,
+       * and concludes it cannot be switched back.
+       */
+      expect(provider.enumValues).toEqual(['graph', 'n8n']);
+    });
+
+    it('carries the shape even when the field is unset', async () => {
+      // The branch that matters most: a cleared enum override is exactly when
+      // the operator has nothing else to go on.
+      build({ row: null, env: {} });
+
+      const view = await service.describe('n8n-license');
+      const provider = view.editable.find(
+        (f) => f.column === 'licenseOpsProvider',
+      )!;
+
+      expect(provider.source).toBe('unset');
+      expect(provider.value).toBeNull();
+      expect(provider.enumValues).toEqual(['graph', 'n8n']);
+    });
+
+    /**
+     * Derived from the inventory rather than spot-checked, so a future connector
+     * that adds an enum field cannot quietly ship without its values — that is
+     * the same "two places, nothing forcing them to agree" shape this bug is.
+     */
+    it('reports the spec shape for every field of every connector', async () => {
+      for (const key of CONNECTOR_KEYS) {
+        const view = await service.describe(key);
+        for (const f of view.editable) {
+          const spec = CONNECTOR_CONFIG[key].editable.find(
+            (e) => e.column === f.column,
+          )!;
+          expect(f.kind).toBe(spec.kind);
+          expect(f.enumValues).toEqual(spec.enumValues);
+        }
+      }
     });
 
     // 🔴 G4 — the load-bearing test: a secret value must never reach the view.

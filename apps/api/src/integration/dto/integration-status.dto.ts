@@ -40,6 +40,23 @@ export class ConnectorFieldDto {
       'where the effective value came from (DB override / env / none)',
   })
   source!: string;
+  // BUG-011 — the field's shape. Without it a client can only render a text box
+  // and the operator has to guess the allowed values. Both are public static
+  // constants in connectors.ts, so nothing secret widens (D2 preserved).
+  @ApiProperty({
+    enum: ['text', 'url', 'guid', 'enum', 'email', 'sku'],
+    description: 'how this field should be edited and validated',
+  })
+  kind!: string;
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description:
+      'allowed values when kind = enum — the exact set the PATCH will accept',
+  })
+  // readonly, matching the spec constant it comes from — the connector inventory
+  // is not something a response should be able to mutate.
+  enumValues?: readonly string[];
 }
 
 export class ConnectorSecretDto {
@@ -109,6 +126,17 @@ export class ConnectorStatusDto {
       'editable non-secret config (value + source) and secret configured-status — never a secret value (D2 / ADR-0013)',
   })
   config!: ConnectorConfigDto;
+
+  /**
+   * BUG-011 — `state` is what is CONFIGURED; this says the running process has
+   * not picked it up yet. The provider factories re-read their switch only at
+   * boot (ADR-0013 C2), so between Save and restart the two disagree.
+   */
+  @ApiProperty({
+    description:
+      'true when the saved provider differs from the one this process resolved at boot — a restart is needed for it to take effect',
+  })
+  pendingRestart!: boolean;
 }
 
 /**

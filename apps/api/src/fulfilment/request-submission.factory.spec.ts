@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { ConnectorConfigService } from '../integration/connector-config.service';
+import { SeamRuntimeRegistry } from '../integration/seam-runtime.registry';
 import { requestSubmissionProviderFactory } from './fulfilment.module';
 import { DirectServiceNowProvider } from './direct-servicenow.provider';
 import { N8nWorkflowProvider } from './n8n-workflow.provider';
@@ -25,11 +26,15 @@ describe('requestSubmissionProviderFactory', () => {
       resolve: (_c: string, column: string) => values[column],
     }) as unknown as ConnectorConfigService;
 
+  // BUG-011 — real registry, not a mock (pure in-memory bookkeeping).
+  const reg = () => new SeamRuntimeRegistry();
+
   it('returns DirectServiceNowProvider when the provider is unset (default)', async () => {
     const provider = await requestSubmissionProviderFactory(
       config,
       snow,
       cc({}),
+      reg(),
     );
     expect(provider).toBeInstanceOf(DirectServiceNowProvider);
   });
@@ -39,6 +44,7 @@ describe('requestSubmissionProviderFactory', () => {
       config,
       snow,
       cc({ requestSubmissionProvider: 'direct' }),
+      reg(),
     );
     expect(provider).toBeInstanceOf(DirectServiceNowProvider);
   });
@@ -51,6 +57,7 @@ describe('requestSubmissionProviderFactory', () => {
         requestSubmissionProvider: 'n8n',
         n8nOutboundWebhookUrl: 'https://n8n.example.com/webhook/x',
       }),
+      reg(),
     );
     expect(provider).toBeInstanceOf(N8nWorkflowProvider);
   });
@@ -61,7 +68,35 @@ describe('requestSubmissionProviderFactory', () => {
         config,
         snow,
         cc({ requestSubmissionProvider: 'n8n' }),
+        reg(),
       ),
     ).rejects.toThrow(/webhook URL is not configured/);
+  });
+
+  /** BUG-011 — seam ① records its boot decision too, same as ② and ④. */
+  it('records the effective boot decision, not the typed string', async () => {
+    const recorded = reg();
+    const mistyped = reg();
+
+    await requestSubmissionProviderFactory(
+      config,
+      snow,
+      cc({
+        requestSubmissionProvider: 'n8n',
+        n8nOutboundWebhookUrl: 'https://n8n.example.com/webhook/x',
+      }),
+      recorded,
+    );
+    await requestSubmissionProviderFactory(
+      config,
+      snow,
+      cc({ requestSubmissionProvider: 'N8N' }),
+      mistyped,
+    );
+
+    expect(recorded.isUsingN8n('n8n-outbound')).toBe(true);
+    // 'N8N' fell back to Direct — and crucially did NOT go looking for a webhook
+    // URL, which is what makes this a safe fallback rather than a boot failure.
+    expect(mistyped.isUsingN8n('n8n-outbound')).toBe(false);
   });
 });

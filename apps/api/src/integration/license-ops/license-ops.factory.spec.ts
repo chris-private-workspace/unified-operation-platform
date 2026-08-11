@@ -1,4 +1,5 @@
 import { ConnectorConfigService } from '../connector-config.service';
+import { SeamRuntimeRegistry } from '../seam-runtime.registry';
 import { licenseOpsProviderFactory } from '../integration.module';
 import { GraphLicenseProvider } from './graph-license.provider';
 import { N8nLicenseProvider } from './n8n-license.provider';
@@ -26,21 +27,25 @@ describe('licenseOpsProviderFactory', () => {
         column === 'licenseOpsProvider' ? value : undefined,
     }) as unknown as ConnectorConfigService;
 
+  // BUG-011 — a real registry, not a mock: it is pure in-memory bookkeeping, and
+  // using the real one means these tests also pin what gets recorded.
+  const reg = () => new SeamRuntimeRegistry();
+
   it('falls back to Graph when nothing is configured', async () => {
-    await expect(licenseOpsProviderFactory(graph, n8n, cc())).resolves.toBe(
-      graph,
-    );
+    await expect(
+      licenseOpsProviderFactory(graph, n8n, cc(), reg()),
+    ).resolves.toBe(graph);
   });
 
   it("uses Graph when explicitly set to 'graph'", async () => {
     await expect(
-      licenseOpsProviderFactory(graph, n8n, cc('graph')),
+      licenseOpsProviderFactory(graph, n8n, cc('graph'), reg()),
     ).resolves.toBe(graph);
   });
 
   it("uses n8n only on the exact string 'n8n'", async () => {
     await expect(
-      licenseOpsProviderFactory(graph, n8n, cc('n8n')),
+      licenseOpsProviderFactory(graph, n8n, cc('n8n'), reg()),
     ).resolves.toBe(n8n);
   });
 
@@ -48,8 +53,40 @@ describe('licenseOpsProviderFactory', () => {
     'treats %p as not-n8n and stays on Graph',
     async (value) => {
       await expect(
-        licenseOpsProviderFactory(graph, n8n, cc(value)),
+        licenseOpsProviderFactory(graph, n8n, cc(value), reg()),
       ).resolves.toBe(graph);
     },
   );
+
+  /**
+   * BUG-011 — the panel reported a provider switch the moment it was saved,
+   * while this factory only re-reads its switch on restart (ADR-0013 C2). It now
+   * records what it actually resolved so the two can be compared.
+   */
+  it('records the boot decision so the panel can tell saved from live', async () => {
+    const registry = reg();
+
+    await licenseOpsProviderFactory(graph, n8n, cc('n8n'), registry);
+
+    expect(registry.isUsingN8n('n8n-license')).toBe(true);
+  });
+
+  /**
+   * The recorded value must be the EFFECTIVE one. A typo fails safe to Graph, so
+   * recording the raw string would show an operator a provider that never ran —
+   * the same class of lie this bug is about, reintroduced one layer down.
+   */
+  it('records the effective choice, not the string that was typed', async () => {
+    const registry = reg();
+
+    const provider = await licenseOpsProviderFactory(
+      graph,
+      n8n,
+      cc('N8N'),
+      registry,
+    );
+
+    expect(provider).toBe(graph);
+    expect(registry.isUsingN8n('n8n-license')).toBe(false);
+  });
 });

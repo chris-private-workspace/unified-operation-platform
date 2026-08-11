@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { useIntegrations } from '@/hooks/queries';
 import { useTestConnection, useUpdateConnector } from '@/hooks/mutations';
@@ -147,6 +148,10 @@ function ConnectorRow({ connector: c }: { connector: ConnectorStatus }) {
             <Badge tone={connectorStateTone(c.state)}>
               {connectorStateLabel(c.state)}
             </Badge>
+            {/* BUG-011 — the badge above says what is CONFIGURED. Without this
+                one it read as what is RUNNING, so a saved switch looked done
+                while the process was still on the old provider. */}
+            {c.pendingRestart && <Badge tone="warn">Pending restart</Badge>}
           </div>
 
           <span className="font-mono text-[11px] text-fg-subtle">
@@ -232,13 +237,36 @@ function ConnectorRow({ connector: c }: { connector: ConnectorStatus }) {
                   {f.label}
                   <FieldSourceNote field={f} />
                 </span>
-                <Input
-                  value={draft[f.column] ?? ''}
-                  onChange={(e) =>
-                    setDraft({ ...draft, [f.column]: e.target.value })
-                  }
-                  placeholder={`Set ${f.label.toLowerCase()}…`}
-                />
+                {/* BUG-011 — an enum used to render as a free-text box, so the
+                    allowed values existed only in the backend and the operator
+                    had to guess. The guess is wrong exactly where it costs
+                    most: two seams take `direct`, seam ② takes `graph`. */}
+                {f.kind === 'enum' && f.enumValues ? (
+                  <Select
+                    value={draft[f.column] ?? ''}
+                    onChange={(e) =>
+                      setDraft({ ...draft, [f.column]: e.target.value })
+                    }
+                  >
+                    {/* Clearing the override has to stay possible — a text box
+                        could be emptied, a two-option select cannot. Empty
+                        value = drop the DB override and fall back to env. */}
+                    <option value="">Use environment default</option>
+                    {f.enumValues.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Input
+                    value={draft[f.column] ?? ''}
+                    onChange={(e) =>
+                      setDraft({ ...draft, [f.column]: e.target.value })
+                    }
+                    placeholder={`Set ${f.label.toLowerCase()}…`}
+                  />
+                )}
               </label>
             ))}
           </div>

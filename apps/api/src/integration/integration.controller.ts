@@ -59,6 +59,11 @@ export class IntegrationController {
         probeable: PROBEABLE[row.key] === null,
         probeNote: PROBEABLE[row.key],
         config: await this.connectorConfig.describe(row.key),
+        // BUG-011 — this line is the whole bug's second half. The field-by-field
+        // build above is a deliberate D2 safeguard, but it also means a new
+        // field on the read-model reaches nobody until it is added HERE, and
+        // neither the service tests nor the UI tests can see that gap.
+        pendingRestart: row.pendingRestart,
       })),
     );
   }

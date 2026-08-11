@@ -518,6 +518,13 @@ export interface ConnectorField {
   label: string;
   value: string | null; // non-secret value — a secret value never appears here
   source: 'db' | 'env' | 'unset';
+  /**
+   * BUG-011 — the field's shape, so the editor can offer the allowed values
+   * instead of a blank text box the operator has to guess into.
+   */
+  kind: 'text' | 'url' | 'guid' | 'enum' | 'email' | 'sku';
+  /** Only for `kind: 'enum'` — the exact set the API will accept. */
+  enumValues?: string[];
 }
 
 /** A secret field: env-only. `configured` says whether env has a value — never the value. */
@@ -540,6 +547,12 @@ export interface ConnectorStatus {
   lastSuccessAt: string | null;
   /** Set when lastSuccessAt can never be derived for this connector. */
   lastSuccessNote: string | null;
+  /**
+   * BUG-011 — `state` is what is CONFIGURED; this says the running process has
+   * not picked it up yet (the provider factories re-read their switch only on
+   * restart, ADR-0013 C2).
+   */
+  pendingRestart: boolean;
   lastProbe: ProbeResult | null;
   probeable: boolean;
   probeNote: string | null;

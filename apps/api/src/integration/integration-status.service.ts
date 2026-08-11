@@ -6,6 +6,7 @@ import {
   type ConnectorKey,
   type ConnectorState,
 } from './connectors';
+import { SeamRuntimeRegistry } from './seam-runtime.registry';
 
 /** One connector row. `lastProbe` is attached by the controller, not here. */
 export interface ConnectorStatus {
@@ -19,6 +20,16 @@ export interface ConnectorStatus {
   lastSuccessAt: Date | null;
   /** Why lastSuccessAt is null when it can never be derived at all (W30 plan §8). */
   lastSuccessNote: string | null;
+  /**
+   * BUG-011 — `state` says what is CONFIGURED; this says the running process has
+   * not picked it up yet.
+   *
+   * The two used to be conflated, and the panel therefore claimed a provider
+   * switch the moment it was saved, while ADR-0013 C2 means the factories only
+   * re-read their switch on restart. Always false for connectors that have no
+   * switchable seam.
+   */
+  pendingRestart: boolean;
 }
 
 /**
@@ -50,7 +61,25 @@ export class IntegrationStatusService {
      * resolver now.
      */
     private readonly connectorConfig: ConnectorConfigService,
+    /**
+     * BUG-011 — the boot-time answer, recorded by the provider factories. The
+     * resolver above says what is configured NOW; this says what the running
+     * process actually got. Comparing them is the only way this panel can tell
+     * "saved" apart from "live" without breaking C2's boot-once semantics.
+     */
+    private readonly seamRuntime: SeamRuntimeRegistry,
   ) {}
+
+  /**
+   * BUG-011 — configured ≠ running.
+   *
+   * `undefined` means this seam's factory never ran in this process (nothing to
+   * compare), so it reports "not pending" rather than inventing a disagreement.
+   */
+  private pendingRestart(seam: ConnectorKey, selected: boolean): boolean {
+    const running = this.seamRuntime.isUsingN8n(seam);
+    return running !== undefined && running !== selected;
+  }
 
   async list(): Promise<ConnectorStatus[]> {
     const [
@@ -77,12 +106,16 @@ export class IntegrationStatusService {
         state: 'required',
         lastSuccessAt: graph,
         lastSuccessNote: null,
+        // No switchable seam — Graph is reached directly by reconcile, the probe
+        // and the sync sweep regardless of seam ② (ADR-0017 D0).
+        pendingRestart: false,
       },
       {
         ...CONNECTORS.servicenow,
         state: 'required',
         lastSuccessAt: servicenow,
         lastSuccessNote: null,
+        pendingRestart: false,
       },
       {
         ...CONNECTORS['n8n-outbound'],
@@ -91,6 +124,7 @@ export class IntegrationStatusService {
         state: outboundSelected ? 'active' : 'inactive',
         lastSuccessAt: n8nOutbound,
         lastSuccessNote: null,
+        pendingRestart: this.pendingRestart('n8n-outbound', outboundSelected),
       },
       {
         ...CONNECTORS['n8n-inbound'],
@@ -106,6 +140,8 @@ export class IntegrationStatusService {
          */
         lastSuccessNote:
           'Cannot be distinguished from other requests in existing data',
+        // Inbound is pushed to us — there is no provider to switch.
+        pendingRestart: false,
       },
       {
         ...CONNECTORS['n8n-license'],
@@ -124,6 +160,10 @@ export class IntegrationStatusService {
          */
         lastSuccessNote:
           'Not recorded — assignments do not store which provider performed them',
+        // BUG-011 — the row this bug was reported against: one switch moves
+        // listTenantSkus + findUser + assignLicense together, so "saved but not
+        // live" is exactly the state an operator must not mistake for done.
+        pendingRestart: this.pendingRestart('n8n-license', licenseSelected),
       },
       {
         ...CONNECTORS['n8n-ticket'],
@@ -141,6 +181,7 @@ export class IntegrationStatusService {
          */
         lastSuccessNote:
           'Not recorded — ticket updates do not store which provider performed them',
+        pendingRestart: this.pendingRestart('n8n-ticket', ticketSelected),
       },
       {
         ...CONNECTORS.email,
@@ -167,6 +208,8 @@ export class IntegrationStatusService {
          */
         lastSuccessNote:
           'Not recorded — the platform does not store sent messages',
+        // One transport, no seam (ADR-0019 D1: a plain alias, not a factory).
+        pendingRestart: false,
       },
     ];
   }
