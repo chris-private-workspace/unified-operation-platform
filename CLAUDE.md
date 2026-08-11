@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029)+ CH-023(ServiceNow 結果留 timeline)三個同時未收**(2026-08-10)—— 後兩個**實作都收晒,淨低 live 驗,卡同一個 B8**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標 |
+| Phase | **W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029)+ CH-023(ServiceNow 結果留 timeline)三個同時未收**(2026-08-11)—— 後兩個**實作都收晒,淨低 live 驗,卡同一個 B8**。**BUG-011 ✅ closed**(PR #79),`main` = `8f7711a`,**本地零 feature branch,下次由 `main` 開新條**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標 |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -298,8 +298,11 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
 - 🟢 **CH-023(assign 之後 ServiceNow 側結果寫落 timeline)實作收晒**(2026-08-10,`f219676`):assign 成功後多寫一條 `RequestEvent` NOTE `ServiceNow {status}: {detail}`,**message 由 `steps` 個 ticket step 推導**(唔另寫文案,否則 dialog 同 timeline 各自漂)。零 schema / 零 migration / **零前端**。🔴 淨低 G9 live 驗,卡同一個 B8。
   - 🔴 **`ADR-0031`(`AssignAttempt` 新表)= Rejected —— 呢個「提案被自己嘅代價否決」嘅形狀值得記住**:D4「refusal 路開始寫狀態」係全份提案入面**唯一推翻既有約束**嘅位(第二次軟化 `ADR-0016 D6`「a block changes no state」),而佢**淨係為 refusal 路存在**;但 refusal「邊道閘擋住」係操作員撳嗰刻見到、改完即刻再撳嘅嘢,**本身唔係「三日後要翻查」嗰種事實** ⇒ **覆蓋面大過需求**。揀 Option A 換返嚟嘅就係「唔使軟化任何約束」。ADR 全文保留唔改寫,將來真係要翻查每次嘗試由 D1-D6 重開。
   - ⚠️ **「由 step 推導」嘅 test 自己有個陷阱**:`toBe(\`ServiceNow ${step.status}: ${step.detail}\`)` 防到 drift,**但係 tautology**(code 同 test 由同一個 step 攞值,永遠 pass)⇒ 一定要同時配一條 hardcode 期望字嘅 assert,兩條夾埋先有意義。
+- 🟢 **BUG-011 ✅ closed**(2026-08-11,PR #79):Integrations panel enum 值送埋去前端(按 `kind` 分流去既有 `Select`)+ 新 `SeamRuntimeRegistry` 記低三個 factory **boot 實際揀咗邊個** ⇒ 出 `pendingRestart` badge。🔴 **`state` 語意同 ADR-0013 C2 boot-once 語義一個字冇改**(改後者 = H1)。**RISK 新增 `R9`**。
+  - 🔴 **「新欄唔會自己流出去」呢個代價要記住**:`IntegrationController.list()` **逐個欄砌回應、明文唔 spread**(ADR-0013 D2 **刻意設計,應該保留**)⇒ 加咗欄落 read-model **唔等於出到 API**,而三層 test 可以全綠(service spec 打 service · UI test 自砌 fixture · **DTO 冇宣告嗰個欄所以 tsc 唔返佢完全合法**)。同上面 `apiPatch` **同一日第二次同一形狀**:**每一層 test 都喺自己嗰層邊緣停低,而 bug 就住喺兩層之間。** 而家有 `integration.controller.spec.ts` 守住條縫。
+  - 🔴 **一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事** —— 同日中三次(CH-023 由 step 推導 = tautology · status 三條 `expect(false)` 喺 no-op 之下仍然綠 · guard 用 `toHaveProperty(key)` 對 `undefined` 一樣 pass)。**唯一分辨方法係拆走實作睇佢紅唔紅**,`toHaveProperty(key, value)` 先由 1 紅變 2 紅。
 - **本機 runtime 避坑**:Prisma engine CDN 被公司 proxy 封(RISK R1);port 3000→Langfuse 佔用 ⇒ api 用 **3100**、5432→既有 Postgres 佔用 ⇒ docker **5433**;web **5173**。起 / 重啟一律用 `restart-stack` skill。
-  - 🔴 **5433 同 `ai-doc-extraction-db` 硬衝突,只可以二揀一** —— 起 UOP 前要 `docker stop` 佢(**要 Chris 批**,係另一個項目),用完 `docker start` 還原。
+  - 🔴 **5433 同 `ai-doc-extraction-db` 硬衝突,只可以二揀一** —— 起 UOP 前要 `docker stop` 佢(**要 Chris 批**,係另一個項目),用完 `docker start` 還原。⚠️ **還原會靜靜失敗**:`docker start` 撞正 `uop-postgres` 未停就搶唔到 port,而**之後即使停咗 UOP、`docker restart` 都唔會重新 attach** —— container `healthy` · `inspect` 見到 `PortBindings` 仲喺,**但 host 零 listener**(restart-stack 硬規則 3 嗰個形狀)。要 `docker compose up -d <svc>` recreate,**兼且真 TCP connect 驗,唔好睇 health flag**。
   - 🔴 **`nest start --watch` 個 build-cache 假綠燈會再撞**:見到 **`Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出**,就係佢 —— 刪 `apps/api/*.tsbuildinfo` **同** `dist/`,然後**直接起 stack,中間唔可以插 `npm run build`**。⚠️ `Test-Path dist/main.js` 要喺 watch **起身之後**check 先有意義(watch 一起身就清 `dist/`,喺之前 check 會見到上一次 build 剩低嘅檔而誤判)。
   - 🔴 **本機 Graph 係通嘅** ⇒ 真跑一次成功 assign 會**喺公司 tenant 真派 licence**。要造「一定失敗」嘅 fixture,**先用唯讀 `POST /fulfilment/requests/:id/sync-check` 探**個 UPN 存唔存在 —— 2026-08-10 實測:一個砌出嚟嘅假 UPN 一樣返 `FOUND`,「個名睇落假」推論唔到「tenant 冇」。
 - 🔴 **ServiceNow 寫入係逐個 table 分開開權,唔可以由「某張表寫得」推論「另一張寫得」**:`sc_request` insert **403**(BUG-010)· `sc_item_option` update **403**(ADR-0026)· `sc_req_item` / `sc_task` update ✅ · catalog `order_now` ✅。⇒ `target_user` **永遠**指住 requester,真 target 睇 `target_users_email`(DD-5)。

@@ -119,3 +119,13 @@ Falsification 一跑就穿:拆走 controller 嗰行之後,**只有 1 條紅,呢�
 api **937 passed / 70 suites** · web 293(另 6 條 pre-existing)· root lint 0 · api tsc 0 · web tsc 0。
 
 ⚠️ **環境還原有手尾**:交返 5433 嗰陣 `docker start ai-doc-extraction-db` 撞正 `uop-postgres` 未停而失敗,之後即使停咗 UOP、`docker restart` 都**唔會重新 attach port** —— container `healthy`、DB 內部 `accepting connections`、`inspect` 見到 `PortBindings` 仲喺,但 **host 5433 零 listener**。⇒ **正正係 restart-stack skill 硬規則 3 記低嗰個「healthy 都可以連唔到」**,今次係我自己踩返落去。Chris 批准之後用 `docker compose up -d postgres` recreate 修好,**真 TCP connect 驗過 = CONNECTED**(唔係睇 health flag)。
+
+---
+
+## Day 2 — 2026-08-11(merge + doc-sync,收單)
+
+**PR #79 merged** → `main` = `8f7711a`。四個 commit 落咗 `main`(`86ed450` / `8500f98` / `50ba679` / `5314664`),`fix/connector-provider-switch` / `chore/b8-live-verification` / `feat/w44-azure-dev-deploy` 三條本地 branch 已 merge 兼刪 ⇒ **本地零 feature branch,下次由 `main` 開新條**。
+
+**Doc-sync(R7 + CLAUDE.md §14)**:`CLAUDE.md` §0 座標 + §9 新增 BUG-011 一格 · `SESSION_SUMMARY.md` 座標 / test 數 / branch / 5433 還原陷阱 · `BACKLOG.md` 最後更新 + W44 kickoff branch 註 + BUG-011 row 標 merged。
+
+🔴 **postmortem 最後嗰條未勾項而家有家** —— `apiGet` 冇 `detail` 已登記做 **`TD-2`**(BACKLOG E 區),連解封條件一齊寫低。**本單刻意唔喺度修**:冇 caller 就冇得驗,而「改咗但冇人證明佢有效」正正係呢一族 bug 嘅成因。⇒ 唔係「順手做埋」,亦唔係「靜靜唔做」。

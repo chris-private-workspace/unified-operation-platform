@@ -89,4 +89,5 @@ BUG-005(panel 讀 env / runtime 讀 DB)修好之後,喺 code 入面留低一條�
 - [x] **RISK_REGISTER → 新增 `R9`「監控面講嘅嘢同 runtime 實際做緊嘅唔同」**。🔴 **Chris 2026-08-10 拍板提早升級,冇跟 R5 個「第三次先升級」先例** —— 理由:R5 三次散落三個唔同 vendor 路徑,而呢兩次出喺**同一個 panel、同一組 seam、同一個 method**(`n8nLicenseSelected()` 本身就係 BUG-005 個修法)。同一個位置連續錯兩次,第三次唔值得等
 - [x] Live 驗 + light/dark 真 render —— 全部做完(見 progress)。**live 第一個回應就揭咗 §6 嗰個 controller 缺口**,證明呢一步唔可以省
 - [x] 新開 `integration.controller.spec.ts` 守住 service → DTO 之間條縫
-- [ ] ⚠️ **同族第三個接縫仲未有守門**:`apiGet` 一樣冇帶 `detail`(W45 刻意冇改,因為現時冇 caller 需要)。**「冇 caller 需要」係今日成立嘅事實,唔係結構保護** —— 下次有 caller 需要嗰陣,會係同一種靜默失敗
+- [x] ⚠️ **同族第三個接縫仲未有守門**:`apiGet` 一樣冇帶 `detail`(W45 刻意冇改,因為現時冇 caller 需要)。**「冇 caller 需要」係今日成立嘅事實,唔係結構保護** —— 下次有 caller 需要嗰陣,會係同一種靜默失敗。
+  ⇒ **2026-08-11 已登記做 BACKLOG `TD-2`(E 區持續技術債)**,連解封條件一齊寫低:做嘅時候 test **一定要落 transport 層**。🔴 **本單唔喺度修** —— 冇 caller 就冇得驗,而「改咗但冇人證明佢有效」正正係呢一族 bug 嘅成因。

@@ -5,20 +5,25 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-10)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 921 test(69 suites)· web 288 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0031**(🔴 **0031 = Rejected**,見下)· CH 到 **023**。
+**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 937 test(70 suites)· web 293 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0031**(🔴 **0031 = Rejected**,見下)· CH 到 **023** · BUG 到 **011**(✅ closed)。
+
+🟢 **`main` = `8f7711a`(2026-08-11,PR #79 merged)· working tree clean · 本地零 feature branch**(`fix/connector-provider-switch` / `chore/b8-live-verification` / `feat/w44-azure-dev-deploy` 三條已 merge 兼刪)。⇒ **下次開工由 `main` 開新 branch**。
 
 **兩個 phase 同時未收**(rolling JIT 破例,Chris 2026-08-10 批):
 - **W44 = 部署上新 Azure DEV 環境** —— 已部署三次,🔴 **卡環境**(F6 卡 `B8` private DNS · F9 卡 `B9` SSO 真人驗)。詳見下面整段。
-- **W45 = assign 過程可見性(ADR-0029)** —— 🟢 **實作全部收晒**(後端十步回傳 `{outcome, failedAt?, steps[]}` · 前端 `AssignResultDialog` · light+dark 真 render 驗過)。🔴 **淨低 F4-4 live 驗,卡同一個 `B8`**。🔴 **branch 座標已變(2026-08-10)**:`feat/w44-azure-dev-deploy` **已 merge 入 `main`**(PR **#77** + **#78**,merge commit `e8d068e`)—— W44 三個 phase 嘅 code 全部落咗 `main`,**唔好再喺嗰條 branch 開工**。剩低嘅嘢**全部係 live 驗**(W44 F6-4/5/6 + F9-8 · W45 F4-4b · CH-023 G9),卡同一個 `B8`,一齊喺 **`chore/b8-live-verification`** 做。
+- **W45 = assign 過程可見性(ADR-0029)** —— 🟢 **實作全部收晒**(後端十步回傳 `{outcome, failedAt?, steps[]}` · 前端 `AssignResultDialog` · light+dark 真 render 驗過)。🔴 **淨低 F4-4 live 驗,卡同一個 `B8`**。🔴 **branch 座標(2026-08-11 最新)**:W44 三個 phase 嘅 code 全部落咗 `main`(PR **#77** / **#78** / **#79**)—— **本地已經冇任何 feature branch**,`chore/b8-live-verification` 亦已 merge 兼刪。剩低嘅嘢**全部係 live 驗**(W44 F6-4/5/6 + F9-8 · W45 F4-4b · CH-023 G9),卡同一個 `B8`,**由 `main` 開一條新 branch 一齊做**。
 - **CH-023 = assign 之後 ServiceNow 側結果留得低** —— 🟢 **實作收晒**(`f219676`),🔴 **淨低 G9 live 驗,卡同一個 `B8`**。🔴 **`ADR-0031`(`AssignAttempt` 新表)= Rejected** —— Chris 揀咗 Option A(一條 `RequestEvent` NOTE)。**呢個係一個「提案被自己嘅代價否決」嘅例**,值得記形狀:D4「refusal 路開始寫狀態」係全份提案入面**唯一推翻既有約束**嘅位(第二次軟化 `ADR-0016 D6`),而佢**淨係為 refusal 路存在**;而 refusal「邊道閘擋住」係撳嗰刻見到、改完即刻再撳嘅嘢,**本身唔係「三日後要翻查」嗰種事實** ⇒ 覆蓋面大過需求。⇒ 零 schema / 零 migration / **零前端**。ADR-0031 全文保留唔改寫,將來要「翻查每次嘗試」由 D1-D6 重開。
 
 > 🔴 **2026-08-10 撞到一個所有 test 層都捉唔到嘅 bug,形狀要記住**:`apiPatch` 由頭到尾 hand-roll `new ApiError(status, message)`,**冇第三個參數** ⇒ error body 永遠唔會落 `ApiError.detail`(只有 `errorFrom` 會,而 `apiPatch` 從來冇用過佢)。ADR-0029 個 steps 就係擺喺 400 body,所以**喺瀏覽器永遠到唔到前端,dialog 一世開唔到** —— 而 **api test 917 綠 / web test 綠 / tsc 0 / lint 0**,因為 UI test **自己手砌 `ApiError` 連 detail 落去**。⇒ **教訓唔係「漏咗一條 test」,係「條 test 放錯層」**:一條手砌自己期望嘅 error 嘅 UI test,永遠唔可能喺 transport 層失敗。已修(`d43b7a9`)+ 補 transport 層 test。⚠️ **`apiGet` 一樣冇 detail,刻意冇改**(現時冇 caller 需要)。
+>
+> 🔴 **同一日第二次同一形狀(BUG-011,`5314664`)**:`IntegrationController.list()` **逐個欄砌回應、明文唔 spread**(ADR-0013 D2 **刻意設計,應該保留**)⇒ 我加咗 `pendingRestart` 落 read-model,**個欄根本冇出到 API**,而三層 test 全綠(service spec 打 service · UI test 自砌 fixture · **DTO 冇宣告嗰個欄所以 tsc 唔返佢完全合法**)。⇒ **兩單嘅共同形狀:每一層 test 都喺自己嗰層邊緣停低,而 bug 就住喺兩層之間。** D2 嗰個代價(**新欄唔會自己流出去**)之前冇人寫低過,而家寫低咗 + `integration.controller.spec.ts` 守住。⚠️ **而第一版 guard 自己都係假嘅**:`toHaveProperty(key)` 對 `undefined` 一樣 pass ⇒ **一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事;唯一分辨方法係拆走實作睇佢紅唔紅。**
 >
 > ⚠️ **本機 `apps/web` 有 6 條 test 一直紅**(`local-profile.test.ts` 5 條 `localStorage.clear is not a function` + `reset-password.test.tsx` 1 條 timeout)。**`git stash` 實測 baseline 一模一樣 = pre-existing**,已登 BACKLOG `WEB-TEST-JSDOM`。⇒ 見到 `6 failed` **唔好當係自己搞壞咗**,但亦唔好當佢唔存在。
 >
 > ⚠️ **`npm run lint`(root)只 lint api**。web 要 `-w @uop/web` 另跑,而佢**本身紅住 16 條 prettier**(全部同 W45 無關,見 BACKLOG `LINT-web`)。
 >
-> ⚠️ **本機 5433 有 port 衝突**:`ai-doc-extraction-db` 同 `uop-postgres` 搶同一個 host port,**只可以二揀一**。W45 借用過一次(Chris 批)之後已還原 = `ai-doc-extraction` 五個 container 跑緊、UOP stack 停咗。要起 UOP 就要再停佢哋一次。
+> ⚠️ **本機 5433 有 port 衝突**:`ai-doc-extraction-db` 同 `uop-postgres` 搶同一個 host port,**只可以二揀一**。W45 + BUG-011 各借用過一次(Chris 批)之後都已還原 = `ai-doc-extraction` 五個 container 跑緊、UOP stack 停咗。要起 UOP 就要再停佢哋一次。
+> 🔴 **還原有個「靜靜失敗」陷阱(BUG-011 實測)**:如果 `docker start ai-doc-extraction-db` 嗰陣 `uop-postgres` 未停,佢會搶唔到 port,而**之後即使停咗 UOP、`docker restart` 都唔會重新 attach** —— container `healthy` · DB 內部 `accepting connections` · `docker inspect` 見到 `PortBindings` 仲喺,**但 host 5433 零 listener**(= restart-stack skill 硬規則 3 嗰個形狀)。修法 = `docker compose up -d <svc>` recreate,**而且要真 TCP connect 驗,唔好睇 health flag**。
 > ## 🔴 環境:「Azure UAT」係誤名(2026-08-04 Chris 更正)—— 呢格睇漏會用錯前提開始
 >
 > **W32/W33 部署嗰個唔係企業 UAT,只係一個自建測試 Azure 環境**:自建 RG(`RG-RCITest-RAPO-N8N`)/ ACR / ACA env(**冇 VNet 整合**)+ PG public,住喺 Azure 公網,**同企業網絡零連繫**。
