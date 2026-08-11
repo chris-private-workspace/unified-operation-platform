@@ -1,6 +1,6 @@
 # CH-021 — Checklist
 
-> **Status**:`code complete · 淨低 A12 live`(2026-08-11)。決策依據 = `spec.md`(**approved,locked**)。
+> **Status**:✅ **done**(2026-08-11 —— code + test + **A12 live 真寄兼 Chris 確認收到**)。決策依據 = `spec.md`(**approved,locked**)。
 > **零 schema · 零新 dep · 零 ADR** —— transport 決策由 ADR-0019 D3 涵蓋,本 CH 只加一個 template + 一個 caller + 一個 optional env。
 
 ## F0 — 開工 gate
@@ -67,14 +67,40 @@
 - [x] F6-2 既有 test 一條唔跌 —— api **937 → 974** / **70 → 73 suites**
 - [x] F6-3 BACKLOG `NOTIFY-1` 更新(R7)—— 標 🟢「實作完成 · 淨低 A12 live」而**唔標 ✅ closed**
 - [x] F6-4 `progress.md` 寫齊
-- [ ] F6-5 CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃一次 —— **留到 A12 收完先做**(§14 硬規矩係 closeout 時掃;而家寫落去會變成「已完成」嘅前提,而 A12 未做)
+- [x] F6-5 CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃一次(A12 收咗先做)
 
-## F7 — Live（A12）
+## F7 — Live（A12）✅
 
-- [ ] F7-1 🔴 **A12 真寄一次** —— ⚠️ **兩個未知數,做之前要查證**:
-  - ①**本機有冇真 ACS 憑證?** 有就唔使等 DEV(同 CH-023 G9 一樣,唔好由「佢係 live 驗」推論「佢卡 B8」)
-  - ②DEV 要 PATCH 一個 `OPS_NOTIFICATION_MAILBOX`(spec §6),而 DEV UI 要公司網(`B8`)
-- [ ] F7-2 🔴 **CH-011 R1 仍然成立**:ACS 返 `Succeeded` **證明唔到收到**(custom sender domain 可以靜靜唔送達)⇒ **以「收件人真係收到」為準**
+- [x] F7-1 🔴 **A12 真寄一次 —— 喺本機做,唔喺 DEV**
+  - 🟢 **查證結果推翻咗 spec 寫嘅「DEV」**:本機 `ACS_CONNECTION_STRING` **係真值**(真 ACS endpoint domain + 40+ 字元 accesskey,零 placeholder marker),而 `ACS_SENDER_ADDRESS` **逐字等於** `CH-012-verify A4` 嗰個(`UnifiedOperationsPortal@rci-t.com`,2026-07-30 真送達過)⇒ **去 DEV 換唔到嘢返嚟**。⚠️ 全部用 `Grep --count` 查,**零值輸出**(H4)
+  - 🟢 **canonical 路零外部副作用** —— `intakeCanonical` 唔掂 ServiceNow、唔掂 Graph,唯一對外動作 = 寄嗰封信。比 CH-022 A7(真 RITM)同 W45 成功路(真 licence)都乾淨
+  - ⚠️ **fixture 揀 `PFU-HK`** —— seed 個 `OPCO_IT` 用戶係 `opco.it.rhk@rapo.com.hk`(**真公司 domain**),用預設 RHK 就會真寄畀佢。揀一個冇 `OPCO_IT` 用戶嘅 OpCo(24 個入面 23 個都係)⇒ 收件人得 `OPS_NOTIFICATION_MAILBOX` 一個
+  - 🟢 `OPS_NOTIFICATION_MAILBOX` 只傳 **shell env**,`.env` **一個字冇改**(skill 硬規則 5 / §4.4)
+- [x] F7-2 🔴 **CH-011 R1 —— 以「收件人真係收到」為準,唔係 ACS 返 `Succeeded`**。**Chris 2026-08-11 確認收到咗封信** ⇒ A12 過
+
+### Live 真 output
+
+| 檢查 | 證據 |
+|---|---|
+| intake 建到單 | `HTTP 201` · `[IntakeService] Intake created request cmso63a4d… (opco PFU-HK, 1 line items)` |
+| **ACS 收貨** | `[AcsEmailService] Sent 'onboarding-intake' via ACS (operation 48e1b00b-f020-4e6f-9077-7500e2257781)` |
+| 收件人解析 | `[IntakeNotificationService] … notified 1 recipient(s)` ← **同時證咗 shell env 真係入到 process**(PFU-HK 冇 `OPCO_IT`,唔傳就會 log `nobody`) |
+| **A2 重推唔再寄** | 第二次 POST → `201` · **同一個 id** · ACS send 總數**仍然 1** |
+| 冪等冇建重複 row | `Request` 得 **1** 行 |
+| fail-soft queue | `OutboundFailure` **0 rows** |
+| **A8 / H4** | 成份 api log grep email 形狀 = **0 命中** |
+| **真送達** | **Chris 確認收到**(subject `[PFU-HK] Onboarding licence request — REQ-CH021-A12`) |
+
+## F8 — 環境還原
+
+- [x] F8-1 停 UOP stack,`docker start ai-doc-extraction-db` 還原 5433
+- [x] F8-2 🔴 **真 TCP connect 驗,唔睇 health flag**(BUG-011 踩過嗰個「靜靜失敗」形狀)
+- [x] F8-3 本機 DB 留低一行 test request(`serviceNowSysId = ch021-a12-199171`)—— dev 資料,冇清
+
+## 🚧 移交（本 CH 明文唔做）
+
+- 🚧 **OQ:ADMIN 手動 import 一張 REQ 之後要唔要通知?**(`ServiceNowImportService`,CH-013)—— 佢同 n8n intake 一樣係「平台第一次見到呢張單」,分別只在觸發者係人。**要就開新 CH**
+- 🚧 **`start-detached.ps1` 冇 capture api stdout** —— 今次因為咁,build-cache 假綠燈嗰兩句(`Found 0 errors` + `MODULE_NOT_FOUND`)睇唔到,白等咗 270 秒。**改動屬 skill 共用工具,等 Chris 話事**(見 progress)
 
 ## 🚧 移交（本 CH 明文唔做）
 

@@ -110,18 +110,21 @@ ops:      env OPS_NOTIFICATION_MAILBOX(optional,單一地址)
 
 ## 3. Acceptance Criteria
 
-- [ ] A1 新建 request(flat `mode:1`)→ 該 OpCo active `OPCO_IT` 每人一封 + ops mailbox 一封
-- [ ] A2 🔴 **重推同一個 REQ → 一封都唔寄**(D1;test 明確 assert `send` 冇被呼叫)
-- [ ] A3 canonical contract(冇 `mode`)同 `/intake/n8n` 一樣寄
-- [ ] A4 OpCo 冇 active `OPCO_IT` 且 `OPS_NOTIFICATION_MAILBOX` 未設 → **log warn,request 照建,零 throw**
-- [ ] A5 同一地址喺兩邊都命中 → 只寄一次
-- [ ] A6 🔴 **寄信 throw → request 仍然 201**,失敗入 `OutboundFailure`(fail-soft)
-- [ ] A7 inactive `OPCO_IT` 用戶**唔會**收到
-- [ ] A8 🔴 **H4**:通知內容含 UPN(收件人係 IT,合理),但 **log line 一個字都唔可以有 UPN / email**
-- [ ] A9 template 三部分齊(`subject` / `text` / `html`),`text` 唔可以空(ADR-0019 既有規矩)
-- [ ] A10 `OPS_NOTIFICATION_MAILBOX` 寫入 `.env.example` 並註明 optional + 唔設嘅後果
-- [ ] A11 `npm run lint`(root)exit 0 · api tsc 0 · 既有 test 一條唔跌
-- [ ] A12 live 驗:DEV 真寄一次,收到信 + 條 link 撳得開
+- [x] A1 新建 request(flat `mode:1`)→ 該 OpCo active `OPCO_IT` 每人一封 + ops mailbox 一封
+- [x] A2 🔴 **重推同一個 REQ → 一封都唔寄**(D1;test 明確 assert `send` 冇被呼叫)—— **live 亦驗過**:第二次 POST 返同一個 id,ACS send 總數仍然係 1
+- [x] A3 canonical contract(冇 `mode`)同 `/intake/n8n` 一樣寄
+- [x] A4 OpCo 冇 active `OPCO_IT` 且 `OPS_NOTIFICATION_MAILBOX` 未設 → **log warn,request 照建,零 throw**
+- [x] A5 同一地址喺兩邊都命中 → 只寄一次
+- [x] A6 🔴 **寄信 throw → request 仍然 201**,失敗入 `OutboundFailure`(fail-soft)
+- [x] A7 inactive `OPCO_IT` 用戶**唔會**收到
+- [x] A8 🔴 **H4**:通知內容含 UPN(收件人係 IT,合理),但 **log line 一個字都唔可以有 UPN / email** —— live 亦驗過:成份 api log grep email 形狀 **0 命中**
+- [x] A9 template 三部分齊(`subject` / `text` / `html`),`text` 唔可以空(ADR-0019 既有規矩)
+- [x] A10 `OPS_NOTIFICATION_MAILBOX` 寫入 `.env.example` 並註明 optional + 唔設嘅後果
+- [x] A11 `npm run lint`(root)exit 0 · api tsc 0 · 既有 test 一條唔跌 —— api **937 → 974 / 70 → 73 suites**
+- [x] A12 live 驗:~~DEV~~ **本機**真寄一次,**Chris 2026-08-11 確認收到**
+  - 🔴 **改咗喺本機做,唔喺 DEV** —— 查證:本機 `ACS_CONNECTION_STRING` 係真值,而 `ACS_SENDER_ADDRESS` 逐字等於 `CH-012-verify A4`(2026-07-30 真送達嗰個)⇒ **DEV 換唔到任何嘢返嚟**。原文寫「DEV」係開 spec 嗰陣未查過,同 CH-023 G9 同一族。
+  - 🟢 **canonical 路零外部副作用** —— 佢唔掂 ServiceNow、唔掂 Graph,唯一對外動作就係寄嗰封信
+  - ⚠️ **fixture 用 `PFU-HK` 唔用 `RHK` 係刻意** —— seed 個 `OPCO_IT` 用戶係 `opco.it.rhk@rapo.com.hk`(**真公司 domain**),用 RHK 就會真寄畀佢。揀一個冇 `OPCO_IT` 用戶嘅 OpCo ⇒ 收件人得 `OPS_NOTIFICATION_MAILBOX` 一個,完全受控
 
 ## 4. Risks
 

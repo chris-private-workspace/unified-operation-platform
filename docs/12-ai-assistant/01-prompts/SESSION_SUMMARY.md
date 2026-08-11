@@ -5,7 +5,9 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 937 test(70 suites)· web 293 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0031**(🔴 **0031 = Rejected**,見下)· CH 到 **023** · BUG 到 **011**(✅ closed)。
+**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 974 test(73 suites)· web 293 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0031**(🔴 **0031 = Rejected**,見下)· CH 到 **023** · BUG 到 **011**(✅ closed)。
+
+🟢 **CH-021 ✅ closed(2026-08-11)** —— onboarding intake 通知(該 OpCo `OPCO_IT` + `OPS_NOTIFICATION_MAILBOX`),**A12 live 真寄兼 Chris 確認收到**。🔴 **A12 喺本機做,唔喺 DEV**:本機 ACS 憑證係真值,`ACS_SENDER_ADDRESS` 逐字等於 `CH-012-verify A4`(真送達過)⇒ DEV 換唔到嘢返嚟;而 **canonical intake 路零外部副作用**(唔掂 SN、唔掂 Graph)。⚠️ **fixture 一定要揀冇 `OPCO_IT` 用戶嘅 OpCo** —— seed 嗰個係 `opco.it.rhk@rapo.com.hk`,**真公司 domain**,用預設 RHK 會真寄畀佢。
 
 🟢 **本地零 feature branch**(2026-08-11:`fix/connector-provider-switch` / `chore/b8-live-verification` / `feat/w44-azure-dev-deploy` / `docs/bug-011-closeout` 全部已 merge 兼刪)⇒ **下次開工由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
 
@@ -22,7 +24,9 @@
 >
 > ⚠️ **`npm run lint`(root)只 lint api**。web 要 `-w @uop/web` 另跑,而佢**本身紅住 16 條 prettier**(全部同 W45 無關,見 BACKLOG `LINT-web`)。
 >
-> ⚠️ **本機 5433 有 port 衝突**:`ai-doc-extraction-db` 同 `uop-postgres` 搶同一個 host port,**只可以二揀一**。W45 + BUG-011 各借用過一次(Chris 批)之後都已還原 = `ai-doc-extraction` 五個 container 跑緊、UOP stack 停咗。要起 UOP 就要再停佢哋一次。
+> 🔴 **`nest start --watch` build-cache 假綠燈 —— 診斷方法 2026-08-11 更正咗**:`Test-Path apps\api\dist\main.js` **唔可靠**(CH-021 A12 實測:watch 跑咗 90 秒佢仍然返 `True`,而真兇就係佢,害我白等 180 秒)。**唯一可靠信號 = `Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出**,但 `start-detached.ps1` **唔 capture api stdout** ⇒ 要用 `Start-Process … -RedirectStandardOutput` 起一次先睇到。修法次序不變:刪 `*.tsbuildinfo` **同** `dist/` → **直接起,中間唔插 `npm run build`**。
+>
+> ⚠️ **本機 5433 有 port 衝突**:`ai-doc-extraction-db` 同 `uop-postgres` 搶同一個 host port,**只可以二揀一**。W45 + BUG-011 + CH-021 各借用過一次(Chris 批)之後都已還原 = `ai-doc-extraction` 五個 container 跑緊、UOP stack 停咗。要起 UOP 就要再停佢哋一次。
 > 🔴 **還原有個「靜靜失敗」陷阱(BUG-011 實測)**:如果 `docker start ai-doc-extraction-db` 嗰陣 `uop-postgres` 未停,佢會搶唔到 port,而**之後即使停咗 UOP、`docker restart` 都唔會重新 attach** —— container `healthy` · DB 內部 `accepting connections` · `docker inspect` 見到 `PortBindings` 仲喺,**但 host 5433 零 listener**(= restart-stack skill 硬規則 3 嗰個形狀)。修法 = `docker compose up -d <svc>` recreate,**而且要真 TCP connect 驗,唔好睇 health flag**。
 > ## 🔴 環境:「Azure UAT」係誤名(2026-08-04 Chris 更正)—— 呢格睇漏會用錯前提開始
 >
