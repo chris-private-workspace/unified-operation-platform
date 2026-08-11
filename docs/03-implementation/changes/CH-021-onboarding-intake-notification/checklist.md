@@ -65,9 +65,9 @@
 
 - [x] F6-1 `npm run lint`(root)**exit 0** · api tsc **0**(⚠️ 一開始紅 21 條,全部 prettier 兼全部喺我改嗰兩個檔,只 `--fix` 咗嗰兩個)
 - [x] F6-2 既有 test 一條唔跌 —— api **937 → 974** / **70 → 73 suites**
-- [ ] F6-3 BACKLOG `NOTIFY-1` 更新(R7)
+- [x] F6-3 BACKLOG `NOTIFY-1` 更新(R7)—— 標 🟢「實作完成 · 淨低 A12 live」而**唔標 ✅ closed**
 - [x] F6-4 `progress.md` 寫齊
-- [ ] F6-5 CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃一次
+- [ ] F6-5 CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃一次 —— **留到 A12 收完先做**(§14 硬規矩係 closeout 時掃;而家寫落去會變成「已完成」嘅前提,而 A12 未做)
 
 ## F7 — Live（A12）
 
