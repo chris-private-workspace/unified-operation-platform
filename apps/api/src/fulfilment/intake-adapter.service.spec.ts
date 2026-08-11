@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { RequestSubmissionProvider } from './request-submission.provider';
 import { OutboundFailureService } from './outbound-failure.service';
+import { IntakeNotificationService } from './intake-notification.service';
 import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
 import {
   N8N_INTAKE_EVENT,
@@ -77,6 +78,10 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
   let audit: { log: jest.Mock };
   let submission: { submit: jest.Mock };
   let failures: { record: jest.Mock };
+  // CH-021 — mocked here on purpose. What this file guards is WHEN it is
+  // called (only on a genuine create); who receives what is the notification
+  // service's own spec.
+  let notifications: { notifyNewIntake: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -110,6 +115,7 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
     audit = { log: jest.fn() };
     submission = { submit: jest.fn() };
     failures = { record: jest.fn() };
+    notifications = { notifyNewIntake: jest.fn() };
 
     // The REAL IntakeService is wired in on purpose: "nothing was written" then
     // means the whole path stayed dry, not just that a mock went uncalled.
@@ -123,6 +129,7 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
         { provide: AuditService, useValue: audit },
         { provide: RequestSubmissionProvider, useValue: submission },
         { provide: OutboundFailureService, useValue: failures },
+        { provide: IntakeNotificationService, useValue: notifications },
       ],
     }).compile();
     adapter = moduleRef.get(IntakeAdapterService);
@@ -857,6 +864,130 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
             requestId: 'r1',
           }),
         );
+      });
+    });
+  });
+
+  /**
+   * CH-021 — the notification fires on a genuine create and on nothing else.
+   *
+   * 🔴 The interesting assertions here are the NEGATIVE ones. Intake is
+   * idempotent on the REQ sysId and workflow 1001 retries up to three times, so
+   * a missing guard does not show up as an error — it shows up as the OpCo IT
+   * team getting three identical mails for one joiner and starting to ignore
+   * all of them. That is CH-021 R1, rated High.
+   */
+  describe('CH-021 — onboarding intake notification', () => {
+    const canonicalPayload = () => ({
+      targetUpn: TARGET_EMAIL,
+      targetDisplayName: 'Jane Doe',
+      opcoCode: 'RHK',
+      serviceNowSysId: REQ_SYS_ID,
+      serviceNowNumber: REQ_NUMBER,
+      lineItems: [{ skuId: 'guid-e5', quantity: 1 }],
+    });
+
+    const flatPayload = () => ({
+      mode: 1,
+      targetUpn: TARGET_EMAIL,
+      targetDisplayName: 'Jane Doe',
+      opcoCode: 'RHK',
+      requesterEmail: 'it.rhk@rapo.com.hk',
+      source: '1001-immediate',
+      requestId: REQ_NUMBER,
+    });
+
+    /** A1 / A3 — all three routes, one behaviour. */
+    it.each([
+      [
+        'canonical',
+        (a: IntakeAdapterService) =>
+          a.intakeCanonical(canonicalPayload() as never),
+      ],
+      [
+        'flat',
+        (a: IntakeAdapterService) => a.intakeFlat(flatPayload() as never),
+      ],
+      ['native', (a: IntakeAdapterService) => a.intakeNative(basePayload())],
+    ])('notifies once when the %s route creates a request', async (_n, run) => {
+      happyMocks();
+      connectorConfig.resolve.mockResolvedValue('guid-e5');
+      prisma.skuCatalog.findUnique.mockResolvedValue({
+        id: 'c-e5',
+        skuId: 'guid-e5',
+        skuPartNumber: 'SPE_E5',
+        active: true,
+      });
+
+      await run(adapter);
+
+      expect(notifications.notifyNewIntake).toHaveBeenCalledTimes(1);
+      expect(notifications.notifyNewIntake).toHaveBeenCalledWith('r1');
+    });
+
+    /**
+     * 🔴 A2 — the guard. `preExisting` is read BEFORE the write, which is the
+     * only moment the answer is still knowable: afterwards `intake()` returns
+     * the same object either way.
+     */
+    it.each([
+      [
+        'canonical',
+        (a: IntakeAdapterService) =>
+          a.intakeCanonical(canonicalPayload() as never),
+      ],
+      [
+        'flat',
+        (a: IntakeAdapterService) => a.intakeFlat(flatPayload() as never),
+      ],
+      ['native', (a: IntakeAdapterService) => a.intakeNative(basePayload())],
+    ])(
+      'sends nothing when the %s route re-pushes a known REQ',
+      async (_n, run) => {
+        happyMocks();
+        connectorConfig.resolve.mockResolvedValue('guid-e5');
+        prisma.skuCatalog.findUnique.mockResolvedValue({
+          id: 'c-e5',
+          skuId: 'guid-e5',
+          skuPartNumber: 'SPE_E5',
+          active: true,
+        });
+        // Both the adapter's pre-check and IntakeService's own idempotency read
+        // this same mock, which is exactly the production shape.
+        prisma.request.findUnique.mockResolvedValue({
+          id: 'r1',
+          lineItems: [],
+        });
+
+        await run(adapter);
+
+        expect(notifications.notifyNewIntake).not.toHaveBeenCalled();
+        expect(prisma.request.create).not.toHaveBeenCalled();
+      },
+    );
+
+    /**
+     * 🔴 MOVED HERE from `intake.controller.spec.ts` by CH-021, and the move is
+     * the point. That file used to assert `IntakeService.intake` got an
+     * undefined SECOND argument — a canonical caller must not reach the by-task
+     * close route, which bypasses ADR-0018 D3's "exactly one active task"
+     * protection. Once the controller called `intakeCanonical(dto)` that
+     * assertion became true by arity rather than by intent, so it would have
+     * kept passing while the guarantee rotted.
+     *
+     * Asserted on the WRITTEN ROW rather than the call shape: if
+     * `intakeCanonical` ever forwards a task ref, this goes red no matter how
+     * the argument is spelled.
+     */
+    it('intakeCanonical passes no task ref — the by-task close route stays shut', async () => {
+      happyMocks();
+
+      await adapter.intakeCanonical(canonicalPayload() as never);
+
+      const { data } = prisma.request.create.mock.calls[0][0];
+      expect(data.lineItems.create[0]).toMatchObject({
+        serviceNowTaskSysId: null,
+        serviceNowTaskNumber: null,
       });
     });
   });

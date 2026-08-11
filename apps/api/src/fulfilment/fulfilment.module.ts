@@ -11,6 +11,7 @@ import { FulfilmentController } from './fulfilment.controller';
 import { IntakeController } from './intake.controller';
 import { IntakeService } from './intake.service';
 import { IntakeAdapterService } from './intake-adapter.service';
+import { IntakeNotificationService } from './intake-notification.service';
 import { IntakeKeyGuard } from './intake-key.guard';
 import { OutboundRequestController } from './outbound-request.controller';
 import { OutboundRequestService } from './outbound-request.service';
@@ -103,6 +104,11 @@ export async function requestSubmissionProviderFactory(
     AssignService,
     IntakeService,
     IntakeAdapterService, // ADR-0017 D4 — n8n native envelope → canonical intake
+    // CH-021 — who to tell when an onboarding lands, and the telling. Separate
+    // from IntakeAdapterService because the recipient policy is the thing
+    // `notification.service.ts` says must be written down deliberately rather
+    // than resolved generically, and it deserves its own file to be argued with.
+    IntakeNotificationService,
     IntakeKeyGuard,
     OutboundRequestService,
     OutboundFailureService, // ADR-0011 — outbound failure queue

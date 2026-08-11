@@ -25,7 +25,8 @@ export interface RenderedEmail {
  * and this is the phase that closes that gap. It is also the caller ADR-0019
  * Consequences named: the base layer no longer has zero production callers.
  */
-export type TemplateKey = 'connectivity-check' | 'password-reset';
+export type TemplateKey =
+  'connectivity-check' | 'password-reset' | 'onboarding-intake';
 
 /**
  * Sent by the CH-011 A11 ops script and by nothing else. It exists so the
@@ -98,12 +99,84 @@ function passwordReset(params: Record<string, string>): RenderedEmail {
   };
 }
 
+/**
+ * CH-021 — an onboarding arrived from n8n and somebody has to go and act on it.
+ *
+ * Recipients are IT staff (the OpCo's own `OPCO_IT` users plus an ops mailbox),
+ * which is why the target's UPN is IN the message: they cannot triage without
+ * knowing who the licence is for. That is a different judgement from the LOG
+ * line, where the same UPN is forbidden (CH-021 A8 / H4) — a mailbox has one
+ * known reader, a log file does not.
+ *
+ * `requestUrl` may be empty. Unlike `password-reset` — where a mail without its
+ * link is useless, so W41 refuses to send at all — this message still does its
+ * job ("go look at the platform") without one. It degrades rather than refuses;
+ * the missing `APP_BASE_URL` is logged by the caller.
+ */
+function onboardingIntake(params: Record<string, string>): RenderedEmail {
+  const displayName = params.displayName ?? '';
+  const targetUpn = params.targetUpn ?? '';
+  const opcoCode = params.opcoCode ?? '';
+  const reqNumber = params.reqNumber ?? '';
+  const lineItems = params.lineItems ?? '';
+  const requestUrl = params.requestUrl ?? '';
+
+  // R5 (CH-021 §4): the OpCo code leads so a 24-OpCo ops mailbox can filter.
+  const subject = `[${opcoCode}] Onboarding licence request${
+    reqNumber ? ` — ${reqNumber}` : ''
+  }`;
+  const who = displayName ? `${displayName} (${targetUpn})` : targetUpn;
+
+  return {
+    subject,
+    text: [
+      'A new onboarding licence request has arrived in the Unified Operation',
+      'Platform and is waiting for someone to pick it up.',
+      '',
+      `Target:      ${who}`,
+      `OpCo:        ${opcoCode}`,
+      `ServiceNow:  ${reqNumber || '(none)'}`,
+      `Licences:    ${lineItems || '(none)'}`,
+      '',
+      ...(requestUrl ? [requestUrl, ''] : []),
+      'The licence is not assigned yet — the platform waits for the account to',
+      'appear in Azure AD before it can be.',
+    ].join('\n'),
+    html: [
+      '<p>A new onboarding licence request has arrived in the Unified Operation',
+      'Platform and is waiting for someone to pick it up.</p>',
+      '<table cellpadding="4" style="border-collapse:collapse">',
+      row('Target', who),
+      row('OpCo', opcoCode),
+      row('ServiceNow', reqNumber || '(none)'),
+      row('Licences', lineItems || '(none)'),
+      '</table>',
+      requestUrl
+        ? `<p><a href="${escapeHtml(requestUrl)}">Open the request</a></p>`
+        : '',
+      '<p>The licence is not assigned yet — the platform waits for the account',
+      'to appear in Azure AD before it can be.</p>',
+    ].join(''),
+  };
+}
+
+/** One label/value row of the summary table, escaped. */
+function row(label: string, value: string): string {
+  return [
+    '<tr>',
+    `<td style="color:#666">${escapeHtml(label)}</td>`,
+    `<td style="font-family:monospace">${escapeHtml(value)}</td>`,
+    '</tr>',
+  ].join('');
+}
+
 export const TEMPLATES: Record<
   TemplateKey,
   (params: Record<string, string>) => RenderedEmail
 > = {
   'connectivity-check': connectivityCheck,
   'password-reset': passwordReset,
+  'onboarding-intake': onboardingIntake,
 };
 
 /**
@@ -120,6 +193,16 @@ export const TEMPLATES: Record<
  * while looking, to the operator who clicked retry, like a successful resend.
  *
  * A new template has to ask to be here.
+ *
+ * 🔴 CH-021 asked, and the answer is NO — `onboarding-intake` stays out too, for
+ * the same STRUCTURAL reason wearing different clothes. Its contents are not
+ * single-use, but they are not persisted either: the queue row carries `to` and
+ * `template` only, so a replay would render the template against `{}` and mail
+ * somebody a summary with no target, no OpCo and no link. Not dangerous — just
+ * useless, while looking to the operator who clicked retry like it worked.
+ *
+ * ⚠️ The way to re-notify is to re-push the intake (it is idempotent on the REQ
+ * sysId, so nothing is duplicated) — not to replay the mail.
  */
 export const REPLAYABLE_TEMPLATES: readonly TemplateKey[] = [
   'connectivity-check',
