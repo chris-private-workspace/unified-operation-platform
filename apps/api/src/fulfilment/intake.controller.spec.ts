@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import { IntakeController } from './intake.controller';
-import { IntakeService } from './intake.service';
 import { IntakeAdapterService } from './intake-adapter.service';
 
 /**
@@ -14,8 +13,11 @@ import { IntakeAdapterService } from './intake-adapter.service';
  * weighted accordingly: most of them are about the canonical side NOT moving.
  */
 describe('IntakeController — intake dispatch (CH-020)', () => {
-  let intake: { intake: jest.Mock };
-  let adapter: { intakeFlat: jest.Mock; intakeNative: jest.Mock };
+  let adapter: {
+    intakeCanonical: jest.Mock;
+    intakeFlat: jest.Mock;
+    intakeNative: jest.Mock;
+  };
   let controller: IntakeController;
 
   const canonicalBody = () => ({
@@ -37,24 +39,26 @@ describe('IntakeController — intake dispatch (CH-020)', () => {
   });
 
   beforeEach(() => {
-    intake = { intake: jest.fn().mockResolvedValue({ id: 'r1' }) };
     adapter = {
+      // CH-021 A3 — the canonical route reaches IntakeService through the
+      // adapter now, so this is where the dispatch lands. What this file
+      // guards is unchanged: which CONTRACT a body is validated against.
+      intakeCanonical: jest.fn().mockResolvedValue({ id: 'r1' }),
       intakeFlat: jest.fn().mockResolvedValue({ id: 'r2' }),
       intakeNative: jest.fn(),
     };
     controller = new IntakeController(
-      intake as unknown as IntakeService,
       adapter as unknown as IntakeAdapterService,
     );
   });
 
   describe('the canonical contract is untouched', () => {
-    it('routes a body with no mode to IntakeService', async () => {
+    it('routes a body with no mode to the canonical path', async () => {
       await controller.push(canonicalBody());
 
-      expect(intake.intake).toHaveBeenCalledTimes(1);
+      expect(adapter.intakeCanonical).toHaveBeenCalledTimes(1);
       expect(adapter.intakeFlat).not.toHaveBeenCalled();
-      expect(intake.intake.mock.calls[0][0]).toMatchObject({
+      expect(adapter.intakeCanonical.mock.calls[0][0]).toMatchObject({
         targetUpn: 'jane.doe@rhk.com',
         serviceNowSysId: 'req-sys-1',
       });
@@ -70,14 +74,14 @@ describe('IntakeController — intake dispatch (CH-020)', () => {
       delete (body as Record<string, unknown>).serviceNowSysId;
 
       await expect(controller.push(body)).rejects.toThrow(BadRequestException);
-      expect(intake.intake).not.toHaveBeenCalled();
+      expect(adapter.intakeCanonical).not.toHaveBeenCalled();
     });
 
     it('still rejects a canonical body with no line items', async () => {
       await expect(
         controller.push({ ...canonicalBody(), lineItems: [] }),
       ).rejects.toThrow(BadRequestException);
-      expect(intake.intake).not.toHaveBeenCalled();
+      expect(adapter.intakeCanonical).not.toHaveBeenCalled();
     });
 
     /**
@@ -88,31 +92,46 @@ describe('IntakeController — intake dispatch (CH-020)', () => {
     it('still strips fields the canonical contract does not declare', async () => {
       await controller.push({ ...canonicalBody(), sneaky: 'value' });
 
-      expect(intake.intake.mock.calls[0][0]).not.toHaveProperty('sneaky');
+      expect(adapter.intakeCanonical.mock.calls[0][0]).not.toHaveProperty(
+        'sneaky',
+      );
     });
 
-    it('passes no task ref on this path — only the flat route may set one', async () => {
+    /**
+     * 🔴 CH-021 — HALF of this test moved, and saying so is the point.
+     *
+     * It used to assert two things: that `serviceNowTaskSysId` is stripped by
+     * whitelist (still here, still real), and that `IntakeService.intake` was
+     * called with an undefined SECOND argument — the guarantee that a canonical
+     * caller cannot reach the by-task close route, which bypasses ADR-0018 D3's
+     * "exactly one active task" protection.
+     *
+     * That second assertion is now VACUOUS at this layer: `intakeCanonical`
+     * takes one parameter, so `calls[0][1]` is undefined by TypeScript rather
+     * than by intent, and it would keep passing if the adapter started
+     * forwarding a task ref. Left here it would be an assertion that reads as
+     * strict and catches nothing — the exact shape this repo hit three times on
+     * 2026-08-10. So it moved to the layer that can still fail: see
+     * `intake-adapter.service.spec.ts` → "intakeCanonical passes no task ref".
+     */
+    it('still strips a task ref the canonical contract does not declare', async () => {
       await controller.push({
         ...canonicalBody(),
         serviceNowTaskSysId: 'task-sys-1',
       });
 
-      // Stripped by whitelist, and the second parameter stays undefined: a
-      // canonical caller must not be able to reach the by-task close route,
-      // which bypasses ADR-0018 D3's "exactly one active task" protection.
-      expect(intake.intake.mock.calls[0][0]).not.toHaveProperty(
+      expect(adapter.intakeCanonical.mock.calls[0][0]).not.toHaveProperty(
         'serviceNowTaskSysId',
       );
-      expect(intake.intake.mock.calls[0][1]).toBeUndefined();
     });
   });
 
   describe('the flat contract', () => {
-    it('routes mode 1 to the adapter, never to IntakeService', async () => {
+    it('routes mode 1 to the flat path, never to the canonical one', async () => {
       await controller.push(flatBody());
 
       expect(adapter.intakeFlat).toHaveBeenCalledTimes(1);
-      expect(intake.intake).not.toHaveBeenCalled();
+      expect(adapter.intakeCanonical).not.toHaveBeenCalled();
       expect(adapter.intakeFlat.mock.calls[0][0]).toMatchObject({
         mode: 1,
         requestId: 'REQ0044038',
@@ -147,7 +166,7 @@ describe('IntakeController — intake dispatch (CH-020)', () => {
         );
 
         expect(adapter.intakeFlat).not.toHaveBeenCalled();
-        expect(intake.intake).not.toHaveBeenCalled();
+        expect(adapter.intakeCanonical).not.toHaveBeenCalled();
       },
     );
   });

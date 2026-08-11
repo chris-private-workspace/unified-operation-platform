@@ -18,7 +18,6 @@ import {
 } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator';
 import { IntakeKeyGuard, INTAKE_KEY_HEADER } from './intake-key.guard';
-import { IntakeService } from './intake.service';
 import { IntakeAdapterService } from './intake-adapter.service';
 import { N8nIntakeRequestDto } from './dto/n8n-intake.dto';
 import { N8nNativeIntakeDto } from './dto/n8n-native-intake.dto';
@@ -31,7 +30,10 @@ import { N8nFlatIntakeDto } from './dto/n8n-flat-intake.dto';
  *
  * Two routes, one writer: `intake` takes the canonical (LOCKED) contract;
  * `intake/n8n` takes n8n's native envelope and resolves it down to the same
- * contract (ADR-0017 D4). Both end up in IntakeService.
+ * contract (ADR-0017 D4). Both end up in IntakeService — since CH-021, both go
+ * through IntakeAdapterService to get there, so the intake side effects
+ * (licence request, notification) are declared in one place instead of per
+ * route. This controller dispatches on the contract and nothing else.
  *
  * ── CH-020 / ADR-0024 D2: `intake` now carries TWO contracts ────────────────
  * 🔴 Read this before adding a field anywhere near it. `POST /requests/intake`
@@ -62,10 +64,10 @@ export class IntakeController {
     transform: true,
   });
 
-  constructor(
-    private readonly intake: IntakeService,
-    private readonly adapter: IntakeAdapterService,
-  ) {}
+  // CH-021: `IntakeService` was injected here directly until the canonical
+  // route moved behind the adapter. Removed rather than left in place — an
+  // unused writer on a @Public() controller is an invitation.
+  constructor(private readonly adapter: IntakeAdapterService) {}
 
   @Post('intake')
   @Public()
@@ -100,7 +102,10 @@ export class IntakeController {
       return this.adapter.intakeFlat(dto);
     }
     const dto = await this.validate(body, N8nIntakeRequestDto);
-    return this.intake.intake(dto);
+    // CH-021 A3 — through the adapter, not straight into IntakeService. The
+    // canonical contract is unchanged; what the adapter adds is the intake side
+    // effects every route shares. See `intakeCanonical`.
+    return this.adapter.intakeCanonical(dto);
   }
 
   /**

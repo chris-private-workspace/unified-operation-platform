@@ -1,8 +1,9 @@
 ---
 change_id: CH-021
 title: "Onboarding intake 之後通知操作人員"
-status: draft
+status: approved
 created: 2026-08-09
+approved: 2026-08-11
 target_completion: 2026-08-11
 affects_components: [fulfilment, integration/email]
 spec_refs:
@@ -15,7 +16,7 @@ spec_refs:
 
 > **Spec version**:1.0
 > **Owner**:AI
-> **Approved by**:_pending_
+> **Approved by**:**Chris Lai(2026-08-11)** —— spec 自此 locked,deviation 走 §7 changelog
 
 ## 1. Context (Why)
 
@@ -93,7 +94,13 @@ ops:      env OPS_NOTIFICATION_MAILBOX(optional,單一地址)
 
 **D2 — 三條 intake 路都要通知,but 一個 caller**
 
-`POST /requests/intake` 有兩個 contract(canonical / flat)、另有 `/intake/n8n`。三條最終都入 `IntakeService.intake`。通知**唔擺喺 `IntakeService`** —— 佢係 shared writer,擺落去會令 `outbound-retry.service.ts` 重建 request 嗰陣都寄一封。⇒ 擺喺 adapter / controller 層,同 `raiseLicenceRequest` 同一位置。
+`POST /requests/intake` 有兩個 contract(canonical / flat)、另有 `/intake/n8n`。三條最終都入 `IntakeService.intake`。通知**唔擺喺 `IntakeService`** —— 佢係 shared writer,擺落去會令**另一個 caller** 建 request 嗰陣都寄一封。⇒ 擺喺 adapter / controller 層,同 `raiseLicenceRequest` 同一位置。
+
+> 🔴 **2026-08-11 實作前查證 —— 本段原文點錯咗個 caller,結論唔變。**
+> 原文寫「會令 **`outbound-retry.service.ts`** 重建 request 嗰陣都寄一封」。實測 `Grep intake\.intake` 全 `src/`:**`outbound-retry.service.ts` 由頭到尾冇 call 過 `IntakeService`**。
+> 真正嘅第二個 caller 係 **`servicenow-import.service.ts`**(CH-013 / ADR-0021 —— ADMIN 喺 UI 手動 import 一個 SN REQ),佢自己個註釋(`:26`)就寫住「This is the second caller of `IntakeService`」。
+> ⇒ **D2 個結論(唔擺落 `IntakeService`)仍然成立**,但理由變咗:唔係「避免 repair 路重複寄」,而係 **§2.1 明文只涵蓋三條 intake 路,SN import 唔喺 scope 入面**。
+> ⚠️ **順帶開一條 open question 畀 Chris(唔喺本 CH 做)**:ADMIN 手動 import 一張 REQ 之後,**該 OpCo 嘅 IT 應唔應該收通知?** 佢同 n8n intake 一樣係「平台第一次見到呢張單」,分別只在觸發者係人。本 CH 按 spec 唔寄,要改就開新 CH。
 
 **D3 — 冇收件人 = log warn,唔係 error**
 
@@ -141,6 +148,8 @@ ops:      env OPS_NOTIFICATION_MAILBOX(optional,單一地址)
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-09 | Initial draft | Chris 端到端對帳揭出缺口;收件人 policy 同日拍板「兩者都要」 | _pending_ |
+| 2026-08-11 | **approved** | Chris approve ⇒ spec locked,開工 | Chris |
+| 2026-08-11 | §2.4 D2 加查證註 | 原文點錯咗第二個 caller(寫 `outbound-retry`,實際係 `servicenow-import`)。**結論唔變**,但理由由「避免 repair 重寄」改成「SN import 唔喺 §2.1 scope」;順帶開一條 OQ | AI(記錄)|
 
 ---
 

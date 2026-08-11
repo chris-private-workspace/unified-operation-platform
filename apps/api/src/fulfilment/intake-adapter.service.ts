@@ -20,6 +20,7 @@ import {
 } from './request-submission.provider';
 import { OutboundFailureService } from './outbound-failure.service';
 import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
+import { IntakeNotificationService } from './intake-notification.service';
 
 /** The catalogue row a default injection resolved to. */
 type DefaultSku = { id: string; skuId: string; skuPartNumber: string };
@@ -42,6 +43,15 @@ type DefaultSku = { id: string; skuId: string; skuPartNumber: string };
  * H4: rejection messages quote the offending non-PII identifier (Job Function,
  * licence code, REQ number) because that is how the first live call tells us
  * what ServiceNow actually sends. They never quote the target's UPN or email.
+ *
+ * ── What this class is NOW, which is wider than its name ────────────────────
+ * 🔴 It stopped being only a translator. ADR-0025 D2 added a side effect
+ * (raise the licence request), CH-021 added another (notify the OpCo's IT), and
+ * CH-021 A3 routed the canonical contract through here too — a path that needs
+ * NO translation at all. What it actually owns today is: every intake side
+ * effect, in one file, so "what happens when an onboarding arrives" is one
+ * thing to read rather than three. It is not renamed because the name is
+ * quoted by ADR-0017 D4 and by every commit that touched it.
  */
 @Injectable()
 export class IntakeAdapterService {
@@ -57,6 +67,8 @@ export class IntakeAdapterService {
     // ServiceNow after taking an onboarding in.
     private readonly submission: RequestSubmissionProvider,
     private readonly failures: OutboundFailureService,
+    // CH-021 — tell the OpCo's IT people an onboarding landed. Never throws.
+    private readonly notifications: IntakeNotificationService,
   ) {}
 
   async intakeNative(dto: N8nNativeIntakeDto) {
@@ -101,18 +113,50 @@ export class IntakeAdapterService {
      * sysId, so a re-post returns the existing request untouched — and an audit
      * row saying "the platform added a line" when it added nothing is exactly
      * the misleading-trail failure W41 had to go back and fix.
+     *
+     * 🔴 CH-021 D1 made this UNCONDITIONAL. It used to be asked only when
+     * something was injected; the notification needs the same answer for every
+     * push, and asking twice would be two ways of deciding one thing (the
+     * pattern this repo has now been bitten by six times). Cost is one indexed
+     * `findUnique` — the alternative D1 rejected was a `Request.notifiedAt`
+     * column, which is a Prisma schema change, so H1.
      */
-    const preExisting = injected
-      ? await this.prisma.request.findUnique({
-          where: { serviceNowSysId },
-          select: { id: true },
-        })
-      : null;
+    const preExisting = await this.prisma.request.findUnique({
+      where: { serviceNowSysId },
+      select: { id: true },
+    });
 
     const created = await this.intake.intake(canonical);
     if (injected && !preExisting) {
       await this.auditInjection(created, injected);
     }
+    if (!preExisting) await this.notifications.notifyNewIntake(created.id);
+    return created;
+  }
+
+  /**
+   * CH-021 A3 — the canonical (LOCKED) contract, which until now went straight
+   * from the controller into `IntakeService`.
+   *
+   * 🔴 It is routed through here for ONE reason: so that all three intake paths
+   * have their side effects in the same file. The alternative was a
+   * `preExisting` check and a notify call in `IntakeController`, which would
+   * have put a Prisma query in a controller AND created a second place that
+   * decides when an intake is new. CH-021 D2 keeps it out of `IntakeService`
+   * because that writer has a second caller (`ServiceNowImportService`, CH-013)
+   * which is out of this change's scope.
+   *
+   * Nothing about the canonical contract itself moves — no validation, no
+   * translation, no new field. This method wraps; it does not interpret.
+   */
+  async intakeCanonical(dto: N8nIntakeRequestDto) {
+    const preExisting = await this.prisma.request.findUnique({
+      where: { serviceNowSysId: dto.serviceNowSysId },
+      select: { id: true },
+    });
+
+    const created = await this.intake.intake(dto);
+    if (!preExisting) await this.notifications.notifyNewIntake(created.id);
     return created;
   }
 
@@ -177,14 +221,12 @@ export class IntakeAdapterService {
       } line item(s), task ${taskRef?.number ?? taskRef?.sysId ?? 'none'}`,
     );
 
-    // Same reasoning as intakeNative: checked BEFORE the write so a repeat push
-    // does not audit an injection that did not happen this time round.
-    const preExisting = injected
-      ? await this.prisma.request.findUnique({
-          where: { serviceNowSysId },
-          select: { id: true },
-        })
-      : null;
+    // Same reasoning as intakeNative, including CH-021 D1 making it
+    // unconditional: one question, one answer, two consumers.
+    const preExisting = await this.prisma.request.findUnique({
+      where: { serviceNowSysId },
+      select: { id: true },
+    });
 
     const created = await this.intake.intake(canonical, taskRef);
     if (injected && !preExisting) {
@@ -193,6 +235,10 @@ export class IntakeAdapterService {
     // ADR-0025 D2 — the licence request the platform owns, raised immediately
     // (Chris 2026-08-04). Fail-soft and once-only; see the method.
     await this.raiseLicenceRequest(created.id, canonical, openedBySysId);
+    // CH-021 — last, and after the ticket on purpose: the mail says "go and
+    // look at this request", so everything the reader will find should already
+    // be there. Fail-soft is guaranteed inside the service, not here.
+    if (!preExisting) await this.notifications.notifyNewIntake(created.id);
     return created;
   }
 

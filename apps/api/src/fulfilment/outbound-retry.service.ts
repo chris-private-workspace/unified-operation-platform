@@ -279,7 +279,12 @@ export class OutboundRetryService {
     }
     if (!REPLAYABLE_TEMPLATES.includes(template)) {
       throw new BadRequestException(
-        `'${template}' cannot be re-sent from the queue because its contents are single-use. Ask the recipient to request it again.`,
+        // CH-021: reworded because a SECOND template now lands here, and the
+        // old text ("its contents are single-use. Ask the recipient to request
+        // it again") was true of `password-reset` and false of
+        // `onboarding-intake` on both counts. The structural reason is shared —
+        // the queue does not store parameters — so that is what it now says.
+        `'${template}' cannot be re-sent from the queue — the queue does not store template parameters, so a replay would send an incomplete message. Trigger it again from the source.`,
       );
     }
 

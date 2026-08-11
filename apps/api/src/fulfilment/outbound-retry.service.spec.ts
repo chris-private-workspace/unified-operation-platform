@@ -354,27 +354,32 @@ describe('OutboundRetryService', () => {
       expect(failures.markResolved).toHaveBeenCalled();
     });
 
-    it('🔴 refuses a template whose contents are single-use', async () => {
-      failures.findById.mockResolvedValue(
-        notificationFailure({
-          to: 'someone.private@rci-t.com',
-          // W41: this stopped being a stand-in. `password-reset` is now a REAL
-          // template key that is deliberately absent from REPLAYABLE_TEMPLATES,
-          // so this test finally exercises the case it was written for — the
-          // actual reset mail, whose token the queue never stored.
-          template: 'password-reset',
-        }),
-      );
+    /**
+     * 🔴 CH-021 reworded the refusal. It used to say "its contents are
+     * single-use", which was true of `password-reset` and false of the template
+     * this phase added — so the assertion moved to the reason BOTH share: the
+     * queue does not store parameters.
+     *
+     * The property the original test was protecting is unchanged and still
+     * why this asserts a message rather than a type: when `password-reset`
+     * became a real key the case silently moved from the unknown-template
+     * branch to this one, and a bare `toThrow(BadRequestException)` would have
+     * passed either way.
+     */
+    it.each(['password-reset', 'onboarding-intake'] as const)(
+      '🔴 refuses %s — the queue never stored its parameters',
+      async (template) => {
+        failures.findById.mockResolvedValue(
+          notificationFailure({ to: 'someone.private@rci-t.com', template }),
+        );
 
-      await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
-        // Assert the MESSAGE, not just the type: when this key became real the
-        // case silently moved from the unknown-template branch to this one, and
-        // a bare `toThrow(BadRequestException)` would have passed either way.
-        /single-use/,
-      );
-      expect(notifications.send).not.toHaveBeenCalled();
-      expect(failures.markResolved).not.toHaveBeenCalled();
-    });
+        await expect(service.retry('f-mail', ADMIN)).rejects.toThrow(
+          /does not store template parameters/,
+        );
+        expect(notifications.send).not.toHaveBeenCalled();
+        expect(failures.markResolved).not.toHaveBeenCalled();
+      },
+    );
 
     it('refuses an unknown template rather than picking a default', async () => {
       failures.findById.mockResolvedValue(
