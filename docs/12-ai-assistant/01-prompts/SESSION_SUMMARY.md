@@ -21,7 +21,7 @@
 
 🔴 **一個落差要記住**:gate 仲擋住嗰 11 個,**組成同 ADR-0033 寫嘅唔同** —— ADR 寫「6 用晒 + 5 `Suspended`」,實測 **7 + 4**(總數啱)。**呢個差異本身就係證據**:probe 嘅數字會郁,而 `capabilityStatus` 唔會 —— 正正就係 D1 揀「存 status」唔揀「由四個數推」嘅理由。
 
-⚠️ **本地有 8 條已 merge 但未刪嘅 stale branch**(`feat/catalog-export` / `feat/ch-025-completion-and-category` / `feat/ch-026-unlimited-sku` / `feat/license-ledger-full-reset` / `feat/w43a-o365-request-creation` / `feat/w43b-closeout` / **`docs/ch-022-a7-live-closeout`** / **`docs/ch-028-in-m365-spec`**)—— `git branch --no-merged main` **空**,即係全部安全刪得。**下次開工仍然由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
+🟢 **stale branch 2026-08-12 清晒**:本地 **8 條**(`git branch -d`)+ remote **18 條**(`git push origin --delete`)—— 全部先跑 `--merged origin/main` 實測過命中先刪,唯一未 merge 嗰條(當時進行中嘅 PR)留低。⇒ **本地剩 `main`、remote 剩 `origin/main`**。💡 **remote 側數量多過本地側**(18 vs 8)—— 本地嗰啲之前有刪過,remote 冇跟,所以查嘅時候兩邊都要查。以下保留做背景 ———— `git branch --no-merged main` **空**,即係全部安全刪得。**下次開工仍然由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
 
 🔴 **PR merge 之後一定要逐個 commit 查有冇入齊,唔可以睇個 `MERGED` 就算** —— **PR #87 實測只 merge 咗 6 個入面嘅頭 2 個**,靠 checkout 之後見到舊版 working tree 先揭穿。方法:`git merge-base --is-ancestor <sha> origin/main` 逐個行(#88 六個已咁樣查過,全部 `True`)。
 
