@@ -100,20 +100,20 @@ last_updated: 2026-08-04
 - [x] F6-2 verify:api / web PATCH 都 `exit=0`,兩個 app `provisioningState = Succeeded`
 - [x] F6-3 verify:**兩個 revision 都 `Healthy`** —— api `--0000002` `RunningAtMaxScale` · web `--0000001` `Running`,replicas 各 1。🟢 **順帶證到 ACA 由 VNet 內 pull 到 `acrrci3ailanding1`**
 - [x] F6-4 verify:`https://rapo-uop-web-dev.rci-t.com/` —— 🟢 **Chris 由公司網絡實測,login 頁面 render 到**。B8(infra 漏建 DNS)已解決;**係 https 唔係 http** ⇒ `APP_BASE_URL` 填 https **證實填啱**(F3-3 當時對抗 infra 寫嘅 http),cookie `Secure` 擔心同時消除
-- [ ] F6-5 verify:`GET https://rapo-uop-web-dev.rci-t.com/api/docs/api` = 200(驗 nginx `/api` proxy → internal api)
-- [ ] F6-6 verify:break-glass login = 200 + role ADMIN(`admin@uop.local`,密碼 = `aca.params.dev.json` 個 `localAdminInitialPassword`)
-- [ ] F6-4b 🆕 🟢 **唔使等 B8** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` → 前端 200 · `/api/docs/api` → 200 · break-glass login。⇒ **F6-4/5/6 嘅實質內容即刻收得**,custom domain 嗰半留 B8 解封後補驗
+- [x] F6-5 verify:`GET https://rapo-uop-web-dev.rci-t.com/api/docs/api` = **200**(驗 nginx `/api` proxy → internal api)—— 🟢 **2026-08-12 由呢台機實測**:`/api/docs/api` **200 Swagger UI** · `/api/docs/api-json` **200 真 OpenAPI JSON** · `/api/me` **401 `Missing credentials`**(唔係 502/504 ⇒ api 真係喺度兼 guard 正常)· `/api/auth/sso/status` → `{"enabled":true}`。⚠️ **路徑係 `/api/docs/api` 唔係 `/docs/api`** —— 打後者會畀 SPA fallback 食咗返 HTML,係最易誤判成「api 唔通」嗰個位
+- [ ] F6-6 verify:break-glass login = 200 + role ADMIN(`admin@uop.local`,密碼 = `aca.params.dev.json` 個 `localAdminInitialPassword`)—— 🔴 **B8 解封之後,呢條卡嘅唔再係「有冇路」,係「有冇憑證」**
+- [ ] ~~F6-4b 由公司網絡打 **ACA 預設 FQDN** 收 F6-4/5/6 嘅實質內容~~ ⛔ **作廢(2026-08-11 前提被推翻 · 2026-08-12 已無需要)**。①原文嗰句「internal env 喺 hub VNet private DNS **一定**有記錄」係**推論唔係實測**,2026-08-10 Chris 實測 ACA 預設 FQDN **一樣訪問唔到**(env `vnetConfiguration.internal=true` 而 `staticIp=10.160.71.70` 私有 IP,靠嘅 private DNS zone 冇 link 到企業網)②2026-08-12 **custom domain 由呢台機直接打得通** ⇒ 呢條繞路兩個理由都冇咗
 - [x] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🟢 **已證(container log 原文)**:`19 migrations found` → 逐個 `Applying migration …` → `The following migration(s) have been applied:`,**零 error**
 - [x] F6-8 verify:seed 完成 —— 🟢 **已證(原文)**:`Seeded local admin (admin@uop.local).` + **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** —— 精確 24 個
 - [x] F6-7b **B3 — ACA 連到 private endpoint 嘅 PG** —— 🟢 **已證**:migration 真跑咗 19 個,冇連接根本做唔到。**呢個係本環境存在嘅意義,而佢通咗**
 - [x] F6-7d 🆕 `[NestApplication] Nest application successfully started`(`04:14:31`)· `[entrypoint]` 零 `WARN: … failed`
 - [x] F6-10 ✅ **infra 2026-08-06 畀咗 `managedEnvironments/read`(+ enable log)⇒ B7 解封**,`logs show` 通,而且**啟動嗰刻嘅 log 仲喺度**
-- [ ] F6-13 🆕 ⚠️ 記低一個無害 warn:`package.json#prisma is deprecated and will be removed in Prisma 7` ⇒ 將來升 Prisma 7 要轉 `prisma.config.ts`(**唔阻本 phase**)
+- [x] F6-13 🆕 ⚠️ 記低一個無害 warn:`package.json#prisma is deprecated and will be removed in Prisma 7` ⇒ 將來升 Prisma 7 要轉 `prisma.config.ts`(**唔阻本 phase**)。**呢條係一句 note 唔係一個 action** —— 記低咗就係做完;留住 `[ ]` 只會令下手以為仲有嘢要做(2026-08-12 對數時更正)
 - [x] F6-7c 🆕 方法論:直接驗證路(log / exec / HTTP)封死之後,轉去 **PG management plane metrics** —— 佢一直喺我哋嘅 RG Contributor 範圍內,四日嚟冇用過
 - [x] F6-9 R6 對數:🟢 **`customDomains`(`rapo-uop-web-dev.rci-t.com` SniEnabled)· `workloadProfileName` · `environmentId` 全部完好**。PATCH 唔 unset 冇送嘅 property ⇒ 比 ARM full PUT 結構上更安全
-- [ ] F6-10 🆕 🔴 **要 infra 畀 `Microsoft.App/managedEnvironments/read`**(純唯讀,比 `join/action` 細)⇒ 解封 `logs show` + `exec`,係而家最大樽頸
-- [ ] F6-11 🆕 替代驗證:Chris 用個人帳號喺 Azure Portal 睇 container log
-- [ ] F6-12 🆕 替代驗證:由企業網絡內嘅機 curl web + `/api/docs/api`
+- [x] ~~F6-10(重複)🔴 要 infra 畀 `managedEnvironments/read`,係而家最大樽頸~~ ⛔ **重複 ID,已由上面嗰條 `F6-10` 取代**(infra 2026-08-06 畀咗)。🔴 **兩條同編號嘅 item 一條 `[x]` 一條 `[ ]` 並存咗六日** —— 掃 checklist 嘅人睇到邊條就信邊條,而「最大樽頸」呢句喺已解封之後仲留住,會令下手當成阻塞。**編號重用 = 兩個真相**,同 `WEB-TEST-JSDOM`/`WEB-TEST-ENV` 同族
+- [x] ~~F6-11 替代驗證:Chris 用個人帳號喺 Azure Portal 睇 container log~~ ⛔ **唔再需要** —— B7 2026-08-06 解封,`logs show` 直接通,log 原文已入 F6-7/F6-8
+- [x] ~~F6-12 替代驗證:由企業網絡內嘅機 curl web + `/api/docs/api`~~ ⛔ **唔再需要** —— 2026-08-12 **由呢台機**直接打得通(見 F6-5),唔使搵企業網嗰部機
 
 ## F7 — n8n UAT 接線驗證(前置 F6)
 
