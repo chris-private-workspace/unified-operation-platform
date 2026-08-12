@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
+import { SEAT_MODELS } from '../seat-model';
 
 /** One SKU dictionary entry (skuId GUID is the source-of-truth key). */
 export class SkuCatalogDto {
@@ -11,6 +18,12 @@ export class SkuCatalogDto {
     string | null;
   @ApiProperty({ nullable: true, required: false }) category!: string | null;
   @ApiProperty() isBaseLicense!: boolean;
+  @ApiProperty({
+    enum: SEAT_MODELS,
+    description:
+      "'prepaid' = prepaidEnabled is a real seat count; 'unlimited' = no seat concept (ADR-0032 D1)",
+  })
+  seatModel!: string;
   @ApiProperty() active!: boolean;
   @ApiProperty({ nullable: true, required: false }) lastSyncedAt!: Date | null;
   @ApiProperty() createdAt!: Date;
@@ -53,6 +66,22 @@ export class UpdateSkuCatalogDto {
   @IsOptional()
   @IsBoolean()
   isBaseLicense?: boolean;
+
+  /**
+   * ADR-0032 D1. Deliberately NOT nullable, unlike alias / category: the column
+   * has a default and every SKU is one of the two — "cleared" would mean nothing.
+   * A rejected value is a 400 rather than a silent skip, because a typo here
+   * would decide whether the assign seat gate runs at all (D4).
+   */
+  @ApiProperty({
+    required: false,
+    enum: SEAT_MODELS,
+    description:
+      "does this SKU have a purchased-seat count at all (ADR-0032 D1); 'unlimited' skips the tenant seat gate",
+  })
+  @IsOptional()
+  @IsIn(SEAT_MODELS as readonly string[])
+  seatModel?: string;
 }
 
 /** Summary of a POST /license/catalog/sync run. */

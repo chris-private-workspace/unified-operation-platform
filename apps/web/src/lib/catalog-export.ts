@@ -24,6 +24,10 @@ const HEADER = [
   'Business alias',
   'Category',
   'Base licence',
+  // CH-026 — writable, so it has to ship in the export: this file IS the import
+  // template (catalog-csv.ts matches headers byte-for-byte), and a curated
+  // column missing from it can only ever be edited one SKU at a time.
+  'Seat model',
   'Active',
   'Last synced',
 ];
@@ -50,6 +54,7 @@ export function buildCatalogCsv(catalog: SkuCatalog[]): CatalogExport {
         csvField(sku.businessAlias ?? ''),
         csvField(sku.category ?? ''),
         sku.isBaseLicense ? 'Yes' : 'No',
+        csvField(sku.seatModel),
         sku.active ? 'Yes' : 'No',
         csvField(syncedAt(sku.lastSyncedAt)),
       ].join(','),

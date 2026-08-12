@@ -21,7 +21,7 @@ import { useCatalog } from '@/hooks/queries';
 import { useUpdateCatalog } from '@/hooks/mutations';
 import { apiPost } from '@/lib/api';
 import { buildCatalogCsv } from '@/lib/catalog-export';
-import type { CatalogSyncResult, SkuCatalog } from '@/lib/api-types';
+import type { CatalogSyncResult, SeatModel, SkuCatalog } from '@/lib/api-types';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -65,8 +65,8 @@ function Field({
   );
 }
 
-// Curate alias / category / base-flag (CH-003). skuId / part number / display
-// name are system-owned (set by tenant sync) and shown read-only.
+// Curate alias / category / base-flag / seat model (CH-003, CH-026). skuId /
+// part number / display name are system-owned (set by tenant sync), read-only.
 function EditSkuDialog({
   sku,
   onClose,
@@ -80,10 +80,14 @@ function EditSkuDialog({
   const [businessAlias, setBusinessAlias] = useState(sku.businessAlias ?? '');
   const [category, setCategory] = useState(sku.category ?? '');
   const [isBase, setIsBase] = useState(sku.isBaseLicense);
+  const [seatModel, setSeatModel] = useState<SeatModel>(sku.seatModel);
 
   const submit = () => {
     update.mutate(
-      { id: sku.id, body: { businessAlias, category, isBaseLicense: isBase } },
+      {
+        id: sku.id,
+        body: { businessAlias, category, isBaseLicense: isBase, seatModel },
+      },
       {
         onSuccess: () => {
           flash(`Updated ${sku.displayName}`, 'ok');
@@ -156,8 +160,21 @@ function EditSkuDialog({
             onChange={(v) => setIsBase(v === 'Base')}
           />
         </Field>
+        {/* ADR-0032 D1 — curated, because whether a SKU is metered is something
+            a human knows and the platform cannot infer. */}
+        <Field label="Seat model">
+          <SegmentedControl
+            options={['Prepaid', 'Unlimited'] as const}
+            value={seatModel === 'unlimited' ? 'Unlimited' : 'Prepaid'}
+            onChange={(v) =>
+              setSeatModel(v === 'Unlimited' ? 'unlimited' : 'prepaid')
+            }
+          />
+        </Field>
         <p className="text-[11.5px] leading-[1.5] text-fg-subtle">
-          Alias feeds allocation-import matching. Part number &amp; skuId are
+          Alias feeds allocation-import matching. Unlimited means the SKU has no
+          purchased seat count — it is left out of the owned totals and skips
+          the tenant seat check when assigning. Part number &amp; skuId are
           system-owned and can’t be edited.
         </p>
       </div>
@@ -314,6 +331,7 @@ export function Catalog() {
                     <th className={TH}>Alias</th>
                     <th className={TH}>Category</th>
                     <th className={TH}>Base</th>
+                    <th className={TH}>Seats</th>
                     <th className={cn(TH, 'text-center')}>Active</th>
                     <th className={cn(TH, 'text-right')}>Actions</th>
                   </tr>
@@ -359,6 +377,17 @@ export function Catalog() {
                           <Badge tone="info">BASE</Badge>
                         ) : (
                           <span className="text-fg-subtle">—</span>
+                        )}
+                      </td>
+                      {/* Both values are real answers, so neither gets an
+                          em-dash: "—" means "no answer" everywhere else in
+                          this table (ADR-0032 D3 makes the same point about
+                          Unalloc. on the Platform view). */}
+                      <td className={TD}>
+                        {s.seatModel === 'unlimited' ? (
+                          <Badge tone="neutral">UNLIMITED</Badge>
+                        ) : (
+                          <span className="text-fg-subtle">Prepaid</span>
                         )}
                       </td>
                       <td className={cn(TD, 'text-center')}>

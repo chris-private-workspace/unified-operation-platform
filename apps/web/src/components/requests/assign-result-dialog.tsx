@@ -154,12 +154,22 @@ export function AssignResultDialog({
   const GroupIcon = STATUS_ICON[groupStatus];
   // DS-5 — the count is mono even inside a sans sentence, the same way the line
   // item's "Step 2/3" and the OpCo budget figures already are.
+  // CH-026 — a skipped gate is not a passed one (assign-step.ts says so in as
+  // many words), and an unlimited SKU now skips `seats`. Counting it as passed
+  // would be the collapsed summary claiming a check that never ran.
+  const skippedGates = gates.filter((s) => s.status === 'skipped').length;
   const groupSummary = failedGate ? (
     <>Stopped at {STEP_LABEL[failedGate.key].toLowerCase()}</>
   ) : (
     <>
-      <span className="font-mono">{gates.length}</span>
+      <span className="font-mono">{gates.length - skippedGates}</span>
       {overridden ? ' checks · OpCo allocation overridden' : ' checks passed'}
+      {skippedGates > 0 && (
+        <>
+          {' · '}
+          <span className="font-mono">{skippedGates}</span> skipped
+        </>
+      )}
     </>
   );
 

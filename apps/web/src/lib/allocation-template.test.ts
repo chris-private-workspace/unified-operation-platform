@@ -17,6 +17,7 @@ function sku(p: Partial<SkuCatalog> & { skuPartNumber: string }): SkuCatalog {
     businessAlias: p.businessAlias ?? null,
     category: p.category ?? null,
     isBaseLicense: p.isBaseLicense ?? false,
+    seatModel: p.seatModel ?? 'prepaid',
     active: p.active ?? true,
     lastSyncedAt: null,
     createdAt: '2026-07-25T00:00:00Z',

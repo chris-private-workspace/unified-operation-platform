@@ -31,6 +31,11 @@ const numOr = (n: number | null): string => (n === null ? '—' : String(n));
 // danger and fills the remainder. owned null/0 → an empty track. Widths are DATA
 // (not design values), so inline style is correct here.
 function OwnedBar({ row }: { row: TenantSkuRow }) {
+  // ADR-0032 — no bar for an unlimited SKU. The bar reads "how much of what we
+  // own is spoken for", and there is no denominator; drawing it against the
+  // Graph sentinel would render a permanently empty track that looks like
+  // "nothing assigned" while thousands of people are using the licence.
+  if (row.seatModel === 'unlimited') return null;
   const owned = row.owned && row.owned > 0 ? row.owned : 0;
   const assignedPct = owned
     ? Math.min(100, (row.assignedToUsers / owned) * 100)
@@ -42,7 +47,10 @@ function OwnedBar({ row }: { row: TenantSkuRow }) {
       )
     : 0;
   return (
-    <div className="flex h-[5px] w-[130px] overflow-hidden rounded-[4px] bg-hover">
+    <div
+      data-testid="owned-bar"
+      className="flex h-[5px] w-[130px] overflow-hidden rounded-[4px] bg-hover"
+    >
       <div className="h-full bg-info" style={{ width: `${assignedPct}%` }} />
       <div
         className={cn(
@@ -108,12 +116,20 @@ export function PlatformView() {
     <div className="flex flex-col gap-[16px]">
       {/* Reconciliation tiles (M365 owned → allocated → assigned). */}
       <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-3">
+        {/* ADR-0032 D3 / OQ-4 — renamed from "Owned in M365". A total that
+            excludes a fifth of the SKUs cannot keep calling itself what M365
+            owns, and the sub-line names what was left out rather than letting
+            the figure quietly shrink. */}
         <StatCard
-          label="Owned in M365"
+          label="Prepaid seats"
           value={kpi(stats.data?.totalOwned ?? 0)}
           tone="info"
           icon={<Boxes size={16} strokeWidth={2} />}
-          sub="prepaid across tenant"
+          sub={
+            stats.data && stats.data.unlimitedSkus > 0
+              ? `${stats.data.unlimitedSkus} unlimited ${stats.data.unlimitedSkus === 1 ? 'SKU' : 'SKUs'} excluded`
+              : 'prepaid across tenant'
+          }
         />
         <StatCard
           label="Allocated to OpCos"
@@ -121,8 +137,11 @@ export function PlatformView() {
           tone="neutral"
           icon={<Layers size={16} strokeWidth={2} />}
           sub={
+            // "prepaid SKUs" is not decoration: this figure is scoped to them
+            // while the value above it counts every SKU, so subtracting one
+            // from the other would not reconcile.
             stats.data
-              ? `${stats.data.totalUnallocated} unallocated across tenant`
+              ? `${stats.data.totalUnallocated} unallocated (prepaid SKUs)`
               : ' '
           }
         />
@@ -262,7 +281,19 @@ export function PlatformView() {
                               <OwnedBar row={r} />
                             </div>
                           </td>
-                          <td className={cn(TD, NUM)}>{numOr(r.owned)}</td>
+                          <td className={cn(TD, NUM)}>
+                            {r.seatModel === 'unlimited' ? (
+                              // Sans, not mono: it is a word in a numeric
+                              // column. DS-5 asks for mono on NUMBERS, and
+                              // ADR-0032 D3 rejected `∞` for the same reason —
+                              // it would not line up and reads as nothing.
+                              <span className="font-sans text-fg-muted">
+                                Unlimited
+                              </span>
+                            ) : (
+                              numOr(r.owned)
+                            )}
+                          </td>
                           <td className={cn(TD, NUM, 'text-fg-muted')}>
                             {r.allocatedToOpcos}
                           </td>
@@ -295,6 +326,11 @@ export function PlatformView() {
                         )}
                       >
                         Subtotal · {g.category}
+                        {g.subtotal.unlimited > 0 && (
+                          <span className="ml-[6px] font-normal text-fg-subtle">
+                            · {g.subtotal.unlimited} unlimited excluded
+                          </span>
+                        )}
                       </td>
                       <td
                         className={cn(TD, NUM, 'font-semibold text-fg-muted')}
@@ -353,9 +389,12 @@ export function PlatformView() {
       <p className="flex items-start gap-[7px] text-[11.5px] leading-[1.5] text-fg-subtle">
         <Info size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
         <span>
-          Owned = M365 prepaid seats (from the last tenant sync). Adjusting
-          tenant counts and per-OpCo allocations is done in SKU Catalog /
-          Settings › Integrations → Import.
+          Owned = M365 prepaid seats (from the last tenant sync). SKUs marked{' '}
+          <span className="font-medium text-fg-muted">Unlimited</span> have no
+          purchased seat count, so they are left out of the owned totals — their
+          allocations and assignments still count. Seat model, tenant counts and
+          per-OpCo allocations are set in SKU Catalog / Settings › Integrations
+          → Import.
         </span>
       </p>
     </div>

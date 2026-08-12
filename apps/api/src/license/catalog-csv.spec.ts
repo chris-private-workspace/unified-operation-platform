@@ -3,7 +3,7 @@ import { parseCatalogCsv } from './catalog-csv';
 
 /** The CH-018 export header, byte-for-byte (catalog-export.ts:20-29). */
 const EXPORT_HEADER =
-  'Display name,Part number,SkuId,Business alias,Category,Base licence,Active,Last synced';
+  'Display name,Part number,SkuId,Business alias,Category,Base licence,Seat model,Active,Last synced';
 
 const exportRow = (
   name: string,
@@ -12,8 +12,9 @@ const exportRow = (
   alias: string,
   category: string,
   base: string,
+  seatModel = 'prepaid',
 ) =>
-  `${name},${part},${guid},${alias},${category},${base},Yes,2 Aug 2026 10:00`;
+  `${name},${part},${guid},${alias},${category},${base},${seatModel},Yes,2 Aug 2026 10:00`;
 
 function code(fn: () => unknown): string {
   try {
@@ -47,6 +48,8 @@ describe('parseCatalogCsv (CH-019)', () => {
         businessAlias: 'E3 Bundle',
         category: 'Base',
         isBaseLicense: true,
+        // CH-026 — the export now carries it, so a round-trip reads it back.
+        seatModel: 'prepaid',
       },
     ]);
     expect(parsed.unknownColumns).toEqual([
@@ -128,6 +131,63 @@ describe('parseCatalogCsv (CH-019)', () => {
     };
     expect(body.code).toBe('invalid-base-value');
     expect(body.invalidBaseValues).toEqual([{ line: 3, value: 'maybe' }]);
+  });
+
+  // ── CH-026 / ADR-0032 — Seat model column ────────────────────────────────
+
+  it.each([
+    ['prepaid', 'prepaid'],
+    ['Prepaid', 'prepaid'],
+    ['UNLIMITED', 'unlimited'],
+  ])('parses Seat model %s as %s', (raw, expected) => {
+    const parsed = parseCatalogCsv(`SkuId,Seat model\nguid-1,${raw}`);
+    expect(parsed.rows[0].seatModel).toBe(expected);
+  });
+
+  /**
+   * A blank cell must not be read as 'prepaid'. It is the same rule as Base
+   * licence above, but the cost is higher: writing 'prepaid' over a SKU someone
+   * marked unlimited turns the tenant seat gate back on for it (ADR-0032 D4).
+   */
+  it('leaves Seat model unchanged when the cell is blank', () => {
+    const parsed = parseCatalogCsv('SkuId,Seat model\nguid-1, ');
+    expect(parsed.rows[0]).not.toHaveProperty('seatModel');
+  });
+
+  it('rejects an unrecognised Seat model value with its line number', () => {
+    let thrown: BadRequestException | undefined;
+    try {
+      parseCatalogCsv('SkuId,Seat model\nguid-1,unlimited\nguid-2,infinite');
+    } catch (err) {
+      thrown = err as BadRequestException;
+    }
+    const body = thrown!.getResponse() as {
+      code: string;
+      message: string;
+      invalidSeatModelValues: { line: number; value: string }[];
+    };
+    expect(body.code).toBe('invalid-seat-model-value');
+    expect(body.invalidSeatModelValues).toEqual([
+      { line: 3, value: 'infinite' },
+    ]);
+    // The message has to name the accepted values — "invalid" alone leaves an
+    // operator guessing at a vocabulary that exists in exactly one file.
+    expect(body.message).toBe(
+      '"Seat model" must be prepaid or unlimited (blank leaves it unchanged).',
+    );
+  });
+
+  it('treats Seat model as writable, not as an ignored system column', () => {
+    const parsed = parseCatalogCsv('SkuId,Seat model\nguid-1,unlimited');
+    expect(parsed.unknownColumns).toEqual([]);
+  });
+
+  // A file with ONLY Seat model edited must still import — before CH-026 the
+  // "at least one editable column" guard would have called it nothing to do.
+  it('accepts a file whose only editable column is Seat model', () => {
+    expect(() =>
+      parseCatalogCsv('SkuId,Display name,Seat model\nguid-1,E3,unlimited'),
+    ).not.toThrow();
   });
 
   it('skips blank spacer rows without counting them', () => {

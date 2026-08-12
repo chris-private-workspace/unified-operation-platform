@@ -45,6 +45,8 @@ function tenantRow(p: Partial<TenantSkuRow> & { skuCatalogId: string }) {
     assignedToUsers: p.assignedToUsers ?? 0,
     unallocated: p.unallocated ?? null,
     overAllocated: p.overAllocated ?? false,
+    seatModel: p.seatModel ?? 'prepaid',
+    noPrepaidSeats: p.noPrepaidSeats ?? false,
   } satisfies TenantSkuRow;
 }
 

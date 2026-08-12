@@ -20,6 +20,7 @@ function sku(p: Partial<SkuCatalog> & { skuPartNumber: string }): SkuCatalog {
     businessAlias: p.businessAlias ?? null,
     category: p.category ?? null,
     isBaseLicense: p.isBaseLicense ?? false,
+    seatModel: p.seatModel ?? 'prepaid',
     active: p.active ?? true,
     lastSyncedAt: p.lastSyncedAt ?? null,
     createdAt: '2026-07-25T00:00:00Z',
@@ -37,7 +38,7 @@ describe('buildCatalogCsv', () => {
     const { csv } = buildCatalogCsv([]);
 
     expect(body(csv)[0]).toBe(
-      'Display name,Part number,SkuId,Business alias,Category,Base licence,Active,Last synced',
+      'Display name,Part number,SkuId,Business alias,Category,Base licence,Seat model,Active,Last synced',
     );
   });
 
@@ -64,8 +65,19 @@ describe('buildCatalogCsv', () => {
     ]);
 
     expect(body(csv)[1]).toBe(
-      'Microsoft 365 E5,SPE_E5,06ebc4ee-1bb5-47dd-8120-11324bc54e06,E5,Base,Yes,Yes,',
+      'Microsoft 365 E5,SPE_E5,06ebc4ee-1bb5-47dd-8120-11324bc54e06,E5,Base,Yes,prepaid,Yes,',
     );
+  });
+
+  // CH-026 — the export IS the import template (catalog-csv.ts parses these
+  // headers byte-for-byte), so a curated column missing here could only ever be
+  // edited one SKU at a time.
+  it('writes the curated seat model, not a blank the import would ignore', () => {
+    const { csv } = buildCatalogCsv([
+      sku({ skuPartNumber: 'POWER_BI_STANDARD', seatModel: 'unlimited' }),
+    ]);
+
+    expect(body(csv)[1].split(',')[6]).toBe('unlimited');
   });
 
   /**
@@ -162,9 +174,12 @@ describe('buildCatalogCsv', () => {
         sku({ skuPartNumber: 'B', isBaseLicense: false, active: false }),
       ]);
 
+      // Base licence is column 5, Active column 7 — CH-026 put Seat model
+      // between them, and it is deliberately NOT a Yes/No: it is a value the
+      // import parses back, so it stays the same word in both directions.
       const [, first, second] = body(csv);
-      expect(first.split(',').slice(5, 7)).toEqual(['Yes', 'Yes']);
-      expect(second.split(',').slice(5, 7)).toEqual(['No', 'No']);
+      expect(first.split(',').slice(5, 8)).toEqual(['Yes', 'prepaid', 'Yes']);
+      expect(second.split(',').slice(5, 8)).toEqual(['No', 'prepaid', 'No']);
     });
   });
 

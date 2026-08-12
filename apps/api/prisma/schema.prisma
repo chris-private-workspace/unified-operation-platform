@@ -124,6 +124,13 @@ model SkuCatalog {
   businessAlias String? // old Excel label — for mapping / reconciliation only
   category      String? // grouping for the OpCo asset-list view (e.g. "Base", "Add-on", "Power Platform", "Security")
   isBaseLicense Boolean             @default(false) // base bundle (E3/F3) vs add-on — UI default hint, NOT a hard gate
+  // Does this SKU have a "how many seats did we buy" concept at all (ADR-0032 D1)?
+  //   'prepaid'   = yes, prepaidEnabled is a real number (the default)
+  //   'unlimited' = no, Graph expresses it with a sentinel (10000 / 50000 / 1000000 observed)
+  // Human-curated like businessAlias / category (ADR-0004 curation-as-scope) —
+  // tenant sync must never write it. String, not a Prisma enum, for the same
+  // reason as ADR-0031 D1: an enum mints a second list to keep in step.
+  seatModel     String              @default("prepaid")
   active        Boolean             @default(true)
   lastSyncedAt  DateTime? // last time this entry was confirmed against tenant subscribedSkus
   ledger        OpcoSkuLedger[]

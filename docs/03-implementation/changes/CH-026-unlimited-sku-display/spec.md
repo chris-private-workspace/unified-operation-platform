@@ -1,20 +1,24 @@
 ---
 change_id: CH-026
 title: "Unlimited / 冇 seat 概念嘅 SKU 喺 Platform view 顯示成點"
-status: draft
+status: approved
 created: 2026-08-12
-target_completion: TBD
-affects_components: [apps/web, apps/api/license]
+target_completion: 2026-08-13
+affects_components: [apps/web, apps/api/license, apps/api/fulfilment, prisma]
 spec_refs:
+  - ADR-0032(決策 SSOT · **Accepted** 2026-08-12)
   - docs/02-architecture/licenseops/DESIGN.md §5(三層 owned → allocated → assigned)
-  - ADR-0008 D5(D365 一視同仁)
+  - ADR-0004(curation-as-scope)
+  - ADR-0023(CH-019 批量 curation import)
 ---
 
 # CH-026 — Unlimited SKU 喺 Platform view 顯示成點
 
-> **Spec version**:0.1(**draft** —— §5 三條 OQ 未決,**未可以 approve**)
+> **Spec version**:1.1(§5 四條 OQ **全部由 Chris 2026-08-12 答咗**;同日 approved)
 > **Owner**:Chris Lai
-> **分類**:Change,**但視乎 §5 OQ-2 點答,可能觸發 H1**(見 §4)
+> **Approved by**:**Chris Lai**(2026-08-12)
+> **決策 SSOT**:**`ADR-0032`**(**Accepted** 2026-08-12,H1)
+> **分類**:Change,**觸發 H1**(`SkuCatalog` 加欄)**+ H5**(改到 assign 個 tenant seat gate)
 
 ## 1. Context (Why)
 
@@ -60,61 +64,65 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) { …擋�
 
 ⇒ **本單唔係純顯示。** 動個 read-model 就會動到 gate 讀嘅嘢,兩者要一齊諗。
 
-## 2. 🔴 點解本單而家係 `draft` 唔係 `proposed`
+## 2. 決策（Chris 2026-08-12 全部答咗 → `ADR-0032`）
 
-因為最中心嗰條問題**冇一個安全嘅預設答案**:**平台點樣分辨「unlimited」同「真係買咗好多」?**
+| OQ | 答案 |
+|---|---|
+| **OQ-1 顯示** | **`Unlimited` + `Unalloc. —`**(ADR-0032 D3) |
+| **OQ-2 點識別** | **C —— `SkuCatalog` 加 curate 欄**(ADR-0032 D1)⇒ **H1**,ADR 已寫 |
+| **OQ-3 `prepaid=0` 嗰批** | **本單一齊收**(ADR-0032 D2 / D4)—— ⚠️ 收嘅方式係 **read-model 自動識別 + 顯示 + gate 訊息**,唔係第二個 curate 欄:佢係**狀態唔係 seat model**,而且係客觀事實(`owned=0 && consumed>0`),唔應該要人手維護 |
+| **OQ-4 grand total** | **剔走 unlimited,KPI 由「Owned in M365」改名「Prepaid seats」**(ADR-0032 D3) |
 
-三條路,代價唔同,而且其中一條觸發 H1:
+否決咗嘅 A(threshold)/ B(已知哨兵值集合)同理由,見 `ADR-0032 §Alternatives`。一句總結:**兩者都係喺 code 入面發明一條 Microsoft 冇承諾過嘅規則**,同 ADR-0004 否決 name-denylist 同源。
 
-| | 做法 | 代價 |
-|---|---|---|
-| **A** | **Threshold**:read-model 層當 `prepaidEnabled >= N`(例如 10000)= unlimited | 零 schema。🔴 **但係一個會隨時間失效嘅假設** —— 今日 tenant 最大真實值 `4502`,萬一將來真係買夠 10000 seat,佢就會靜靜變成「unlimited」而冇人知 |
-| **B** | **已知哨兵值集合**:只認 `10000 / 50000 / 1000000` 三個確切值 | 零 schema,唔會誤判真實採購量。🔴 **但 Microsoft 加一個新哨兵值我哋就漏咗**,而且漏咗嘅表現同 A 一樣係靜默 |
-| **C** | **`SkuCatalog` 加一個 curate 欄**(例如 `seatModel: 'prepaid' \| 'unlimited'`) | 🔴 **schema 改動 = H1,要 ADR**。但係**唯一一個唔靠猜嘅做法** —— 同 `businessAlias` / `category` / `isBaseLicense` 一樣行 curation-as-scope(ADR-0004 同款),而 CH-019 已經有批量 import 路可以一次過填 22 個 |
+## 3. Scope
 
-⚠️ **A 同 B 都係喺 code 入面發明一條 Microsoft 冇承諾過嘅規則。** 呢個形狀本 repo 撞過:ADR-0004 當年**拒絕**咗 name-denylist,理由一模一樣。
+### 3.1 In Scope
 
-## 3. Scope 草稿（等 §5 答完先 lock）
+- **A — schema**:`SkuCatalog.seatModel String @default("prepaid")` + migration。🔴 **migration 零行為改變**(全部 SKU 落 default),`unlimited` 靠人手 curate(ADR-0032 D5:**唔寫自動 data migration**,咁做等於偷偷實施咗被否決嘅 threshold)
+- **B — curation 兩條路**:單筆 `PATCH /license/catalog/:id` + CH-019 批量 import 都要收 `seatModel`;export CSV 帶埋佢。🔴 **值要 validate**(只准 `prepaid` / `unlimited`),兩條路都要 —— 同 ADR-0023 個 alias 閘同款
+- **C — read-model**:`tenant-owned.service.ts` 出 `seatModel` **同**一個 derived flag(`prepaid` 但 `owned = 0 && consumed > 0`);grand total **剔走 unlimited**
+- **D — Platform view**:`Unlimited` / `Unalloc. —` / KPI 改名 **`Prepaid seats`** / `owned=0 有人用` 自己一個 state
+- **E — 🔴 assign gate**(H5):`unlimited` **明確跳過** tenant seat gate;`prepaid` 而 `owned=0` **仍然擋但改訊息**
+- **F — SKU Catalog 頁**:要睇得到同改得到 `seatModel`(否則 curate 唔到)
 
-### 3.1 In Scope（初步）
+### 3.2 Out of Scope（explicit）
 
-- **A** — read-model(`tenant-owned.service.ts`)識別「呢個 SKU 有冇 prepaid seat 概念」,並喺 DTO 出一個**明確嘅欄**(唔係靠前端估數字大細)
-- **B** — Platform view 對呢類 SKU 顯示「**Unlimited**」(或 `∞`)而唔係一個七位數;`Unalloc.` 對佢哋顯示 `—`(冇意義,唔係 0)
-- **C** — **Grand total 要講清楚佢加咗啲乜** —— 至少要把 unlimited SKU 剔出總和,否則個 KPI 永遠係四百萬
-- **D** — 🔴 **`prepaidEnabled = 0` 但 `consumedUnits > 0` 呢類要有自己嘅講法**,唔可以同「真係得 0 個 seat」撈埋一齊
-- **E** — 🔴 **assign gate 對應處理** —— 至少要令「呢個 SKU 冇 prepaid 概念」同「seat 用晒」出唔同嘅拒絕訊息
-
-### 3.2 Out of Scope（初步）
-
-- ❌ 改 Graph 攞數據嘅方式 / 加新 Graph call
+- ❌ 改 Graph 攞數據嘅方式 / 加新 Graph call —— `prepaidEnabled` 照存原值,詮釋喺 read-model
 - ❌ 改 `OpcoSkuLedger` 嘅語意(allocated / assigned 兩層數字唔郁 = 已 lock 決策)
-- ❌ Drift 計算(`ledgerAssignedSum` vs `tenantConsumed`)—— 除非 §5 OQ-3 答「要」
+- ❌ **OpCo budget gate** —— 一個字唔改,佢仍然係 allocation 嘅權威
+- ❌ **放行 `prepaid` 而 `owned = 0` 嘅 assign** —— 🔴 本單只改「點講」唔改「擋唔擋」(ADR-0032 D4)。放行要先答「呢啲 SKU 到底點嚟」,未答之前放行 = 靠估派 licence
+- ❌ **Drift 計算**(`ledgerAssignedSum` vs `tenantConsumed`)對 unlimited SKU 意味住乜 —— ⚠️ 呢條數唔細(`FLOW_FREE` 用緊 4525),但佢係獨立一個問題,要另開
 - ❌ By OpCo view —— 佢由頭到尾唔顯示 tenant owned
+- ❌ 自動把 `prepaidEnabled >= N` 標做 unlimited 嘅 data migration(ADR-0032 D5)
 
-## 4. H1 判斷
+## 4. Hard-constraint 判斷
 
-- 揀 **A 或 B** ⇒ 純 read-model + 顯示層 ⇒ **唔係 H1**,Change workflow 行得
-- 揀 **C** ⇒ `SkuCatalog` 加欄 = **schema 改動 = H1** ⇒ **STOP,要 ADR**(可以喺同一輪傾)
+| | 觸發 | 狀態 |
+|---|---|---|
+| **H1** | `SkuCatalog` 加 `seatModel` 欄 = schema 改動 | 🟢 **`ADR-0032` Accepted**(2026-08-12,Chris)—— 閘已過 |
+| **H5** | §3.1 E 改到 assign 個 tenant seat gate = critical path | test 必須同步:`unlimited` 過閘 / `owned=0` 仍然擋兼訊息啱 / **常態 SKU 行為逐字不變** |
 
-⚠️ 無論揀邊個,**§3.1 E(assign gate)都會改到一條 critical path** ⇒ **H5 適用**:一定要同步寫 test。
+## 5. Open Questions
 
-## 5. 🔴 Open Questions（答完先可以 `proposed`）
+**四條全部由 Chris 2026-08-12 答咗**(見 §2),記錄喺 `ADR-0032`。
 
-- **OQ-1 — 顯示成點?** `Unlimited` 文字 / `∞` 符號 / 「N/A」?而 `Unalloc.` 對佢哋應該係 `—` 定係照計?(我建議 `Unlimited` + `Unalloc. —`,因為 `∞` 喺 mono 表入面對唔齊,而 `—` 喺呢個 codebase 一直代表「呢個問題冇答案」)
-- **OQ-2 — 點識別?** A(threshold)/ B(已知哨兵值)/ C(curate 欄,**H1**)。我建議 **C**,理由 §2 —— 但佢係三個入面最貴,而且要 ADR
-- **OQ-3 — `prepaidEnabled = 0` 但有人用嗰批點算?** 佢哋同 unlimited **唔係同一件事**(可能係已到期訂閱、可能係 add-on)。要唔要本單一齊收,定係另開?
-- **OQ-4 — Grand total 點計?** 剔走 unlimited 之後個「Owned in M365」係咪應該改名(例如「Prepaid seats」)?而家個名對住一個剔走咗一半 SKU 嘅數字會誤導
+新開一條:
+
+- **OQ-5** — `prepaidEnabled = 0` 但有人用嗰批**到底點嚟**?(訂閱過期 / add-on 附帶 / trial 完咗?)**本單唔答亦唔靠佢**(D4 照擋,只改訊息),但答咗先決定得到將來放唔放行。⚠️ 呢條要查 tenant 側,唔係 code 答得到。
 
 ## 6. Effort Estimate
 
-**未估得**(視乎 OQ-2)。粗略:A/B 路 ≈ 半日;C 路 ≈ 一日 + ADR。
+**約 1 日**(schema + migration ≈ 1h · curation 兩條路 + validate ≈ 2h · read-model + 顯示 ≈ 2h · assign gate + test ≈ 2h · 驗證 + doc-sync ≈ 1h)。⚠️ 唔含「人手 curate 嗰 22 個 SKU」—— 嗰個係 Chris 落 UI 做。
 
 ## 7. Spec Changelog
 
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-12 | Initial **draft** + 本機真數據 | Chris 第四點 review | — |
+| 2026-08-12 | **四條 OQ 全部答咗** → 升 `proposed`;scope 具體化;寫 **ADR-0032**(H1) | Chris:OQ-1 `Unlimited`+`Unalloc. —` · OQ-2 **C(curate 欄)** · OQ-3 一齊收 · OQ-4 改名 `Prepaid seats` | Chris Lai |
+| 2026-08-12 | **兩道閘齊過** → `ADR-0032` `Accepted` + 本 spec `approved`,開始實作 | Chris 明示 approve | Chris Lai |
 
 ---
 
-**Gate reminder**:本單係 `draft`,**§5 四條 OQ 全部答完先可以升 `proposed`**。⚠️ OQ-2 揀 C 要先過 **H1**(ADR)。
+**Gate reminder**:🟢 **兩道閘 2026-08-12 齊過**:①`ADR-0032` `Accepted`(H1)②本 spec `approved`(PROCESS R1.change)。實作進度見 `checklist.md`。

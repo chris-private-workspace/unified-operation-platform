@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseCsv } from './csv';
+import { SEAT_MODELS, isSeatModel } from './seat-model';
 
 /**
  * SKU catalog curation CSV (CH-019 / ADR-0023). Parses the CH-018 export back
@@ -15,12 +16,14 @@ export const SKU_ID_COLUMN = 'SkuId';
 export const ALIAS_COLUMN = 'Business alias';
 export const CATEGORY_COLUMN = 'Category';
 export const BASE_COLUMN = 'Base licence';
+export const SEAT_MODEL_COLUMN = 'Seat model';
 
 /** The only writable columns — identical to the PATCH surface (ADR-0023 D3). */
 export const EDITABLE_COLUMNS = [
   ALIAS_COLUMN,
   CATEGORY_COLUMN,
   BASE_COLUMN,
+  SEAT_MODEL_COLUMN,
 ] as const;
 
 /**
@@ -33,6 +36,8 @@ export interface CatalogCsvRow {
   businessAlias?: string | null;
   category?: string | null;
   isBaseLicense?: boolean;
+  /** ADR-0032 D1 — never null: the column has a default and blank means "leave it". */
+  seatModel?: string;
 }
 
 export interface ParsedCatalogCsv {
@@ -114,11 +119,13 @@ export function parseCatalogCsv(csv: string): ParsedCatalogCsv {
   const aliasAt = columnAt.get(ALIAS_COLUMN);
   const categoryAt = columnAt.get(CATEGORY_COLUMN);
   const baseAt = columnAt.get(BASE_COLUMN);
+  const seatModelAt = columnAt.get(SEAT_MODEL_COLUMN);
 
   const rows: CatalogCsvRow[] = [];
   const seenSkuIds = new Set<string>();
   const duplicateSkuIds: string[] = [];
   const invalidBaseValues: { line: number; value: string }[] = [];
+  const invalidSeatModelValues: { line: number; value: string }[] = [];
 
   for (let r = 1; r < table.length; r++) {
     const cells = table[r];
@@ -152,6 +159,18 @@ export function parseCatalogCsv(csv: string): ParsedCatalogCsv {
         else invalidBaseValues.push({ line: r + 1, value: raw });
       }
     }
+    if (seatModelAt !== undefined) {
+      const raw = (cells[seatModelAt] ?? '').trim();
+      // Blank leaves it, same as Base licence — seatModel is not nullable, so a
+      // blank cell cannot be read as 'prepaid' without inventing an edit. That
+      // matters more here than on Base: silently writing 'prepaid' would turn
+      // the tenant seat gate back on for a SKU somebody had marked unlimited.
+      if (raw !== '') {
+        const value = raw.toLowerCase();
+        if (isSeatModel(value)) row.seatModel = value;
+        else invalidSeatModelValues.push({ line: r + 1, value: raw });
+      }
+    }
     rows.push(row);
   }
 
@@ -168,6 +187,14 @@ export function parseCatalogCsv(csv: string): ParsedCatalogCsv {
       code: 'invalid-base-value',
       message: `"${BASE_COLUMN}" must be Yes or No (blank leaves it unchanged).`,
       invalidBaseValues,
+    });
+  }
+
+  if (invalidSeatModelValues.length > 0) {
+    throw new BadRequestException({
+      code: 'invalid-seat-model-value',
+      message: `"${SEAT_MODEL_COLUMN}" must be ${SEAT_MODELS.join(' or ')} (blank leaves it unchanged).`,
+      invalidSeatModelValues,
     });
   }
 
