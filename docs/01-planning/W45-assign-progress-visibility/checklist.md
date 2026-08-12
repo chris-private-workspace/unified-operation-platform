@@ -51,11 +51,24 @@
 - [x] F4-1 OpenAPI 反映新形狀(G8)—— `AssignResultDto` / `AssignStepDto` 掛咗 `@ApiOkResponse`,四個 `enum:` 全部 spread const array(唔手寫 literal)。⚠️ **只證到 code 層**:`/docs/api` runtime 未睇過(同 F3-7 一齊卡)
 - [x] F4-2 root lint exit 0 · api + web tsc 0(G9)—— ⚠️ **`npm run lint`(root)只 lint api**;web 要另跑 `-w @uop/web`,而佢 **本身就已經紅 16 條 prettier**(`allocation-reset*` 15 + `sync-check.test` 1,全部同本 phase 無關)⇒ 我只 `--fix` 咗自己嗰 5 個檔,無關嗰 16 條**冇掂**
 - [x] F4-3 既有 test 一條唔跌(G9)—— api **911 / 69 suites**(908 → 911)· web **286 passed**(276 → 286)。⚠️ web 另有 **6 條 pre-existing 紅**(`localStorage.clear is not a function`),`git stash` 實測 baseline 一模一樣
-- [ ] F4-4 🔴 **live 驗**:DEV 真撳一次失敗 + 一次成功(G11)—— SKU 用 `POWERAUTOMATE_ATTENDED_RPA`(W43 查證,要先加 `allocated`)
+- [x] F4-4 ✅ **live 驗收咗**(2026-08-12,本機,Chris 批准真派一次 licence)—— SKU **`POWERAUTOMATE_ATTENDED_RPA`**,一次 session 內**撳三次收齊三條路**:
+
+  | # | 局 | HTTP | `failedAt` | steps |
+  |---|---|---|---|---|
+  | 1 | 原 fixture(target = 砌出嚟嘅 `w45.render.check@…`) | **400** | **`directory`** | 4 步,`Target user not found in Azure AD` |
+  | 2 | target 換成真人,冇 override | **400** | **`budget`** | 6 步,`0 assigned of 0 allocated` |
+  | 3 | 同上 + ADMIN `budgetOverrideReason` | **200** | — | **10 步 · `outcome = assigned`** |
+
+  第 3 撳完整十步真回傳:`stage/sync-azure/sync-servicenow/directory/usage-location` ok → **`budget: overridden`** → `seats: ok` → **`assign: ok`** → `ledger: ok` → **`ticket: skipped`**(`This line has no RITM and the request has no ServiceNow mirror`)。
+
+  🟢 **一次過收埋兩個「從來未真驗過」嘅狀態** —— `progress.md:308` 記低四張截圖入面 `success`/`skipped`/`overridden` 係**攔截 PATCH 造出嚟**,唔係真回應。今次 `overridden` + `skipped` **兩個都係真回應**。
+  🟢 **Graph 側獨立覆核**:`licenseDetails` 顯示 `user holds this SKU : true` ⇒ 唔係只信平台講。**移返之後 `false`,tenant `consumed 92 → 91`,零殘留。**
+  🔴 **點解揀 override 唔揀補 ledger allocation**:`ledger/import` 走 CSV matrix 而且要 `businessAlias` 已 curate(ADR-0004),呢隻 SKU 冇 alias ⇒ 行唔通;手插 ledger row 就要再改一次 DB。**override 零額外資料改動,而且順帶把 `overridden` 由「攔截造出嚟」變成真回應** —— 換到嘅嘢比「七道閘全綠」多。
+  ⚠️ **代價講清楚**:`budget` 因此**冇驗到 `ok` 分支**。佢有 unit test 蓋住,而且 1 號、2 號兩撳已證咗個閘真係擋(唔係擺設)。
   - [x] **F4-4a 部署** ✅ **2026-08-10 部署 #4(`dev-211001e`)** —— build host 就係開發嗰台機(egress IP 實測 `52.187.129.166`,同 B1 記低嗰個逐字一樣)。api `--0000006` / web `--0000003` 都 `Healthy` traffic 100,舊 revision 已退場;custom domain 完好。container log 原文證到 DB 通 + schema 最新 + seed 行到,零 `failed`。詳見 `docs/13-deployment/09-dev-as-built.md`
-  - [ ] **F4-4b 真撳** —— 🔴 **2026-08-11 拆兩半(Chris 拍板),因為兩半卡住嘅嘢唔同**。全套步驟見 **`docs/13-deployment/10-dev-live-verification-runbook.md`**
-    - [ ] **F4-4b-1 失敗路 @ DEV**(runbook **A5**)🔴 **卡 `B8`**,一定要喺公司網。🟢 零副作用。⚠️ **佢喺 DEV 嘅價值同本機唔同** —— dialog 嘅**邏輯本機已經 100% 真驗過**(F3-7 blocked 兩張截圖 = 真 400、真 steps、light + dark);**DEV 加嘅係「400 body 捱唔捱得過真 ACA ingress + nginx proxy」**,而嗰個正正係 `apiPatch` `detail` bug 同一族
-    - [ ] **F4-4b-2 成功路 @ 本機**(runbook **B3**)🔴 **唔卡 `B8`** —— 卡嘅係「要唔要真派一個 licence」呢個**決定**。⚠️ **原本寫住卡 B8 係錯嘅**:`BACKLOG` `DEV-GRAPH-PLACEHOLDER` 行(2026-08-10 查證)證實 **DEV 個 `GRAPH_TENANT_ID` = 公司 M365 tenant `d1ea071a-…`,`GRAPH_CLIENT_ID` 同本機 `.env` 完全一致** ⇒ **兩邊同一個 tenant 同一個 Graph app,喺 DEV 撳同喺本機撳真派出去嗰個 licence 一模一樣** ⇒ 去 DEV 換唔到任何嘢返嚟,而本機仲快
+  - [x] **F4-4b 真撳** —— 🔴 **2026-08-11 拆兩半(Chris 拍板),因為兩半卡住嘅嘢唔同**。全套步驟見 **`docs/13-deployment/10-dev-live-verification-runbook.md`**
+    - [ ] 🚧 **F4-4b-1 失敗路 @ DEV**(runbook **A5**)—— **仍然未做,而且 2026-08-12 之後理由變咗**:`B8` 已解封(custom domain 由呢台機打得通),所以**唔再係「冇路」**。佢淨低嘅價值係**單一而具體嘅一樣嘢**:400 body 捱唔捱得過真 ACA ingress + nginx proxy(同 `apiPatch` `detail` bug 同一族)。⚠️ **dialog 邏輯本機已 100% 真驗過**(今日再加三撳真 400/200),所以呢條**唔阻 W45 收官**,併入 W44 `F6` 一齊做
+    - [x] **F4-4b-2 成功路 @ 本機**(runbook **B3**)✅ **2026-08-12 收咗**,見上面 F4-4 個表⚠️ **原本寫住卡 B8 係錯嘅**:`BACKLOG` `DEV-GRAPH-PLACEHOLDER` 行(2026-08-10 查證)證實 **DEV 個 `GRAPH_TENANT_ID` = 公司 M365 tenant `d1ea071a-…`,`GRAPH_CLIENT_ID` 同本機 `.env` 完全一致** ⇒ **兩邊同一個 tenant 同一個 Graph app,喺 DEV 撳同喺本機撳真派出去嗰個 licence 一模一樣** ⇒ 去 DEV 換唔到任何嘢返嚟,而本機仲快
       - 🔴 **順帶更正 F3-7 一個容易睇漏嘅界線**:嗰四張截圖入面,`success` / `skipped` / `overridden` **三個狀態係攔截 PATCH 造出嚟**(`progress.md:308`)⇒ **成功路到今日為止零真回應證據**,呢一格先係佢
   - 💡 **建議拆兩半**:**失敗路**用 allocation = 0 行 `budget` 閘(閘喺 tenant seat read 同 `assignLicense` 之前,有 test 釘住)⇒ **零副作用,可以放心做**,而且已涵蓋 dialog / 十步 / `whoFixes` / 400 body 過真 nginx+ACA ingress;**成功路**會喺公司 tenant **真派一個 licence**(CH-020 V5d 做過一次,留低咗一個冇收嘅 Power BI Free),要先揀定 target 同收拾方式
 - [x] F4-5 BACKLOG `ASSIGN-PROGRESS` 標完成(R7)—— 標 🟢「實作完成 · 淨低 live 驗(卡 B8)」而**唔標 ✅ closed**(G11 未做)。順帶:`LINT-web` 更新真實數字(16 條)+ **新登 `WEB-TEST-JSDOM`**(6 條 pre-existing 紅 test,一直冇人追)

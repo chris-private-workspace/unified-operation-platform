@@ -35,7 +35,24 @@
 - [x] F3-2 G8 `npm run lint`(root)**exit 0** · api tsc **exit 0**
 - [x] F3-3 BACKLOG 標完成(R7)+ W45 `progress.md` 寫一段
 - [x] F3-4 CLAUDE.md §0 / §9 + `SESSION_SUMMARY.md` 座標掃一次(§14 規矩:呢兩份係唯一無條件讀入每個新 session 嘅文件)
-- [ ] F3-5 🔴 **live 驗**(G9)—— 🔴 **2026-08-11 更正:唔卡 `B8`**。全套步驟見 **`docs/13-deployment/10-dev-live-verification-runbook.md` Track B**
+- [x] F3-5 ✅ **live 驗收咗**(2026-08-12,本機,Chris 批准真派一次 licence · G9)
+
+  真 assign 成功之後,`Operational history` 多咗一條:
+
+  ```
+  NOTE | ServiceNow skipped: This line has no RITM and the request has no ServiceNow mirror
+  ```
+
+  同一次回應入面 dialog 個 ticket step:
+
+  ```
+  ticket | skipped | This line has no RITM and the request has no ServiceNow mirror
+  ```
+
+  ✅ **形狀 `ServiceNow {status}: {detail}` 對得住** · ✅ **兩處逐字一樣,零 drift**(呢個正正係「由同一個 step 推導,唔另寫文案」嘅實證)· ✅ **重新 GET 一次 request 條 NOTE 仲喺**(由 DB 讀返,唔係 dialog 嗰份記憶體)—— **呢個就係本 CH 存在嘅全部理由:「嗰行字得五秒命」而家唔係。**
+
+  🟢 **而且驗到嘅正正係 `skipped` 分支,唔係將就** —— BACKLOG 記低本 CH 個 driver 就係「ADR-0029 令 `ticket: skipped` 由要靠推理變成畫面一行字,但嗰行字得五秒命」。⇒ **`skipped` 係最對題嗰個分支。**
+  ⚠️ **另外三個分支(RITM close requested / parent REQ work note / failed)未 live 驗** —— 要一張真有 RITM 嘅單先撳得到,而咁樣要額外開一張真 SN 單。三個都有 unit test 蓋住,**唔阻本 CH 收官**;將來有真 onboarding 單流過就會自然覆蓋。
   - ⚠️ **原本寫住「卡 `B8`,同 W45 F4-4b 一齊做」係錯嘅,而錯法值得記**:兩件嘢都係「live 驗」,就被推去「兩件都卡同一個環境」——**由一個相關但唔對位嘅觀察推去更強結論,同一族第五次**。
   - 🔴 **真正卡住嘅係一個決定,唔係一個環境**:本 CH 條 NOTE **只喺 assign 成功之後先寫** ⇒ 要驗佢就要**真派一個 licence**。而 `BACKLOG` `DEV-GRAPH-PLACEHOLDER` 行(2026-08-10 查證)證實 **DEV 個 `GRAPH_TENANT_ID` = 公司 M365 tenant `d1ea071a-…`,`GRAPH_CLIENT_ID` 同本機 `.env` 完全一致** ⇒ **DEV 同本機同一個 tenant 同一個 Graph app,派出去嗰個 licence 一模一樣** ⇒ **去 DEV 換唔到任何嘢返嚟,本機做仲快**(唔使等公司網)。
   - 🔴 **撳之前一定要 ServiceNow `Test connection` = `active`** —— 條 NOTE 個內容**由 ticket step 推導**,SN 唔通就只驗到 `failed` 分支,驗唔到 `ok`(`RITM close requested`)。💡 本機打得通真 SN 有前例(CH-020 V5d,2026-08-03,早過 DEV 存在),但**唔好由前例推論今日**。

@@ -419,3 +419,46 @@ api **917 → 921 passed / 69 suites**(新 4 條)· root `npm run lint` **exit 0
 ### 順帶:需求本身喺同一日再實證一次
 
 問 Chris 佢朝早喺 DEV 派嗰個 `FORMS_PRO` 條 line 有冇 RITM 號,答「**沒有印象了**」—— 即係呢個缺口喺提出之後**幾個鐘之內**又犯一次。(另:嗰個 `FORMS_PRO` **決定留低唔收**。)
+
+---
+
+## Day 4 — 2026-08-12：F4-4 live 驗收咗（本機，Chris 批准真派一次 licence）
+
+### 撳三次，收齊三條路
+
+| # | 局 | HTTP | `failedAt` | steps |
+|---|---|---|---|---|
+| 1 | 原 fixture（target = 砌出嚟嘅 `w45.render.check@…`） | **400** | **`directory`** | 4 步 · `Target user not found in Azure AD` |
+| 2 | target 換成真人，冇 override | **400** | **`budget`** | 6 步 · `0 assigned of 0 allocated` |
+| 3 | 同上 + ADMIN `budgetOverrideReason` | **200** | — | **10 步 · `outcome = assigned`** |
+
+第 3 撳完整十步：`stage / sync-azure / sync-servicenow / directory / usage-location` 全 `ok` → **`budget: overridden`** → `seats: ok` → **`assign: ok`** → `ledger: ok` → **`ticket: skipped`**。
+
+### 🟢 收到嘅嘢比預期多
+
+**兩個「從來未真驗過」嘅狀態一次過收埋。** `progress.md:308` 記低四張截圖入面 `success` / `skipped` / `overridden` 係**攔截 PATCH 造出嚟**嘅。今次 `overridden` 同 `skipped` **兩個都係真回應**。
+
+**Graph 側獨立覆核，唔只信平台講**：`licenseDetails` → `user holds this SKU : true`；移返之後 `false`，tenant `consumed 92 → 91`，**零殘留**。
+
+### 🔴 一個判斷：揀 override，唔補 ledger allocation
+
+過 `budget` 閘有兩條路，我揀咗 override，理由：
+
+- `ledger/import` 走 CSV matrix 而且要 `businessAlias` **已 curate**（ADR-0004）—— 呢隻 SKU 冇 alias ⇒ **行唔通**；手插 ledger row 就要再改一次 DB。
+- override **零額外資料改動**，而且順帶把 `overridden` 由「攔截造出嚟」變成真回應。
+
+⇒ **換到嘅嘢比「七道閘全綠」多。**
+
+⚠️ **代價要講清楚**：`budget` 因此**冇驗到 `ok` 分支**。佢有 unit test 蓋住，而且第 1、2 撳已經證咗個閘真係擋（唔係擺設）。
+
+### 🔴 順帶揭到一個對照，值得記住形狀
+
+**`sync-check` 返 `FOUND`，而真 assign 個 `directory` 閘返 `not found` —— 同一個 UPN、同一分鐘、兩個相反答案。**
+
+§9 原本只寫「一個砌出嚟嘅假 UPN 一樣返 `FOUND`」（08-10）。今次有**對照**：唔止係「探唔到」，係**同真相相反**。⇒ 要探個 UPN 存唔存在，唯一可靠方法係直接打 Graph `/users/{upn}`。
+
+📌 同「revision `Healthy` ≠ DB 通」、「`Test-Path dist/main.js` 返 `True` ≠ build 冇壞」同族：**一個 endpoint 叫做「check」，唔等於佢真係 check 過。**
+
+### 🚧 淨低
+
+**`F4-4b-1` 失敗路 @ DEV** —— `B8` 已解封，所以**唔再係「冇路」**。佢淨低嘅價值係單一而具體嘅一樣嘢：**400 body 捱唔捱得過真 ACA ingress + nginx proxy**（同 `apiPatch` `detail` bug 同族）。dialog 邏輯本機已 100% 真驗過（今日再加三撳真 400/200）⇒ **唔阻 W45 收官，併入 W44 `F6` 一齊做。**
