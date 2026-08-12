@@ -13,6 +13,8 @@
 
 🟢🟢 **五項真環境驗證 2026-08-12 全部收咗**(Chris 批准停 `ai-doc-extraction-db`,一氣呵成):migration 對真 DB **21/21 applied** · **真 sync 驗到 `SPE_E3` `owned` 21 → 4498**(21 + 4477 grace)、`SPE_E5` 4502 → 4744 ⇒ **CH-020 嗰個「dev tenant 超支 33」之謎解開兼修好** · **gate 拒絕 `32 → 11`,同 ADR-0033 D4 個表逐字一樣** · light+dark 六張截圖。⇒ **CH-026 / CH-027 兩單都 closed。**
 
+🟢🟢 **CH-022(`INTAKE-REQUESTER`)2026-08-12 `A7` live 收 ⇒ closed** —— 端到端第 2 步(UOP 收到 n8n intake 之後喺 SN 開 O365 單)**由 W43 交付以嚟第一次真流量行得通**。四個證據冇一個靠 intake 回應:api log `Ordered ServiceNow request REQ0044083 (1 RITM)`(**零** `Could not raise…` = 08-07 三次全部掛嗰句)· SN `sc_req_item` 真出 **`RITM0047389`**(`cat_item=efe38ade…`,count **1**)· `REQ0044083` 個 `requested_for` **逐字等於源 `REQ0044067` 個 `opened_by`**(ADR-0030 修法)· 本機 DB 重讀 line item RITM 已填。📌 **`requesterEmail` 係故意送一個 SN 必然反查唔到嘅地址** —— 舊 code 就死喺呢格,單照開得成 ⇒ **`A1` 嘅 live 版**。🔴 **intake 回應永遠證明唔到 RITM 開咗**(`created` 喺 `raiseLicenceRequest` 之前 snapshot ⇒ line item `serviceNowSysId` 恆為 null)。🔴 **08-11「留返 DEV 做」個前提打咗折**:DEV **一樣缺** `DEFAULT_ONBOARDING_SKU_ID`(grep 零命中,只剩 DB override),而兩邊 `SERVICENOW_INSTANCE_URL` **逐字一樣** ⇒ 同 Graph tenant 論證同族第三次。⚠️ **留低咗一張真單 `REQ0044083`/`RITM0047389` 待決定收唔收**(平台冇 cancel,H3 out-of-scope;同 CH-020 leftover 同族)。
+
 🚧 **淨低 CH-026 `G-7` = Chris 落 UI 人手 curate 22 個 SKU 做 `unlimited`**。⚠️ **未做之前 `Available seats` KPI 仲係 4,270,779(哨兵值主導)、`unlimitedSkus` = 0 —— 唔好誤讀成 CH-026 冇生效**,機制 render 得到,差嘅係人手 curate 嗰步。
 
 🔴 **一個落差要記住**:gate 仲擋住嗰 11 個,**組成同 ADR-0033 寫嘅唔同** —— ADR 寫「6 用晒 + 5 `Suspended`」,實測 **7 + 4**(總數啱)。**呢個差異本身就係證據**:probe 嘅數字會郁,而 `capabilityStatus` 唔會 —— 正正就係 D1 揀「存 status」唔揀「由四個數推」嘅理由。
