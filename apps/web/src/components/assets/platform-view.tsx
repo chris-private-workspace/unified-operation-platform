@@ -228,7 +228,12 @@ export function PlatformView() {
                       computed on this screen — Drift owns that number, and it
                       reads a LIVE tenant total while this reads the last
                       snapshot, so a second delta here would disagree with it. */}
-                  <th className={cn(TH, 'text-right')}>In M365</th>
+                  {/* nowrap: two words in a narrow numeric column wrap to two
+                      lines and make this header taller than every other one.
+                      The table already scrolls horizontally. */}
+                  <th className={cn(TH, 'whitespace-nowrap text-right')}>
+                    In M365
+                  </th>
                   <th className={cn(TH, 'text-right')}>Unalloc.</th>
                   <th className={cn(TH, 'text-center')}>Status</th>
                 </tr>

@@ -116,6 +116,8 @@ grand total 行(`platform-view.tsx:230-261`)食 `stats.data`(`TenantSkuStatsDto`
 ## 7. 已知代價
 
 - 表由 6 欄變 7 欄,窄螢幕更易橫向捲(`overflow-x-auto` 已在,但要 light+dark 都睇過)
+  - ✅ **實測數字(2026-08-12)**:`table.scrollWidth 1160` vs container `1132` ⇒ **溢出 28px @ 1440px viewport**,而 `In M365` 佔 **79px** ⇒ **加欄之前係零溢出**。⚠️ 即係話**桌面闊度都已經開始要捲**,唔止「窄螢幕」。**冇為咗慳位改 padding**(嗰個係設計值,H6)
+  - ✅ 順帶修咗一個只有真 render 睇得到嘅問題:`In M365` 兩個字喺窄 numeric 欄會**換行**令 header 高過其餘六欄 ⇒ 加 `whitespace-nowrap`,實測七個 `th` 全部 36px
 - **`In M365` 同 Drift 頁個數可以唔同**(時間差)—— D6 條 note 就係為咗呢個;揀 D2-A 之後呢個代價只影響一個數字,唔會變成兩個 delta 互相打架
 - 加完之後畫面會**第一次公開展示**「平台帳 vs M365 實況」嘅落差 —— 呢個係本 CH 嘅**目的**,唔係副作用,但要有心理準備條數可能好核突(CH-020 就撞過 dev tenant 超支 33)
 
