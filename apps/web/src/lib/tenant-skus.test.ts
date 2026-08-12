@@ -306,6 +306,7 @@ describe('groupByCategory', () => {
       owned: 2100,
       allocated: 2371,
       assigned: 0,
+      consumed: 0, // CH-028 — no fixture in this case carries a snapshot
       unallocated: -271, // 2100 - 2371
       unlimited: 0,
     });
@@ -313,6 +314,7 @@ describe('groupByCategory', () => {
       owned: 50,
       allocated: 20,
       assigned: 0,
+      consumed: 0,
       unallocated: 30,
       unlimited: 0,
     });
@@ -327,6 +329,7 @@ describe('groupByCategory', () => {
           category: 'Base',
           owned: 100,
           allocatedToOpcos: 40,
+          tenantConsumed: 60,
         }),
       },
       {
@@ -342,6 +345,10 @@ describe('groupByCategory', () => {
       owned: 100, // null → 0
       allocated: 70,
       assigned: 0,
+      // CH-028 — same rule for tenantConsumed, and 60 rather than 0 on purpose:
+      // a 0-vs-0 expectation could not tell "the null row was skipped" apart
+      // from "the whole sum came out empty".
+      consumed: 60,
       unlimited: 0,
       unallocated: 30,
     });
@@ -355,7 +362,13 @@ describe('groupByCategory', () => {
   // sentinel would put 1,000,000 on a category row and make the column useless.
   it('leaves unlimited SKUs out of owned / unallocated but keeps their seats', () => {
     const [g] = groupByCategory([
-      row({ id: 'e3', category: 'Base', owned: 2000, allocatedToOpcos: 1800 }),
+      row({
+        id: 'e3',
+        category: 'Base',
+        owned: 2000,
+        allocatedToOpcos: 1800,
+        tenantConsumed: 1861,
+      }),
       row({
         id: 'pbi',
         category: 'Base',
@@ -363,6 +376,7 @@ describe('groupByCategory', () => {
         owned: 1000000,
         allocatedToOpcos: 40,
         assignedToUsers: 12,
+        tenantConsumed: 3064,
       }),
     ]);
 
@@ -370,6 +384,13 @@ describe('groupByCategory', () => {
       owned: 2000, // hard-coded: the sentinel must not appear at any scale
       allocated: 1840, // 1800 + 40 — real seats on both
       assigned: 12,
+      /**
+       * CH-028 D5 — 1861 + 3064. The unlimited row IS counted here while its
+       * `owned` is dropped one line above: consumption is a measurement of use,
+       * not a derivation of a sentinel. Those two opposite scopes sitting in one
+       * assertion is the point — get either backwards and this goes red.
+       */
+      consumed: 4925,
       unallocated: 200, // 2000 - 1800, prepaid only
       unlimited: 1,
     });

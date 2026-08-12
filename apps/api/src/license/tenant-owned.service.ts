@@ -178,6 +178,11 @@ export class TenantOwnedService {
       totalOwned,
       totalAllocated: rows.reduce((s, r) => s + r.allocatedToOpcos, 0),
       totalAssigned: rows.reduce((s, r) => s + r.assignedToUsers, 0),
+      // CH-028 D3 — same all-rows scope as totalAssigned (see the DTO for why
+      // the prepaid-only scope would be wrong here). null means "never synced",
+      // which is not a measurement of zero — but a total has to be a number, so
+      // those rows simply do not contribute.
+      totalConsumed: rows.reduce((s, r) => s + (r.tenantConsumed ?? 0), 0),
       totalUnallocated: totalOwned - prepaidAllocated,
       skusOverAllocated: rows.filter((r) => r.overAllocated).length,
       unlimitedSkus: rows.length - prepaid.length,

@@ -159,6 +159,7 @@ describe('TenantOwnedService', () => {
       totalOwned: 2100,
       totalAllocated: 2371,
       totalAssigned: 0,
+      totalConsumed: 1590, // CH-028 — 1500 + 90, from the snapshots
       totalUnallocated: -271, // 2100 - 2371
       skusOverAllocated: 1, // sku-e3
       unlimitedSkus: 0,
@@ -202,10 +203,44 @@ describe('TenantOwnedService', () => {
       totalOwned: 0,
       totalAllocated: 0,
       totalAssigned: 0,
+      totalConsumed: 0,
       totalUnallocated: 0,
       skusOverAllocated: 0,
       unlimitedSkus: 0,
     });
+  });
+
+  /**
+   * CH-028 D3 — a SKU that is allocated but was never synced carries
+   * tenantConsumed: null, and null is NOT a measurement of zero. A total has to
+   * be a number, so it simply does not contribute — but that softness is stated
+   * in the DTO rather than left for a reader to discover, and this pins it.
+   */
+  it('counts a never-synced SKU as nothing in totalConsumed (not as zero usage)', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      snap('sku-e3', 2000, 1500),
+    ]);
+    prisma.opcoSkuLedger.groupBy.mockResolvedValue([
+      {
+        skuCatalogId: 'sku-x',
+        _sum: { allocatedQuantity: 50, assignedQuantity: 10 },
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-e3', 'SPE_E3'),
+      cat('sku-x', 'ADDON'),
+    ]);
+
+    const rows = await service.listTenantSkus();
+    const stats = await service.tenantSkuStats();
+
+    // Both rows are present — sku-x qualifies on ledger alone — so the total is
+    // being taken over two rows, one of which has nothing to contribute.
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.skuCatalogId === 'sku-x')!.tenantConsumed).toBe(
+      null,
+    );
+    expect(stats.totalConsumed).toBe(1500);
   });
 
   // ── CH-026 / ADR-0032 ────────────────────────────────────────────────────
@@ -426,6 +461,13 @@ describe('TenantOwnedService', () => {
     expect(stats.totalUnallocated).toBe(200); // 2000 - 1800, prepaid only
     expect(stats.totalAllocated).toBe(1847); // 1800 + 40 + 7 — every SKU
     expect(stats.totalAssigned).toBe(1515); // 1500 + 12 + 3 — every SKU
+    /**
+     * CH-028 D3 — the point of the whole decision, in one number: consumption
+     * is counted on the unlimited rows too. 4,525 of this 9,089 is FLOW_FREE
+     * alone, and a prepaid-only scope would have silently dropped it while the
+     * per-category subtotals below kept counting it.
+     */
+    expect(stats.totalConsumed).toBe(9089); // 1500 + 3064 + 4525 — every SKU
     expect(stats.unlimitedSkus).toBe(2);
     expect(stats.skusOverAllocated).toBe(0);
   });

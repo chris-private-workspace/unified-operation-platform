@@ -56,6 +56,7 @@ const stats = (over: Partial<TenantSkuStats> = {}): TenantSkuStats => ({
   totalOwned: 2000,
   totalAllocated: 1840,
   totalAssigned: 12,
+  totalConsumed: 0,
   totalUnallocated: 200,
   skusOverAllocated: 0,
   unlimitedSkus: 0,
@@ -276,5 +277,101 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
     expect(
       within(rowFor('pbi')).queryByTestId('grace-seats'),
     ).not.toBeInTheDocument();
+  });
+});
+
+// ── CH-028 — `In M365` beside `Assigned` ──────────────────────────────────
+
+/**
+ * `Assigned` is the platform's OWN ledger (Σ OpcoSkuLedger.assignedQuantity);
+ * `In M365` is what the tenant reported. Putting the two side by side IS the
+ * change — and D2 stops exactly there, because the difference between them is
+ * Drift's number, computed from a live tenant read rather than this snapshot.
+ */
+describe('PlatformView — In M365 column (CH-028)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('renders tenantConsumed per row, and an em-dash when the SKU was never synced', () => {
+    arrange([
+      row({
+        skuCatalogId: 'e3',
+        owned: 2000,
+        tenantConsumed: 1861,
+        allocatedToOpcos: 1800,
+        assignedToUsers: 1500,
+        unallocated: 200,
+      }),
+      row({ skuCatalogId: 'addon', allocatedToOpcos: 50, assignedToUsers: 10 }),
+    ]);
+
+    render(<PlatformView />);
+
+    // By ROLE, not by text: the scope note under the table names this column
+    // too, so a text query would match twice and pass for the wrong reason.
+    expect(
+      screen.getByRole('columnheader', { name: 'In M365' }),
+    ).toBeInTheDocument();
+    expect(within(rowFor('e3')).getByText('1861')).toBeInTheDocument();
+    // Never synced → three em-dashes on that row (Owned, In M365, Unalloc.).
+    // All three mean "no measurement"; 0 would be a claim we cannot make.
+    expect(within(rowFor('addon')).getAllByText('—')).toHaveLength(3);
+    expect(within(rowFor('addon')).queryByText('0')).not.toBeInTheDocument();
+  });
+
+  it('totals it on the grand-total row (endpoint) and the category subtotal (client)', () => {
+    arrange(
+      [
+        row({ skuCatalogId: 'e3', owned: 2000, tenantConsumed: 1861 }),
+        row({
+          skuCatalogId: 'pbi',
+          seatModel: 'unlimited',
+          owned: 1000000,
+          tenantConsumed: 3064,
+        }),
+      ],
+      // Deliberately NOT 4925. The grand total comes from /stats while the
+      // subtotal is computed here; a shared value could not tell the two apart
+      // if either one quietly stopped being wired up.
+      stats({ totalConsumed: 9999 }),
+    );
+
+    render(<PlatformView />);
+
+    const grand = screen.getByText('All SKUs · total').closest('tr')!;
+    expect(within(grand).getByText('9999')).toBeInTheDocument();
+
+    // 1861 + 3064 — the unlimited row IS counted here, exactly like `assigned`
+    // is, and unlike `owned` which drops it (ADR-0032 D3). That split scope is
+    // the whole of D5.
+    const subtotal = screen.getByTestId('category-subtotal');
+    expect(within(subtotal).getByText('4925')).toBeInTheDocument();
+  });
+
+  it('does not compute the difference anywhere — Drift owns that number (D2)', () => {
+    arrange([
+      row({
+        skuCatalogId: 'e3',
+        owned: 2000,
+        tenantConsumed: 4321,
+        allocatedToOpcos: 1800,
+        assignedToUsers: 100,
+        unallocated: 200,
+      }),
+    ]);
+
+    render(<PlatformView />);
+
+    const tr = rowFor('e3');
+    // Both figures are on screen, side by side...
+    expect(within(tr).getByText('100')).toBeInTheDocument();
+    expect(within(tr).getByText('4321')).toBeInTheDocument();
+    /**
+     * ...but 4321 − 100 is not. Absent on purpose: this screen reads the LAST
+     * SNAPSHOT while Drift reads a LIVE tenant total, so a delta computed here
+     * would be a second number claiming to be the same fact — and the two
+     * disagree by design, not by accident. If this goes red, the question to
+     * answer first is whether Drift is still the only place that owns it.
+     */
+    expect(within(tr).queryByText(/4221/)).not.toBeInTheDocument();
   });
 });

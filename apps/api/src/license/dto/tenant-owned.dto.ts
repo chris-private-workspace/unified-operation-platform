@@ -114,6 +114,21 @@ export class TenantSkuStatsDto {
     description: 'Σ assignedQuantity across ALL SKUs (real on unlimited too)',
   })
   totalAssigned!: number;
+  /**
+   * CH-028 D3 — the grand-total counterpart of the row-level `tenantConsumed`.
+   *
+   * 🔴 Scoped like `totalAssigned` (ALL rows), NOT like `totalOwned`
+   * (prepaid-only). Consumption is a real measurement on an unlimited SKU too —
+   * FLOW_FREE alone is ~4,525 seats in use — and excluding those rows would make
+   * this total disagree with the per-category subtotals below it, which count
+   * every row. Rows never synced contribute 0 (they carry null, not a zero
+   * measurement); that is the one place this figure is softer than it looks.
+   */
+  @ApiProperty({
+    description:
+      'Σ tenantConsumed across ALL SKUs (real on unlimited too) — same scope as totalAssigned, deliberately NOT the prepaid-only scope of totalOwned; never-synced rows count 0',
+  })
+  totalConsumed!: number;
   @ApiProperty({
     description:
       'totalOwned - Σ allocated across PREPAID SKUs (can be negative); the prepaid-only scope matches totalOwned, NOT totalAllocated',

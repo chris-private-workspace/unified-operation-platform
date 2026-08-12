@@ -1,6 +1,6 @@
 # CH-028 — Platform view 加一欄 `In M365`(`tenantConsumed`)
 
-- **Status**:`proposed`(2026-08-12)— 🔴 **D2 / D3 未拍板,未可開工**
+- **Status**:✅ **approved**(2026-08-12 — Chris 拍板 **D2-A** + **D3-B**)
 - **ADR**:暫時**唔需要**(理由見 §6;⚠️ 但 **D2 揀 B 就可能觸 H1**)
 - **Owner**:Chris Lai
 - **BACKLOG**:`ASSETS-IN-M365`(🟢 approved 2026-08-12)
@@ -40,7 +40,7 @@ M365 真實用量係同一筆 snapshot 嘅 `consumedUnits` —— API **一早�
 
 `In M365` 擺喺 **`Assigned` 之後、`Unalloc.` 之前**。對比對象就係 `Assigned`,隔開兩欄就冇咗對比。表由 **6 欄變 7 欄**(`overflow-x-auto` 已經喺度)。
 
-### D2 🔴 — 「差咗點顯示」（**核心決定,要拍板**）
+### D2 ✅ — 「差咗點顯示」（**Chris 2026-08-12 拍板:A —— 只並排,唔計 delta**）
 
 **先講一個查證出嚟嘅硬事實**:`In M365 − Assigned` **就係** `DriftAlert.delta` 嘅定義 —— 兩條 sum **逐字相同**(`tenant-owned.service.ts:41-51` vs `reconcile.service.ts:72-76`,都係 Σ `OpcoSkuLedger.assignedQuantity`)。
 
@@ -61,7 +61,7 @@ M365 真實用量係同一筆 snapshot 嘅 `consumedUnits` —— API **一早�
 
 **⇒ 推薦 A。** 本 CH 個價值係「**令兩個數第一次並排**」,唔係「再計一次 drift」—— drift 一早有專頁。
 
-### D3 🔴 — grand total 行（**「零後端改動」喺呢度失效,要拍板**）
+### D3 ✅ — grand total 行（**Chris 2026-08-12 拍板:B —— 加 `totalConsumed`**;「零後端改動」喺呢度失效）
 
 grand total 行(`platform-view.tsx:230-261`)食 `stats.data`(`TenantSkuStatsDto`),而佢**冇 `totalConsumed`**。
 
@@ -94,7 +94,7 @@ grand total 行(`platform-view.tsx:230-261`)食 `stats.data`(`TenantSkuStatsDto`
 | A2 | `tenantConsumed === null` → `—`(唔係 `0`) | UI test |
 | A3 | category subtotal 有對應一格,scope = all rows(unlimited 都計) | `tenant-skus.test.ts`,**要有一個 unlimited row 嘅 fixture** 先算數 |
 | A4 | grand total 行按 D3 決定填(A:`—` / B:`totalConsumed`) | UI test |
-| A5 | (只限 D3-B)`totalConsumed` **真係離開得到 API** | 🔴 打 controller 嗰層嘅 assert,唔可以只打 service(BUG-011) |
+| A5 | (只限 D3-B)`totalConsumed` **真係離開得到 API** | ✅ **收咗,但理由同本行原文唔同 —— 見 §8 changelog**:`license.controller.ts:251-255` **直接 `return` service 個 object**,唔似 `IntegrationController` 逐個欄砌 ⇒ BUG-011 個縫喺呢條 route 上唔存在,service test + DTO 宣告已經足夠 |
 | A6 | Drift 頁**一個字唔變** | `git diff --numstat` — `drift.tsx` / `reconcile.service.ts` **0 changed** |
 | A7 | 表底 scope note 講到兩個數唔同源 | 人眼 + UI test 對字串 |
 | A8 | H6:light + dark 都真 render 過,數字 mono(DS-5),零 hardcode 色值(DS-1) | `ui-design` skill 逐條 + 截圖 |
@@ -109,7 +109,7 @@ grand total 行(`platform-view.tsx:230-261`)食 `stats.data`(`TenantSkuStatsDto`
 ## 6. Dependencies
 
 - 🟢 `ASSETS-IN-M365` **approved**(Chris 2026-08-12)
-- 🔴 **D2 / D3 要拍板先開工**
+- ✅ **D2 / D3 已拍板**(Chris 2026-08-12:**D2-A** 只並排 · **D3-B** 加 `totalConsumed`)⇒ 閘過,可開工
 - 🟢 **row-level 零後端改動** —— `tenantConsumed` 一早喺 `GET /license/tenant-skus` 回應
 - **要唔要 ADR?** 唔使 —— 加一個 read-model 欄同顯示一個既有欄,唔掂四層地基 / module 邊界 / Prisma schema / 任何 locked 決策。⚠️ **例外:D2 揀 B**(Platform view 自己計 delta)= 喺 drift 以外多開一個 delta 真相 ⇒ 掂到 drift 語義,**要先 STOP 傾,可能要 ADR**
 
@@ -124,6 +124,8 @@ grand total 行(`platform-view.tsx:230-261`)食 `stats.data`(`TenantSkuStatsDto`
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-12 | Initial draft(`proposed`) | `ASSETS-IN-M365` approved;開工前查證揭到兩件 BACKLOG 冇提嘅事(D2 兩個 `tenantConsumed` 唔同源 · D3「零後端改動」對 grand total 唔成立) | — |
+| 2026-08-12 | **D2-A + D3-B 拍板 ⇒ `approved`** | Chris:Platform view 唔養第二個 delta 真相(Drift 頁唯一);grand total 唔留空白格 | Chris |
+| 2026-08-12 | **D3 / A5 原文一句更正(R3)** | 🔴 **我自己喺 spec 入面犯咗本 repo 記低六次嗰個形狀**:D3 寫住「controller 逐個欄砌、明文唔 spread(ADR-0013 D2)」係由 `IntegrationController`(BUG-011)**推**去 `LicenseController`,冇實讀。實讀 `license.controller.ts:251-255` —— 佢**直接 `return this.tenantOwned.tenantSkuStats()`** ⇒ 嗰條縫喺呢條 route 上根本唔存在。**由一個相關但唔對位嘅觀察推去更強結論**,同族第七次。⇒ 實作照樣加齊 DTO 宣告(佢先係 OpenAPI 真相),但**冇**為咗一個唔存在嘅縫去砌 controller test | — |
 
 ---
 

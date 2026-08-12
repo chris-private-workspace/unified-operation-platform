@@ -221,6 +221,14 @@ export function PlatformView() {
                   <th className={cn(TH, 'text-right')}>Owned</th>
                   <th className={cn(TH, 'text-right')}>Allocated</th>
                   <th className={cn(TH, 'text-right')}>Assigned</th>
+                  {/* CH-028 D1 — beside Assigned on purpose. Assigned is the
+                      platform's own ledger; this is what M365 reports. Putting
+                      a column between them would remove the only reason to
+                      show it. D2 stops here: the difference is deliberately NOT
+                      computed on this screen — Drift owns that number, and it
+                      reads a LIVE tenant total while this reads the last
+                      snapshot, so a second delta here would disagree with it. */}
+                  <th className={cn(TH, 'text-right')}>In M365</th>
                   <th className={cn(TH, 'text-right')}>Unalloc.</th>
                   <th className={cn(TH, 'text-center')}>Status</th>
                 </tr>
@@ -245,6 +253,9 @@ export function PlatformView() {
                   <td className={cn(TD, NUM, 'font-bold text-info')}>
                     {kpi(stats.data?.totalAssigned ?? 0)}
                   </td>
+                  <td className={cn(TD, NUM, 'font-bold')}>
+                    {kpi(stats.data?.totalConsumed ?? 0)}
+                  </td>
                   <td
                     className={cn(
                       TD,
@@ -265,7 +276,7 @@ export function PlatformView() {
                     {/* category subheader */}
                     <tr className="bg-hover">
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="px-[16px] py-[6px] text-[10.5px] font-bold uppercase tracking-[.06em] text-fg-muted"
                       >
                         {g.category}
@@ -329,6 +340,15 @@ export function PlatformView() {
                           <td className={cn(TD, NUM, 'text-info')}>
                             {r.assignedToUsers}
                           </td>
+                          {/* No colour: `Assigned` is info because it is the
+                              platform's own figure, and tinting this one the
+                              same way would claim they are the same kind of
+                              fact. Left plain like `Owned` — both come from the
+                              tenant snapshot. `—` (not 0) when never synced:
+                              zero usage is an answer, and it is the wrong one. */}
+                          <td className={cn(TD, NUM)}>
+                            {numOr(r.tenantConsumed)}
+                          </td>
                           <td
                             className={cn(
                               TD,
@@ -347,7 +367,10 @@ export function PlatformView() {
                       );
                     })}
                     {/* category subtotal */}
-                    <tr className="border-b border-border bg-hover">
+                    <tr
+                      data-testid="category-subtotal"
+                      className="border-b border-border bg-hover"
+                    >
                       <td
                         className={cn(
                           TD,
@@ -375,6 +398,11 @@ export function PlatformView() {
                         className={cn(TD, NUM, 'font-semibold text-fg-muted')}
                       >
                         {g.subtotal.assigned}
+                      </td>
+                      <td
+                        className={cn(TD, NUM, 'font-semibold text-fg-muted')}
+                      >
+                        {g.subtotal.consumed}
                       </td>
                       <td
                         className={cn(
@@ -421,12 +449,16 @@ export function PlatformView() {
           Owned = M365 seats available to assign (from the last tenant sync):
           enabled seats plus any inside an expired subscription&rsquo;s grace
           period, which still work. Cancelled and locked-out seats are excluded.
-          Hover a number for the breakdown. SKUs marked{' '}
-          <span className="font-medium text-fg-muted">Unlimited</span> have no
-          purchased seat count, so they are left out of the owned totals — their
-          allocations and assignments still count. Seat model, tenant counts and
-          per-OpCo allocations are set in SKU Catalog / Settings › Integrations
-          → Import.
+          Hover a number for the breakdown.{' '}
+          <span className="font-medium text-fg-muted">Assigned</span> is the
+          platform&rsquo;s own ledger;{' '}
+          <span className="font-medium text-fg-muted">In M365</span> is what the
+          tenant reported at that sync. Where they differ, Drift tracks it. SKUs
+          marked <span className="font-medium text-fg-muted">Unlimited</span>{' '}
+          have no purchased seat count, so they are left out of the owned totals
+          — their allocations and assignments still count. Seat model, tenant
+          counts and per-OpCo allocations are set in SKU Catalog / Settings ›
+          Integrations → Import.
         </span>
       </p>
     </div>
