@@ -113,7 +113,10 @@ Chris 2026-08-12 睇實際畫面之後一次過提出五點。逐點查證後,**
 |---|---|---|---|---|
 | R1 | C 條 event **只有將來嘅 intake 先有**,已存在 request 永遠冇 | High | Low | spec 明文寫死唔追溯;UI 上「冇 event」同「當時冇開單」讀落一樣,但捏造歷史更差 |
 | R2 | `«` `»` 偏離 handoff | — | Low | Chris 2026-08-12 明批;**必須同步寫入 `design-system.md` navigation 段**,否則下個 session 會當佢係 drift |
-| R3 | 改文案 / 改 badge 名撞爛既有 test | High | Low | 已定位三處:`ledger.test.ts:90,114,121`(Headroom)、`request-detail.sn-gate.test.tsx:213`(`getAllByText('Ready to assign')` 期望 **2** 個,改完 sync row 會變 1)、`request-detail.sync-check.test.tsx:212`。**逐條睇住改,唔可以為咗轉綠而放寬 assert** |
+| R3 | 改文案 / 改 badge 名撞爛既有 test | High | Low | 已定位:`ledger.test.ts:90,114,121`(Headroom)、`request-detail.sn-gate.test.tsx:147,149`(檢查點文案)。**逐條睇住改,唔可以為咗轉綠而放寬 assert** |
+
+> 🔴 **R3 原文寫錯咗一句,2026-08-12 實跑更正**(§7 changelog)。原文話 `sn-gate.test.tsx:213` 個 `getAllByText('Ready to assign')` 期望 **2** 個「改完 sync row 會變 1」。**實跑冇紅** —— 嗰個 fixture 嘅 line 係 `READY` 唔係 `ASSIGNED`,所以 `allLinesAssigned` 返 false,行為一個字冇變。`sync-check.test.tsx:212` 同樣冇紅。
+> **呢句係一個未實跑就寫落文件嘅推論**,而佢喺 spec 入面讀落同已驗證嘅事實一模一樣 —— 同 §9 記低嗰一族(B8「兩個 hostname 都打唔到」· CH-023 G9「卡 B8」)同源。真正紅嘅係文案兩行(`:147` / `:149`),嗰兩條反而**原文冇提**。
 | R4 | B 抽共用元件時順手改到 requests 頁其他嘢 | Med | Med | §1.3 surgical:只換 pager 嗰個 `<div>`,filter / table / row 一行唔郁 |
 | R5 | C 個 event 寫喺 transaction 入面拖死 intake | Low | High | 明確寫喺 `$transaction` **之外**、`submitted` 成功之後,try/catch 包住(CH-023 P1/P2 同款) |
 
@@ -141,6 +144,8 @@ Chris 2026-08-12 睇實際畫面之後一次過提出五點。逐點查證後,**
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-12 | Initial draft | Chris 五點 review | — |
+| 2026-08-12 | approved | scope + acceptance 原樣批,零 deviation | Chris Lai |
+| 2026-08-12 | **更正 R3** —— 原文「`sn-gate:213` 改完會變 1」係推論,實跑冇紅;真正紅嘅係 `:147` / `:149` 文案兩行 | 未實跑就寫入文件,而讀落同事實無異(§4 R3 blockquote) | AI(自揭) |
 
 ---
 

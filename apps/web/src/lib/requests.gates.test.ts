@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveStatus, matchesFilter } from './requests';
+import {
+  allLinesAssigned,
+  deriveStatus,
+  licenceRequestNumbers,
+  matchesFilter,
+} from './requests';
 import type {
   LineItemStage,
   OnboardingRequest,
@@ -96,6 +101,102 @@ describe('deriveStatus — the second sync gate (ADR-0025 D5)', () => {
         req({ lineItems: [line('QUOTING')], serviceNowUserSyncedAt: null }),
       ).label,
     ).toBe('In procurement');
+  });
+});
+
+/**
+ * CH-024 D — the check-point row on the request detail asks this instead of
+ * asking the sync gates, which is why it used to keep saying "Ready to assign"
+ * after everything had been assigned.
+ *
+ * The gates are left OPEN in every case here on purpose: they are exactly what
+ * the old code looked at, so a regression that reverts to reading them would
+ * still pass a fixture that shut them.
+ */
+describe('allLinesAssigned (CH-024 D)', () => {
+  it('every line assigned → true', () => {
+    expect(allLinesAssigned(req({ lineItems: [line('ASSIGNED')] }))).toBe(true);
+  });
+
+  it('🔴 one of two assigned → false (must not flip on the first assign)', () => {
+    expect(
+      allLinesAssigned(req({ lineItems: [line('ASSIGNED'), line('READY')] })),
+    ).toBe(false);
+  });
+
+  it('nothing assigned yet → false', () => {
+    expect(allLinesAssigned(req({ lineItems: [line('READY')] }))).toBe(false);
+  });
+
+  it('cancelled lines do not count against a finished request', () => {
+    expect(
+      allLinesAssigned(
+        req({ lineItems: [line('ASSIGNED'), line('CANCELLED')] }),
+      ),
+    ).toBe(true);
+  });
+
+  it('🔴 an all-cancelled request is NOT assigned — nothing was', () => {
+    expect(allLinesAssigned(req({ lineItems: [line('CANCELLED')] }))).toBe(
+      false,
+    );
+  });
+
+  it('a request with no lines at all is not assigned', () => {
+    expect(allLinesAssigned(req({ lineItems: [] }))).toBe(false);
+  });
+});
+
+/**
+ * CH-024 C — the licence RITMs, which are NOT `req.serviceNowNumber`.
+ * `schema.prisma` warns that confusing the two is the easiest mistake here, so
+ * the first case pins that this function ignores the onboarding REQ entirely.
+ */
+describe('licenceRequestNumbers (CH-024 C)', () => {
+  const withRitm = (n: string | null) => ({
+    ...line('READY'),
+    serviceNowNumber: n,
+  });
+
+  it('🔴 never returns the onboarding REQ, even when the lines have no RITM', () => {
+    const r = req({
+      serviceNowNumber: 'REQ0012345',
+      lineItems: [withRitm(null)],
+    });
+    expect(licenceRequestNumbers(r)).toEqual([]);
+  });
+
+  it('returns the RITM off a line', () => {
+    const r = req({
+      serviceNowNumber: 'REQ0012345',
+      lineItems: [withRitm('RITM0047290')],
+    });
+    expect(licenceRequestNumbers(r)).toEqual(['RITM0047290']);
+  });
+
+  it('dedupes lines raised on one submission, keeping first-seen order', () => {
+    const r = req({
+      lineItems: [
+        withRitm('RITM0047290'),
+        withRitm('RITM0047291'),
+        withRitm('RITM0047290'),
+      ],
+    });
+    expect(licenceRequestNumbers(r)).toEqual(['RITM0047290', 'RITM0047291']);
+  });
+
+  it('skips lines with no ticket without leaving a hole', () => {
+    const r = req({
+      lineItems: [withRitm(null), withRitm('RITM0047290'), withRitm(null)],
+    });
+    expect(licenceRequestNumbers(r)).toEqual(['RITM0047290']);
+  });
+
+  it('a cancelled line keeps its ticket visible — it still exists over there', () => {
+    const r = req({
+      lineItems: [{ ...line('CANCELLED'), serviceNowNumber: 'RITM0047290' }],
+    });
+    expect(licenceRequestNumbers(r)).toEqual(['RITM0047290']);
   });
 });
 

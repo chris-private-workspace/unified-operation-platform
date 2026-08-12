@@ -66,6 +66,7 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
     opco: Record<string, jest.Mock>;
     skuCatalog: Record<string, jest.Mock>;
     requestLineItem: Record<string, jest.Mock>;
+    requestEvent: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
   // ADR-0030 D1 — the REQ's own `opened_by`, which is what now becomes the
@@ -100,6 +101,11 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
+      // CH-024 C — the licence request's timeline entry. Mocked even for the
+      // tests that ignore it: the write is fail-soft, so an undefined mock
+      // would be swallowed by its own catch and the assertions below would be
+      // asserting against a step that silently never ran.
+      requestEvent: { create: jest.fn() },
       // Two shapes now: the interactive callback form, and the array form the
       // RITM write-back uses.
       $transaction: jest.fn((arg: unknown) =>
@@ -864,6 +870,97 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
             requestId: 'r1',
           }),
         );
+      });
+
+      /**
+       * CH-024 C — the ticket the platform raised lands on the timeline.
+       *
+       * 🔴 Why this matters more than it looks: the parent REQ number has
+       * nowhere on `Request` to live (a second candidate idempotency key is
+       * worse than a lost reference), and the RITMs live on the line items. So
+       * this event is the ONLY durable record of the REQ the platform opened.
+       * Before it, the answer to "which ticket did we raise for this joiner"
+       * was one log line.
+       */
+      describe('recording it on the timeline (CH-024 C)', () => {
+        it('writes a NOTE naming the REQ the platform raised, and its RITMs', async () => {
+          flatMocks();
+          prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+          submission.submit.mockResolvedValue(submitted());
+
+          await adapter.intakeFlat(flatPayload());
+
+          expect(prisma.requestEvent.create).toHaveBeenCalledTimes(1);
+          const { data } = prisma.requestEvent.create.mock.calls[0][0];
+          expect(data.requestId).toBe('r1');
+          expect(data.type).toBe('NOTE');
+          // Hardcoded, not rebuilt from `submitted()`: deriving the expectation
+          // from the same source as the code makes the assertion a tautology
+          // that passes however the wording drifts (CH-023 lesson).
+          expect(data.message).toBe(
+            'Licence request REQ0044200 raised in ServiceNow by the platform (RITM0055)',
+          );
+        });
+
+        // H4 — the REQ / RITM numbers are safe; the joiner's UPN is not, and
+        // the log line beside this one already holds that boundary.
+        it('never puts the target UPN on the timeline', async () => {
+          flatMocks();
+          prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+          submission.submit.mockResolvedValue(submitted());
+
+          await adapter.intakeFlat(flatPayload());
+
+          const { data } = prisma.requestEvent.create.mock.calls[0][0];
+          expect(data.message).not.toContain(TARGET_EMAIL);
+        });
+
+        /**
+         * 🔴 Fail-soft. By this point the ServiceNow ticket is REAL and the
+         * RITMs are already on the lines. Throwing would unwind nothing over
+         * there and would turn a bookkeeping miss into a failed intake.
+         */
+        it('a failed timeline write does not fail the intake', async () => {
+          flatMocks();
+          prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+          submission.submit.mockResolvedValue(submitted());
+          prisma.requestEvent.create.mockRejectedValue(new Error('db down'));
+
+          await expect(
+            adapter.intakeFlat(flatPayload()),
+          ).resolves.toMatchObject({ id: 'r1' });
+
+          // And the RITMs still got written — the failure is confined to the
+          // note, not to the step before it.
+          expect(prisma.requestLineItem.update).toHaveBeenCalled();
+        });
+
+        /**
+         * 🔴 "Comes free from the early return" is exactly the kind of claim
+         * that stops being true when someone moves the call. n8n retries up to
+         * three times, so a duplicate here means three timeline entries for one
+         * ticket — and the timeline is what an operator trusts.
+         */
+        it('n8n re-pushing does not add a second entry', async () => {
+          flatMocks();
+          prisma.requestLineItem.findMany.mockResolvedValue([
+            { ...pendingLine(), serviceNowSysId: 'raised-already' },
+          ]);
+
+          await adapter.intakeFlat(flatPayload());
+
+          expect(prisma.requestEvent.create).not.toHaveBeenCalled();
+        });
+
+        it('writes nothing when ServiceNow refused the submission', async () => {
+          flatMocks();
+          prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+          submission.submit.mockRejectedValue(new Error('SN 503'));
+
+          await adapter.intakeFlat(flatPayload());
+
+          expect(prisma.requestEvent.create).not.toHaveBeenCalled();
+        });
       });
     });
   });

@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/shell/app-shell';
 import { RequireAuth } from '@/components/auth/require-auth';
 import { Login } from '@/pages/login';
@@ -15,6 +15,7 @@ import { Drift } from '@/pages/drift';
 import { Assets } from '@/pages/assets';
 import { Audit } from '@/pages/audit';
 import { OutboundFailures } from '@/pages/outbound-failures';
+import { NEW_REQUEST_ENABLED } from '@/lib/features';
 
 // One route per screen (design-system.md §3.2). FE-1 → Overview + SKU Catalog;
 // FE-2 → Requests list + detail; FE-3 → Drift Alerts; FE-Assets → License Assets
@@ -36,7 +37,17 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Overview /> },
       { path: 'requests', element: <Requests /> },
-      { path: 'requests/new', element: <NewRequest /> },
+      // CH-024 A — the route stays declared while the feature is parked, and
+      // redirects rather than 404s: a bookmark to it should land somewhere
+      // useful, and `replace` keeps it out of history so Back does not bounce.
+      {
+        path: 'requests/new',
+        element: NEW_REQUEST_ENABLED ? (
+          <NewRequest />
+        ) : (
+          <Navigate to="/requests" replace />
+        ),
+      },
       { path: 'requests/:id', element: <RequestDetail /> },
       { path: 'assets', element: <Assets /> },
       { path: 'drift', element: <Drift /> },

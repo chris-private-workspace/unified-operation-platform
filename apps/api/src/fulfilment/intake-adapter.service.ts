@@ -17,6 +17,7 @@ import { opcoCodeForJobFunction } from './opco-department-map';
 import {
   RequestSubmissionProvider,
   SubmitLineItem,
+  SubmittedRequest,
 } from './request-submission.provider';
 import { OutboundFailureService } from './outbound-failure.service';
 import { OUTBOUND_FAILURE_KINDS } from './outbound-failure-fields';
@@ -368,6 +369,60 @@ export class IntakeAdapterService {
         submitted.serviceNowNumber ?? submitted.serviceNowSysId
       } for ${requestId} (${submitted.lineItems.length} RITM)`,
     );
+
+    await this.recordLicenceRequestEvent(requestId, submitted);
+  }
+
+  /**
+   * CH-024 C — put the ticket the platform just raised on the request's own
+   * timeline.
+   *
+   * 🔴 This is the ONLY place the platform's own parent REQ number survives.
+   * `RequestLineItem` keeps each RITM, but the REQ above them deliberately has
+   * nowhere on `Request` to live (`schema.prisma`: a second candidate
+   * idempotency key is worse than a lost reference), so before this change it
+   * existed in one log line and nowhere else. An operator asking "which ticket
+   * did the platform open for this joiner" had no way to find out.
+   *
+   * 🔴 FAIL-SOFT, and for a sharper reason than usual: by the time we are here
+   * the ticket is REAL and the line items already carry it. Throwing would
+   * unwind nothing external and would turn a bookkeeping miss into a failed
+   * intake. Same reasoning as CH-023 P1.
+   *
+   * Once-only comes free: the caller returns early when any line already has a
+   * RITM, so this is unreachable on a repeat push (guarded by a test, because
+   * "comes free" is exactly the kind of claim that stops being true).
+   *
+   * H4: the REQ / RITM numbers are not PII; the target's UPN is, and is not
+   * here — matching the log line above it.
+   */
+  private async recordLicenceRequestEvent(
+    requestId: string,
+    submitted: SubmittedRequest,
+  ): Promise<void> {
+    const ref = submitted.serviceNowNumber ?? submitted.serviceNowSysId;
+    const ritms = submitted.lineItems
+      .map((l) => l.serviceNowNumber)
+      .filter((n): n is string => Boolean(n));
+    try {
+      await this.prisma.requestEvent.create({
+        data: {
+          requestId,
+          type: 'NOTE',
+          // actorId stays null: nobody pressed anything. The intake arrived and
+          // the platform raised this on its own initiative.
+          message: `Licence request ${ref} raised in ServiceNow by the platform${
+            ritms.length ? ` (${ritms.join(', ')})` : ''
+          }`,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Licence request ${ref} was raised for ${requestId} but the timeline entry could not be written: ${
+          (err as Error)?.message
+        }`,
+      );
+    }
   }
 
   /**

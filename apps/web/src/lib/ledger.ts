@@ -30,12 +30,17 @@ export interface AssetStatus {
  * Row health for the status column (mirrors the prototype's tone map): over-
  * allocated (assigned > allocated) → danger; empty (nothing budgeted, nobody
  * assigned) → neutral; fully allocated (budget set, no headroom left) → warn;
- * otherwise headroom available → ok.
+ * otherwise seats are available → ok.
  *
  * CH-008: the Empty branch MUST stay below overAllocated — allocated=0 with
  * assigned>0 is a real over-allocation, not an empty cell. Before CH-008 a 0/0
- * row fell through to the green "Headroom", reading as "capacity available"
+ * row fell through to the green healthy label, reading as "capacity available"
  * when in fact there is nothing there.
+ *
+ * CH-024 E: the healthy label was "Headroom" — the same number this row already
+ * shows under the "Available" column header, and the same word the KPI card
+ * above uses for the tenant-wide total. Three names for one quantity, in a
+ * column that is asking a yes/no question. Named after the column it restates.
  */
 export function assetStatus(
   row: Pick<
@@ -48,7 +53,7 @@ export function assetStatus(
     return { label: 'Empty', tone: 'neutral' };
   if (row.allocatedQuantity > 0 && row.headroom === 0)
     return { label: 'Fully allocated', tone: 'warn' };
-  return { label: 'Headroom', tone: 'ok' };
+  return { label: 'Available', tone: 'ok' };
 }
 
 /** Distinct OpCos in the rows, by code, sorted — feeds the filter chips. */

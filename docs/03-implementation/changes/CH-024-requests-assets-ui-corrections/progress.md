@@ -51,6 +51,74 @@ status: in-progress     # in-progress | closed
 
 ---
 
+## Day 1 — 2026-08-12(實作 A–E 全部)
+
+### Done
+
+Checklist **A-1..4 · B-1..7 · C-1..9 · D-1..6 · E-1..2 · V-1..5** 全部 tick。V-6 / V-7 未做(見 Blockers)。
+
+**Code(前端)**
+- **新** `lib/features.ts`(`NEW_REQUEST_ENABLED = false`)· `lib/pagination.ts`(`pageWindow` / `pageRangeLabel`)· `components/ui/pagination.tsx`
+- `requests.tsx`:掣 conditional + 換 pager · `router.tsx`:`requests/new` → `<Navigate replace>` · `by-opco-view.tsx`:換 pager(保留 `setEditingId(null)`)
+- `lib/ledger.ts`:badge `Headroom` → `Available` · `lib/requests.ts`:新 `allLinesAssigned` + `licenceRequestNumbers`,`deriveStatus` 改用前者
+- `request-detail.tsx`:三個檢查點文案 · sync row 加 `License assigned` 分支 · 新 `ServiceNowTickets` / `TicketRef` · meta row `Request` → `Ref #id` · line item 卡出 RITM · 刪 orphan `ExternalLink` import
+
+**Code(後端)**
+- `intake-adapter.service.ts`:新 private `recordLicenceRequestEvent`,喺 `raiseLicenceRequest` 最尾 call。零 schema、零 migration、零 API 契約改動
+
+**Test**:新 `lib/pagination.test.ts`(11)· `pages/requests.new-request-flag.test.tsx`(4)· `pages/request-detail.tickets.test.tsx`(5);加落既有 `requests.gates.test.ts`(+11)· `sn-gate.test.tsx`(+2)· `intake-adapter.service.spec.ts`(+5)。改既有:`ledger.test.ts` 3 條 · `sn-gate.test.tsx` 文案 2 行。
+
+**Doc**:`design-system.md` navigation 段(B-7 · owner-approved `«` `»` 記低)。
+
+### ui-design skill 自檢(V-5)
+
+| # | 結果 | 備註 |
+|---|---|---|
+| DS-1 token-only | ✅ | 色全部走 token(`bg-accent`/`text-accent-fg`/`border-border`/`bg-card`/`bg-hover`/`text-fg-muted`);尺寸 arbitrary px 係**照 handoff `Pagination.jsx` 實際值**(28/28/8/12)兼同既有 pager 一致,唔係 eyeball |
+| DS-2 唔 eyeball | ✅ | 每個數都有出處(handoff jsx 或原 pager) |
+| DS-3 單一 accent + 一 primary | ✅ | pager active 用 `bg-accent` = **handoff 原版就係咁**,而且佢係**狀態指示唔係 action**。⚠️ 留意:License Assets 進入 row edit 時會同時有 `Save`(primary)+ pager active —— **呢個係改動前一模一樣嘅情況**,本單冇令佢惡化 |
+| DS-4 light + dark | ⚠️ **未驗** | 見 Blockers。零硬色值 ⇒ 結構上應該冇問題,但**冇 render 過就唔可以話驗咗**(H7) |
+| DS-5 數字 mono | ✅ **修正咗一個既有缺失** —— 舊 pager 個頁碼**唔係** mono,handoff `.prompt.md` 明寫 "numbers are monospace" |
+| DS-6 lucide stroke | ✅ | 用 `ChevronsLeft/Left/Right/ChevronsRight`,**冇用** handoff 個 `‹` `›` 文字 glyph(理由寫咗喺元件 comment + design-system.md) |
+| DS-7 平面美學 | ✅ | 零 blur / 零 gradient / 零 colored-left-border |
+| DS-8 Badge + semantic | ✅ | E 只改 label 字,`tone: 'ok'` 一個字冇郁;四個 branch 次序(CH-008 守住嗰個)完全冇碰 |
+| DS-9 motion 克制 | ✅ | 只有 `transition-colors` |
+| DS-10 voice / casing | ✅ | Sentence case;`Onboarding request` / `Licence request` / `AD account created` / `Synced to ServiceNow` / `License assigned` 全部短名詞 |
+| DS-11 對 prototype | ⚠️ **未做** | 同 DS-4 一齊,見 Blockers |
+| DS-12 唔捏造 logo | N/A | |
+
+### Decisions
+
+- **`«` `»` 用 lucide `ChevronsLeft/Right`,唔用 handoff 個文字 glyph** —— DS-6 喺呢個元件一樣成立,而且少一個字體相依字符。已寫入 design-system.md,免得下個 session 當佢係 drift
+- **pager 收 1-based,caller 轉** —— 跟 handoff prop 契約同畫面上嘅數字一致;兩個 caller 各自喺邊界 `+1` / `-1`。喺元件入面收 0-based 會令一個元件有兩套慣例
+- **`deriveStatus` 改用 `allLinesAssigned`** —— 本來可以淨係喺 detail 頁加個新判斷,但咁就係**第二份清單**(本 repo 數到第七次嘅族)。而家兩處同一個答案
+- **`recordLicenceRequestEvent` 參數用既有 `SubmittedRequest` 型別**,唔手寫 inline 結構(順帶解咗 prettier)
+- **meta row `Request` 改成 `Ref #id`** —— spec 冇明寫,但佢原本係 `serviceNowNumber ?? #id`,即係**同右邊 panel 印同一個號**。唔改嘅話「兩張單分開」呢個目標喺同一屏被自己推翻
+
+### 揭到（值得記低）
+
+1. 🔴 **spec R3 自己有個未實跑嘅推論** —— 寫住 `sn-gate:213` 會由 2 變 1。實跑**冇紅**(嗰個 fixture 係 `READY` line);真正紅嘅 `:147` / `:149` 原文冇提。**同 §9 記低嗰族(B8 / CH-023 G9)同源**,已喺 spec §4 + §7 明文更正
+2. 🔴 **root `npm run lint` 只跑 api** ⇒ web lint 從來未入過 gate,已累積 **15 條 pre-existing prettier 錯**。冇順手修(§1.3),逐檔 lint 本單掂到嘅 15 個檔 = exit 0。已入 BACKLOG
+3. **兩個 falsification 都真紅**,其中 `not.toHaveBeenCalled()` 嗰條**本身就係 §9 點名嘅 vacuous 陷阱形狀** —— 拆走早退真係紅,證明佢有守住嘢
+4. **`requests.new-request-flag.test.tsx` 第一版超時** —— 因為 `withFlag` 順手連 `@/router`(拉晒全部畫面)都 import 埋落 button test。單獨跑 3941ms 綠,全 suite 並行就爆 5s。拆成兩個 loader 之後 **545ms**。⚠️ **形狀值得記**:一條「單獨跑先綠」嘅 test 係最難查嗰種
+
+### Blockers
+
+- 🔴 **V-6 / V-7(light + dark 真 render · pager 邊界人手驗)未做** —— 要起本地 stack,而 **5433 同 `ai-doc-extraction-db` 硬衝突**(§9),要 Chris 批先 `docker stop` 佢。**H6 未收,所以本單未 done**
+
+### Effort
+
+- Planned:4–6h;Actual(Day 1):≈ 3.5h(未計 V-6/V-7)
+
+### Commits
+
+| Hash | Subject |
+|---|---|
+| `519a47b` | `docs(planning): CH-024 spec approved + checklist` |
+| _(下一個)_ | `feat(web,fulfilment): CH-024 A-E` |
+
+---
+
 ## Closeout(填於 status=closed)
 
 ### Acceptance verification

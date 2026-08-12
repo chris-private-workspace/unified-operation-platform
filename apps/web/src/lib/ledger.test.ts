@@ -80,18 +80,21 @@ describe('assetStatus', () => {
     expect(s).toEqual({ label: 'Fully allocated', tone: 'warn' });
   });
 
-  it('headroom available → ok', () => {
+  // CH-024 E — the healthy label restates the "Available" column, so it is
+  // named after it. Asserted literally (not derived from the source) so a
+  // rename cannot pass silently: this is the string an operator reads.
+  it('headroom available → Available / ok', () => {
     const s = assetStatus({
       allocatedQuantity: 10,
       assignedQuantity: 4,
       headroom: 6,
       overAllocated: false,
     });
-    expect(s).toEqual({ label: 'Headroom', tone: 'ok' });
+    expect(s).toEqual({ label: 'Available', tone: 'ok' });
   });
 
   // ── CH-008 ────────────────────────────────────────────────────────
-  it('0 / 0 → Empty / neutral (before CH-008 this fell through to green Headroom)', () => {
+  it('0 / 0 → Empty / neutral (before CH-008 this fell through to the green healthy label)', () => {
     const s = assetStatus({
       allocatedQuantity: 0,
       assignedQuantity: 0,
@@ -111,14 +114,14 @@ describe('assetStatus', () => {
     expect(s).toEqual({ label: 'Over-allocated', tone: 'danger' });
   });
 
-  it('budget set with nobody assigned is NOT empty — still Headroom (A4)', () => {
+  it('budget set with nobody assigned is NOT empty — still Available (A4)', () => {
     const s = assetStatus({
       allocatedQuantity: 80,
       assignedQuantity: 0,
       headroom: 80,
       overAllocated: false,
     });
-    expect(s).toEqual({ label: 'Headroom', tone: 'ok' });
+    expect(s).toEqual({ label: 'Available', tone: 'ok' });
   });
 });
 
