@@ -146,11 +146,26 @@ export class N8nLicenseProvider extends LicenseOperationsProvider {
       'read the tenant license inventory',
     );
     const skus = Array.isArray(body.skus) ? body.skus : [];
-    return skus.map((s: Record<string, any>) => ({
-      skuId: String(s.skuId),
-      prepaidEnabled: Number(s.prepaidEnabled ?? 0),
-      consumedUnits: Number(s.consumedUnits ?? 0),
-    }));
+    return skus.map((s: Record<string, any>) => {
+      const prepaidEnabled = Number(s.prepaidEnabled ?? 0);
+      return {
+        skuId: String(s.skuId),
+        prepaidEnabled,
+        consumedUnits: Number(s.consumedUnits ?? 0),
+        /**
+         * ADR-0033 D3 — workflow 2002 sends one seat number, so the honest
+         * answer here is that same number. Not a stub to fill in later:
+         * inventing a grace-period figure n8n never measured is exactly the
+         * fabrication D6 refuses to do for old snapshots.
+         *
+         * ⚠️ Real consequence, and it is deliberate: switching to this provider
+         * quietly returns the tenant seat gate to its pre-CH-027 behaviour. That
+         * is a provider-visible behaviour difference (RISK R9's family), not a
+         * bug to paper over here — it would take a change on the n8n side.
+         */
+        assignableUnits: prepaidEnabled,
+      };
+    });
   }
 
   /**

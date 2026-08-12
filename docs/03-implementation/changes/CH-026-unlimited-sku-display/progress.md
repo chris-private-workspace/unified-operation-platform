@@ -86,6 +86,46 @@ last_updated: 2026-08-12
 | 4 | `totalAllocated` / `totalAssigned` **唔剔** unlimited | 佢哋喺 unlimited SKU 上係**真數字**(OpCo budget 仍然 gate 緊 assign,人真係用緊)。剔走 = 少報。代價係兩個 KPI 範圍唔同 ⇒ 靠 sub-line 明文講(`(prepaid SKUs)`) |
 | 5 | assign 個 `!tenantSku` 分支**一個字唔改** | 佢返「No available seats」對「SKU 唔喺 tenant inventory」其實都係誤導,但**唔喺本單 scope**。記低,唔順手改 |
 
+### Day 1(續)— OQ-5 查證（Chris 叫查）
+
+**🔴 我 spec 寫嘅「呢條要查 tenant 側,唔係 code 答得到」係錯嘅。** 答案由頭到尾住喺**同一個 Graph 回應**:`graph.service.ts:89` 只攞 `prepaidUnits.**enabled**`,而 `subscribedSku` 一路畀緊**四個**數。⇒ 唔係 Graph 冇講,係我哋冇聽。
+
+**方法**:唯讀 `GET /subscribedSkus`(scratchpad script,零寫入,唔入 repo)。
+
+**答案 —— `enabled = 0` 嗰 15 個,冇一個係「冇 seat」**:
+
+| 成因 | 數 | 例 |
+|---|---|---|
+| 訂閱過期(`warning > 0`) | **11** | `POWER_BI_PRO` warn=**790** · `CDS_DB_CAPACITY` 670 · `FLOW_PER_USER` 79 · `DESKLESSPACK` 51 |
+| 訂閱取消/暫停(`Suspended` 兼 `suspended > 0`) | **4** | `VIVA` 50 · `Teams_Premium_(for_Departments)` 43 · `Power_Automate_per_process` 5 · `PROJECT_PLAN3_DEPT` 3 |
+
+零例外。**唔係 add-on 附帶、唔係 trial 完 —— 係訂閱狀態。**
+
+### 🔴 順帶揭到一個大過 OQ-5 嘅嘢
+
+同一次 probe:**`consumedUnits >= prepaidEnabled` 會拒絕 32 / 101 個 SKU**,而 **27 個 tenant 手上仲有 seat**(喺 `warning`/`suspended`,兩個我哋一個都冇讀)。
+
+- `enabled = 0`:**15**(本單 `noPrepaidSeats` 覆蓋到)
+- **`enabled > 0` 但 `consumed >= enabled`:17**(覆蓋唔到)—— **`SPE_E5` 4543/4502**、**`SPE_E3` 677 / `enabled=21` 而 `warning=4477`**、`MCOEV` 1007/20、`INTUNE_A_VL` 329/110、`STANDARDPACK` 388/301
+
+⚠️ **唔係 32 個都係誤擋**:`Microsoft_Teams_Rooms_Basic` 22/22、`MCOCAP` 19/19 係真係用晒。分界線 = `warning + suspended > 0`。
+⚠️ **`warning` seat 派唔派得新 licence 未驗證** —— 維持得住既有 assignment 有數據支持(`SPE_E3` 677 個人用緊而 `enabled` 得 21),**派新冇試過**。
+
+📌 **CH-020 2026-08-03 已經真撞過呢件事** —— 當時記低「dev tenant SPE_E5 consumed 4535 / prepaid 4502 = 超支 33,tenant seat gate 擋死」,結論係「換個 SKU 做 fixture」。**冇人問過點解一個公司會超支自己買嘅 seat。** 而家知道:`warning=242`,即係嗰批 seat 過咗期但仲用緊。
+
+### 本單順帶改咗嘅字（**只改字,唔改行為**）
+
+因為呢啲字係**今日先寫落去**嘅,而家已知講錯:
+
+| 由 | 改成 | 點解 |
+|---|---|---|
+| `Tenant has no prepaid seats … M365 reports no purchased seat count` | `No assignable seats … M365 reports 0 enabled … Usually the subscription lapsed` | seat **買咗**,只係過期/暫停。原文會叫操作員去買一啲佢已經擁有嘅嘢 |
+| badge `No prepaid seats` | **`No seats enabled`** | 同上;`enabled` 係我哋真正量到嗰個欄 |
+
+🔴 **`noPrepaidSeats` 個欄名冇改** —— 佢字面對應 `prepaidUnits.enabled === 0`,**準確**;改名要動 DTO / api-types / 三處 test,而佢本身冇講錯。**講錯嘅係圍住佢嗰啲 label**,改嗰啲就夠。
+
+**唔跟落去嘅嘢**:改 `owned` 定義 = 動 read-model 語意(+ 可能動 assign gate)= **另一個 ADR**。已開 `BACKLOG` **`TENANT-SEAT-WARNING`**。
+
 ### 下一手
 
 1. Chris 放返本地 stack → **D-9 render 驗** + **A-2 migration 真跑**

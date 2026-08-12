@@ -348,32 +348,73 @@ export class AssignService {
     } else {
       const skus = await this.licenseOps.listTenantSkus();
       const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
-      if (tenantSku && tenantSku.prepaidEnabled === 0) {
+      if (tenantSku && tenantSku.assignableUnits === 0) {
         /**
-         * ADR-0032 D4 ② — still REFUSED, only honestly. `POWER_BI_PRO` (0 owned,
-         * 91 in use) and three others are permanently unassignable here, and the
-         * old text sent the operator to buy seats for a SKU that has no seat
-         * count at all. What causes these is unverified (OQ-5), so this says
-         * what is true and offers the one remedy we do know.
+         * ADR-0032 D4 ②, re-scoped by ADR-0033 D5 — still REFUSED, only
+         * honestly, and now only for the SKUs that deserve it.
+         *
+         * Before CH-027 this branch fired on `prepaidEnabled === 0`, which on
+         * the live tenant was 15 SKUs — and 11 of them DID have seats, sitting
+         * in `prepaidUnits.warning` because the subscription had lapsed. Those
+         * 11 now pass the gate. What is left is the case where nothing is
+         * assignable at all: the subscription was cancelled.
+         *
+         * 🔴 The wording must not name capabilityStatus as fact — the seam does
+         * not carry it (D3), so this path only knows the count is zero.
          */
         fail(
           'seats',
-          `Tenant has no prepaid seats for ${item.sku.skuPartNumber} ` +
-            `(0 owned, ${tenantSku.consumedUnits} in use) — M365 reports no purchased seat count. ` +
-            'If this SKU is not licensed per seat, mark it unlimited in SKU Catalog.',
+          `No assignable seats for ${item.sku.skuPartNumber} in the tenant ` +
+            `(M365 reports 0 available, ${tenantSku.consumedUnits} in use). ` +
+            'Usually the subscription was cancelled — expired seats keep working through the grace period, cancelled ones do not. ' +
+            'Check it in M365 admin, or mark this SKU unlimited in SKU Catalog if it is not licensed per seat.',
           'procurement',
         );
       }
-      // Untouched, wording and all: the ordinary "seats are used up" path, and
-      // the `!tenantSku` case it has always covered (ADR-0032 changes neither).
-      if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
+      /**
+       * The ordinary "seats are used up" path — and the `!tenantSku` case it has
+       * always covered. ADR-0033 D4 changes what it counts against
+       * (`assignableUnits` instead of `prepaidEnabled`) and nothing else: on the
+       * live tenant that is the difference between refusing 32 SKUs and refusing
+       * 11, with SPE_E5 / SPE_E3 / MCOEV on the wrong side of the old line.
+       */
+      if (!tenantSku || tenantSku.consumedUnits >= tenantSku.assignableUnits) {
         fail(
           'seats',
           `No available seats for SKU ${item.sku.skuPartNumber}`,
           'procurement',
         );
+      } else if (
+        /**
+         * ADR-0033 D4 配套 — the gate passed, but say what on.
+         *
+         * This is precisely the case where `enabled` alone would NOT have
+         * covered the assign: the seat is coming out of an expired
+         * subscription's grace period. Not a warning that the assign might fail
+         * (it will not — verified against the live tenant 2026-08-12), but a
+         * fact with a deadline, and the operator is the one who can act on it.
+         * ADR-0029's AssignStep.detail already carries text on an `ok` step, so
+         * this costs no contract change.
+         *
+         * `else if` rather than a statement after the gate: `fail` returns never
+         * but TS only narrows through it for a const with an explicit function
+         * type, which this one is not.
+         */
+        tenantSku.assignableUnits > tenantSku.prepaidEnabled &&
+        tenantSku.consumedUnits >= tenantSku.prepaidEnabled
+      ) {
+        steps.push({
+          key: 'seats',
+          status: 'ok',
+          detail:
+            `${item.sku.skuPartNumber} has ${tenantSku.prepaidEnabled} enabled seats and ` +
+            `${tenantSku.assignableUnits - tenantSku.prepaidEnabled} in the expiry grace period, ` +
+            `${tenantSku.consumedUnits} in use — this assignment uses a grace-period seat. ` +
+            'Those seats stop working when the grace period ends.',
+        });
+      } else {
+        pass('seats');
       }
-      pass('seats');
     }
 
     // ── The assignment itself (external side-effect, BEFORE the DB transaction) ──

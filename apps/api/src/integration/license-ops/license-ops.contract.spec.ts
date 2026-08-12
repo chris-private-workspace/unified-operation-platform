@@ -128,12 +128,22 @@ describe('LicenseOperationsProvider contract — both implementations agree', ()
     },
     {
       name: 'the tenant inventory reads back',
+      /**
+       * ADR-0033 D3 — warning/suspended are 0 here on purpose. The two
+       * providers agree only while the grace period is empty; with warning > 0
+       * Graph reports more assignable seats than n8n can, and that divergence is
+       * the decision, not a contract break. It is asserted in
+       * graph-license.provider.spec.ts, where it belongs.
+       */
       arrangeGraph: () =>
         graphMock.getSubscribedSkus.mockResolvedValue([
           {
             skuId: SKU,
             skuPartNumber: 'SPE_E3',
             prepaidEnabled: 100,
+            suspendedUnits: 0,
+            warningUnits: 0,
+            lockedOutUnits: 0,
             consumedUnits: 42,
             capabilityStatus: 'Enabled',
             appliesTo: 'User',

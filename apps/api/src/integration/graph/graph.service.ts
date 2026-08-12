@@ -11,7 +11,15 @@ import { ConnectorConfigService } from '../connector-config.service';
 export interface SubscribedSku {
   skuId: string; // GUID — the source-of-truth key (maps to SkuCatalog.skuId)
   skuPartNumber: string; // e.g. "SPE_E3", "ENTERPRISEPACK"
-  prepaidEnabled: number; // prepaidUnits.enabled — total purchased seats
+  // ── prepaidUnits, all four of them (ADR-0033) ──
+  // Reading only `enabled` was the original defect: on the live tenant it made
+  // 27 SKUs look seatless while the tenant still had seats, `SPE_E3` among them
+  // (enabled 21, warning 4477). The other three are not new data — Graph has
+  // been sending them since day one.
+  prepaidEnabled: number; // .enabled   — assignable now
+  suspendedUnits: number; // .suspended — subscription cancelled, in retention
+  warningUnits: number; // .warning   — expired but inside the grace period
+  lockedOutUnits: number; // .lockedOut — locked, no longer usable
   consumedUnits: number; // total assigned across the whole tenant
   capabilityStatus: string; // "Enabled" | "Warning" | "Suspended" | ...
   appliesTo: string; // "User" | "Company"
@@ -76,9 +84,15 @@ export class GraphService implements OnModuleInit {
 
   /**
    * Pull the tenant's license inventory.
-   * prepaidEnabled = purchased, consumedUnits = assigned.
-   * This is the total-level source of truth used for catalog seeding
-   * (initialisation) and for drift reconciliation.
+   * consumedUnits = assigned; the four prepaidUnits buckets say what the tenant
+   * is entitled to and in what state (ADR-0033). This is the total-level source
+   * of truth used for catalog seeding (initialisation) and for drift
+   * reconciliation.
+   *
+   * 🔴 All four buckets are carried, but this method does NOT combine them —
+   * "which of these count as assignable" is a decision (ADR-0033 D4), and it
+   * belongs to the seam implementation and the read-model, not to the vendor
+   * client.
    */
   async getSubscribedSkus(): Promise<SubscribedSku[]> {
     const res = await this.client.api('/subscribedSkus').get();
@@ -87,6 +101,9 @@ export class GraphService implements OnModuleInit {
       skuId: s.skuId,
       skuPartNumber: s.skuPartNumber,
       prepaidEnabled: s.prepaidUnits?.enabled ?? 0,
+      suspendedUnits: s.prepaidUnits?.suspended ?? 0,
+      warningUnits: s.prepaidUnits?.warning ?? 0,
+      lockedOutUnits: s.prepaidUnits?.lockedOut ?? 0,
       consumedUnits: s.consumedUnits ?? 0,
       capabilityStatus: s.capabilityStatus,
       appliesTo: s.appliesTo,

@@ -109,7 +109,41 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) { …擋�
 
 新開一條:
 
-- **OQ-5** — `prepaidEnabled = 0` 但有人用嗰批**到底點嚟**?(訂閱過期 / add-on 附帶 / trial 完咗?)**本單唔答亦唔靠佢**(D4 照擋,只改訊息),但答咗先決定得到將來放唔放行。⚠️ 呢條要查 tenant 側,唔係 code 答得到。
+- ~~**OQ-5** — `prepaidEnabled = 0` 但有人用嗰批**到底點嚟**?~~ ✅ **2026-08-12 答咗**(Chris 叫查)—— 見 §5.1。
+
+### 5.1 OQ-5 —— 已答（2026-08-12 唯讀 Graph probe）
+
+🔴 **我原本寫「呢條要查 tenant 側,唔係 code 答得到」—— 呢句係錯嘅,而錯法值得記。** 答案由頭到尾住喺**同一個 API 回應**入面:`graph.service.ts:89` 只攞 `prepaidUnits.enabled`,而 Graph 同一筆 `subscribedSku` 一路畀緊**四個**數(`enabled` / `suspended` / `warning` / `lockedOut`)。⇒ **唔係 Graph 冇講,係我哋冇聽。**
+
+**方法**:唯讀 `GET /subscribedSkus`(scratchpad script,零寫入),印全部四個欄 + `capabilityStatus`。
+
+**答案 —— `enabled = 0` 嗰批(共 15 個)冇一個係「冇 seat」**:
+
+| 成因 | 數 | 例 |
+|---|---|---|
+| **訂閱過期(`warning > 0`)** | **11** | `POWER_BI_PRO` warn=**790** · `CDS_DB_CAPACITY` warn=670 · `FLOW_PER_USER` warn=79 · `DESKLESSPACK` warn=51 |
+| **訂閱取消 / 暫停(`capabilityStatus=Suspended` 兼 `suspended > 0`)** | **4** | `VIVA` susp=50 · `Teams_Premium_(for_Departments)` susp=43 · `Power_Automate_per_process` susp=5 · `PROJECT_PLAN3_DEPT` susp=3 |
+
+**零例外**(11 + 4 = 15)。⇒ 唔係 add-on 附帶、唔係 trial 完 —— **係訂閱狀態**。
+
+### 5.2 🔴 順帶揭到一個大過 OQ-5 嘅嘢（**唔喺本單 scope**）
+
+同一次 probe 順手數:**`assign.service.ts` 個 `consumedUnits >= prepaidEnabled` 會拒絕 32 / 101 個 SKU**,而其中 **27 個 tenant 手上其實仲有 seat**(喺 `warning` / `suspended`,兩個我哋一個都冇讀)。
+
+| | |
+|---|---|
+| `enabled = 0` | 15(= 本單 `noPrepaidSeats` 覆蓋嗰批) |
+| **`enabled > 0` 但 `consumed >= enabled`** | **17** —— 包括 **`SPE_E5` 4543/4502**、**`SPE_E3` 677/`enabled=21`(warn=4477)**、`MCOEV` 1007/20(warn=1382)、`INTUNE_A_VL` 329/110、`STANDARDPACK` 388/301 |
+
+⚠️ **唔係 32 個都係誤擋** —— `Microsoft_Teams_Rooms_Basic` 22/22、`MCOCAP` 19/19 係**真係用晒**。分界線係 `warning + suspended > 0`(27 個)。
+
+⚠️ **仲有一件事未驗證,唔可以當已知**:`warning` 嗰批 seat **維持得住既有 assignment** 呢點有數據支持(`SPE_E3` 677 個人用緊而 `enabled` 得 21),但**派新 licence 掂唔掂,冇試過**。呢個決定咗係「放行」定「照擋但講清楚」,要真試先知。
+
+📌 **本單刻意唔跟落去**:改 `owned` 嘅定義 = 動 read-model 語意 + 可能動 assign gate = **另一個 ADR**。本單只做一件事 —— **把已知講錯咗嘅字改返**(assign 拒絕訊息 + badge `No prepaid seats` → `No seats enabled`),因為嗰啲字係本單今日先寫落去嘅。
+
+🟡 **同日已開 `ADR-0033`(Proposed)** —— Chris 答咗兩條(snapshot 存齊四個欄 · `owned = enabled + warning`),`D4`(gate 用邊個數)ADR 建議 **`enabled + warning`**:實測 `enabled` 拒絕 **32/101** · `+warning` **11** · `+suspended` **6**,而 B 之下擋住嗰 11 個**每個都講得出理由**(6 個真用晒 + 5 個 `Suspended`)。追蹤 `BACKLOG` **`TENANT-SEAT-WARNING`**。
+
+⚠️ **`ADR-0033` 落地會改返本單兩處字**:`Prepaid seats` KPI 名(D2 之後佢已經唔止 prepaid)同 `No seats enabled` label(收窄之後剩返嘅係 `Suspended`)。**呢個成本值得記** —— 本單嘅文案係喺「只讀過四個欄之一」嘅前提下寫嘅。
 
 ## 6. Effort Estimate
 

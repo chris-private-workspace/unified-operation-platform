@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { groupByCategory, platformStatus } from './tenant-skus';
+import {
+  groupByCategory,
+  hasGraceSeats,
+  ownedBreakdownText,
+  platformStatus,
+} from './tenant-skus';
 import type { SeatModel, TenantSkuRow } from './api-types';
 
 function row(p: {
@@ -10,6 +15,19 @@ function row(p: {
   category?: string | null;
   seatModel?: SeatModel;
   tenantConsumed?: number | null;
+  /**
+   * CH-027 — the buckets BEHIND `owned`. `enabled` defaults to the whole of
+   * `owned` (i.e. no grace period), which is what every pre-CH-027 case here
+   * describes; a grace-period case passes both and the fixture keeps
+   * enabled + warning === owned, exactly as the API guarantees.
+   */
+  breakdown?: Partial<{
+    enabled: number;
+    warning: number;
+    suspended: number;
+    lockedOut: number;
+    capabilityStatus: string;
+  }>;
 }): TenantSkuRow {
   const owned = p.owned ?? null;
   const allocatedToOpcos = p.allocatedToOpcos ?? 0;
@@ -19,6 +37,7 @@ function row(p: {
   // would never emit (e.g. unlimited WITH an unallocated figure).
   const noPrepaidSeats =
     !unlimited && owned === 0 && (p.tenantConsumed ?? 0) > 0;
+  const warning = p.breakdown?.warning ?? 0;
   return {
     skuCatalogId: p.id,
     sku: {
@@ -29,6 +48,16 @@ function row(p: {
     },
     seatModel,
     owned,
+    ownedBreakdown:
+      owned === null
+        ? null
+        : {
+            enabled: p.breakdown?.enabled ?? owned - warning,
+            warning,
+            suspended: p.breakdown?.suspended ?? 0,
+            lockedOut: p.breakdown?.lockedOut ?? 0,
+            capabilityStatus: p.breakdown?.capabilityStatus ?? 'Enabled',
+          },
     tenantConsumed: p.tenantConsumed ?? null,
     allocatedToOpcos,
     assignedToUsers: p.assignedToUsers ?? 0,
@@ -95,13 +124,62 @@ describe('platformStatus', () => {
     ).toEqual({ label: 'Unlimited', tone: 'neutral' });
   });
 
-  it('prepaid with 0 owned but in use → No prepaid seats warn', () => {
+  /**
+   * CH-027 acceptance G2 — VIVA's live shape. The label comes from Microsoft's
+   * capabilityStatus, not from suspended > 0.
+   */
+  it('prepaid with 0 assignable but in use, subscription cancelled → Subscription suspended warn', () => {
     expect(
-      platformStatus(row({ id: 'pbipro', owned: 0, tenantConsumed: 91 })),
-    ).toEqual({ label: 'No prepaid seats', tone: 'warn' });
+      platformStatus(
+        row({
+          id: 'viva',
+          owned: 0,
+          tenantConsumed: 30,
+          breakdown: { suspended: 50, capabilityStatus: 'Suspended' },
+        }),
+      ),
+    ).toEqual({ label: 'Subscription suspended', tone: 'warn' });
   });
 
-  it('keeps Over-allocated ahead of No prepaid seats when both are true', () => {
+  it('does not claim a suspended subscription when M365 does not say so', () => {
+    expect(
+      platformStatus(row({ id: 'odd', owned: 0, tenantConsumed: 7 })),
+    ).toEqual({ label: 'No seats available', tone: 'warn' });
+  });
+
+  /**
+   * 🔴 THE case that makes G2 an assertion rather than a coincidence — and it
+   * had to be added after the falsification pass, because the two cases above
+   * do NOT discriminate: on both of them `suspended > 0` and
+   * `capabilityStatus === 'Suspended'` agree, so an implementation that inferred
+   * the verdict from the count passed them both (27 green). Same family as
+   * CH-023's tautology: an expectation can look strict and still separate
+   * nothing.
+   *
+   * Here the two rules disagree. The shape is real: capabilityStatus is
+   * Microsoft's verdict on the SUBSCRIPTION, while the buckets are counts that
+   * move — a cancelled subscription's seats leave `suspended` when the retention
+   * window closes, and the verdict outlives the count. That is the whole reason
+   * ADR-0033 D1 stores the status instead of deriving it.
+   */
+  it('reads the M365 verdict, not the suspended count, when the two disagree', () => {
+    expect(
+      platformStatus(
+        row({
+          id: 'gone',
+          owned: 0,
+          tenantConsumed: 4,
+          breakdown: {
+            suspended: 0,
+            lockedOut: 5,
+            capabilityStatus: 'Suspended',
+          },
+        }),
+      ),
+    ).toEqual({ label: 'Subscription suspended', tone: 'warn' });
+  });
+
+  it('keeps Over-allocated ahead of the no-seats label when both are true', () => {
     expect(
       platformStatus(
         row({
@@ -112,6 +190,79 @@ describe('platformStatus', () => {
         }),
       ),
     ).toEqual({ label: 'Over-allocated', tone: 'danger' });
+  });
+
+  /**
+   * CH-027 — the SKU that started all of this. Before ADR-0033 it read
+   * "No seats enabled" while the tenant had 790 usable seats.
+   */
+  it('a lapsed subscription with grace seats is Available, not flagged', () => {
+    expect(
+      platformStatus(
+        row({
+          id: 'pbipro',
+          owned: 790,
+          tenantConsumed: 91,
+          breakdown: { enabled: 0, warning: 790, capabilityStatus: 'Warning' },
+        }),
+      ),
+    ).toEqual({ label: 'Available', tone: 'ok' });
+  });
+});
+
+describe('grace-period display helpers (ADR-0033 D7)', () => {
+  it('flags a row whose owned leans on the expiry grace period', () => {
+    expect(
+      hasGraceSeats(
+        row({
+          id: 'e3',
+          owned: 4498,
+          breakdown: { enabled: 21, warning: 4477 },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag a clean prepaid row, nor one that was never synced', () => {
+    expect(hasGraceSeats(row({ id: 'e1', owned: 100 }))).toBe(false);
+    expect(hasGraceSeats(row({ id: 'x', owned: null }))).toBe(false);
+  });
+
+  it('names the excluded buckets as excluded, and carries M365 status', () => {
+    const text = ownedBreakdownText(
+      row({
+        id: 'e3',
+        owned: 4498,
+        breakdown: {
+          enabled: 21,
+          warning: 4477,
+          suspended: 3,
+          lockedOut: 5,
+          capabilityStatus: 'Warning',
+        },
+      }),
+    );
+    // Hard-coded whole string: a check for "contains 4477" would pass on text
+    // that presented the suspended seats as part of the total.
+    expect(text).toBe(
+      'enabled 21 · expiry grace period 4477 · suspended 3 (not counted) · locked out 5 (not counted) · M365 status Warning',
+    );
+  });
+
+  it('omits the empty buckets rather than printing zeroes', () => {
+    expect(
+      ownedBreakdownText(
+        row({
+          id: 'e1',
+          owned: 100,
+          breakdown: { capabilityStatus: 'Enabled' },
+        }),
+      ),
+    ).toBe('enabled 100 · expiry grace period 0 · M365 status Enabled');
+  });
+
+  it('has nothing to say about a SKU that was never synced', () => {
+    expect(ownedBreakdownText(row({ id: 'x', owned: null }))).toBeUndefined();
   });
 });
 

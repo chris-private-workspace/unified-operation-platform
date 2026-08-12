@@ -36,6 +36,66 @@ describe('GraphService — H4: no UPN in logs (BUG-001)', () => {
     expect(logged).toContain('sku-guid-1');
   });
 
+  /**
+   * CH-027 / ADR-0033 A1 — the fixture is the point. `prepaidUnits` really does
+   * carry four keys, and reading only `enabled` is what made 27 live SKUs look
+   * seatless. SPE_E3's real numbers (21 enabled / 4477 warning) are used so the
+   * fixture cannot drift into a shape Graph never sends.
+   */
+  it('getSubscribedSkus carries all four prepaidUnits buckets', async () => {
+    const service = new GraphService(config, connectorConfig);
+    (service as any).client = {
+      api: jest.fn(() => ({
+        get: jest.fn().mockResolvedValue({
+          value: [
+            {
+              skuId: 'sku-guid-e3',
+              skuPartNumber: 'SPE_E3',
+              consumedUnits: 677,
+              capabilityStatus: 'Enabled',
+              appliesTo: 'User',
+              prepaidUnits: {
+                enabled: 21,
+                suspended: 0,
+                warning: 4477,
+                lockedOut: 0,
+              },
+            },
+          ],
+        }),
+      })),
+    };
+
+    const [sku] = await service.getSubscribedSkus();
+
+    expect(sku.prepaidEnabled).toBe(21);
+    expect(sku.warningUnits).toBe(4477);
+    expect(sku.suspendedUnits).toBe(0);
+    expect(sku.lockedOutUnits).toBe(0);
+    expect(sku.consumedUnits).toBe(677);
+    expect(sku.capabilityStatus).toBe('Enabled');
+  });
+
+  it('getSubscribedSkus defaults every missing bucket to 0', async () => {
+    const service = new GraphService(config, connectorConfig);
+    (service as any).client = {
+      api: jest.fn(() => ({
+        get: jest.fn().mockResolvedValue({
+          value: [{ skuId: 'sku-guid-x', skuPartNumber: 'X' }],
+        }),
+      })),
+    };
+
+    const [sku] = await service.getSubscribedSkus();
+
+    // 0, never undefined: assignableUnits adds two of these together, and one
+    // undefined turns the whole seat gate into NaN comparisons that pass.
+    expect(sku.prepaidEnabled).toBe(0);
+    expect(sku.warningUnits).toBe(0);
+    expect(sku.suspendedUnits).toBe(0);
+    expect(sku.lockedOutUnits).toBe(0);
+  });
+
   it('findUser error log omits the UPN', async () => {
     const service = new GraphService(config, connectorConfig);
     (service as any).client = {

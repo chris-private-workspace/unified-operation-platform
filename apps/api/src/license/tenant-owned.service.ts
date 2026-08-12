@@ -22,19 +22,19 @@ export class TenantOwnedService {
     // small, so a JS first-seen map beats a correlated subquery — cf. W14).
     const snaps = await this.prisma.tenantSkuSnapshot.findMany({
       orderBy: { capturedAt: 'desc' },
-      select: { skuCatalogId: true, prepaidEnabled: true, consumedUnits: true },
+      select: {
+        skuCatalogId: true,
+        prepaidEnabled: true,
+        suspendedUnits: true,
+        warningUnits: true,
+        lockedOutUnits: true,
+        consumedUnits: true,
+        capabilityStatus: true,
+      },
     });
-    const latest = new Map<
-      string,
-      { prepaidEnabled: number; consumedUnits: number }
-    >();
+    const latest = new Map<string, (typeof snaps)[number]>();
     for (const s of snaps) {
-      if (!latest.has(s.skuCatalogId)) {
-        latest.set(s.skuCatalogId, {
-          prepaidEnabled: s.prepaidEnabled,
-          consumedUnits: s.consumedUnits,
-        });
-      }
+      if (!latest.has(s.skuCatalogId)) latest.set(s.skuCatalogId, s);
     }
 
     // Σ allocated / assigned per SKU across every OpCo (tenant-wide, no scope).
@@ -70,17 +70,34 @@ export class TenantOwnedService {
       // Show a SKU only if it is owned (has a snapshot) or allocated (has ledger).
       if (!snap && !led) continue;
 
-      // ADR-0032 D1 — `owned` itself is still the raw snapshot value; nothing
-      // here rewrites what the tenant reported. What the seat model changes is
-      // which DERIVATIONS of it mean anything.
       const unlimited = sku.seatModel === SEAT_MODEL.UNLIMITED;
-      const owned = snap ? snap.prepaidEnabled : null;
+      /**
+       * 🔴 ADR-0033 D2 — `owned` is a SEMANTIC change, not a new field: same
+       * name, same position, but it now answers "how many seats can we use"
+       * instead of "what does prepaidUnits.enabled say". On the live tenant
+       * SPE_E3 moves from 21 to 4498.
+       *
+       * `warning` counts because those seats still assign (verified against the
+       * tenant on 2026-08-12). `suspended` / `lockedOut` do not: Microsoft says
+       * they are unusable, and counting them would be the same mistake in the
+       * opposite direction.
+       *
+       * The breakdown below is therefore NOT decoration — without it nobody can
+       * explain the number, which is why D2 makes it mandatory.
+       */
+      const owned = snap ? snap.prepaidEnabled + snap.warningUnits : null;
       const tenantConsumed = snap ? snap.consumedUnits : null;
       const allocatedToOpcos = led?.allocated ?? 0;
       const assignedToUsers = led?.assigned ?? 0;
-      // ADR-0032 D2 — derived, never curated: this is a STATE (expired /
-      // add-on / trial over — cause unverified, OQ-5), not a seat model, and
-      // the platform can see it without anyone maintaining it.
+      /**
+       * ADR-0032 D2, narrowed by ADR-0033 D5 — derived, never curated.
+       *
+       * Now that `owned` includes the grace period, this only fires when there
+       * is genuinely nothing to assign: on the live tenant it drops from 15 SKUs
+       * to the 4 whose subscription was cancelled. The other 11 were never
+       * seatless — their seats had simply expired into `warning`, and CH-026's
+       * label said so only because `enabled` was all we read.
+       */
       const noPrepaidSeats =
         !unlimited && owned === 0 && (tenantConsumed ?? 0) > 0;
       out.push({
@@ -93,6 +110,24 @@ export class TenantOwnedService {
         },
         seatModel: sku.seatModel,
         owned,
+        /**
+         * ADR-0033 D2 — mandatory, because `owned` is now a sum. null when the
+         * SKU was never synced, for the same reason `owned` is: there is no
+         * measurement to break down.
+         *
+         * capabilityStatus rides along rather than being inferred from
+         * `suspended > 0` — it is Microsoft's own verdict, and D5's label reads
+         * it directly.
+         */
+        ownedBreakdown: snap
+          ? {
+              enabled: snap.prepaidEnabled,
+              warning: snap.warningUnits,
+              suspended: snap.suspendedUnits,
+              lockedOut: snap.lockedOutUnits,
+              capabilityStatus: snap.capabilityStatus,
+            }
+          : null,
         tenantConsumed,
         allocatedToOpcos,
         assignedToUsers,

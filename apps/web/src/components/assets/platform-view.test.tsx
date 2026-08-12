@@ -35,9 +35,22 @@ const row = (over: Partial<TenantSkuRow> & { skuCatalogId: string }) => {
     unallocated: null,
     overAllocated: false,
     noPrepaidSeats: false,
+    ownedBreakdown: null,
     ...over,
   } as TenantSkuRow;
 };
+
+/** CH-027 — the buckets behind `owned`, spelled out where a case needs them. */
+const breakdown = (
+  over: Partial<TenantSkuRow['ownedBreakdown'] & object> = {},
+): NonNullable<TenantSkuRow['ownedBreakdown']> => ({
+  enabled: 0,
+  warning: 0,
+  suspended: 0,
+  lockedOut: 0,
+  capabilityStatus: 'Enabled',
+  ...over,
+});
 
 const stats = (over: Partial<TenantSkuStats> = {}): TenantSkuStats => ({
   totalOwned: 2000,
@@ -111,21 +124,25 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
     expect(within(rowFor('e3')).getByTestId('owned-bar')).toBeInTheDocument();
   });
 
-  it('gives a prepaid SKU with 0 owned but real usage its own status', () => {
+  it('gives a prepaid SKU with 0 assignable seats but real usage its own status', () => {
     arrange([
       row({
-        skuCatalogId: 'pbipro',
+        skuCatalogId: 'viva',
         owned: 0,
-        tenantConsumed: 91,
+        tenantConsumed: 30,
         noPrepaidSeats: true,
         unallocated: null,
+        ownedBreakdown: breakdown({
+          suspended: 50,
+          capabilityStatus: 'Suspended',
+        }),
       }),
     ]);
 
     render(<PlatformView />);
 
     expect(
-      within(rowFor('pbipro')).getByText('No prepaid seats'),
+      within(rowFor('viva')).getByText('Subscription suspended'),
     ).toBeInTheDocument();
   });
 
@@ -159,7 +176,10 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
 
     render(<PlatformView />);
 
-    expect(screen.getByText('Prepaid seats')).toBeInTheDocument();
+    // CH-027 / ADR-0033 D7 — "Prepaid seats" lasted one day: D2 made the total
+    // count grace-period seats too, so the label had to stop saying prepaid.
+    expect(screen.getByText('Available seats')).toBeInTheDocument();
+    expect(screen.queryByText('Prepaid seats')).not.toBeInTheDocument();
     expect(screen.queryByText('Owned in M365')).not.toBeInTheDocument();
     // The count is the whole point: a total that quietly shrank by four million
     // has to say how many SKUs went with it.
@@ -177,5 +197,84 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
     render(<PlatformView />);
 
     expect(screen.getByText('prepaid across tenant')).toBeInTheDocument();
+  });
+
+  // ── CH-027 / ADR-0033 D7 — acceptance H1 ────────────────────────────────
+
+  /**
+   * SPE_E3's live shape. The point of this test is the SPLIT being on screen:
+   * `4498` on its own is the number that turns into a support ticket, because
+   * nobody can tell it from 4498 seats we actually bought.
+   */
+  it('shows the enabled / grace split on a row that leans on an expired subscription', () => {
+    arrange([
+      row({
+        skuCatalogId: 'e3',
+        owned: 4498,
+        tenantConsumed: 677,
+        allocatedToOpcos: 700,
+        unallocated: 3798,
+        ownedBreakdown: breakdown({
+          enabled: 21,
+          warning: 4477,
+          capabilityStatus: 'Warning',
+        }),
+      }),
+    ]);
+
+    render(<PlatformView />);
+
+    const tr = rowFor('e3');
+    expect(within(tr).getByText('4498')).toBeInTheDocument();
+    expect(within(tr).getByTestId('grace-seats')).toHaveTextContent(
+      '21 + 4477 grace',
+    );
+    // The full breakdown is on the cell itself (hover), including the M365
+    // verdict — asserted on the DOM attribute, since a title is invisible to a
+    // text query and would otherwise be "tested" by nothing at all.
+    expect(within(tr).getByTitle(/expiry grace period 4477/)).toHaveAttribute(
+      'title',
+      'enabled 21 · expiry grace period 4477 · M365 status Warning',
+    );
+  });
+
+  it('leaves a clean prepaid row unannotated', () => {
+    arrange([
+      row({
+        skuCatalogId: 'e1',
+        owned: 100,
+        allocatedToOpcos: 80,
+        unallocated: 20,
+        ownedBreakdown: breakdown({ enabled: 100 }),
+      }),
+    ]);
+
+    render(<PlatformView />);
+
+    expect(
+      within(rowFor('e1')).queryByTestId('grace-seats'),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * An unlimited SKU's `owned` is a Graph sentinel, so a "21 + 4477 grace"
+   * annotation under it would be describing arithmetic on a made-up number.
+   */
+  it('never annotates an unlimited SKU, even if the tenant reports grace seats', () => {
+    arrange([
+      row({
+        skuCatalogId: 'pbi',
+        seatModel: 'unlimited',
+        owned: 1000012,
+        tenantConsumed: 3064,
+        ownedBreakdown: breakdown({ enabled: 1000000, warning: 12 }),
+      }),
+    ]);
+
+    render(<PlatformView />);
+
+    expect(
+      within(rowFor('pbi')).queryByTestId('grace-seats'),
+    ).not.toBeInTheDocument();
   });
 });

@@ -31,6 +31,9 @@ describe('GraphLicenseProvider', () => {
           skuId: 'sku-guid-1',
           skuPartNumber: 'SPE_E3',
           prepaidEnabled: 100,
+          suspendedUnits: 0,
+          warningUnits: 0,
+          lockedOutUnits: 0,
           consumedUnits: 42,
           capabilityStatus: 'Enabled',
           appliesTo: 'User',
@@ -39,12 +42,48 @@ describe('GraphLicenseProvider', () => {
 
       const result = await provider.listTenantSkus();
 
-      // Exactly three keys — a non-Graph implementation must not be forced to
-      // invent capabilityStatus / appliesTo (see TenantSkuSeats).
+      // Exactly four keys — a non-Graph implementation must not be forced to
+      // invent capabilityStatus / appliesTo, nor the three extra prepaidUnits
+      // buckets (ADR-0033 D3). assignableUnits is a conclusion, not a bucket.
       expect(result).toEqual([
-        { skuId: 'sku-guid-1', prepaidEnabled: 100, consumedUnits: 42 },
+        {
+          skuId: 'sku-guid-1',
+          prepaidEnabled: 100,
+          consumedUnits: 42,
+          assignableUnits: 100,
+        },
       ]);
-      expect(Object.keys(result[0])).toHaveLength(3);
+      expect(Object.keys(result[0])).toHaveLength(4);
+    });
+
+    /**
+     * ADR-0033 D3/D4 — the whole point of the change, on SPE_E3's real numbers.
+     * `enabled + warning`; `suspended` and `lockedOut` stay out.
+     */
+    it('counts grace-period seats as assignable, cancelled and locked ones not', async () => {
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'sku-guid-e3',
+          skuPartNumber: 'SPE_E3',
+          prepaidEnabled: 21,
+          suspendedUnits: 7,
+          warningUnits: 4477,
+          lockedOutUnits: 5,
+          consumedUnits: 677,
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      const [row] = await provider.listTenantSkus();
+
+      expect(row.assignableUnits).toBe(4498);
+      // Spelled out rather than derived from the fixture: an expectation that
+      // recomputes the implementation always passes (CH-023's tautology).
+      expect(row.prepaidEnabled).toBe(21);
+      expect(row).not.toHaveProperty('warningUnits');
+      expect(row).not.toHaveProperty('suspendedUnits');
+      expect(row).not.toHaveProperty('capabilityStatus');
     });
 
     it('wraps a transport failure as 503 with the message assign.service used', async () => {

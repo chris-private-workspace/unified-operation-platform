@@ -47,6 +47,9 @@ function tenantRow(p: Partial<TenantSkuRow> & { skuCatalogId: string }) {
     overAllocated: p.overAllocated ?? false,
     seatModel: p.seatModel ?? 'prepaid',
     noPrepaidSeats: p.noPrepaidSeats ?? false,
+    // CH-027 — nothing in capacity.ts reads the breakdown; it is here because
+    // the API always sends it alongside a non-null owned.
+    ownedBreakdown: p.ownedBreakdown ?? null,
   } satisfies TenantSkuRow;
 }
 

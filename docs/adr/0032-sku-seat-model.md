@@ -144,7 +144,8 @@ migration 只加欄 + default `'prepaid'` ⇒ **零行為改變**。跟住由**�
 - **22 個 SKU 要人手標一次**,而且**新同步入嚟嘅 SKU 預設 `prepaid`** ⇒ 一個新 unlimited SKU 會先顯示成七位數,直到有人 curate。⚠️ 呢個係 curation-as-scope 一路以來嘅代價(同 `businessAlias` 一樣),唔係本 ADR 新增
 - **`seatModel` 係字串,打錯字唔會即刻爆** —— 要 DTO 層 validate 落已知值,並且 import 路一樣要驗(同 ADR-0023 個 alias 閘同款)
 - **Drift 計算未掂**:`ledgerAssignedSum` vs `tenantConsumed` 對 unlimited SKU 意味住乜,本 ADR **明文唔答**(CH-026 §3.2 out of scope)。⚠️ 揀 `FLOW_FREE`(用緊 4525)做例就知呢條數唔細,要另開
-- **`prepaidEnabled = 0` 嗰批仍然派唔到 licence**,只係而家會講返真相。**成因未查證** —— 要答「佢哋到底點嚟」先決定放唔放行
+- **`prepaidEnabled = 0` 嗰批仍然派唔到 licence**,只係而家會講返真相。~~成因未查證~~ ✅ **2026-08-12 查證咗(唯讀 `/subscribedSkus` probe,Chris 要求)**:15 個入面 **11 個訂閱過期**(`prepaidUnits.warning > 0`)· **4 個訂閱取消/暫停**(`capabilityStatus=Suspended` 兼 `suspended > 0`),**零例外**。🔴 **本 ADR 原文寫「要查 tenant 側」係錯嘅** —— 答案一路住喺**同一個 Graph 回應**,`graph.service.ts:89` 只攞咗 `prepaidUnits.enabled` 四個之一。⇒ 本 ADR 個 D4 訊息已改成講「no assignable seats / 通常係訂閱過期」而唔係「no purchased seat count」
+- 🔴 **同一次 probe 揭到一個大過本 ADR 嘅嘢,明文唔喺本 ADR 處理**:`consumedUnits >= prepaidEnabled` 會拒絕 **32 / 101** 個 SKU,其中 **27 個 tenant 手上仲有 seat**(喺 `warning`/`suspended`)—— 包括 **`SPE_E5` 4543/4502** 同 **`SPE_E3` 677/`enabled=21`(warn=4477)**。即係 `owned = prepaidUnits.enabled` 呢個定義本身唔夠,而本 ADR 個 D2 只覆蓋咗 15/32。⚠️ **`warning` seat 派唔派得新 licence 未驗證**(維持得住既有 assignment 有數據支持,派新冇試過)⇒ 要另開 ADR,追蹤 `BACKLOG` **`TENANT-SEAT-WARNING`**
 
 ### 唔改嘅嘢（明文）
 

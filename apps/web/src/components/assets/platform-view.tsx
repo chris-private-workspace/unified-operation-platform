@@ -15,7 +15,12 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
 import { useCatalog, useTenantSkus, useTenantSkuStats } from '@/hooks/queries';
 import { ApiError } from '@/lib/api';
-import { groupByCategory, platformStatus } from '@/lib/tenant-skus';
+import {
+  groupByCategory,
+  hasGraceSeats,
+  ownedBreakdownText,
+  platformStatus,
+} from '@/lib/tenant-skus';
 import type { TenantSkuRow } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 
@@ -119,9 +124,14 @@ export function PlatformView() {
         {/* ADR-0032 D3 / OQ-4 — renamed from "Owned in M365". A total that
             excludes a fifth of the SKUs cannot keep calling itself what M365
             owns, and the sub-line names what was left out rather than letting
-            the figure quietly shrink. */}
+            the figure quietly shrink.
+
+            ADR-0033 D7 — and renamed again one day later, because D2 made it
+            count grace-period seats too: it is no longer "prepaid". The cost of
+            CH-026 having been written while we could only see one of the four
+            prepaidUnits buckets. */}
         <StatCard
-          label="Prepaid seats"
+          label="Available seats"
           value={kpi(stats.data?.totalOwned ?? 0)}
           tone="info"
           icon={<Boxes size={16} strokeWidth={2} />}
@@ -281,7 +291,10 @@ export function PlatformView() {
                               <OwnedBar row={r} />
                             </div>
                           </td>
-                          <td className={cn(TD, NUM)}>
+                          <td
+                            className={cn(TD, NUM)}
+                            title={ownedBreakdownText(r)}
+                          >
                             {r.seatModel === 'unlimited' ? (
                               // Sans, not mono: it is a word in a numeric
                               // column. DS-5 asks for mono on NUMBERS, and
@@ -293,6 +306,22 @@ export function PlatformView() {
                             ) : (
                               numOr(r.owned)
                             )}
+                            {/* ADR-0033 D7 — a number propped up by an expired
+                                subscription is not the same fact as a clean
+                                purchased count, so it says which part is which.
+                                An annotation on the number, NOT a second status
+                                badge: the Status column already owns state
+                                (DS-8), and two places claiming it drift. */}
+                            {r.seatModel !== 'unlimited' &&
+                              hasGraceSeats(r) && (
+                                <div
+                                  data-testid="grace-seats"
+                                  className="text-[10.5px] font-normal leading-[1.5] text-fg-subtle"
+                                >
+                                  {r.ownedBreakdown!.enabled} +{' '}
+                                  {r.ownedBreakdown!.warning} grace
+                                </div>
+                              )}
                           </td>
                           <td className={cn(TD, NUM, 'text-fg-muted')}>
                             {r.allocatedToOpcos}
@@ -389,7 +418,10 @@ export function PlatformView() {
       <p className="flex items-start gap-[7px] text-[11.5px] leading-[1.5] text-fg-subtle">
         <Info size={13} strokeWidth={2} className="mt-[2px] shrink-0" />
         <span>
-          Owned = M365 prepaid seats (from the last tenant sync). SKUs marked{' '}
+          Owned = M365 seats available to assign (from the last tenant sync):
+          enabled seats plus any inside an expired subscription&rsquo;s grace
+          period, which still work. Cancelled and locked-out seats are excluded.
+          Hover a number for the breakdown. SKUs marked{' '}
           <span className="font-medium text-fg-muted">Unlimited</span> have no
           purchased seat count, so they are left out of the owned totals — their
           allocations and assignments still count. Seat model, tenant counts and

@@ -10,12 +10,45 @@ export class TenantSkuRefDto {
 }
 
 /**
+ * The four prepaidUnits buckets behind `owned`, plus Microsoft's own verdict on
+ * the subscription (ADR-0033 D1/D2).
+ *
+ * 🔴 Declared here on purpose. BUG-011 showed the gap this closes: a field can
+ * exist on the read-model, be returned by the service, and still never reach a
+ * caller — while every test layer stays green, because an undeclared field is
+ * perfectly legal TypeScript on the way out.
+ */
+export class TenantSkuOwnedBreakdownDto {
+  @ApiProperty({ description: 'prepaidUnits.enabled — assignable now' })
+  enabled!: number;
+  @ApiProperty({
+    description:
+      'prepaidUnits.warning — subscription expired but inside the grace period; these seats still assign and ARE counted in owned',
+  })
+  warning!: number;
+  @ApiProperty({
+    description:
+      'prepaidUnits.suspended — subscription cancelled; NOT counted in owned',
+  })
+  suspended!: number;
+  @ApiProperty({
+    description: 'prepaidUnits.lockedOut — locked; NOT counted in owned',
+  })
+  lockedOut!: number;
+  @ApiProperty({
+    example: 'Enabled',
+    description:
+      "Microsoft's capabilityStatus (Enabled | Warning | Suspended | LockedOut | Deleted) — read directly, never inferred from the counts above",
+  })
+  capabilityStatus!: string;
+}
+
+/**
  * One tenant-level per-SKU row (GET /license/tenant-skus). Three layers per
- * DESIGN §5: owned (M365 prepaidUnits.enabled) → allocatedToOpcos (Σ OpCo
- * budget) → assignedToUsers (Σ assigned). owned / tenantConsumed come from the
- * latest TenantSkuSnapshot; a SKU allocated but never synced from tenant has
- * owned=null — honest, since unallocated / overAllocated can't be derived
- * without the owned total.
+ * DESIGN §5: owned → allocatedToOpcos (Σ OpCo budget) → assignedToUsers
+ * (Σ assigned). owned / tenantConsumed come from the latest TenantSkuSnapshot;
+ * a SKU allocated but never synced from tenant has owned=null — honest, since
+ * unallocated / overAllocated can't be derived without the owned total.
  */
 export class TenantSkuRowDto {
   @ApiProperty() skuCatalogId!: string;
@@ -29,9 +62,16 @@ export class TenantSkuRowDto {
   @ApiProperty({
     nullable: true,
     description:
-      'M365 prepaidUnits.enabled (latest snapshot); null if never synced',
+      'ASSIGNABLE seats (ADR-0033 D2): prepaidUnits.enabled + prepaidUnits.warning from the latest snapshot; null if never synced. Was enabled-only before CH-027 — see ownedBreakdown for why a number may have jumped',
   })
   owned!: number | null;
+  @ApiProperty({
+    type: TenantSkuOwnedBreakdownDto,
+    nullable: true,
+    description:
+      'what owned is made of; null when never synced. Mandatory per ADR-0033 D2 — owned is a sum now, and a sum with no breakdown is unexplainable',
+  })
+  ownedBreakdown!: TenantSkuOwnedBreakdownDto | null;
   @ApiProperty({
     nullable: true,
     description: 'M365 consumedUnits (latest snapshot); null if never synced',
@@ -54,7 +94,7 @@ export class TenantSkuRowDto {
   overAllocated!: boolean;
   @ApiProperty({
     description:
-      'derived, not curated (ADR-0032 D2): a prepaid SKU with 0 owned but people using it — the tenant seat gate refuses these, and "no seats left" is the wrong reason',
+      'derived, not curated (ADR-0032 D2, narrowed by ADR-0033 D5): 0 ASSIGNABLE seats but people using it — i.e. the subscription was cancelled, not merely expired. Read ownedBreakdown.capabilityStatus for the reason; do not infer it from suspended > 0',
   })
   noPrepaidSeats!: boolean;
 }

@@ -181,13 +181,23 @@ model LedgerAdjustment {
 
 // ── Live M365 tenant state (from subscribedSkus) — total truth
 
+// ADR-0033 D1 — all four prepaidUnits buckets are stored, not just `enabled`.
+// `prepaidEnabled` keeps its name on purpose: it always did mean exactly
+// prepaidUnits.enabled. What was wrong was treating it as the whole of `owned`.
 model TenantSkuSnapshot {
-  id             String     @id @default(cuid())
-  skuCatalogId   String
-  sku            SkuCatalog @relation(fields: [skuCatalogId], references: [id])
-  prepaidEnabled Int // prepaidUnits.enabled (total purchased)
-  consumedUnits  Int // consumedUnits (total assigned in tenant)
-  capturedAt     DateTime   @default(now())
+  id               String     @id @default(cuid())
+  skuCatalogId     String
+  sku              SkuCatalog @relation(fields: [skuCatalogId], references: [id])
+  prepaidEnabled   Int // prepaidUnits.enabled   — assignable now
+  suspendedUnits   Int        @default(0) // prepaidUnits.suspended — subscription cancelled
+  warningUnits     Int        @default(0) // prepaidUnits.warning   — expired, in grace period
+  lockedOutUnits   Int        @default(0) // prepaidUnits.lockedOut — locked, unusable
+  consumedUnits    Int // consumedUnits (total assigned in tenant)
+  // Microsoft's own verdict on the subscription. Stored rather than derived from
+  // the four numbers above: deriving it would re-create a judgement the vendor
+  // already published (the ADR-0004 / ADR-0032 shape).
+  capabilityStatus String     @default("Enabled") // Enabled | Warning | Suspended | Deleted | LockedOut
+  capturedAt       DateTime   @default(now())
 
   @@index([skuCatalogId, capturedAt])
 }
