@@ -1133,9 +1133,9 @@ describe('AssignService', () => {
       // Hard-coded expectation, not one derived from the fixture: a message
       // rebuilt from the same values would pass no matter what it said.
       expect(body.message).toBe(
-        'Tenant has no prepaid seats for SPE_E3 (0 owned, 91 in use) — ' +
-          'M365 reports no purchased seat count. ' +
-          'If this SKU is not licensed per seat, mark it unlimited in SKU Catalog.',
+        'No assignable seats for SPE_E3 in the tenant (M365 reports 0 enabled, 91 in use). ' +
+          'Usually the subscription lapsed — expired seats keep working but stop counting as enabled. ' +
+          'Check it in M365 admin, or mark this SKU unlimited in SKU Catalog if it is not licensed per seat.',
       );
     });
 

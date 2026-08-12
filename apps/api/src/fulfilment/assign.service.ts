@@ -350,17 +350,23 @@ export class AssignService {
       const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
       if (tenantSku && tenantSku.prepaidEnabled === 0) {
         /**
-         * ADR-0032 D4 ② — still REFUSED, only honestly. `POWER_BI_PRO` (0 owned,
-         * 91 in use) and three others are permanently unassignable here, and the
-         * old text sent the operator to buy seats for a SKU that has no seat
-         * count at all. What causes these is unverified (OQ-5), so this says
-         * what is true and offers the one remedy we do know.
+         * ADR-0032 D4 ② — still REFUSED, only honestly. `POWER_BI_PRO` (0
+         * enabled, 91 in use) and fourteen others are permanently unassignable
+         * here, and the old text sent the operator to buy seats for a SKU whose
+         * seats are not missing at all.
+         *
+         * 🔴 OQ-5 answered 2026-08-12 by a read-only `/subscribedSkus` probe:
+         * ALL 15 of them carry the seats in `prepaidUnits.warning` (subscription
+         * lapsed, 11 SKUs) or `prepaidUnits.suspended` (cancelled, 4 SKUs) —
+         * `enabled` is the only one of the four we read. So the honest sentence
+         * is "none available to assign", NOT "none purchased".
          */
         fail(
           'seats',
-          `Tenant has no prepaid seats for ${item.sku.skuPartNumber} ` +
-            `(0 owned, ${tenantSku.consumedUnits} in use) — M365 reports no purchased seat count. ` +
-            'If this SKU is not licensed per seat, mark it unlimited in SKU Catalog.',
+          `No assignable seats for ${item.sku.skuPartNumber} in the tenant ` +
+            `(M365 reports 0 enabled, ${tenantSku.consumedUnits} in use). ` +
+            'Usually the subscription lapsed — expired seats keep working but stop counting as enabled. ' +
+            'Check it in M365 admin, or mark this SKU unlimited in SKU Catalog if it is not licensed per seat.',
           'procurement',
         );
       }

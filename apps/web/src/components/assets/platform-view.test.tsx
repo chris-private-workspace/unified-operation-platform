@@ -125,7 +125,7 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
     render(<PlatformView />);
 
     expect(
-      within(rowFor('pbipro')).getByText('No prepaid seats'),
+      within(rowFor('pbipro')).getByText('No seats enabled'),
     ).toBeInTheDocument();
   });
 

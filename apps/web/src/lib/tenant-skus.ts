@@ -24,7 +24,11 @@ export function platformStatus(row: TenantSkuRow): PlatformStatus {
   if (row.seatModel === 'unlimited')
     return { label: 'Unlimited', tone: 'neutral' };
   if (row.overAllocated) return { label: 'Over-allocated', tone: 'danger' };
-  if (row.noPrepaidSeats) return { label: 'No prepaid seats', tone: 'warn' };
+  // "No seats enabled", not "no prepaid seats": OQ-5 (2026-08-12 Graph probe)
+  // showed all 15 such SKUs DO have seats — they sit in prepaidUnits.warning
+  // (lapsed) or .suspended (cancelled), neither of which we read. Saying "no
+  // prepaid seats" would send the reader to buy something they already own.
+  if (row.noPrepaidSeats) return { label: 'No seats enabled', tone: 'warn' };
   if (row.owned === null) return { label: 'Not synced', tone: 'neutral' };
   if (row.owned > 0 && row.unallocated === 0)
     return { label: 'Fully allocated', tone: 'warn' };

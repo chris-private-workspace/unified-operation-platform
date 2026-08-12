@@ -78,9 +78,17 @@ export class TenantOwnedService {
       const tenantConsumed = snap ? snap.consumedUnits : null;
       const allocatedToOpcos = led?.allocated ?? 0;
       const assignedToUsers = led?.assigned ?? 0;
-      // ADR-0032 D2 — derived, never curated: this is a STATE (expired /
-      // add-on / trial over — cause unverified, OQ-5), not a seat model, and
-      // the platform can see it without anyone maintaining it.
+      /**
+       * ADR-0032 D2 — derived, never curated: this is a STATE, not a seat
+       * model, and the platform can see it without anyone maintaining it.
+       *
+       * 🔴 OQ-5 answered 2026-08-12 (read-only /subscribedSkus probe): all 15
+       * such SKUs on the live tenant DO have seats. They sit in
+       * `prepaidUnits.warning` (subscription lapsed — 11) or `.suspended`
+       * (cancelled — 4), and `enabled` is the only one of the four fields
+       * graph.service.ts reads. The name says what we measured (`enabled` is
+       * 0); the labels around it must not claim the seats were never bought.
+       */
       const noPrepaidSeats =
         !unlimited && owned === 0 && (tenantConsumed ?? 0) > 0;
       out.push({

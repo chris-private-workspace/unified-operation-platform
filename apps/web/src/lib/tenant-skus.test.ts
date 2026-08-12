@@ -95,13 +95,13 @@ describe('platformStatus', () => {
     ).toEqual({ label: 'Unlimited', tone: 'neutral' });
   });
 
-  it('prepaid with 0 owned but in use → No prepaid seats warn', () => {
+  it('prepaid with 0 owned but in use → No seats enabled warn', () => {
     expect(
       platformStatus(row({ id: 'pbipro', owned: 0, tenantConsumed: 91 })),
-    ).toEqual({ label: 'No prepaid seats', tone: 'warn' });
+    ).toEqual({ label: 'No seats enabled', tone: 'warn' });
   });
 
-  it('keeps Over-allocated ahead of No prepaid seats when both are true', () => {
+  it('keeps Over-allocated ahead of No seats enabled when both are true', () => {
     expect(
       platformStatus(
         row({
