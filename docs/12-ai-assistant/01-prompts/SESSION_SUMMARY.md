@@ -5,11 +5,17 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 974 test(73 suites)· web 293 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0031**(🔴 **0031 = Rejected**,見下)· CH 到 **023** · BUG 到 **011**(✅ closed)。
+**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 1011 test(73 suites)· web 358 passed**(⚠️ 另有 **6 條 pre-existing 紅** + **1 條 flake**,見下)。ADR 到 **0033**(🔴 **0031 = Rejected**,見下)· CH 到 **027** · BUG 到 **011**(✅ closed)。
 
 🟢 **CH-021 ✅ closed(2026-08-11)** —— onboarding intake 通知(該 OpCo `OPCO_IT` + `OPS_NOTIFICATION_MAILBOX`),**A12 live 真寄兼 Chris 確認收到**。🔴 **A12 喺本機做,唔喺 DEV**:本機 ACS 憑證係真值,`ACS_SENDER_ADDRESS` 逐字等於 `CH-012-verify A4`(真送達過)⇒ DEV 換唔到嘢返嚟;而 **canonical intake 路零外部副作用**(唔掂 SN、唔掂 Graph)。⚠️ **fixture 一定要揀冇 `OPCO_IT` 用戶嘅 OpCo** —— seed 嗰個係 `opco.it.rhk@rapo.com.hk`,**真公司 domain**,用預設 RHK 會真寄畀佢。
 
-🟢 **本地零 feature branch**(2026-08-11:`fix/connector-provider-switch` / `chore/b8-live-verification` / `feat/w44-azure-dev-deploy` / `docs/bug-011-closeout` 全部已 merge 兼刪)⇒ **下次開工由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
+🟢 **CH-024 / 025 / 026 / 027 四單 2026-08-12 一日內全部 closed 兼 merged**(PR #84 / #85 / #87 / **#88**)。**CH-027 = ADR-0033 落地** —— `owned` 由 `prepaidUnits.enabled` 改成 `enabled + warning`,assign gate 跟住走 ⇒ **由拒絕 32/101 個 SKU 收窄到 11 個,而 11 個個個講得出理由**(6 個真係用晒 + 5 個訂閱已取消)。🟢 **`warning` seat 派得到係實測唔係推論**(`AAD_PREMIUM_P2` `enabled=0`/`warning=10` → Graph HTTP 200,`consumed` 0→1,移返後 0)。
+
+🔴 **CH-026 + CH-027 合共留低五項未驗,全部卡同一件事(本地 stack)**:CH-026 `A-2` migration 未對真 DB 跑 · CH-026 `D-9` light+dark 真 render · CH-027 `B-4` migration 未對真 DB 跑 · CH-027 `V-5` light+dark 真 render · CH-027 `V-6` 真環境 sync 驗 `SPE_E3` `owned` **21 → 4498**。⚠️ **5433 畀 `ai-doc-extraction-db` 佔住,停佢係另一個項目要 Chris 批,而且佢停咗會自己返嚟搶 port** ⇒ 要做就一氣呵成。
+
+⚠️ **本地有 6 條已 merge 但未刪嘅 stale branch**(`feat/catalog-export` / `feat/ch-025-completion-and-category` / `feat/ch-026-unlimited-sku` / `feat/license-ledger-full-reset` / `feat/w43a-o365-request-creation` / `feat/w43b-closeout`)—— `git branch --no-merged main` **空**,即係全部安全刪得。**下次開工仍然由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
+
+🔴 **PR merge 之後一定要逐個 commit 查有冇入齊,唔可以睇個 `MERGED` 就算** —— **PR #87 實測只 merge 咗 6 個入面嘅頭 2 個**,靠 checkout 之後見到舊版 working tree 先揭穿。方法:`git merge-base --is-ancestor <sha> origin/main` 逐個行(#88 六個已咁樣查過,全部 `True`)。
 
 **兩個 phase 同時未收**(rolling JIT 破例,Chris 2026-08-10 批):
 - **W44 = 部署上新 Azure DEV 環境** —— 已部署三次,🔴 **卡環境**(F6 卡 `B8` private DNS · F9 卡 `B9` SSO 真人驗)。詳見下面整段。

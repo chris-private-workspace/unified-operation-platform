@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **CH-021 ✅ closed**(2026-08-11,onboarding intake 通知,A12 live 真送達)。**W44(Azure DEV 部署,卡 B8/B9)+ W45(assign 過程可見性,ADR-0029)+ CH-023(ServiceNow 結果留 timeline)三個同時未收**(2026-08-11)—— 後兩個**實作都收晒,淨低 live 驗,卡同一個 B8**。**BUG-011 ✅ closed**(PR #79),**本地零 feature branch,下次由 `main` 開新條**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標。⚠️ **呢格刻意唔寫 `main` 嘅 commit hash** —— 寫 hash 嗰個 commit 本身就會令佢過時,而「有冇 feature branch」先係真正影響下手點開工嗰半 |
+| Phase | **CH-024 / 025 / 026 / 027 四單 2026-08-12 一日內全部 closed 兼 merged**(PR #84 / #85 / #87 / **#88**)。**CH-027 = ADR-0033 落地** —— `owned` 由 `prepaidUnits.enabled` 改成 `enabled + warning`,assign gate 由拒絕 32/101 個 SKU 收窄到 11 個。🔴 **CH-026 + CH-027 合共留低五項未驗,全部卡本地 stack**(兩個 migration 未對真 DB 跑 · 兩個 light+dark render · `SPE_E3` `owned` 21→4498)。**W44(Azure DEV,B8 已解封)仍未收**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標。⚠️ **本地有 6 條已 merge 但未刪嘅 stale branch**(`git branch --no-merged main` 空)⇒ 開工仍然由 `main` 開新條。⚠️ **呢格刻意唔寫 `main` 嘅 commit hash** —— 寫 hash 嗰個 commit 本身就會令佢過時,而「有冇 feature branch」先係真正影響下手點開工嗰半 |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -323,7 +323,9 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
   - 🔴 **本機 Graph 係通嘅** ⇒ 真跑一次成功 assign 會**喺公司 tenant 真派 licence**。要造「一定失敗」嘅 fixture,**先用唯讀 `POST /fulfilment/requests/:id/sync-check` 探**個 UPN 存唔存在 —— 2026-08-10 實測:一個砌出嚟嘅假 UPN 一樣返 `FOUND`,「個名睇落假」推論唔到「tenant 冇」。
 - 🔴 **ServiceNow 寫入係逐個 table 分開開權,唔可以由「某張表寫得」推論「另一張寫得」**:`sc_request` insert **403**(BUG-010)· `sc_item_option` update **403**(ADR-0026)· `sc_req_item` / `sc_task` update ✅ · catalog `order_now` ✅。⇒ `target_user` **永遠**指住 requester,真 target 睇 `target_users_email`(DD-5)。
 - 🔴 **UOP 同 n8n 共用 SN 帳號 `n8napiservice1`** ⇒ `sys_updated_by` 分唔到邊個系統做,唯一指紋係 `close_notes`(RISK **R7**)。查 SN 側「邊個做過乜」一律唔可以信 `sys_updated_by`。
-- **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration;W43 遺留 = live close 未驗 / 前端 light+dark 未 render 驗)。
+- 🔴 **PR 顯示 `MERGED` 唔等於啲 commit 入齊咗** —— **PR #87 實測只 merge 咗 6 個入面嘅頭 2 個**,靠 checkout 之後見到舊版 working tree 先揭穿,而嗰 4 條走漏嘅要跟下一個 PR 先入到 main。⇒ **merge 之後逐個 `git merge-base --is-ancestor <sha> origin/main`**,唔好睇個 state 就當收咗(PR #88 六個已咁樣查過,全部 `True`)。同「revision `Healthy` ≠ DB 通」、「有設定 ≠ 設定啱」同族:**一個 summary-level 綠燈證明唔到下面每一件都真係做咗。**
+- 🔴 **`owned` 嘅定義 2026-08-12 改咗(ADR-0033 / CH-027)** —— 由 `prepaidUnits.enabled` 變 `enabled + warning`(過期但喺寬限期嘅 seat **真係派得到**,實測 Graph HTTP 200)。assign gate 跟住由拒絕 **32/101** 收窄到 **11**。`suspended`/`lockedOut` **刻意唔計**(Microsoft 自己喺 `capabilityStatus` 講咗唔可以用)。⚠️ **凡見到「`owned` = 買咗幾多」嘅舊講法,一律當過時。**
+- **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration;W43 遺留 = live close 未驗;🔴 **CH-026 + CH-027 五項卡本地 stack** —— 兩個 migration 未對真 DB 跑 · 兩個 light+dark render · `SPE_E3` `owned` 21→4498)。
 
 ---
 
