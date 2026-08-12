@@ -13,8 +13,9 @@ import {
 
 /**
  * Bulk SKU curation (CH-019 / ADR-0023). Loads an edited SKU Catalog export
- * back in — the same three columns `PATCH /license/catalog/:id` writes, for
- * many SKUs at once.
+ * back in — the same curated columns `PATCH /license/catalog/:id` writes, for
+ * many SKUs at once (CH-026 added `Seat model` to both surfaces at once, which
+ * is the invariant: one column set, two entry points).
  *
  * Invariants:
  *  - matches on skuId (GUID) only, never on a name (DESIGN §5 — businessAlias
@@ -173,6 +174,7 @@ export class CatalogImportService {
       businessAlias?: string | null;
       category?: string | null;
       isBaseLicense?: boolean;
+      seatModel?: string;
     },
   ): CatalogImportChangeDto | null {
     const change: CatalogImportChangeDto = {
@@ -206,6 +208,13 @@ export class CatalogImportService {
       };
       touched = true;
     }
+    // ADR-0032 D1. The parser already rejected anything outside SEAT_MODELS for
+    // the WHOLE file (catalog-csv.ts), so by here the value is known-good — same
+    // fail-closed-on-the-batch stance as the alias collision guard.
+    if (row.seatModel !== undefined && row.seatModel !== sku.seatModel) {
+      change.seatModel = { before: sku.seatModel, after: row.seatModel };
+      touched = true;
+    }
     return touched ? change : null;
   }
 }
@@ -217,5 +226,6 @@ function toUpdateInput(
   if (change.alias) data.businessAlias = change.alias.after;
   if (change.category) data.category = change.category.after;
   if (change.isBaseLicense) data.isBaseLicense = change.isBaseLicense.after;
+  if (change.seatModel) data.seatModel = change.seatModel.after;
   return data;
 }

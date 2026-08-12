@@ -1,12 +1,12 @@
 ---
 change_id: CH-026
 title: "Unlimited / 冇 seat 概念嘅 SKU 喺 Platform view 顯示成點"
-status: proposed
+status: approved
 created: 2026-08-12
 target_completion: 2026-08-13
 affects_components: [apps/web, apps/api/license, apps/api/fulfilment, prisma]
 spec_refs:
-  - ADR-0032(決策 SSOT · 🔴 待 accept)
+  - ADR-0032(決策 SSOT · **Accepted** 2026-08-12)
   - docs/02-architecture/licenseops/DESIGN.md §5(三層 owned → allocated → assigned)
   - ADR-0004(curation-as-scope)
   - ADR-0023(CH-019 批量 curation import)
@@ -14,9 +14,10 @@ spec_refs:
 
 # CH-026 — Unlimited SKU 喺 Platform view 顯示成點
 
-> **Spec version**:1.0(§5 四條 OQ **全部由 Chris 2026-08-12 答咗**)
+> **Spec version**:1.1(§5 四條 OQ **全部由 Chris 2026-08-12 答咗**;同日 approved)
 > **Owner**:Chris Lai
-> **決策 SSOT**:**`ADR-0032`**(🔴 **Proposed —— accept 咗先可以落 code**,H1)
+> **Approved by**:**Chris Lai**(2026-08-12)
+> **決策 SSOT**:**`ADR-0032`**(**Accepted** 2026-08-12,H1)
 > **分類**:Change,**觸發 H1**(`SkuCatalog` 加欄)**+ H5**(改到 assign 個 tenant seat gate)
 
 ## 1. Context (Why)
@@ -99,7 +100,7 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) { …擋�
 
 | | 觸發 | 狀態 |
 |---|---|---|
-| **H1** | `SkuCatalog` 加 `seatModel` 欄 = schema 改動 | 🔴 **`ADR-0032` 已寫,`Proposed`** —— **accept 咗先可以落 code** |
+| **H1** | `SkuCatalog` 加 `seatModel` 欄 = schema 改動 | 🟢 **`ADR-0032` Accepted**(2026-08-12,Chris)—— 閘已過 |
 | **H5** | §3.1 E 改到 assign 個 tenant seat gate = critical path | test 必須同步:`unlimited` 過閘 / `owned=0` 仍然擋兼訊息啱 / **常態 SKU 行為逐字不變** |
 
 ## 5. Open Questions
@@ -120,7 +121,8 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) { …擋�
 |---|---|---|---|
 | 2026-08-12 | Initial **draft** + 本機真數據 | Chris 第四點 review | — |
 | 2026-08-12 | **四條 OQ 全部答咗** → 升 `proposed`;scope 具體化;寫 **ADR-0032**(H1) | Chris:OQ-1 `Unlimited`+`Unalloc. —` · OQ-2 **C(curate 欄)** · OQ-3 一齊收 · OQ-4 改名 `Prepaid seats` | Chris Lai |
+| 2026-08-12 | **兩道閘齊過** → `ADR-0032` `Accepted` + 本 spec `approved`,開始實作 | Chris 明示 approve | Chris Lai |
 
 ---
 
-**Gate reminder**:🔴 **兩道閘,兩道都未過**:①`ADR-0032` 要由 `Proposed` → `Accepted`(H1)②本 spec 要由 `proposed` → `approved`(PROCESS R1.change)。**兩者齊咗先可以寫第一行 code。**
+**Gate reminder**:🟢 **兩道閘 2026-08-12 齊過**:①`ADR-0032` `Accepted`(H1)②本 spec `approved`(PROCESS R1.change)。實作進度見 `checklist.md`。

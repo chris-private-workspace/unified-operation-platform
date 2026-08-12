@@ -66,7 +66,14 @@ describe('AssignService', () => {
     id: 'li1',
     stage: 'READY',
     requestId: 'r1',
-    sku: { id: 'c1', skuId: 'guid-1', skuPartNumber: 'SPE_E3' },
+    // 'prepaid' is the column default, so every test written before CH-026
+    // still exercises the ordinary seat gate rather than the new branch.
+    sku: {
+      id: 'c1',
+      skuId: 'guid-1',
+      skuPartNumber: 'SPE_E3',
+      seatModel: 'prepaid',
+    },
     ...over,
     /**
      * 🔴 AFTER `...over`, deliberately. `request` used to sit before it, which
@@ -1061,6 +1068,92 @@ describe('AssignService', () => {
       ]);
 
       await expectBlockedAt('seats', 'procurement', false);
+    });
+
+    // ── CH-026 / ADR-0032 D4 — the seat gate says what it means ──────────────
+
+    /**
+     * 🔴 The Graph inventory read is asserted as NOT happening, not merely as
+     * "the assign succeeded". `getSubscribedSkus` returning [] here means that
+     * if the skip branch is removed, `!tenantSku` refuses and this goes red —
+     * which is exactly the falsification CH-026 E-5 asks for. Asserting only
+     * the outcome would let a version that still calls Graph pass.
+     */
+    it('skips the tenant seat gate for an unlimited SKU, without reading Graph inventory', async () => {
+      arrangeHappy();
+      prisma.requestLineItem.findUnique.mockResolvedValue(
+        readyItem({
+          sku: {
+            id: 'c1',
+            skuId: 'guid-1',
+            skuPartNumber: 'POWER_BI_STANDARD',
+            seatModel: 'unlimited',
+          },
+        }),
+      );
+      graph.getSubscribedSkus.mockResolvedValue([]);
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.outcome).toBe('assigned');
+      expect(graph.getSubscribedSkus).not.toHaveBeenCalled();
+      const seats = res.steps.find((s) => s.key === 'seats');
+      // `skipped`, not `ok` — nothing was checked, and assign-step.ts is explicit
+      // that collapsing those two is how a screen ends up claiming a check ran.
+      expect(seats).toMatchObject({ key: 'seats', status: 'skipped' });
+      expect(seats?.detail).toBe(
+        'POWER_BI_STANDARD is marked unlimited — it has no prepaid seat count to check.',
+      );
+      // Still ten steps in run order: skipping a check is not dropping it.
+      expect(res.steps).toHaveLength(10);
+    });
+
+    it('refuses a prepaid SKU with no prepaid seats, and stops calling it "no seats left"', async () => {
+      arrangeHappy();
+      // POWER_BI_PRO on the live tenant: 0 owned, 91 in use (ADR-0032 Context).
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'guid-1',
+          skuPartNumber: 'SPE_E3',
+          prepaidEnabled: 0,
+          consumedUnits: 91,
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      const body = await blockedBody();
+      expect(body.failedAt).toBe('seats');
+      const steps = body.steps as AssignStep[];
+      expect(steps[steps.length - 1]).toMatchObject({
+        key: 'seats',
+        status: 'failed',
+        whoFixes: 'procurement',
+      });
+      // Hard-coded expectation, not one derived from the fixture: a message
+      // rebuilt from the same values would pass no matter what it said.
+      expect(body.message).toBe(
+        'Tenant has no prepaid seats for SPE_E3 (0 owned, 91 in use) — ' +
+          'M365 reports no purchased seat count. ' +
+          'If this SKU is not licensed per seat, mark it unlimited in SKU Catalog.',
+      );
+    });
+
+    it('leaves the ordinary "seats used up" message word for word', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([
+        {
+          skuId: 'guid-1',
+          skuPartNumber: 'SPE_E3',
+          prepaidEnabled: 100,
+          consumedUnits: 100,
+          capabilityStatus: 'Enabled',
+          appliesTo: 'User',
+        },
+      ]);
+
+      const body = await blockedBody();
+      expect(body.message).toBe('No available seats for SKU SPE_E3');
     });
 
     it('keeps `message` alongside the new shape so an unchanged caller still renders an error', async () => {

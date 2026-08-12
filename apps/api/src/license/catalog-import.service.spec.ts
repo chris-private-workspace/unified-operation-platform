@@ -13,6 +13,7 @@ interface CatalogRow {
   businessAlias: string | null;
   category: string | null;
   isBaseLicense: boolean;
+  seatModel: string;
   active: boolean;
 }
 
@@ -24,6 +25,7 @@ const entry = (over: Partial<CatalogRow> = {}): CatalogRow => ({
   businessAlias: null,
   category: null,
   isBaseLicense: false,
+  seatModel: 'prepaid',
   active: true,
   ...over,
 });
@@ -112,6 +114,45 @@ describe('CatalogImportService (CH-019 / ADR-0023)', () => {
     ]);
     // Category was identical — it must not appear at all.
     expect(res.changes[0]).not.toHaveProperty('category');
+  });
+
+  // ── CH-026 / ADR-0032 — Seat model rides the same path ───────────────────
+  it('diffs and commits a Seat model change through the bulk path', async () => {
+    catalog(entry({ seatModel: 'prepaid' }));
+    prisma.skuCatalog.update.mockResolvedValue(
+      entry({ seatModel: 'unlimited' }),
+    );
+
+    const res = await service.import('actor-1', {
+      csv: 'SkuId,Seat model\nguid-1,unlimited',
+      dryRun: false,
+    });
+
+    expect(res.changes).toEqual([
+      {
+        skuId: 'guid-1',
+        skuPartNumber: 'SPE_E3',
+        displayName: 'Microsoft 365 E3',
+        seatModel: { before: 'prepaid', after: 'unlimited' },
+        clearsAlias: false,
+      },
+    ]);
+    // The write itself, not just the preview: the diff and the update input are
+    // two separate code paths and only one of them was the CH-019 bug shape.
+    expect(prisma.skuCatalog.update).toHaveBeenCalledWith({
+      where: { id: 'c1' },
+      data: { seatModel: 'unlimited' },
+    });
+  });
+
+  it('reports no change when the file repeats the seat model a SKU already has', async () => {
+    catalog(entry({ seatModel: 'unlimited' }));
+
+    const res = await service.import('actor-1', {
+      csv: 'SkuId,Seat model\nguid-1,Unlimited',
+    });
+
+    expect(res.changes).toEqual([]);
   });
 
   it('matches skuId case-insensitively', async () => {

@@ -187,6 +187,25 @@ describe('CatalogService', () => {
       });
     });
 
+    // CH-026 / ADR-0032 D1 — seatModel joins the curated set. The DTO layer is
+    // where an unknown value is rejected (@IsIn); this asserts the service does
+    // not quietly drop a field the DTO let through.
+    it('writes seatModel when supplied, and leaves it alone when not', async () => {
+      prisma.skuCatalog.findUnique.mockResolvedValue({ id: 'c1' });
+      prisma.skuCatalog.update.mockResolvedValue({ id: 'c1' });
+
+      await service.updateEntry('actor-1', 'c1', { seatModel: 'unlimited' });
+      expect(prisma.skuCatalog.update.mock.calls[0][0].data).toEqual({
+        seatModel: 'unlimited',
+      });
+
+      prisma.skuCatalog.update.mockClear();
+      await service.updateEntry('actor-1', 'c1', { category: 'Base' });
+      expect(prisma.skuCatalog.update.mock.calls[0][0].data).not.toHaveProperty(
+        'seatModel',
+      );
+    });
+
     it('404s an unknown id and writes nothing', async () => {
       prisma.skuCatalog.findUnique.mockResolvedValue(null);
 

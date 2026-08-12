@@ -10,12 +10,21 @@ export interface PlatformStatus {
 }
 
 /**
- * Row health for the Platform status column. over-allocated (allocated to OpCos
- * exceeds tenant-owned) → danger; owned unknown (never synced) → neutral; owned
- * fully committed to OpCos → warn; otherwise headroom available → ok.
+ * Row health for the Platform status column. unlimited (no seat concept at all)
+ * → neutral; over-allocated (allocated to OpCos exceeds tenant-owned) → danger;
+ * no prepaid seats but in use → warn; owned unknown (never synced) → neutral;
+ * owned fully committed to OpCos → warn; otherwise headroom available → ok.
+ *
+ * 🔴 `unlimited` is first because every check under it reads `owned`, and on an
+ * unlimited SKU `owned` is a Graph sentinel rather than a seat count (ADR-0032).
+ * `overAllocated` stays ahead of `noPrepaidSeats`: both can be true at once
+ * (0 owned, seats allocated anyway) and the over-allocation is the louder fact.
  */
 export function platformStatus(row: TenantSkuRow): PlatformStatus {
+  if (row.seatModel === 'unlimited')
+    return { label: 'Unlimited', tone: 'neutral' };
   if (row.overAllocated) return { label: 'Over-allocated', tone: 'danger' };
+  if (row.noPrepaidSeats) return { label: 'No prepaid seats', tone: 'warn' };
   if (row.owned === null) return { label: 'Not synced', tone: 'neutral' };
   if (row.owned > 0 && row.unallocated === 0)
     return { label: 'Fully allocated', tone: 'warn' };
@@ -30,6 +39,8 @@ export interface CategoryGroup {
     allocated: number;
     assigned: number;
     unallocated: number;
+    /** Rows left out of `owned` / `unallocated` — otherwise the scope is silent. */
+    unlimited: number;
   };
 }
 
@@ -37,6 +48,12 @@ export interface CategoryGroup {
  * Group rows by SKU category (null → "Uncategorized"), preserving first-seen
  * order (the backend already sorts by category → partNumber). Each group carries
  * a subtotal; owned nulls count as 0 so a partly-synced group still totals.
+ *
+ * 🔴 The subtotal draws the same line as `/license/tenant-skus/stats`
+ * (ADR-0032 D3): `owned` and `unallocated` count PREPAID rows only — adding a
+ * sentinel makes the number meaningless — while `allocated` / `assigned` count
+ * every row, because those are real seats on an unlimited SKU too. Two
+ * different scopes in one row is only safe because `unlimited` says so.
  */
 export function groupByCategory(rows: TenantSkuRow[]): CategoryGroup[] {
   const groups = new Map<string, TenantSkuRow[]>();
@@ -45,13 +62,22 @@ export function groupByCategory(rows: TenantSkuRow[]): CategoryGroup[] {
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
   }
   return [...groups.entries()].map(([category, rs]) => {
-    const owned = rs.reduce((s, r) => s + (r.owned ?? 0), 0);
-    const allocated = rs.reduce((s, r) => s + r.allocatedToOpcos, 0);
-    const assigned = rs.reduce((s, r) => s + r.assignedToUsers, 0);
+    const prepaid = rs.filter((r) => r.seatModel !== 'unlimited');
+    const owned = prepaid.reduce((s, r) => s + (r.owned ?? 0), 0);
+    const prepaidAllocated = prepaid.reduce(
+      (s, r) => s + r.allocatedToOpcos,
+      0,
+    );
     return {
       category,
       rows: rs,
-      subtotal: { owned, allocated, assigned, unallocated: owned - allocated },
+      subtotal: {
+        owned,
+        allocated: rs.reduce((s, r) => s + r.allocatedToOpcos, 0),
+        assigned: rs.reduce((s, r) => s + r.assignedToUsers, 0),
+        unallocated: owned - prepaidAllocated,
+        unlimited: rs.length - prepaid.length,
+      },
     };
   });
 }

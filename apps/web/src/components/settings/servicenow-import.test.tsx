@@ -34,6 +34,7 @@ const CATALOG: SkuCatalog[] = [
     businessAlias: 'E5',
     category: null,
     isBaseLicense: false,
+    seatModel: 'prepaid',
     active: true,
     lastSyncedAt: null,
     createdAt: '2026-07-25T00:00:00Z',

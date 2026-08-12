@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantSkuRowDto, TenantSkuStatsDto } from './dto/tenant-owned.dto';
+import { SEAT_MODEL } from './seat-model';
 
 /**
  * BE-tenant-owned (W16) — tenant-level per-SKU read-model for the Assets
@@ -57,6 +58,7 @@ export class TenantOwnedService {
         skuPartNumber: true,
         displayName: true,
         category: true,
+        seatModel: true,
       },
       orderBy: [{ category: 'asc' }, { skuPartNumber: 'asc' }],
     });
@@ -68,9 +70,19 @@ export class TenantOwnedService {
       // Show a SKU only if it is owned (has a snapshot) or allocated (has ledger).
       if (!snap && !led) continue;
 
+      // ADR-0032 D1 — `owned` itself is still the raw snapshot value; nothing
+      // here rewrites what the tenant reported. What the seat model changes is
+      // which DERIVATIONS of it mean anything.
+      const unlimited = sku.seatModel === SEAT_MODEL.UNLIMITED;
       const owned = snap ? snap.prepaidEnabled : null;
+      const tenantConsumed = snap ? snap.consumedUnits : null;
       const allocatedToOpcos = led?.allocated ?? 0;
       const assignedToUsers = led?.assigned ?? 0;
+      // ADR-0032 D2 — derived, never curated: this is a STATE (expired /
+      // add-on / trial over — cause unverified, OQ-5), not a seat model, and
+      // the platform can see it without anyone maintaining it.
+      const noPrepaidSeats =
+        !unlimited && owned === 0 && (tenantConsumed ?? 0) > 0;
       out.push({
         skuCatalogId: sku.id,
         sku: {
@@ -79,12 +91,23 @@ export class TenantOwnedService {
           displayName: sku.displayName,
           category: sku.category,
         },
+        seatModel: sku.seatModel,
         owned,
-        tenantConsumed: snap ? snap.consumedUnits : null,
+        tenantConsumed,
         allocatedToOpcos,
         assignedToUsers,
-        unallocated: owned !== null ? owned - allocatedToOpcos : null,
-        overAllocated: owned !== null && allocatedToOpcos > owned,
+        // null, not 0 (ADR-0032 D3): "0 left" is an answer, and it is the wrong
+        // one for both of these — an unlimited SKU has no denominator, and a
+        // SKU with no prepaid seats has nothing to leave unallocated either.
+        unallocated:
+          unlimited || noPrepaidSeats || owned === null
+            ? null
+            : owned - allocatedToOpcos,
+        // An unlimited SKU cannot be over-allocated against a sentinel. A
+        // noPrepaidSeats one still can (0 owned, seats handed to OpCos anyway),
+        // and that stays visible — it is a real inconsistency.
+        overAllocated: !unlimited && owned !== null && allocatedToOpcos > owned,
+        noPrepaidSeats,
       });
     }
     return out;
@@ -96,15 +119,33 @@ export class TenantOwnedService {
 
   async tenantSkuStats(): Promise<TenantSkuStatsDto> {
     const rows = await this.rows();
-    const totalOwned = rows.reduce((s, r) => s + (r.owned ?? 0), 0);
-    const totalAllocated = rows.reduce((s, r) => s + r.allocatedToOpcos, 0);
-    const totalAssigned = rows.reduce((s, r) => s + r.assignedToUsers, 0);
+    /**
+     * ADR-0032 D3 / OQ-4 — the owned total counts prepaid SKUs only. On the
+     * live tenant the sentinels alone contributed 4,220,000 against a largest
+     * real purchase of 4,502: the old total was not "slightly off", it was
+     * ~99% sentinel.
+     *
+     * 🔴 allocated / assigned are NOT filtered. Those are real numbers on an
+     * unlimited SKU too — an OpCo budget still exists and still gates assigns
+     * (D4 leaves the budget gate alone), and people really are using the
+     * licence. Only the derivations OF `owned` have to shrink to the prepaid
+     * world, which is why `totalUnallocated` subtracts the prepaid allocation
+     * rather than the full one. `unlimitedSkus` is what stops that difference
+     * from being a silent one.
+     */
+    const prepaid = rows.filter((r) => r.seatModel !== SEAT_MODEL.UNLIMITED);
+    const totalOwned = prepaid.reduce((s, r) => s + (r.owned ?? 0), 0);
+    const prepaidAllocated = prepaid.reduce(
+      (s, r) => s + r.allocatedToOpcos,
+      0,
+    );
     return {
       totalOwned,
-      totalAllocated,
-      totalAssigned,
-      totalUnallocated: totalOwned - totalAllocated,
+      totalAllocated: rows.reduce((s, r) => s + r.allocatedToOpcos, 0),
+      totalAssigned: rows.reduce((s, r) => s + r.assignedToUsers, 0),
+      totalUnallocated: totalOwned - prepaidAllocated,
       skusOverAllocated: rows.filter((r) => r.overAllocated).length,
+      unlimitedSkus: rows.length - prepaid.length,
     };
   }
 }

@@ -2,12 +2,21 @@ import { Test } from '@nestjs/testing';
 import { TenantOwnedService } from './tenant-owned.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-const cat = (id: string, part: string, category: string | null = 'Base') => ({
+// seatModel defaults to 'prepaid' exactly as the column does — every existing
+// expectation below therefore still describes the ordinary SKU, which is what
+// makes them the guard that CH-026 changed nothing for it.
+const cat = (
+  id: string,
+  part: string,
+  category: string | null = 'Base',
+  seatModel = 'prepaid',
+) => ({
   id,
   skuId: `guid-${part}`,
   skuPartNumber: part,
   displayName: part,
   category,
+  seatModel,
 });
 
 describe('TenantOwnedService', () => {
@@ -123,6 +132,7 @@ describe('TenantOwnedService', () => {
       totalAssigned: 0,
       totalUnallocated: -271, // 2100 - 2371
       skusOverAllocated: 1, // sku-e3
+      unlimitedSkus: 0,
     });
   });
 
@@ -165,6 +175,105 @@ describe('TenantOwnedService', () => {
       totalAssigned: 0,
       totalUnallocated: 0,
       skusOverAllocated: 0,
+      unlimitedSkus: 0,
     });
+  });
+
+  // ── CH-026 / ADR-0032 ────────────────────────────────────────────────────
+  // Numbers taken from the live tenant snapshot recorded in the ADR: the
+  // sentinel is 1000000 (NOT the 10000000 first assumed), and POWER_BI_STANDARD
+  // really is at 3064 in use against it.
+
+  it('reports an unlimited SKU without deriving anything from the sentinel', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      { skuCatalogId: 'sku-pbi', prepaidEnabled: 1000000, consumedUnits: 3064 },
+    ]);
+    prisma.opcoSkuLedger.groupBy.mockResolvedValue([
+      {
+        skuCatalogId: 'sku-pbi',
+        _sum: { allocatedQuantity: 40, assignedQuantity: 12 },
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-pbi', 'POWER_BI_STANDARD', 'Power Platform', 'unlimited'),
+    ]);
+
+    const [row] = await service.listTenantSkus();
+    expect(row).toMatchObject({
+      seatModel: 'unlimited',
+      // The raw snapshot value is still reported — the read-model interprets,
+      // it does not rewrite what the tenant said.
+      owned: 1000000,
+      tenantConsumed: 3064,
+      // null, not 0: there is no denominator to subtract an allocation from.
+      unallocated: null,
+      overAllocated: false,
+      noPrepaidSeats: false,
+      // Real seats on a real SKU — these are NOT excluded.
+      allocatedToOpcos: 40,
+      assignedToUsers: 12,
+    });
+  });
+
+  it('flags a prepaid SKU that has 0 owned but is in use (derived, not curated)', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      { skuCatalogId: 'sku-pbipro', prepaidEnabled: 0, consumedUnits: 91 },
+      // 0 owned AND nobody using it is an ordinary empty SKU, not this state.
+      { skuCatalogId: 'sku-idle', prepaidEnabled: 0, consumedUnits: 0 },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-pbipro', 'POWER_BI_PRO'),
+      cat('sku-idle', 'IDLE_SKU'),
+    ]);
+
+    const rows = await service.listTenantSkus();
+    const byId = Object.fromEntries(rows.map((r) => [r.skuCatalogId, r]));
+    expect(byId['sku-pbipro']).toMatchObject({
+      seatModel: 'prepaid',
+      owned: 0,
+      noPrepaidSeats: true,
+      unallocated: null,
+    });
+    expect(byId['sku-idle']).toMatchObject({
+      noPrepaidSeats: false,
+      unallocated: 0, // 0 owned, 0 allocated — a real answer
+    });
+  });
+
+  it('excludes unlimited SKUs from the owned totals but not from allocated / assigned', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      { skuCatalogId: 'sku-e3', prepaidEnabled: 2000, consumedUnits: 1500 },
+      { skuCatalogId: 'sku-pbi', prepaidEnabled: 1000000, consumedUnits: 3064 },
+      { skuCatalogId: 'sku-flow', prepaidEnabled: 10000, consumedUnits: 4525 },
+    ]);
+    prisma.opcoSkuLedger.groupBy.mockResolvedValue([
+      {
+        skuCatalogId: 'sku-e3',
+        _sum: { allocatedQuantity: 1800, assignedQuantity: 1500 },
+      },
+      {
+        skuCatalogId: 'sku-pbi',
+        _sum: { allocatedQuantity: 40, assignedQuantity: 12 },
+      },
+      {
+        skuCatalogId: 'sku-flow',
+        _sum: { allocatedQuantity: 7, assignedQuantity: 3 },
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-e3', 'SPE_E3'),
+      cat('sku-pbi', 'POWER_BI_STANDARD', 'Power Platform', 'unlimited'),
+      cat('sku-flow', 'FLOW_FREE', 'Power Platform', 'unlimited'),
+    ]);
+
+    const stats = await service.tenantSkuStats();
+    // Hard-coded, not derived from the fixture: 1,010,000 of sentinel would
+    // otherwise be invisible in an expression that recomputes the same sum.
+    expect(stats.totalOwned).toBe(2000);
+    expect(stats.totalUnallocated).toBe(200); // 2000 - 1800, prepaid only
+    expect(stats.totalAllocated).toBe(1847); // 1800 + 40 + 7 — every SKU
+    expect(stats.totalAssigned).toBe(1515); // 1500 + 12 + 3 — every SKU
+    expect(stats.unlimitedSkus).toBe(2);
+    expect(stats.skusOverAllocated).toBe(0);
   });
 });

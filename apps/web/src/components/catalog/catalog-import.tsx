@@ -114,9 +114,10 @@ export function CatalogImportPanel({
           <p className="mt-[6px] text-[11.5px] leading-[1.5] text-fg-subtle">
             Export the catalog, edit{' '}
             <span className="text-fg-muted">Business alias</span>,{' '}
-            <span className="text-fg-muted">Category</span> and{' '}
-            <span className="text-fg-muted">Base licence</span> in a
-            spreadsheet, then upload it back. SKUs are matched on{' '}
+            <span className="text-fg-muted">Category</span>,{' '}
+            <span className="text-fg-muted">Base licence</span> and{' '}
+            <span className="text-fg-muted">Seat model</span> in a spreadsheet,
+            then upload it back. SKUs are matched on{' '}
             <span className="font-mono text-[11px] text-fg-muted">SkuId</span> —
             other columns are ignored, and no SKU is ever created. You’ll
             preview every change before anything is written.
@@ -393,6 +394,13 @@ function ImportError({ error }: { error: ApiError }) {
           )}
         />
       )}
+      {detail.invalidSeatModelValues && (
+        <ItemList
+          items={detail.invalidSeatModelValues.map(
+            (v) => `line ${v.line}: "${v.value}"`,
+          )}
+        />
+      )}
       {detail.foundColumns && (
         <p className="mt-[9px] text-[11.5px] text-fg-muted">
           Columns found:{' '}
@@ -472,6 +480,8 @@ function fieldsOf(row: CatalogImportChange): [string, string, string][] {
       row.isBaseLicense.before ? 'Yes' : 'No',
       row.isBaseLicense.after ? 'Yes' : 'No',
     ]);
+  if (row.seatModel)
+    out.push(['Seat model', row.seatModel.before, row.seatModel.after]);
   return out;
 }
 

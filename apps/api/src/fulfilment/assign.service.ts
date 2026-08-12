@@ -18,6 +18,7 @@ import {
   type TicketTarget,
 } from '../integration/ticket-update/ticket-update.provider';
 import { assertOpcoScope } from '../auth/opco-scope';
+import { SEAT_MODEL } from '../license/seat-model';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { aggregateRequestStatus } from './stage.service';
@@ -317,22 +318,63 @@ export class AssignService {
       pass('budget');
     }
 
-    const skus = await this.licenseOps.listTenantSkus();
-    const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
-    if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
+    /**
+     * ── Tenant seat gate ──
+     *
+     * 🔴 A SEPARATE step from `budget`, and this is the whole argument for not
+     * folding them the way the mockup does. 2026-08-07 on DEV hit BOTH layers
+     * on real traffic. The remedies do not overlap: this one is about tenant
+     * seats, `budget` is "raise this OpCo's allocation".
+     *
+     * CH-026 / ADR-0032 D4 — the gate now says what it means for the two cases
+     * where it used to be accidentally right or plainly wrong.
+     */
+    if (item.sku.seatModel === SEAT_MODEL.UNLIMITED) {
       /**
-       * 🔴 A SEPARATE step from `budget`, and this is the whole argument for
-       * not folding them the way the mockup does. 2026-08-07 on DEV hit BOTH
-       * layers on real traffic. The remedies do not overlap: this one is "buy
-       * more tenant seats", `budget` is "raise this OpCo's allocation".
+       * `skipped`, not `ok` (assign-step.ts): nothing was checked. An unlimited
+       * SKU has no purchased-seat count to check against, and until now it
+       * passed only because the Graph sentinel (10000 / 50000 / 1000000)
+       * happened to exceed usage — nobody designed that.
+       *
+       * The Graph inventory read is skipped along with it, for the same reason
+       * ADR-0016 D5 put the budget gate ahead of it: a check we are not going
+       * to make must not cost a vendor round-trip.
        */
-      fail(
-        'seats',
-        `No available seats for SKU ${item.sku.skuPartNumber}`,
-        'procurement',
-      );
+      steps.push({
+        key: 'seats',
+        status: 'skipped',
+        detail: `${item.sku.skuPartNumber} is marked unlimited — it has no prepaid seat count to check.`,
+      });
+    } else {
+      const skus = await this.licenseOps.listTenantSkus();
+      const tenantSku = skus.find((s) => s.skuId === item.sku.skuId);
+      if (tenantSku && tenantSku.prepaidEnabled === 0) {
+        /**
+         * ADR-0032 D4 ② — still REFUSED, only honestly. `POWER_BI_PRO` (0 owned,
+         * 91 in use) and three others are permanently unassignable here, and the
+         * old text sent the operator to buy seats for a SKU that has no seat
+         * count at all. What causes these is unverified (OQ-5), so this says
+         * what is true and offers the one remedy we do know.
+         */
+        fail(
+          'seats',
+          `Tenant has no prepaid seats for ${item.sku.skuPartNumber} ` +
+            `(0 owned, ${tenantSku.consumedUnits} in use) — M365 reports no purchased seat count. ` +
+            'If this SKU is not licensed per seat, mark it unlimited in SKU Catalog.',
+          'procurement',
+        );
+      }
+      // Untouched, wording and all: the ordinary "seats are used up" path, and
+      // the `!tenantSku` case it has always covered (ADR-0032 changes neither).
+      if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) {
+        fail(
+          'seats',
+          `No available seats for SKU ${item.sku.skuPartNumber}`,
+          'procurement',
+        );
+      }
+      pass('seats');
     }
-    pass('seats');
 
     // ── The assignment itself (external side-effect, BEFORE the DB transaction) ──
     // A transport failure throws (503) exactly as before; what comes back here

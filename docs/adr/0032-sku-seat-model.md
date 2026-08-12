@@ -1,6 +1,6 @@
 # ADR-0032 — SKU 有冇 seat 概念,由平台自己 curate
 
-**Status**: Proposed(方向已由 Chris 2026-08-12 拍板 = curate 欄;本文待 accept)
+**Status**: **Accepted**(Chris Lai,2026-08-12)
 **Date**: 2026-08-12
 **Deciders**: Chris Lai
 **Supersedes / Amends**: 擴充 `DESIGN.md §5` 三層模型(owned → allocated → assigned),**唔推翻** —— 加嘅係「呢一層對呢個 SKU 有冇意義」呢個維度

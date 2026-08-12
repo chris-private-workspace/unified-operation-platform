@@ -21,6 +21,12 @@ export type EventType =
   'STAGE_CHANGE' | 'ASSIGN' | 'SYNC' | 'RECONCILE' | 'NOTE';
 
 /** GET /license/catalog → SkuCatalogDto[] */
+/**
+ * ADR-0032 D1 — curated, never derived from prepaidEnabled. 'unlimited' means
+ * the SKU has no purchased-seat count at all and Graph reports a sentinel.
+ */
+export type SeatModel = 'prepaid' | 'unlimited';
+
 export interface SkuCatalog {
   id: string;
   skuId: string; // M365 GUID — source of truth
@@ -29,6 +35,7 @@ export interface SkuCatalog {
   businessAlias: string | null;
   category: string | null;
   isBaseLicense: boolean;
+  seatModel: SeatModel;
   active: boolean;
   lastSyncedAt: string | null;
   createdAt: string;
@@ -39,6 +46,9 @@ export interface UpdateCatalogBody {
   businessAlias?: string | null;
   category?: string | null;
   isBaseLicense?: boolean;
+  // Not nullable, unlike alias / category: the column has a default and every
+  // SKU is one of the two, so "cleared" would mean nothing (ADR-0032 D1).
+  seatModel?: SeatModel;
 }
 
 /**
@@ -71,6 +81,8 @@ export interface CatalogImportChange {
   alias?: CatalogTextChange;
   category?: CatalogTextChange;
   isBaseLicense?: CatalogFlagChange;
+  /** Never null on either side — seatModel has a default (ADR-0032 D1). */
+  seatModel?: { before: SeatModel; after: SeatModel };
   /** Alias goes from a value to none — its consequence is invisible on screen. */
   clearsAlias: boolean;
 }
@@ -98,6 +110,7 @@ export interface CatalogImportErrorDetail {
   duplicateSkuIds?: string[];
   duplicateColumns?: string[];
   invalidBaseValues?: { line: number; value: string }[];
+  invalidSeatModelValues?: { line: number; value: string }[];
   foundColumns?: string[];
   aliasClears?: number;
 }
@@ -277,12 +290,14 @@ export interface LedgerStats {
 export interface TenantSkuRow {
   skuCatalogId: string;
   sku: LedgerSkuRef;
+  seatModel: SeatModel; // ADR-0032 D1 — curated
   owned: number | null;
   tenantConsumed: number | null;
   allocatedToOpcos: number;
   assignedToUsers: number;
-  unallocated: number | null; // owned - allocatedToOpcos
-  overAllocated: boolean; // allocatedToOpcos > owned
+  unallocated: number | null; // owned - allocatedToOpcos; null when unlimited
+  overAllocated: boolean; // allocatedToOpcos > owned; false when unlimited
+  noPrepaidSeats: boolean; // derived (ADR-0032 D2): prepaid, 0 owned, but in use
 }
 
 /**
@@ -578,11 +593,12 @@ export interface UpdateUserBody {
 
 /** GET /license/tenant-skus/stats → TenantSkuStatsDto (Platform recon tiles). */
 export interface TenantSkuStats {
-  totalOwned: number;
-  totalAllocated: number;
-  totalAssigned: number;
-  totalUnallocated: number; // totalOwned - totalAllocated (may be negative)
+  totalOwned: number; // PREPAID SKUs only (ADR-0032 D3)
+  totalAllocated: number; // all SKUs
+  totalAssigned: number; // all SKUs
+  totalUnallocated: number; // totalOwned - Σ allocated across PREPAID SKUs
   skusOverAllocated: number;
+  unlimitedSkus: number; // rows excluded from totalOwned / totalUnallocated
 }
 
 /** GET /license/drift → DriftAlertDto[] */

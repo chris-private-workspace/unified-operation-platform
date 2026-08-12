@@ -30,8 +30,8 @@ export interface CatalogSyncResult {
  * records a TenantSkuSnapshot of the totals each run.
  *
  * skuId (GUID) is the only key we trust (DESIGN §5). Human-curated columns
- * (businessAlias / category / displayName / isBaseLicense) are never
- * overwritten on update — the tenant can't supply them.
+ * (businessAlias / category / displayName / isBaseLicense / seatModel) are
+ * never overwritten on update — the tenant can't supply them.
  */
 @Injectable()
 export class CatalogService {
@@ -131,6 +131,7 @@ export class CatalogService {
       businessAlias?: string | null;
       category?: string | null;
       isBaseLicense?: boolean;
+      seatModel?: string;
     },
   ) {
     const existing = await this.prisma.skuCatalog.findUnique({ where: { id } });
@@ -147,6 +148,12 @@ export class CatalogService {
     }
     if (dto.isBaseLicense !== undefined) {
       data.isBaseLicense = dto.isBaseLicense;
+    }
+    // ADR-0032 D1 — curated like the fields above; tenant sync never writes it.
+    // The DTO already rejected anything outside SEAT_MODELS, so no re-check here
+    // (the import path validates at its own parser, for the same reason).
+    if (dto.seatModel !== undefined) {
+      data.seatModel = dto.seatModel;
     }
 
     // ADR-0023 D5 / OQ-1 — the same collision guard the bulk import runs.

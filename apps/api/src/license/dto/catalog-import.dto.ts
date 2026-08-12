@@ -1,15 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { SEAT_MODELS } from '../seat-model';
 
 /**
  * POST /license/catalog/import — bulk curation of the SKU dictionary
  * (CH-019 / ADR-0023). Body is the CH-018 export, edited: SKUs are matched on
- * `SkuId` (GUID) and only the three curated columns are writable.
+ * `SkuId` (GUID) and only the curated columns are writable.
  */
 export class CatalogImportRequestDto {
   @ApiProperty({
     description:
-      'CSV text — the SKU Catalog export with alias / category / base edited',
+      'CSV text — the SKU Catalog export with alias / category / base / seat model edited',
   })
   @IsString()
   @IsNotEmpty()
@@ -44,6 +45,16 @@ export class CatalogFlagChangeDto {
   @ApiProperty() after!: boolean;
 }
 
+/**
+ * Its own shape rather than reusing CatalogTextChangeDto: seatModel is never
+ * null (ADR-0032 D1 — it has a default), and declaring it nullable would make
+ * the OpenAPI contract describe a value that cannot occur.
+ */
+export class CatalogSeatModelChangeDto {
+  @ApiProperty({ enum: SEAT_MODELS }) before!: string;
+  @ApiProperty({ enum: SEAT_MODELS }) after!: string;
+}
+
 /** One SKU with at least one changed field. Unchanged fields are omitted. */
 export class CatalogImportChangeDto {
   @ApiProperty() skuId!: string;
@@ -55,6 +66,8 @@ export class CatalogImportChangeDto {
   category?: CatalogTextChangeDto;
   @ApiProperty({ type: CatalogFlagChangeDto, required: false })
   isBaseLicense?: CatalogFlagChangeDto;
+  @ApiProperty({ type: CatalogSeatModelChangeDto, required: false })
+  seatModel?: CatalogSeatModelChangeDto;
   @ApiProperty({
     description:
       'alias goes from a value to none — the one change whose consequence is invisible in this screen',

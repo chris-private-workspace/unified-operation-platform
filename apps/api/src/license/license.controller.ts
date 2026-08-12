@@ -91,7 +91,9 @@ export class LicenseController {
   }
 
   /**
-   * Human curation of one SKU (CH-003) — alias / category / base-flag only.
+   * Human curation of one SKU (CH-003) — alias / category / base-flag / seat
+   * model only (CH-026 added the last one to this surface and the bulk one
+   * together; they must stay the same column set).
    * ADMIN / REGIONAL (inherits the class default); OPCO_IT can't curate the
    * shared dictionary. skuId / part number / display name stay system-owned.
    */
@@ -107,7 +109,7 @@ export class LicenseController {
 
   /**
    * Bulk curation (CH-019 / ADR-0023) — the SKU Catalog export, edited and
-   * uploaded back. Same three columns and same roles as the PATCH above; the
+   * uploaded back. Same curated columns and same roles as the PATCH above; the
    * difference is scale, a dry-run preview, and two fail-closed gates (alias
    * collisions, alias clears). 200 rather than 201: a dry run creates nothing,
    * and a commit updates existing rows.
