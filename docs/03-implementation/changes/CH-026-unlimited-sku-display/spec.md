@@ -139,7 +139,11 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.prepaidEnabled) { …擋�
 
 ⚠️ **仲有一件事未驗證,唔可以當已知**:`warning` 嗰批 seat **維持得住既有 assignment** 呢點有數據支持(`SPE_E3` 677 個人用緊而 `enabled` 得 21),但**派新 licence 掂唔掂,冇試過**。呢個決定咗係「放行」定「照擋但講清楚」,要真試先知。
 
-📌 **本單刻意唔跟落去**:改 `owned` 嘅定義 = 動 read-model 語意 + 可能動 assign gate = **另一個 ADR**。本單只做一件事 —— **把已知講錯咗嘅字改返**(assign 拒絕訊息 + badge `No prepaid seats` → `No seats enabled`),因為嗰啲字係本單今日先寫落去嘅。落地追蹤見 `BACKLOG` **`TENANT-SEAT-WARNING`**。
+📌 **本單刻意唔跟落去**:改 `owned` 嘅定義 = 動 read-model 語意 + 可能動 assign gate = **另一個 ADR**。本單只做一件事 —— **把已知講錯咗嘅字改返**(assign 拒絕訊息 + badge `No prepaid seats` → `No seats enabled`),因為嗰啲字係本單今日先寫落去嘅。
+
+🟡 **同日已開 `ADR-0033`(Proposed)** —— Chris 答咗兩條(snapshot 存齊四個欄 · `owned = enabled + warning`),`D4`(gate 用邊個數)ADR 建議 **`enabled + warning`**:實測 `enabled` 拒絕 **32/101** · `+warning` **11** · `+suspended` **6**,而 B 之下擋住嗰 11 個**每個都講得出理由**(6 個真用晒 + 5 個 `Suspended`)。追蹤 `BACKLOG` **`TENANT-SEAT-WARNING`**。
+
+⚠️ **`ADR-0033` 落地會改返本單兩處字**:`Prepaid seats` KPI 名(D2 之後佢已經唔止 prepaid)同 `No seats enabled` label(收窄之後剩返嘅係 `Suspended`)。**呢個成本值得記** —— 本單嘅文案係喺「只讀過四個欄之一」嘅前提下寫嘅。
 
 ## 6. Effort Estimate
 
