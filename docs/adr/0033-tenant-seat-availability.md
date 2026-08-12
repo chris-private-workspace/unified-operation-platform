@@ -1,6 +1,6 @@
 # ADR-0033 — Tenant 可用 seat = `enabled + warning`，唔再只計 `enabled`
 
-**Status**: **Proposed**(D1 / D2 方向 Chris 2026-08-12 已答;D4 待確認建議)
+**Status**: **Accepted**(Chris Lai,2026-08-12 —— D1 連 `capabilityStatus` 一齊採納 · D2 · **D4 揀 B**)
 **Date**: 2026-08-12
 **Deciders**: Chris Lai
 **Supersedes / Amends**: **唔推翻** `ADR-0032` —— 佢處理「呢個 SKU 有冇 seat 概念」(curate),本 ADR 處理「有概念嗰啲,可用 seat 到底係幾多」(量度)。兩者正交
@@ -69,13 +69,15 @@ model TenantSkuSnapshot {
   warningUnits   Int @default(0) // .warning   — 過期寬限期,仲用得
   lockedOutUnits Int @default(0) // .lockedOut — 已鎖
   consumedUnits  Int
+  // Microsoft 自己對呢個訂閱嘅判斷。存佢而唔係由四個數推 —— 見下。
+  capabilityStatus String @default("Enabled") // Enabled | Warning | Suspended | Deleted | LockedOut
   // ...
 }
 ```
 
 🔴 **`prepaidEnabled` 個名唔改。** 佢一直**準確**對應 `prepaidUnits.enabled`;rename 會掃過 `catalog.service` / `tenant-owned.service` / seam ② 三個 provider / 十幾條 test,而佢本身冇講錯。**講錯嘅係「把佢當成 owned 全部」嗰個用法**,改用法唔改名。
 
-**建議加多一個(唔喺 Chris 原答案,提出畀你剔)**:`capabilityStatus String @default("Enabled")` —— 佢係嗰 4 個 `Suspended` SKU 嘅**權威標記**,而由四個數字推返出嚟係第二份判斷(本 repo 反覆出現嗰個形狀)。**成本 = 一個欄**;唔要就 D5 靠 `suspended > 0` 推。
+🟢 **`capabilityStatus String @default("Enabled")` 一齊加**(Chris 2026-08-12 採納建議)。佢係嗰 4 個 `Suspended` SKU 嘅**權威標記** —— 由四個數字推返「呢個訂閱係咪已經取消」就係喺 code 入面**再造一份 Microsoft 已經講咗嘅判斷**,而嗰個形狀本 repo 撞過好多次(`ADR-0004` name-denylist · `ADR-0032` threshold · BUG-005/BUG-011 兩份 provider 清單)。**成本 = 一個欄**;`graph.service.ts:91` **一早已經攞緊佢**,只係從來冇存落 snapshot。
 
 ### D2 — `owned` = `enabled + warning`（Chris 2026-08-12 答）
 
@@ -103,7 +105,7 @@ export interface TenantSkuSeats {
 
 ⇒ 每個 provider 詮釋自己嘅 vendor,seam 只收結論。**n8n provider 出 `assignableUnits = prepaidEnabled`**(佢冇更多資料)⇒ n8n 路行為**逐字不變**,唔使等 n8n workflow 改。
 
-### D4 — assign gate 用 `assignableUnits`（🔴 **本 ADR 唯一要你落嘅決定**）
+### D4 — assign gate 用 `assignableUnits` = `enabled + warning`（🟢 **Chris 2026-08-12 揀 B**）
 
 ```ts
 if (!tenantSku || tenantSku.consumedUnits >= tenantSku.assignableUnits) { …擋… }
@@ -117,7 +119,7 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.assignableUnits) { …擋
 | **B** `enabled + warning`(**建議**) | **11** | 6 個**真係用晒**(`Teams_Rooms_Basic` 22/22 · `VISIO_PLAN2_DEPT` 2/2 · `M365_F1_COMM` 26/1 …)+ **5 個 `Suspended`**(`VIVA` · `Teams_Premium` ×2 · `Power_Automate_per_process` · `PROJECT_PLAN3_DEPT`) |
 | **C** `+ suspended` | **6** | 只剩真係用晒嗰批 |
 
-🟢 **建議 B**,兩個理由:
+🟢 **揀咗 B**(Chris 2026-08-12),兩個理由:
 
 1. **B 之下仲擋住嘅 11 個,每一個都講得出理由** —— 6 個真係用晒/超支,5 個訂閱已取消。**冇一個係誤擋。** A 之下有 27 個講唔出。
 2. **C 會放行 `capabilityStatus = Suspended` 嘅 SKU** —— 即係 Microsoft 明講唔可以用,我哋照派。B 同 C 只差嗰 5 個,而嗰 5 個正正係唯一應該擋嘅一批。
@@ -128,7 +130,7 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.assignableUnits) { …擋
 
 `ADR-0032 D2` 個 derived flag 由 `enabled === 0 && consumed > 0` 改成 **`owned === 0 && consumed > 0`**(即 `enabled` 同 `warning` 都係 0)⇒ 由今日嘅 **15 個**收窄到**真正冇可用 seat 嗰批**。
 
-**label 亦要跟**:`No seats enabled` → 建議 **`Subscription suspended`**(因為收窄之後,剩返嗰批就係 `Suspended`)。⚠️ 呢個要 D1 個 `capabilityStatus` 或者 `suspended > 0` 撐,唔可以靠估。
+**label 亦要跟**:`No seats enabled` → **`Subscription suspended`**(收窄之後剩返嗰批就係 `Suspended`)。🟢 **由 D1 個 `capabilityStatus` 直接讀,唔靠 `suspended > 0` 推** —— 呢個正正係 Chris 採納嗰個欄嘅第一個 caller。
 
 ### D6 — 遷移：新欄 default 0 ⇒ re-sync 之前零行為改變
 
