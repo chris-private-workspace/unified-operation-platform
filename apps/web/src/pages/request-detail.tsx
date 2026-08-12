@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Check,
   ChevronLeft,
-  ExternalLink,
   Pencil,
   Plus,
   Sparkles,
@@ -41,10 +40,12 @@ import {
 // routine on one screen and notable on the other.
 import { EVENT_TONE } from '@/lib/activity';
 import {
+  allLinesAssigned,
   canAddLine,
   canEditUpn,
   canRemoveLine,
   deriveStatus,
+  licenceRequestNumbers,
   nextStage,
   STAGE_LABEL,
   STAGE_TONE,
@@ -61,7 +62,11 @@ import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { canOverrideBudget, canSeePlatform } from '@/lib/roles';
 import { formatDateTime } from '@/lib/format';
 import { ApiError } from '@/lib/api';
-import type { AssignResult, AssignStep } from '@/lib/api-types';
+import type {
+  AssignResult,
+  AssignStep,
+  OnboardingRequest,
+} from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -376,31 +381,26 @@ export function RequestDetail() {
                     {req.handledById ? 'Assigned' : 'Unassigned'}
                   </span>
                 </span>
+                {/* CH-024 C — the platform's own reference. It used to fall
+                    back to `req.serviceNowNumber`, which printed the onboarding
+                    REQ a second time three centimetres from where the panel on
+                    the right already showed it, while the licence request was
+                    nowhere on the screen. */}
                 <span>
-                  Request{' '}
+                  Ref{' '}
                   <span className="font-mono text-fg-muted">
-                    {req.serviceNowNumber ?? `#${req.id.slice(-6)}`}
+                    #{req.id.slice(-6)}
                   </span>
                 </span>
               </div>
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-[8px]">
-            {req.serviceNowNumber && (
-              // Sync key — read-only always (D4). This is the field that must
-              // never change, so it is deliberately not part of edit mode.
-              <span className="flex items-center gap-[6px] rounded-md border border-border bg-card px-[10px] py-[6px] text-[11.5px] text-fg-muted">
-                ServiceNow{' '}
-                <span className="font-mono text-fg">
-                  {req.serviceNowNumber}
-                </span>
-                <ExternalLink
-                  size={13}
-                  strokeWidth={2}
-                  className="text-fg-subtle"
-                />
-              </span>
-            )}
+            {/* CH-024 C — the two ServiceNow tickets, named and separated.
+                Before this they were one line reading "ServiceNow REQ0012345",
+                which is true of the onboarding ticket and silent about the
+                licence request the platform raised for it. */}
+            <ServiceNowTickets req={req} />
             {!form ? (
               <Button
                 variant="ghost"
@@ -486,9 +486,12 @@ export function RequestDetail() {
         )}
 
         <div className="mt-[16px] flex flex-wrap items-center gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
+          {/* CH-024 D — the first step now names WHICH account: the row is read
+              left to right as one sentence, and "Account created" on its own
+              left the reader to guess whether it meant AD, M365 or ServiceNow. */}
           <SyncStep
             done={Boolean(req.accountCreatedAt)}
-            title="Account created"
+            title="AD account created"
             sub="in shared tenant"
           />
           <div className="h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
@@ -501,14 +504,26 @@ export function RequestDetail() {
           {/* ADR-0025 D4 — gate ②, shown as a third check point rather than as a
               separate panel: it is the same kind of fact as the two beside it
               (does this person exist over there yet), and assigning needs all
-              three. A panel of its own would read as optional. */}
+              three. A panel of its own would read as optional.
+              CH-024 D — "Synced to" rather than "Known to", so all three steps
+              describe the same kind of event in the same words. */}
           <SyncStep
             done={snSynced}
-            title="Known to ServiceNow"
+            title="Synced to ServiceNow"
             sub="target user record"
           />
           <div className="ml-auto flex items-center gap-[8px]">
-            {assignable ? (
+            {/* 🔴 CH-024 D — line items FIRST, gates second. This branch used to
+                start at `assignable`, which is a statement about whether the
+                request COULD be assigned; once both gates opened it said "Ready
+                to assign" forever, including after every line had been assigned.
+                The header badge above was already right (deriveStatus →
+                "Completed"), so the screen contradicted itself. */}
+            {allLinesAssigned(req) ? (
+              <span className="text-[12.5px] font-medium text-ok">
+                License assigned
+              </span>
+            ) : assignable ? (
               <span className="text-[12.5px] font-medium text-ok">
                 Ready to assign
               </span>
@@ -706,8 +721,20 @@ export function RequestDetail() {
                           ×{item.quantity}
                         </span>
                       </div>
-                      <span className="text-[11.5px] text-fg-subtle">
+                      <span className="flex flex-wrap items-center gap-x-[8px] text-[11.5px] text-fg-subtle">
                         {pathLabel}
+                        {/* CH-024 C — the licence RITM belongs on the line that
+                            owns it: this is the ticket the platform closes when
+                            THIS SKU is assigned. Absent (not "—") when the line
+                            has none, so nothing implies a missing ticket. */}
+                        {item.serviceNowNumber && (
+                          <span>
+                            ·{' '}
+                            <span className="font-mono text-fg-muted">
+                              {item.serviceNowNumber}
+                            </span>
+                          </span>
+                        )}
                       </span>
                       {/* Two layers, never merged: OpCo budget is live + scoped;
                           tenant seats are as-of the last sync (snapshot, not
@@ -1081,6 +1108,73 @@ function OverrideBudgetDialog({
         </p>
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * CH-024 C — the two ServiceNow tickets behind one onboarding, named.
+ *
+ * 🔴 They are NOT two views of the same ticket:
+ *
+ *   Onboarding request — the REQ n8n raised when the joiner was onboarded. It
+ *     is also this row's idempotency key (`@unique`), so it never changes.
+ *   Licence request    — the `O365 User License Maintenance Request` THIS
+ *     platform raised (ADR-0025 D2), carried as a RITM on each line item, and
+ *     the one the platform closes after assigning.
+ *
+ * Before this the header printed only the first, twice, and an operator had no
+ * way to learn the second existed — while `schema.prisma` warns in as many
+ * words that confusing the two is the easiest mistake to make here.
+ *
+ * Read-only by design (CH-007 D4): these are sync keys, never edit-mode fields.
+ * A section with nothing to show is omitted rather than printing a dash — an
+ * empty "Licence request —" reads as "the ticket is missing", which is a
+ * different and much louder claim than "none has been raised".
+ */
+function ServiceNowTickets({ req }: { req: OnboardingRequest }) {
+  const licence = licenceRequestNumbers(req);
+  if (!req.serviceNowNumber && licence.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-[7px] rounded-md border border-border bg-card px-[11px] py-[9px]">
+      {req.serviceNowNumber && (
+        <TicketRef
+          label="Onboarding request"
+          numbers={[req.serviceNowNumber]}
+          sub="raised in ServiceNow — the source of this onboarding"
+        />
+      )}
+      {licence.length > 0 && (
+        <TicketRef
+          label={licence.length > 1 ? 'Licence requests' : 'Licence request'}
+          numbers={licence}
+          sub="raised by this platform, closed on assign"
+        />
+      )}
+    </div>
+  );
+}
+
+function TicketRef({
+  label,
+  numbers,
+  sub,
+}: {
+  label: string;
+  numbers: string[];
+  sub: string;
+}) {
+  return (
+    <div className="flex flex-col items-end gap-[1px] leading-[1.3]">
+      <span className="flex flex-wrap items-center justify-end gap-x-[7px] text-[11.5px] text-fg-muted">
+        {label}
+        {numbers.map((n) => (
+          <span key={n} className="font-mono text-fg">
+            {n}
+          </span>
+        ))}
+      </span>
+      <span className="text-[11px] text-fg-subtle">{sub}</span>
+    </div>
   );
 }
 

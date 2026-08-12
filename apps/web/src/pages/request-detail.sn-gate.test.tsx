@@ -144,9 +144,11 @@ describe('request detail — the ServiceNow check point (F5-1)', () => {
   it('shows it as a third check point, outstanding while the gate is shut', () => {
     show({ ...OPEN, serviceNowUserSyncedAt: null });
 
-    expect(screen.getByText('Known to ServiceNow')).toBeTruthy();
+    // CH-024 D wording: all three check points now describe the same kind of
+    // event in the same words, and the first one names which account.
+    expect(screen.getByText('Synced to ServiceNow')).toBeTruthy();
     // The two it sits beside are still there — it was added, not substituted.
-    expect(screen.getByText('Account created')).toBeTruthy();
+    expect(screen.getByText('AD account created')).toBeTruthy();
     expect(screen.getByText('Synced to Azure AD')).toBeTruthy();
   });
 
@@ -177,6 +179,37 @@ describe('request detail — the ServiceNow check point (F5-1)', () => {
     expect(screen.getByText(/^Check now/)).toBeTruthy();
     expect(screen.getByText('Mark synced')).toBeTruthy();
     expect(screen.queryByText('Waiting on ServiceNow')).toBeNull();
+  });
+});
+
+/**
+ * CH-024 D — the check-point row after everything has been assigned.
+ *
+ * 🔴 The gates are OPEN in both cases here. That is the whole point: the old
+ * code branched on `assignable` (= both gates open) and never looked at the
+ * line items, so it said "Ready to assign" forever. A fixture that shut a gate
+ * would pass against the broken version too.
+ */
+describe('request detail — the row stops offering what is already done', () => {
+  // Distinct id: the two-line case renders both, and a duplicate React key
+  // would make the second one vanish — quietly turning the outstanding-line
+  // test into the all-assigned one.
+  const assigned = { ...READY_LINE, id: 'li-2', stage: 'ASSIGNED' };
+
+  it('says License assigned once every line is assigned', () => {
+    show({ ...OPEN, lineItems: [assigned] } as any);
+
+    expect(screen.getByText('License assigned')).toBeTruthy();
+    // Not merely "the new text is present": the old text must be GONE, or the
+    // screen still contradicts the "Completed" badge above it.
+    expect(screen.queryByText('Ready to assign')).toBeNull();
+  });
+
+  it('🔴 still says Ready to assign while one line is outstanding', () => {
+    show({ ...OPEN, lineItems: [assigned, READY_LINE] } as any);
+
+    expect(screen.queryByText('License assigned')).toBeNull();
+    expect(screen.getAllByText('Ready to assign').length).toBeGreaterThan(0);
   });
 });
 

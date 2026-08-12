@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
+import { Pagination } from '@/components/ui/pagination';
 import { Inbox, Plus } from 'lucide-react';
+import { NEW_REQUEST_ENABLED } from '@/lib/features';
 import { useMe, useRequests } from '@/hooks/queries';
 import {
   deriveStatus,
@@ -113,14 +115,19 @@ export function Requests() {
               {rows.length} of {all.length} requests
             </span>
           )}
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus size={14} strokeWidth={2} />}
-            onClick={() => navigate('/requests/new')}
-          >
-            New request
-          </Button>
+          {/* CH-024 A — parked, so the button is absent rather than disabled: a
+              control that cannot be pressed reads as "broken", and there is
+              nothing broken here. The route redirects to match. */}
+          {NEW_REQUEST_ENABLED && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus size={14} strokeWidth={2} />}
+              onClick={() => navigate('/requests/new')}
+            >
+              New request
+            </Button>
+          )}
         </div>
       </div>
 
@@ -214,29 +221,16 @@ export function Requests() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between gap-[12px] border-t border-border px-[16px] py-[11px]">
-              <span className="text-[11.5px] text-fg-subtle">
-                {`${safePage * PAGE_SIZE + 1}–${safePage * PAGE_SIZE + pageRows.length} of ${rows.length}`}
-              </span>
-              {pageCount > 1 && (
-                <div className="flex items-center gap-[6px]">
-                  {Array.from({ length: pageCount }, (_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setPage(i)}
-                      className={cn(
-                        'h-[28px] min-w-[28px] rounded-md px-[9px] text-[12px] font-medium',
-                        i === safePage
-                          ? 'bg-accent text-accent-fg'
-                          : 'border border-border bg-card text-fg hover:bg-hover',
-                      )}
-                    >
-                      {i + 1}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* CH-024 B — same shared pager as License Assets; `page` is
+                0-based here and 1-based on screen. */}
+            <Pagination
+              page={safePage + 1}
+              pageCount={pageCount}
+              pageSize={PAGE_SIZE}
+              total={rows.length}
+              shown={pageRows.length}
+              onChange={(p) => setPage(p - 1)}
+            />
           </>
         )}
       </Card>

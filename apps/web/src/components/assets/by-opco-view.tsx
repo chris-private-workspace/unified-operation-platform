@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading, LoadError } from '@/components/ui/feedback-states';
+import { Pagination } from '@/components/ui/pagination';
 import { Toast } from '@/components/ui/toast';
 import { useLedger, useLedgerStats } from '@/hooks/queries';
 import { useUpdateLedger } from '@/hooks/mutations';
@@ -517,32 +518,21 @@ export function ByOpcoView() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between gap-[12px] border-t border-border px-[16px] py-[11px]">
-              <span className="text-[11.5px] text-fg-subtle">
-                {`${safePage * PAGE_SIZE + 1}–${safePage * PAGE_SIZE + pageRows.length} of ${filtered.length}`}
-              </span>
-              {pageCount > 1 && (
-                <div className="flex items-center gap-[6px]">
-                  {Array.from({ length: pageCount }, (_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        setPage(i);
-                        setEditingId(null);
-                      }}
-                      className={cn(
-                        'h-[28px] min-w-[28px] rounded-md px-[9px] text-[12px] font-medium',
-                        i === safePage
-                          ? 'bg-accent text-accent-fg'
-                          : 'border border-border bg-card text-fg hover:bg-hover',
-                      )}
-                    >
-                      {i + 1}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* CH-024 B — `page` is 0-based here, the pager is 1-based; the
+                conversion stays at this boundary. Leaving edit mode on a page
+                change is unchanged behaviour: the draft belongs to a row that
+                is about to leave the screen. */}
+            <Pagination
+              page={safePage + 1}
+              pageCount={pageCount}
+              pageSize={PAGE_SIZE}
+              total={filtered.length}
+              shown={pageRows.length}
+              onChange={(p) => {
+                setPage(p - 1);
+                setEditingId(null);
+              }}
+            />
           </>
         )}
       </Card>

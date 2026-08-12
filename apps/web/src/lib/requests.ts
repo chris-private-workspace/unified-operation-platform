@@ -85,15 +85,68 @@ export interface DerivedStatus {
   tone: BadgeTone;
 }
 
+/** Line items that still count — a cancelled line is not waiting for anything. */
+function activeLines(req: OnboardingRequest): RequestLineItem[] {
+  return (req.lineItems ?? []).filter((i) => i.stage !== 'CANCELLED');
+}
+
+/**
+ * Every line that still counts has been assigned — i.e. there is nothing left
+ * to do on this request.
+ *
+ * CH-024 D. Exported because the request detail's check-point row needs the
+ * same answer as `deriveStatus`, and asking it twice in two places is how the
+ * screen ended up contradicting itself: the header badge said "Completed" while
+ * the row underneath still said "Ready to assign", because the row only ever
+ * looked at the two sync gates and never at the line items at all.
+ *
+ * A request whose lines are ALL cancelled is not "assigned" — nothing was.
+ */
+export function allLinesAssigned(req: OnboardingRequest): boolean {
+  const active = activeLines(req);
+  return active.length > 0 && active.every((i) => i.stage === 'ASSIGNED');
+}
+
+/**
+ * The ServiceNow numbers of the licence request(s) THIS PLATFORM raised —
+ * i.e. the RITMs on the line items, not `req.serviceNowNumber`.
+ *
+ * CH-024 C. These are two different tickets and `schema.prisma` says so in as
+ * many words ("mixing them up is the easiest mistake to make here"):
+ *
+ *   req.serviceNowNumber  → the onboarding REQ n8n raised. Also the idempotency
+ *                           key, so it can never change.
+ *   these                 → the `O365 User License Maintenance Request` the
+ *                           platform raised for this joiner, and the one it
+ *                           closes after assigning.
+ *
+ * Deduped because several lines are raised on ONE submission and can carry the
+ * same RITM; order of first appearance, so the display order follows the line
+ * items rather than an arbitrary Set iteration.
+ *
+ * Cancelled lines are included: a cancelled line whose ticket was already
+ * raised still has a real ticket sitting in ServiceNow, and hiding it is how an
+ * orphan goes unnoticed.
+ */
+export function licenceRequestNumbers(req: OnboardingRequest): string[] {
+  const seen: string[] = [];
+  for (const line of req.lineItems ?? []) {
+    const n = line.serviceNowNumber;
+    if (n && !seen.includes(n)) seen.push(n);
+  }
+  return seen;
+}
+
 /**
  * Granular request status derived from line-item stages + the Azure sync gate
  * (not the coarse RequestStatus enum). Mirrors the prototype's status column.
  */
 export function deriveStatus(req: OnboardingRequest): DerivedStatus {
-  const active = (req.lineItems ?? []).filter((i) => i.stage !== 'CANCELLED');
+  const active = activeLines(req);
   if (active.length === 0) return { label: 'Cancelled', tone: 'neutral' };
-  if (active.every((i) => i.stage === 'ASSIGNED'))
-    return { label: 'Completed', tone: 'ok' };
+  // CH-024 D — shares `allLinesAssigned` with the detail screen's check-point
+  // row on purpose. Same question, one answer.
+  if (allLinesAssigned(req)) return { label: 'Completed', tone: 'ok' };
   if (active.some((i) => PROCUREMENT_STAGES.includes(i.stage)))
     return { label: 'In procurement', tone: 'warn' };
   // remaining items are REQUESTED / READY (± some ASSIGNED)

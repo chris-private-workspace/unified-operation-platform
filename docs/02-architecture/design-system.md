@@ -78,7 +78,19 @@ shadcn/ui 做底但 re-skin 用上面 token(或 alias `--primary:var(--accent)` 
 **Badge = 全系統通用狀態標記。Stage → tone map(必守)**:
 `Ready→ok` · `Quoting / Awaiting vendor→warn` · `Requested→info` · `Blocked→danger` · `Assigned→neutral` · `AI→purple`。
 
-> ⚠️ Tabs / Pagination / Tooltip / EmptyState 係 handoff 額外加、未 wire 入現有畫面 —— 用嗰陣跟各自 `.prompt.md`。
+> ⚠️ Tabs / Tooltip 係 handoff 額外加、未 wire 入現有畫面 —— 用嗰陣跟各自 `.prompt.md`。
+> ✅ **Pagination 已 wire(CH-024 B,2026-08-12)**:`apps/web/src/components/ui/pagination.tsx`,caller = Requests 列表 + License Assets(By OpCo)。EmptyState 一早已 wire。
+
+**Pagination `«` / `»`(owner-approved primitive 擴充,Chris 2026-08-12 · CH-024)**
+
+Handoff 原版得 `‹` prev / `›` next + 最多 5 個 window 頁碼。**加咗 first / last 兩個掣**,約束:
+
+- **只加呢兩個,唔加「跳去第 N 頁」輸入框 / 每頁筆數選擇** —— 加嗰兩樣就變咗另一件 control,要另外傾
+- **window 仍然係 5**(`lib/pagination.ts` `PAGE_WINDOW`)—— 呢個數唔郁
+- 🔴 **點解要偏離**:真實 ledger 係 **2283 行 / 10 per page = 229 頁**。handoff 個範例係 8 頁,喺嗰個規模 prev/next 夠用;229 頁之下由頭去尾要撳幾十次,等於「去唔到」
+- **icon 用 lucide `ChevronsLeft` / `ChevronsRight`**,唔用 handoff 個 `‹` `›` 文字 glyph —— DS-6(icon = lucide stroke)喺呢個元件一樣成立,而且少一個字體相依嘅字符
+
+⚠️ **改動前 229 頁係全部逐個掣 render 出嚟**(`Array.from({length: pageCount})`)。見到呢個 pattern = 未 wire 新元件。
 
 **Toast `action`(owner-approved primitive 擴充,Chris 2026-07-31 · CH-013)**
 
