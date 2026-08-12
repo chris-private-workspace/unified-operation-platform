@@ -1,7 +1,7 @@
 ---
 change_id: CH-024
 title: "Requests / Assets 五處 UI 修正 —— 溯源可見性 + 分頁 + 狀態誠實"
-status: approved
+status: done
 created: 2026-08-12
 target_completion: 2026-08-13
 affects_components: [apps/web, apps/api/fulfilment]

@@ -1,7 +1,7 @@
 ---
 change_id: CH-024
 spec_ref: ./spec.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-08-12
 ---
 
@@ -68,17 +68,19 @@ last_updated: 2026-08-12
   - 拆走 D-2 個 `allLinesAssigned` 分支 ⇒ `says License assigned once every line is assigned` **紅**(1 failed / 9 passed)
   - 拆走 C-7 個早退 ⇒ `n8n re-pushing does not add a second entry` **紅** ⇒ 嗰條 `not.toHaveBeenCalled()` **唔係 vacuous**(§9 記低嘅陷阱)
 - [x] **V-5** 跑 `ui-design` skill 自檢(DS-1..12)—— 見 `progress.md` Day 1
-- [ ] **V-6** 🔴 **light + dark 兩邊真 render 睇過**(H6)—— Requests / License Assets / Request detail 三頁。**未做:要起本地 stack,而 5433 同 `ai-doc-extraction-db` 硬衝突,要 Chris 批先 stop 佢**
-- [ ] **V-7** 人手驗 B1/B2 邊界(第 1 頁 · 中間 · 最後一頁)—— 同 V-6 一齊做
+- [x] **V-6** 🔴 **light + dark 兩邊真 render 睇過**(H6,2026-08-12,Chris 批咗 stop `ai-doc-extraction-db`)—— 六張截圖:Requests light+dark · License Assets light+dark · Request detail light+dark。**A-3 route redirect 亦 live 驗**(打 `/requests/new` → URL 真係變 `/requests`)
+- [x] **V-7** 人手驗 B1/B2 邊界 —— 第 1 頁 `«` `‹` **disabled** + window `1-5`;最後一頁(7)window 移去 `3-7` + `›` `»` **disabled** + summary **`61–64 of 64`**(短尾頁計啱 = `pageRangeLabel` 用實際 rows 唔重算嘅理由)。active 掣 `font-family` 實測 = **`Geist Mono`**(DS-5)
+
+> 🔴 **本機 ledger 係空,pager 驗唔到** —— Chris 截圖嗰 2283 行係另一個環境。造咗 fixture(64 ledger rows = 7 頁 · 一張帶兩個單號嘅 request · 一張全 `ASSIGNED` 嘅 request),**驗完全部清返**(`ledger_rows` 1 / `requests` 2 / leftover **0**,同造之前一樣)。SQL 三個檔留喺 scratchpad。
 
 ## Cross-Cutting
 
-- [ ] Commit 對應 `progress.md` Day-N(R2)
-- [ ] Commit message follow Conventional Commits + scope
-- [ ] (N/A 若無架構決定)ADR —— 本單**預期零 ADR**:無 schema / 無契約 / 無 vendor 改動
-- [ ] `BACKLOG.md` 同步(R7)—— 特別係 §2.2 兩個 out-of-scope(Platform `In M365` 欄 · outbound 路 event)
-- [ ] `progress.md` closeout summary
-- [ ] `progress.md` + 本檔 frontmatter status → `done`
+- [x] Commit 對應 `progress.md` Day-N(R2)
+- [x] Commit message follow Conventional Commits + scope
+- [x] ADR —— **零 ADR,如預期**:無 schema / 無 migration / 無契約 / 無 vendor 改動
+- [x] `BACKLOG.md` 同步(R7)—— `CH-024` + `ASSETS-IN-M365` 入 A 區;`LINT-web` 更新(⚠️ **第一版開咗條重複 `TD-3`,自己捉返刪咗**)
+- [x] `progress.md` closeout summary
+- [x] `progress.md` + 本檔 frontmatter status → `done`
 
 ---
 

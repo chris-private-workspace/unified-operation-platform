@@ -2,7 +2,7 @@
 change_id: CH-024
 spec_ref: ./spec.md
 checklist_ref: ./checklist.md
-status: in-progress     # in-progress | closed
+status: closed          # in-progress | closed
 ---
 
 # CH-024 — Progress
@@ -119,20 +119,82 @@ Checklist **A-1..4 · B-1..7 · C-1..9 · D-1..6 · E-1..2 · V-1..5** 全部 ti
 
 ---
 
-## Closeout(填於 status=closed)
+## Day 2 — 2026-08-12(H6 render 驗證)
+
+### Done
+
+**V-6 / V-7 全收**,`checklist.md` 全部 tick,status → `done`。
+
+**驗到嘅嘢**(六張截圖喺 scratchpad `ch024-screenshots/`):
+
+| 項 | 實測 |
+|---|---|
+| **A** | Requests toolbar **冇** `New request` 掣(light + dark 都係),打 `/requests/new` 個 URL **真係變咗** `/requests` |
+| **B** | 第 1 頁 `« ‹` **disabled** + window `1-5`;最後一頁(7)window 移去 `3-7` + `› »` **disabled**;summary **`61–64 of 64`**(短尾頁 4 行計啱);active 掣 `font-family` 實測 **`Geist Mono`** |
+| **C** | 頭部兩塊分開:`Onboarding request REQ0044200 / raised in ServiceNow — the source of this onboarding` 同 `Licence request RITM0055123 / raised by this platform, closed on assign`;meta row 變 `Ref #nazgs2`(唔再重複 REQ 號);line item 卡出 `· RITM0055123` |
+| **D** | 三個檢查點 `AD account created → Synced to Azure AD → Synced to ServiceNow`;全 assigned 嗰張:頂部 badge `Completed` **同時** sync row `License assigned` ⇒ **兩者終於一致**;仲有一條 READY 嗰張維持 `Ready to assign` |
+| **E** | badge `Available` 同表頭 `AVAILABLE` 欄對得返;`Fully allocated` / `Over-allocated` 一個字冇改 |
+| **H6** | 三頁 light + dark 都行過,零硬色值爆,dark 對比正常 |
+
+### 🔴 起 stack 撞咗三個坑,每個都值得記
+
+1. **`ai-doc-extraction-db` 停咗之後自己起返** —— 10:34 `docker stop`、**10:41 又 Up**。佢係 `restart=unless-stopped`,而呢個 policy 嘅語意**就係手動停之後唔應該返嚟**。**我唔知邊個起佢**(冇亂猜),但後果係 `uop-postgres` 撞 `port is already allocated` 起唔到。⇒ **下次起 stack 之前,要驗嘅唔係「我停咗未」,係「而家邊個佔住 5433」**
+2. 🔴 **`ensure-infra.ps1` 個 `[2]` 檢查有假綠燈** —— 佢報 `port 5433 (postgres) -> LISTENING`,**但嗰個 listener 係 `ai-doc-extraction-db`**。佢只問「個 port 有冇人聽」,冇問「係咪我個 container」。係 `[3]` 真連線探測(`container ... is not running`)先揭穿。**同 §9「有設定 ≠ 設定啱」、「revision Healthy ≠ DB 通」完全同源**
+3. 🔴 **`Found 0 errors` + `MODULE_NOT_FOUND` 出現咗兩次,而第二次唔係 build cache** —— 真兇係**我自己開咗兩條 `nest start --watch`**(未清 `20528` 就起 `1508`)。第二條起身**清 `dist/`** → tsc 讀第一條啱啱寫低嘅 `tsbuildinfo` → 判斷「已最新」→ **skip emit** → `dist` 空。⇒ **同一個症狀,兩個唔同成因**;`kill-zombies` dry-run 印出**兩條 watch 並排**先係決定性證據,唔係再刪多次 cache
+
+### Decisions
+
+- **本機造 fixture 驗 pager** —— 本機 ledger 係**空**(`No allocations tracked yet`),Chris 截圖嗰 2283 行係另一個環境。造 64 行(7 頁)+ 兩張 request,**驗完即清**(`ledger_rows` 1 / `requests` 2 / leftover 0,同造之前逐個對返)。三個 SQL 檔留喺 scratchpad
+- **截圖唔入 repo** —— `.playwright-mcp/` 有 gitignore,但我指定咗 filename 所以跌咗喺 repo root,移咗去 scratchpad
+
+### Blockers
+
+- 無 —— **CH-024 全部 acceptance 收齊**
+
+### Effort
+
+- Day 2:≈ 1h(其中約一半係上面三個坑)
+
+### Commits
+
+| Hash | Subject |
+|---|---|
+| `1e0d5f9` | `feat(web,fulfilment): CH-024 A-E` |
+| `b7f409e` | `docs(planning): CH-024 落 BACKLOG` |
+| _(下一個)_ | `docs(planning): CH-024 ✅ closed` |
+
+---
+
+## Closeout
 
 ### Acceptance verification
 
-_(待填)_
+**spec §3 全部 21 條 ✅**(A1-A2 · B1-B3 · C1-C5 · D1-D3 · E1 · T1-T4 · H6)。零 partial、零 failed。
 
 ### Effort summary
 
 | Day | Planned (h) | Actual (h) | Variance |
 |---|---|---|---|
+| 0(spec) | — | 1.0 | — |
+| 1(實作) | 4–6 | 3.5 | −0.5 ~ −2.5 |
+| 2(H6) | — | 1.0 | — |
+| **合計** | **4–6** | **5.5** | 喺範圍內 |
 
 ### Lessons
 
-_(待填)_
+**work**
+- **五點合一個 CH** 係啱嘅 —— B / D / E 撞同一批 test 檔,拆五個單會重複改三次
+- **兩個 falsification 都真跑** —— 尤其 `not.toHaveBeenCalled()` 嗰條,佢正正係 §9 點名「no-op 之下仍然綠」嘅形狀,唔拆走實作根本唔知佢守唔守到嘢
+- **改動嗰刻抽 pure function**(`allLinesAssigned` / `pageWindow` / `licenceRequestNumbers`)—— 229 頁嘅邊界、四種 line 組合,component test 到唔到,pure test 一句就到
+
+**didn't**
+- 🔴 **spec §4 R3 寫咗一句未實跑嘅推論**(`sn-gate:213` 會由 2 變 1),而佢喺 spec 入面**讀落同已驗證嘅事實一模一樣**。實跑先知冇紅,而真正紅嗰兩行原文冇提。**同 §9 記低嗰族(B8「兩個 hostname 都打唔到」· CH-023 G9「卡 B8」)同源** ⇒ 寫 spec 嗰陣「呢條 test 會紅」呢種話,**要嘛先跑,要嘛標明係推論**
+- **落 BACKLOG 開咗條重複 entry** —— `TD-3` 講嘅嘢 `LINT-web` 一早有(CH-019 就揭過)。自己捉返,但**應該落筆之前先搜**
+- **一條「單獨跑先綠」嘅 test** —— `withFlag` 順手把成個 router 樹拉入 button test,單獨 3941ms 綠、全 suite 並行爆 5s。拆開之後 545ms。⚠️ 呢種 test **最難查**,因為重跑一次佢又綠
+
+**carry-over**
+- `LINT-web`(BACKLOG)—— 本單第三次數到佢,今次 15 條
+- `ASSETS-IN-M365`(BACKLOG)—— 候選,未批
 
 ---
 
