@@ -13,7 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ServiceNowService } from '../integration/servicenow/servicenow.service';
 import { assertOpcoScope, scopeWhere } from '../auth/opco-scope';
-import { StageService } from './stage.service';
+import { aggregateRequestStatus, StageService } from './stage.service';
 import { IntakeRequestDto } from './dto/intake.dto';
 import { AddLineItemDto } from './dto/line-item.dto';
 import { UpdateRequestDto } from './dto/update-request.dto';
@@ -94,6 +94,27 @@ export class RequestService {
     if (request.origin === 'platform-created') {
       throw new ConflictException(
         'Cannot add line items to a platform-created request — it is already in ServiceNow. Open a new request instead.',
+      );
+    }
+    // CH-025 C: a finished onboarding stays finished. Without this, adding a
+    // line to a COMPLETED request pushed it back to IN_PROGRESS via
+    // recomputeRequestStatus below — a delivered onboarding quietly coming back
+    // to life, with no record of why.
+    //
+    // 🔴 Recomputed from the line items rather than read off `request.status`:
+    // the persisted column is maintained by recomputeRequestStatus, and gating
+    // on a cached copy of a derived value is how the two drift apart. Same
+    // function the recompute uses, so they cannot disagree.
+    const existing = await this.prisma.requestLineItem.findMany({
+      where: { requestId },
+      select: { stage: true },
+    });
+    if (
+      aggregateRequestStatus(existing.map((l) => l.stage)) ===
+      RequestStatus.COMPLETED
+    ) {
+      throw new ConflictException(
+        'This request is complete — every licence has been assigned. Add line items to a new request instead.',
       );
     }
     const sku = await this.prisma.skuCatalog.findUnique({

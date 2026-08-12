@@ -43,6 +43,10 @@ describe('RequestService', () => {
         create: jest.fn(),
         findUnique: jest.fn(),
         delete: jest.fn().mockResolvedValue({ id: 'li1' }),
+        // CH-025 C — addLineItem now recomputes "is this request finished"
+        // from the existing lines. Default EMPTY, which aggregates to OPEN, so
+        // every test written before CH-025 behaves exactly as it did.
+        findMany: jest.fn().mockResolvedValue([]),
       },
       requestEvent: { create: jest.fn() },
     };
@@ -207,6 +211,84 @@ describe('RequestService', () => {
         service.addLineItem('r1', { skuCatalogId: 'c1' }, ADMIN),
       ).rejects.toThrow(ConflictException);
       expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
+    });
+
+    /**
+     * CH-025 C — a finished onboarding stays finished.
+     *
+     * 🔴 Before this guard the add SUCCEEDED, and `recomputeRequestStatus`
+     * below then pushed the request from COMPLETED back to IN_PROGRESS: a
+     * delivered onboarding quietly coming back to life, with the timeline
+     * showing only "line item added".
+     */
+    describe('completed requests (CH-025 C)', () => {
+      const intake = () =>
+        prisma.request.findUnique.mockResolvedValue({
+          id: 'r1',
+          opcoId: 'o1',
+          origin: 'onboarding-intake',
+        });
+
+      it('🔴 refuses, and writes NOTHING, once every line is assigned', async () => {
+        intake();
+        prisma.requestLineItem.findMany.mockResolvedValue([
+          { stage: 'ASSIGNED' },
+          { stage: 'ASSIGNED' },
+        ]);
+
+        await expect(
+          service.addLineItem('r1', { skuCatalogId: 'c1' }, ADMIN),
+        ).rejects.toThrow(ConflictException);
+        // All three, because the damage was never the extra line on its own —
+        // it was the status flip and the event that made it look routine.
+        expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
+        expect(prisma.requestEvent.create).not.toHaveBeenCalled();
+        expect(stage.recomputeRequestStatus).not.toHaveBeenCalled();
+      });
+
+      it('still allows while one line is outstanding', async () => {
+        intake();
+        prisma.requestLineItem.findMany.mockResolvedValue([
+          { stage: 'ASSIGNED' },
+          { stage: 'READY' },
+        ]);
+        prisma.skuCatalog.findUnique.mockResolvedValue({
+          id: 'c1',
+          skuPartNumber: 'SPE_E3',
+        });
+        prisma.requestLineItem.create.mockImplementation(({ data }) => ({
+          id: 'li2',
+          ...data,
+        }));
+
+        await expect(
+          service.addLineItem('r1', { skuCatalogId: 'c1' }, ADMIN),
+        ).resolves.toMatchObject({ stage: 'REQUESTED' });
+      });
+
+      /**
+       * Nothing was delivered, so nothing is finished. This mirrors the
+       * front-end `allLinesAssigned`; the two must not disagree about where
+       * "complete" starts, or the UI hides a control the API would accept.
+       */
+      it('an all-cancelled request is NOT complete — adding stays open', async () => {
+        intake();
+        prisma.requestLineItem.findMany.mockResolvedValue([
+          { stage: 'CANCELLED' },
+        ]);
+        prisma.skuCatalog.findUnique.mockResolvedValue({
+          id: 'c1',
+          skuPartNumber: 'SPE_E3',
+        });
+        prisma.requestLineItem.create.mockImplementation(({ data }) => ({
+          id: 'li2',
+          ...data,
+        }));
+
+        await expect(
+          service.addLineItem('r1', { skuCatalogId: 'c1' }, ADMIN),
+        ).resolves.toBeDefined();
+      });
     });
 
     // …while intake requests (the D-1 authoring flow) still accept lines.
