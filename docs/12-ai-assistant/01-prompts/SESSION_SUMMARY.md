@@ -11,7 +11,11 @@
 
 🟢 **CH-024 / 025 / 026 / 027 四單 2026-08-12 一日內全部 closed 兼 merged**(PR #84 / #85 / #87 / **#88**)。**CH-027 = ADR-0033 落地** —— `owned` 由 `prepaidUnits.enabled` 改成 `enabled + warning`,assign gate 跟住走 ⇒ **由拒絕 32/101 個 SKU 收窄到 11 個,而 11 個個個講得出理由**(6 個真係用晒 + 5 個訂閱已取消)。🟢 **`warning` seat 派得到係實測唔係推論**(`AAD_PREMIUM_P2` `enabled=0`/`warning=10` → Graph HTTP 200,`consumed` 0→1,移返後 0)。
 
-🔴 **CH-026 + CH-027 合共留低五項未驗,全部卡同一件事(本地 stack)**:CH-026 `A-2` migration 未對真 DB 跑 · CH-026 `D-9` light+dark 真 render · CH-027 `B-4` migration 未對真 DB 跑 · CH-027 `V-5` light+dark 真 render · CH-027 `V-6` 真環境 sync 驗 `SPE_E3` `owned` **21 → 4498**。⚠️ **5433 畀 `ai-doc-extraction-db` 佔住,停佢係另一個項目要 Chris 批,而且佢停咗會自己返嚟搶 port** ⇒ 要做就一氣呵成。
+🟢🟢 **五項真環境驗證 2026-08-12 全部收咗**(Chris 批准停 `ai-doc-extraction-db`,一氣呵成):migration 對真 DB **21/21 applied** · **真 sync 驗到 `SPE_E3` `owned` 21 → 4498**(21 + 4477 grace)、`SPE_E5` 4502 → 4744 ⇒ **CH-020 嗰個「dev tenant 超支 33」之謎解開兼修好** · **gate 拒絕 `32 → 11`,同 ADR-0033 D4 個表逐字一樣** · light+dark 六張截圖。⇒ **CH-026 / CH-027 兩單都 closed。**
+
+🚧 **淨低 CH-026 `G-7` = Chris 落 UI 人手 curate 22 個 SKU 做 `unlimited`**。⚠️ **未做之前 `Available seats` KPI 仲係 4,270,779(哨兵值主導)、`unlimitedSkus` = 0 —— 唔好誤讀成 CH-026 冇生效**,機制 render 得到,差嘅係人手 curate 嗰步。
+
+🔴 **一個落差要記住**:gate 仲擋住嗰 11 個,**組成同 ADR-0033 寫嘅唔同** —— ADR 寫「6 用晒 + 5 `Suspended`」,實測 **7 + 4**(總數啱)。**呢個差異本身就係證據**:probe 嘅數字會郁,而 `capabilityStatus` 唔會 —— 正正就係 D1 揀「存 status」唔揀「由四個數推」嘅理由。
 
 ⚠️ **本地有 6 條已 merge 但未刪嘅 stale branch**(`feat/catalog-export` / `feat/ch-025-completion-and-category` / `feat/ch-026-unlimited-sku` / `feat/license-ledger-full-reset` / `feat/w43a-o365-request-creation` / `feat/w43b-closeout`)—— `git branch --no-merged main` **空**,即係全部安全刪得。**下次開工仍然由 `main` 開新 branch**。⚠️ **呢度刻意唔寫 `main` 嘅 commit hash** —— 寫低嗰個 commit 本身就令佢過時(實犯:PR #80 寫住 `main = 8f7711a`,而 merge 佢即刻變 `6bb8e0c`)。要當下真相跑 `git log --oneline -1`。
 

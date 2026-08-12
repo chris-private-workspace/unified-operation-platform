@@ -39,14 +39,32 @@ DTO 一宣告 `ownedBreakdown`,`apps/web` tsc **即刻紅 5 個 fixture**。BUG-
 1. **acceptance D2「n8n 既有 test 一條都唔使改」字面守唔到** —— `listTenantSkus` 個 `toEqual` **形狀** assert 要加 `assignableUnits`,因為契約真係多咗一個欄。**行為** assert 同 `license-ops.contract.spec.ts` 跨 provider 等價**一條唔改** ⇒ D2 意圖守住。
 2. **F4 加咗一條反面 acceptance** —— 原文只講「靠 `warning` 撐起嗰陣要有 detail」,單獨嘅話 `graceSeats > 0` 就滿足到,而咁樣**每個 `SPE_E3` assign 都會被標成 grace**。反面 case（`enabled` 夠用 ⇒ `detail` 必須 `undefined`）先真正約束到條件。
 
-### 🚧 未完（全部同一個原因）
+## Day 1（續）— 2026-08-12 真環境驗證：**B-4 / V-5 / V-6 全部收咗**
 
-| 項 | 卡乜 |
-|---|---|
-| **B-4** migration 未對真 DB 跑 | 本地 stack |
-| **V-5** light + dark 真 render（`ui-design` 逐條自檢已做,DS-4 / DS-11 差 render） | 本地 stack |
-| **V-6** 真環境 sync 驗 `SPE_E3` `owned` 21 → 4498 | 本地 stack |
+Chris 同日批准停 `ai-doc-extraction-db` ⇒ 五項(CH-026 `A-2`/`D-9` + CH-027 `B-4`/`V-5`/`V-6`)**一氣呵成收晒**。
 
-**本地 stack 停咗** —— 5433 畀 `ai-doc-extraction-db` 佔住,**停佢係另一個項目嘅事,要 Chris 批**。⚠️ 而且 2026-08-12 實測佢**停咗會自己返嚟兼搶走個 port**(見 `CLAUDE.md §9`),所以要做就一氣呵成。
+### B-4 + CH-026 A-2 — migration 對真 DB
 
-⇒ 三項同 **CH-026 D-9 / A-2** 一齊做最抵,因為佢哋卡住同一件事。
+`prisma migrate deploy` → `localhost:5433` db `platform`,**21/21 applied**(兩個手寫 SQL 一次過)。DB 側實測:101 個舊 snapshot 三個新 bucket **全 0**、`capabilityStatus` **全 `Enabled`**;101 個 `SkuCatalog` **全 `prepaid`** ⇒ **兩個 ADR 嘅「零 data migration」承諾都真係做到**。
+
+### V-6 — 真 sync
+
+`SPE_E3` `owned` **21 → 4498**(21 + 4477 grace),**逐字命中 spec 個預測**。`SPE_E5` 4502 → 4744 ⇒ **CH-020 2026-08-03 嗰個「超支 33」之謎正式解開兼修好**。gate 拒絕實測 **32 → 11**。全表見 `checklist.md`。
+
+🔴 **兩個要記低嘅落差**:
+1. **11 個嘅組成同 ADR 寫嘅唔同** —— ADR 寫「6 用晒 + 5 `Suspended`」,實測 **7 + 4**。總數啱、拆法差一個。**呢個差異本身就係證據**:probe 數字會郁,而 `capabilityStatus` 唔會 —— 正正就係 D1 揀存 status 嘅理由。
+2. **`totalOwned` 仲係 4,270,779、`unlimitedSkus` = 0** —— 因為 **CH-026 `G-7` 未做**,一個 SKU 都未 curate 做 unlimited。⚠️ **唔好誤讀成 CH-026 冇生效** —— 機制 render 到(見下),差嘅係人手 curate 嗰步。
+
+### V-5 + CH-026 D-9 — light + dark 真 render
+
+六張截圖。`Available seats` KPI · `SPE_E3` 副行 `21 + 4477 grace`(全表 54 行有)· `VIVA` + `Teams_Premium` 出 `Subscription suspended` · hover `title` 實測 DOM attribute · SKU Catalog `SEATS` 欄 `Prepaid` / `UNLIMITED`。
+
+📌 **驗嘅過程自己撞返兩個記錄在案嘅坑,而兩個都即刻捉到,因為今次有 capture**:
+- **build-cache 假綠燈**(`Found 0 errors` + `MODULE_NOT_FOUND` 同時出現)—— 我一開始就用 `Start-Process -RedirectStandardOutput` 起 api,所以 **13 秒就睇到答案**。§9 記低嗰兩次各白等 180/270 秒,分別純粹係「有冇 capture stdout」。⇒ **`start-detached.ps1` 唔 capture api stdout 呢件事,值得當成一個要修嘅嘢,唔係一個要記住嘅嘢。**
+- **`ai-doc-extraction-db` 搶 port** —— 今次 `docker stop` 之後**即刻**跑 `ensure-infra`,冇畀佢窗口。
+
+📌 **兩句我自己講錯即時更正咗**:①第一張 catalog 截圖我叫咗 dark,實際 light(navigate 之後 theme reset)②我一度講 SKU Catalog pager「冇 `‹ ›`」—— 錯,佢有;舊款嘅係「13 頁全列」呢半。
+
+### 🚧 淨低（唔喺本單）
+
+**CH-026 `G-7`** —— 人手 curate 22 個 SKU 做 unlimited,**Chris 落 UI 做**,本來就唔喺 CH-026/027 範圍。做完之後 `Available seats` 個 KPI 先會由四百萬級變返有意義嘅數。

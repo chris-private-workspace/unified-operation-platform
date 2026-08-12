@@ -1,7 +1,7 @@
 ---
 change_id: CH-026
 spec_ref: ./spec.md
-status: in-progress            # in-progress | done —— 卡 D-9 / A-2(本地 stack 停咗)
+status: done                   # 2026-08-12 D-9 / A-2 收咗;淨低 G-7 = Chris 落 UI curate,本來就唔喺本單
 last_updated: 2026-08-12
 ---
 
@@ -14,7 +14,7 @@ last_updated: 2026-08-12
 ## A — Schema + migration（H1,ADR-0032 D1 / D5）
 
 - [x] **A-1** `SkuCatalog.seatModel String @default("prepaid")` + comment 寫明兩個值同點解唔用 enum
-- [ ] **A-2** 🚧 migration:**淨係 ADD COLUMN + DEFAULT**,零 data migration(D5 —— 自動標 unlimited = 偷偷實施被否決嘅 threshold)
+- [x] **A-2** migration:**淨係 ADD COLUMN + DEFAULT**,零 data migration(D5 —— 自動標 unlimited = 偷偷實施被否決嘅 threshold)。🟢 **2026-08-12 對真 DB 跑過**(Chris 批准停 `ai-doc-extraction-db`):`prisma migrate deploy` → `localhost:5433` db `platform` **21/21 applied**,同 CH-027 `B-4` 一次過收。**D5 實測**:101 個 `SkuCatalog` row **全部落 `prepaid`**,零 row 被自動標 unlimited
   → 檔已寫(`20260812135934_ch026_sku_seat_model`)兼且**刻意零 data migration**,但 **SQL 未對真 DB 跑過**(本地 stack 停咗,`migrate dev` 連唔到)。**唔可以當 migration 驗過**
 - [x] **A-3** `prisma generate`(client 出到 `seatModel`)
 - [x] **A-4** 🔴 `syncFromTenant` **唔可以** overwrite `seatModel` —— create / update 兩條 path 都查過,冇掂
@@ -51,7 +51,7 @@ last_updated: 2026-08-12
 - [x] **D-6** grand total / category subtotal 跟 C-4 同一條界(subtotal 多一個 `unlimited` 計數)
 - [x] **D-7** `lib/tenant-skus.ts` 兩個 pure fn 同步 + test
 - [x] **D-8** UI test:新 `platform-view.test.tsx` 6 條(unlimited 行 / bar / `No prepaid seats` / 常態行不變 / KPI 改名 + 兩句 scope 文案 / 冇 unlimited 時唔出嗰句)
-- [ ] **D-9** 🚧 H6:`ui-design` skill **逐條做咗**(結果喺 `progress.md`),但 **light + dark 真 render 未做** —— 本地 stack 停咗(另一個項目佔用),Platform view 冇 API 數據 render 唔到表
+- [x] **D-9** H6:`ui-design` skill 逐條做咗(結果喺 `progress.md`)+ 🟢 **light + dark 真 render 收咗**(2026-08-12,同 CH-027 `V-5` 一次過):Platform view `POWER_BI_STANDARD` 出 **`Unlimited`** cell + `Unalloc.` **`—`** + `Unlimited` neutral badge;SKU Catalog `SEATS` 欄出 `Prepaid` + **`UNLIMITED`** badge,兩個 mode 對比度都夠。⚠️ **`G-7` 未做 ⇒ 零 SKU 標咗 unlimited**,所以暫時 PATCH `POWER_BI_STANDARD` 做 fixture,**驗完已還原**(`unlimited SKUs remaining = 0` 實測)
 
 ## E — Assign gate（spec §3.1 E · **H5**,ADR-0032 D4）
 

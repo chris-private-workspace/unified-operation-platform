@@ -12,7 +12,7 @@
 | Project | **Unified Operation Platform** — IT operation / support 的管理 + 操作平台(逐步引入 AI 功能) |
 | Primary Spec(platform) | `docs/architecture.md`(平台級,draft) |
 | Module 1 Spec | `docs/02-architecture/licenseops/DESIGN.md`(**LicenseOps** = M365 license 履行,決策 SSOT) |
-| Phase | **CH-024 / 025 / 026 / 027 四單 2026-08-12 一日內全部 closed 兼 merged**(PR #84 / #85 / #87 / **#88**)。**CH-027 = ADR-0033 落地** —— `owned` 由 `prepaidUnits.enabled` 改成 `enabled + warning`,assign gate 由拒絕 32/101 個 SKU 收窄到 11 個。🔴 **CH-026 + CH-027 合共留低五項未驗,全部卡本地 stack**(兩個 migration 未對真 DB 跑 · 兩個 light+dark render · `SPE_E3` `owned` 21→4498)。**W44(Azure DEV,B8 已解封)仍未收**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標。⚠️ **本地有 6 條已 merge 但未刪嘅 stale branch**(`git branch --no-merged main` 空)⇒ 開工仍然由 `main` 開新條。⚠️ **呢格刻意唔寫 `main` 嘅 commit hash** —— 寫 hash 嗰個 commit 本身就會令佢過時,而「有冇 feature branch」先係真正影響下手點開工嗰半 |
+| Phase | **CH-024 / 025 / 026 / 027 四單 2026-08-12 一日內全部 closed 兼 merged**(PR #84 / #85 / #87 / **#88**)。**CH-027 = ADR-0033 落地** —— `owned` 由 `prepaidUnits.enabled` 改成 `enabled + warning`,assign gate 由拒絕 32/101 個 SKU 收窄到 11 個。🟢 **CH-026 + CH-027 五項真環境驗證 2026-08-12 全部收咗**(migration 對真 DB `21/21` · light+dark render · **真 sync 驗到 `SPE_E3` `owned` 21 → 4498**、gate 拒絕 `32 → 11`)⇒ **兩單都 closed**。🚧 淨低 **CH-026 `G-7`(人手 curate 22 個 SKU)= Chris 落 UI 做** —— 未做之前 `Available seats` KPI 仲係 4,270,779(哨兵值主導),**唔好誤讀成 CH-026 冇生效**。**W44(Azure DEV,B8 已解封)仍未收**;pending 真相 SSOT = `BACKLOG.md`,呢格只寫最近一個座標。⚠️ **本地有 6 條已 merge 但未刪嘅 stale branch**(`git branch --no-merged main` 空)⇒ 開工仍然由 `main` 開新條。⚠️ **呢格刻意唔寫 `main` 嘅 commit hash** —— 寫 hash 嗰個 commit 本身就會令佢過時,而「有冇 feature branch」先係真正影響下手點開工嗰半 |
 | Strict Mode | **ON** — see §5 Hard Constraints |
 | Behavioral Baseline | **§1** — universal coding mindset,適用於所有 code change |
 | Decision Owner(architecture) | **Chris Lai** |
@@ -319,13 +319,14 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
   - 🔴 **`nest start --watch` 個 build-cache 假綠燈會再撞**:見到 **`Found 0 errors` 同 `MODULE_NOT_FOUND` 一齊出**,就係佢 —— 刪 `apps/api/*.tsbuildinfo` **同** `dist/`,然後**直接起 stack,中間唔可以插 `npm run build`**。
     - 🔴 **2026-08-12 再更正:同一個症狀有第二個成因,而且更常見 —— 兩條 `nest start --watch` 同時跑。** 第二條起身**清 `dist/`** → tsc 讀第一條啱啱寫低嘅 `tsbuildinfo` → 判斷「已最新」→ **skip emit** ⇒ `dist` 空。**刪幾多次 cache 都冇用**,因為每起一次就重新生成一次。**分辨方法 = `kill-zombies.ps1` dry-run 睇下有幾多條 `nest.js start --watch`**(正常 1 條);實測嗰次係我自己起第二條之前冇清第一條。
     - 🔴 **2026-08-11 更正:`Test-Path dist/main.js` 唔係可靠嘅 discriminator,呢度原本教錯咗。** 原文寫「要喺 watch **起身之後** check 先有意義」;CH-021 A12 實測**照做咗**,watch 已經跑咗 90 秒,佢**仍然返 `True`**(舊 build 剩低嘅檔)⇒ 我據此**排除**咗 build-cache,再白等 180 秒,而真兇就係佢。
-    - ⇒ **唯一可靠信號 = log 嗰兩句同時出現**。🔴 **但 `start-detached.ps1` 唔會 capture api stdout**,所以預設情況下你**睇唔到** —— 要 `Start-Process … -RedirectStandardOutput/-RedirectStandardError` 起一次先睇到。**呢個係目前呢個坑最貴嗰半**(兩次共 270 秒白等)。
+    - ⇒ **唯一可靠信號 = log 嗰兩句同時出現**。🔴 **但 `start-detached.ps1` 唔會 capture api stdout**,所以預設情況下你**睇唔到** —— 要 `Start-Process … -RedirectStandardOutput/-RedirectStandardError` 起一次先睇到。
+    - 🟢 **2026-08-12 第三次撞,13 秒解決** —— 因為**一開始就用 `Start-Process -RedirectStandardOutput` 起 api**,唔使等,唔使估。⇒ **三次對照下,「白等 180/270 秒」同「13 秒」嘅唯一分別就係有冇 capture stdout。** 呢個唔應該再當成「要記住嘅坑」,應該當成 **`start-detached.ps1` 一個要修嘅缺陷**(佢係唯一令呢個坑貴嘅嘢)。**起本機 api 一律自己 redirect,直到腳本改咗為止。**
   - 🔴 **本機 Graph 係通嘅** ⇒ 真跑一次成功 assign 會**喺公司 tenant 真派 licence**。要造「一定失敗」嘅 fixture,**先用唯讀 `POST /fulfilment/requests/:id/sync-check` 探**個 UPN 存唔存在 —— 2026-08-10 實測:一個砌出嚟嘅假 UPN 一樣返 `FOUND`,「個名睇落假」推論唔到「tenant 冇」。
 - 🔴 **ServiceNow 寫入係逐個 table 分開開權,唔可以由「某張表寫得」推論「另一張寫得」**:`sc_request` insert **403**(BUG-010)· `sc_item_option` update **403**(ADR-0026)· `sc_req_item` / `sc_task` update ✅ · catalog `order_now` ✅。⇒ `target_user` **永遠**指住 requester,真 target 睇 `target_users_email`(DD-5)。
 - 🔴 **UOP 同 n8n 共用 SN 帳號 `n8napiservice1`** ⇒ `sys_updated_by` 分唔到邊個系統做,唯一指紋係 `close_notes`(RISK **R7**)。查 SN 側「邊個做過乜」一律唔可以信 `sys_updated_by`。
 - 🔴 **PR 顯示 `MERGED` 唔等於啲 commit 入齊咗** —— **PR #87 實測只 merge 咗 6 個入面嘅頭 2 個**,靠 checkout 之後見到舊版 working tree 先揭穿,而嗰 4 條走漏嘅要跟下一個 PR 先入到 main。⇒ **merge 之後逐個 `git merge-base --is-ancestor <sha> origin/main`**,唔好睇個 state 就當收咗(PR #88 六個已咁樣查過,全部 `True`)。同「revision `Healthy` ≠ DB 通」、「有設定 ≠ 設定啱」同族:**一個 summary-level 綠燈證明唔到下面每一件都真係做咗。**
 - 🔴 **`owned` 嘅定義 2026-08-12 改咗(ADR-0033 / CH-027)** —— 由 `prepaidUnits.enabled` 變 `enabled + warning`(過期但喺寬限期嘅 seat **真係派得到**,實測 Graph HTTP 200)。assign gate 跟住由拒絕 **32/101** 收窄到 **11**。`suspended`/`lockedOut` **刻意唔計**(Microsoft 自己喺 `capabilityStatus` 講咗唔可以用)。⚠️ **凡見到「`owned` = 買咗幾多」嘅舊講法,一律當過時。**
-- **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration;W43 遺留 = live close 未驗;🔴 **CH-026 + CH-027 五項卡本地 stack** —— 兩個 migration 未對真 DB 跑 · 兩個 light+dark render · `SPE_E3` `owned` 21→4498)。
+- **仍未做 / pending**:見 `BACKLOG.md`(🔴 AUTH-2b 真 SSO e2e 同 DEPLOY-harden 卡住 IT app registration;W43 遺留 = live close 未驗;🚧 **CH-026 `G-7`** = Chris 落 UI 人手 curate 22 個 SKU)。
 
 ---
 

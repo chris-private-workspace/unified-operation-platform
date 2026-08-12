@@ -16,7 +16,7 @@
 - [x] **B-2** migration `20260812160000_ch027_tenant_seat_buckets`,**只加欄**,零 `UPDATE` / 零 `INSERT` — **B1**
 - [x] **B-3** 舊 snapshot(新欄 = 0)之下 `owned` 同今日逐字一樣 — **B2**
       · 靠 `tenant-owned.service.spec.ts` 個 `snap()` helper:所有 pre-CH-027 期望值一個數字都冇改
-- [ ] 🚧 **B-4** migration 對真 DB 跑過 —— **卡本地 stack**(5433 畀 `ai-doc-extraction-db` 佔住,停佢要 Chris 批)。target:同 CH-026 A-2 一齊做
+- [x] **B-4** migration 對真 DB 跑過(2026-08-12,Chris 批准停 `ai-doc-extraction-db`)—— `prisma migrate deploy` 對 `localhost:5433` db `platform`,**21/21 applied**,同 CH-026 `A-2` 一次過收
 
 ## C — 寫入（`catalog.service.syncFromTenant`）
 
@@ -60,8 +60,44 @@
 - [x] **V-3** api lint **0**;web lint 回到 **16 條 pre-existing**(我加嗰 11 條 prettier 已 fix)— **T3**
       · 📌 順帶把 `LINT-web` 個數**量咗**而唔係數:**16** = `allocation-reset.test.tsx` 11 + `allocation-reset.tsx` 4 + `request-detail.sync-check.test.tsx` 1
 - [x] **V-4** 🔴 **Falsification ×2** — **T4**,詳見下面
-- [ ] 🚧 **V-5** `ui-design` 逐條自檢**做咗**(見下),但 **light + dark 真 render 未做** —— 卡本地 stack。target:同 CH-026 D-9 一齊
-- [ ] 🚧 **V-6** 真環境 sync:`SPE_E3` `owned` 21 → 4498 — **V1**,同樣卡本地 stack
+- [x] **V-5** `ui-design` 逐條自檢 + **light + dark 真 render**(2026-08-12,六張截圖)— **H6**
+- [x] **V-6** 真環境 sync:`SPE_E3` `owned` **21 → 4498** — **V1**,見下
+
+## 🟢 V-6 真環境驗證結果（2026-08-12）
+
+`POST /license/catalog/sync` 打真 Graph ⇒ `{created:0, updated:101, deactivated:0, snapshots:101}`。
+
+| SKU | owned **before** | owned **after** | breakdown | gate |
+|---|---|---|---|---|
+| **`SPE_E3`** | **21** | **4498** | 21 enabled + **4477** grace | 677 用緊 → **過閘** |
+| `SPE_E5` | 4502 | **4744** | 4502 + 242 | 4543 → **由擋死變過閘**(CH-020 2026-08-03 個「超支 33」之謎) |
+| `MCOEV` | 20 | **1402** | 20 + 1382 | 1007 → 過閘 |
+| `POWER_BI_PRO` | 0 · `noPrepaidSeats:true` | **790** · **`false`** | 0 + 790 | 91 → 過閘 |
+| `VIVA` | 0 · status `Enabled`(migration default) | 0 · **`Suspended`** | suspended 50 | **仍然擋** |
+
+🟢 **`VIVA` 個 `capabilityStatus` 由 default `Enabled` 變真值 `Suspended`** ⇒ 順帶證咗 C1 寫入路真係行到,唔係靠 default 撐住。
+
+🟢 **gate 拒絕數實測 `32 → 11`** —— 由 read-model 101 行算返:`consumed >= enabled` = **32**、`consumed >= enabled + warning` = **11**,**同 `ADR-0033 D4` 個表逐字一樣**。
+⚠️ **但組成同 ADR 寫嘅唔同**:ADR 寫「6 個真係用晒 + 5 個 `Suspended`」,實測係 **7 個用晒/超支 + 4 個 `Suspended`**。總數啱、拆法差一個。冇改變決定(11 個個個講得出理由),但**呢個差異本身就係「probe 數字會郁」嘅證據** —— 而嗰樣正正係 D1 揀存 `capabilityStatus` 唔揀由數推嘅理由。
+`noPrepaidSeats` 實測 **6 → 2**(⚠️ 唔係 ADR 講嘅 15 → 4 —— 嗰個 15 係「`enabled = 0` 嘅 SKU」全體,而 flag 要 `consumed > 0`,兩個係唔同 set,冇矛盾)。
+
+🔴 **`totalOwned` = 4,270,779 · `unlimitedSkus` = 0** —— 因為 **CH-026 `G-7`(人手 curate 22 個 SKU)未做**,一個 SKU 都未標 `unlimited`。KPI 仲係畀哨兵值主導,**呢個唔係 code 問題,係 Chris 落 UI 嗰步**。
+
+**B2 端到端實證**:sync **之前**個 read-model,`SPE_E3` owned = **21** 而四個 bucket 全 0 ⇒ **舊 snapshot 之下 `owned` 完全等於 `enabled`**,行為同 CH-027 之前逐字一樣。DB 側:101 個舊 snapshot,`warningUnits`/`suspendedUnits`/`lockedOutUnits` **全部 0**、`capabilityStatus` **全部 `Enabled`**。
+
+## 🖼 Render 驗證（V-5，六張截圖）
+
+| 畫面 | light | dark | 見到乜 |
+|---|---|---|---|
+| Platform KPI | ✅ | ✅ | **`Available seats`**(`Prepaid seats` 冇咗)+ `1 unlimited SKU excluded` |
+| Platform 表(grace) | ✅ | ✅ | `SPE_E3` **4498** + 副行 **`21 + 4477 grace`**;`SPE_E5` `4502 + 242 grace`;全表 **54 行**有副行 |
+| Platform 表(suspended) | ✅ | ✅ | `VIVA` + `Teams_Premium_(for_Departments)` 兩個 **`Subscription suspended`** warn badge |
+| Platform hover | ✅ | — | `title` = `enabled 0 · expiry grace period 10 · M365 status Enabled`(實測 DOM attribute) |
+| SKU Catalog `SEATS` 欄 | ✅ | ✅ | `Prepaid` + **`UNLIMITED`** badge ⇒ **CH-026 `D-9` 同一次收埋** |
+
+⚠️ `UNLIMITED` 要見到就要有 SKU 標咗 unlimited,而 `G-7` 未做 ⇒ 暫時 PATCH `POWER_BI_STANDARD` 做 fixture,**驗完已還原**(`unlimited SKUs remaining = 0` 實測)。
+
+📌 **順帶更正兩句我自己講錯嘅嘢**:①第一張 catalog 截圖我叫咗做 dark,實際係 light(navigate 之後 theme reset),已補真 dark ②我一度講「SKU Catalog 個 pager 冇 `‹ ›`」—— **錯**,佢有箭嘴;舊款嘅係「13 頁全列」呢半(CH-025 記低嗰句仍然成立)。
 
 ## 🔴 Falsification 結果（T4）
 
@@ -94,12 +130,12 @@
 | DS-1 token-only | ✅ | 只用 `text-fg-subtle`;零 hex |
 | DS-2 唔 eyeball | ✅ | `text-[10.5px]` **逐字等於**同檔 `TH`;`leading-[1.5]` 等於同檔 footnote。冇引入新數值 |
 | DS-3 單一 accent / 一 primary | ✅ | 冇加掣 |
-| DS-4 light + dark | 🚧 | token 本身兩邊都 swap,但**真 render 未做**(V-5) |
+| DS-4 light + dark | ✅ | 六張截圖,grace 副行同 `Subscription suspended` badge 兩邊對比度都夠 |
 | DS-5 數字 mono | ✅ | 副行喺 `NUM` cell 入面,`font-mono` 繼承落嚟 |
 | DS-6 lucide only | ✅ | 冇新 icon |
 | DS-7 平面 | ✅ | 冇陰影 / gradient |
 | DS-8 狀態走 Badge | ✅ | **刻意唔加第二個 badge**,副行係數字註腳唔係狀態 |
 | DS-9 motion | N/A | |
 | DS-10 voice | ✅ | `21 + 4477 grace` — 短、Sentence case |
-| DS-11 對 prototype | 🚧 | 同 DS-4 一齊(V-5) |
+| DS-11 對 prototype | ✅ | 表格結構 / badge / 副行都係既有 primitive 組合,冇加新 pattern |
 | DS-12 唔捏造 logo | N/A | |
