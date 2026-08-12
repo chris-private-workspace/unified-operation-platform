@@ -47,14 +47,26 @@ Chris 2026-08-12 叫查 `CH-026` **OQ-5**(`prepaidEnabled = 0` 但有人用嗰�
 
 📌 **CH-020 2026-08-03 真撞過** —— 當時 progress 記低「dev tenant `SPE_E5` consumed 4535 / prepaid 4502 = 超支 33,tenant seat gate 擋死」,結論係「換個 SKU 做 fixture」。**冇人問過點解一間公司會超支自己買嘅 seat。** 而家知:`warning=242`,即係嗰批 seat 過咗期但仲用緊。呢個 ADR 存在嘅理由,九日前就以一個「奇怪 fixture」嘅形式出現過。
 
-### 🔴 一件未驗證嘅事（決定 D4 之前要知）
+### 🟢 `warning` seat 派得到新 licence —— 2026-08-12 真試過
 
-**`warning` 嗰批 seat 派唔派得到新 licence,冇試過。**
+起草時呢度寫住「冇試過」。**Chris 同日批咗真試,而家有答案。**
 
-- **維持得住既有 assignment** 有強數據支持:`SPE_E3` `enabled` 得 **21** 而 **677 個人用緊** —— 如果 warning seat 唔算數,嗰 656 個人唔會有 licence
-- **派新掂唔掂,係另一件事** —— 要真試(揀一個 `enabled=0 && warning>0` 嘅 SKU 真派一次,睇 Graph 收唔收)。⚠️ 咁做會喺**公司 tenant 真派一個 licence**,要 owner 批
+**方法**:唯讀 probe 揀 `AAD_PREMIUM_P2`(`enabled=0` / `warning=10` / **`consumed=0`**,即係冇任何人受影響),直接打 Graph `POST /users/{upn}/assignLicense` —— 唔經平台(平台今日一定擋:`0 >= 0`),而且零平台副作用(唔寫 ledger、唔開 request)。
 
-呢個未知**唔阻止**本 ADR 落地(見 D4 個 fail-forward 論證),但決定咗操作員見到嘅失敗**長成點**。
+| | 實測 |
+|---|---|
+| BEFORE | `consumed=0` · `enabled=0` · `warning=10` · user 未持有 |
+| `assignLicense` | **HTTP 200** |
+| AFTER(+8s) | **`consumed=1`** · **user 真係持有** |
+| `removeLicenses` 移返 | HTTP 200 → `consumed=0` · user 冇咗 —— **零殘留** |
+
+⇒ **Graph 完全接受用 `warning` 嗰批 seat 派新 licence。** 呢個直接證實三件事:
+
+1. **D4 揀 B 係啱嘅** —— `enabled + warning` 唔止「帳面有」,係**真係派得**
+2. **平台今日個 gate 係純粹誤擋** —— `AAD_PREMIUM_P2` 明明有 10 個可用 seat 而平台講「冇 seat」
+3. **D4 原本嗰個 fail-forward 風險消失咗** —— 唔再係「可能派唔到」,係**確定派得到**
+
+⚠️ **一個邊界仍然未驗**:`warning` 用完(例如 11 個)之後 Graph 點反應。本 ADR 唔靠佢 —— gate 本來就會喺 `consumed >= enabled + warning` 嗰刻擋住。
 
 ---
 
@@ -124,7 +136,9 @@ if (!tenantSku || tenantSku.consumedUnits >= tenantSku.assignableUnits) { …擋
 1. **B 之下仲擋住嘅 11 個,每一個都講得出理由** —— 6 個真係用晒/超支,5 個訂閱已取消。**冇一個係誤擋。** A 之下有 27 個講唔出。
 2. **C 會放行 `capabilityStatus = Suspended` 嘅 SKU** —— 即係 Microsoft 明講唔可以用,我哋照派。B 同 C 只差嗰 5 個,而嗰 5 個正正係唯一應該擋嘅一批。
 
-⚠️ **B 有一個 fail-forward 代價,要接受先揀得**:如果 `warning` seat 其實派唔到新(未驗證),失敗會由「pre-flight `seats` gate 擋住、零副作用、訊息受我哋控制」變成「`assign` step 被 Graph 拒絕、訊息係 vendor 原文」。⇒ **配套(建議一齊做)**:當 `assignableUnits` 主要靠 `warning` 撐起嗰陣,`seats` step 即使 `ok` 都帶一句 `detail`:「N seats are in the expiry grace period」。ADR-0029 個 `AssignStep.detail` 本來就容得下,零契約改動。
+🟢 **原本嗰個 fail-forward 代價已經冇咗**(2026-08-12 真試,見 Context):`warning` seat **確定派得到**,所以 B 唔會把「pre-flight 擋住」換成「Graph 拒絕」。
+
+⇒ **配套仍然做,但理由變咗**:當 `assignableUnits` 主要靠 `warning` 撐起嗰陣,`seats` step 即使 `ok` 都帶一句 `detail`:「N seats are in the expiry grace period」。**唔再係「呢次可能會失敗」嘅警告,而係一個事實** —— 呢個 SKU 靠緊一個**已經過期**嘅訂閱撐住,寬限期一完就會冇,而嗰件事操作員應該知。ADR-0029 個 `AssignStep.detail` 本來就容得下,零契約改動。
 
 ### D5 — `noPrepaidSeats` 跟住 `owned` 重新定義
 
@@ -177,7 +191,7 @@ migration 只加欄。舊 snapshot 三個新欄 = `0` ⇒ `owned = enabled + 0` 
 ### 🔴 代價 / 風險
 
 - **`TenantSkuRowDto.owned` 係語意改動** —— 任何讀緊佢嘅嘢(前端 / 將來 API consumer)睇到嘅數會變。`SPE_E3` 由 `21` 變 `4498`。**冇 breakdown 就冇人解釋得到**,所以 D2 把 breakdown 列做必須
-- 🔴 **`warning` seat 派唔派得新,未驗證** —— B 係 fail-forward(見 D4)。要收窄呢個風險就要真試一次,而真試 = 喺公司 tenant 真派一個 licence
+- ~~🔴 `warning` seat 派唔派得新,未驗證~~ 🟢 **2026-08-12 真試過:派得到**(`AAD_PREMIUM_P2` `enabled=0/warning=10` → HTTP 200,`consumed` 0→1,移返後 0)。**呢條由風險變成本 ADR 最硬嘅一塊證據** —— 亦即係話今日個 gate 對嗰 27 個 SKU 係**純粹誤擋**,唔係保守
 - **Drift 唔受影響但要講明**:`reconcile` 比 `ledgerAssignedSum` vs `tenantConsumed`,**兩邊都唔掂 `owned`**(已查證:`prepaidEnabled` 全部觸及點列喺 D3 上面,冇一個喺 `reconcile.service.ts`)⇒ 本 ADR 零 drift 影響
 - **n8n provider 嘅 `assignableUnits` = `prepaidEnabled`** ⇒ 如果將來真係切去 n8n seam,**呢個 gate 會靜靜退返做今日嘅行為**。⚠️ 呢個係刻意(唔捏造 n8n 冇送過嘅數),但要記住佢係一個**會隨 provider 改變嘅行為差異** —— 屬 `R9`(監控面講嘅嘢同 runtime 做緊嘅唔同)同一族
 - **`ADR-0032` 個 `Prepaid seats` KPI 名同 `noPrepaidSeats` label 都要跟住改**(D5 / D7)—— 一個 ADR 落地咗一日就要改字,呢個成本值得記:`CH-026` 個文案係喺**只讀過四個欄之一**嘅前提下寫嘅

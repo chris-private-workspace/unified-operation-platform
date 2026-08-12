@@ -1,7 +1,7 @@
 ---
 change_id: CH-027
 title: "Tenant 可用 seat 計埋寬限期 —— owned / assign gate 唔再只睇 enabled"
-status: proposed
+status: approved
 created: 2026-08-12
 target_completion: 2026-08-13
 affects_components: [apps/api/integration, apps/api/license, apps/api/fulfilment, apps/web, prisma]
@@ -72,7 +72,7 @@ spec_refs:
 
 ### 2.2 Out of Scope（explicit）
 
-- ❌ **真試 `warning` seat 派唔派得新 licence** —— 會喺公司 tenant 真派一個 licence,**要 owner 另外批**。⚠️ 本單係 fail-forward(ADR-0033 D4),配套 detail 就係為咗呢個未知而存在
+- ✅ ~~真試 `warning` seat 派唔派得新 licence~~ —— **2026-08-12 做咗**(Chris 批):`AAD_PREMIUM_P2`(`enabled=0`/`warning=10`/`consumed=0`)直接打 Graph → **HTTP 200**,`consumed` 0→1,**移返後 0(零殘留)**。⇒ **本單唔再係 fail-forward**;F4 個 detail 仍然做,但理由由「可能失敗」變成「呢個 SKU 靠緊過期訂閱撐住」
 - ❌ **`reconcile` / drift** —— 已查證兩邊都唔掂 `owned`,零影響
 - ❌ **`OpcoSkuLedger` 兩層數字 / OpCo budget gate** —— 一個字唔改
 - ❌ **追溯補舊 snapshot**(D6)
@@ -93,7 +93,7 @@ spec_refs:
 - [ ] **F1** **`enabled=0, warning=790, consumed=91`**(`POWER_BI_PRO` 真形狀)→ **過閘**
 - [ ] **F2** **`enabled=0, suspended=50, warning=0, consumed=30`**(`VIVA` 真形狀)→ **仍然擋**
 - [ ] **F3** **`enabled=22, warning=0, consumed=22`**(`Teams_Rooms_Basic`)→ **仍然擋**(真係用晒)
-- [ ] **F4** `seats` step 喺靠 `warning` 撐起嗰陣帶 grace-period `detail`;唔靠嗰陣**冇**呢句
+- [ ] **F4** `seats` step 喺靠 `warning` 撐起嗰陣帶 grace-period `detail`;唔靠嗰陣**冇**呢句。⚠️ 文案唔可以講成「可能失敗」—— 已實測派得到(§7 OQ-1);要講嘅係「呢個 SKU 靠緊一個已經過期嘅訂閱」
 - [ ] **F5** 🔴 `unlimited`(ADR-0032)**行為逐字不變** —— 仍然 `skipped`、仍然唔打 Graph
 - [ ] **G1** `noPrepaidSeats` 收窄:`POWER_BI_PRO` 形狀 **false**、`VIVA` 形狀 **true**
 - [ ] **G2** badge 出 `Subscription suspended`,而且**由 `capabilityStatus` 讀**(拆走 `capabilityStatus` ⇒ test 真紅)
@@ -117,7 +117,7 @@ spec_refs:
 
 | # | Risk | L | I | Mitigation |
 |---|---|---|---|---|
-| R1 | **`warning` seat 派唔到新 licence** ⇒ 失敗由「pre-flight 擋住」變「Graph 拒絕」 | **Med** | **Med** | ADR-0033 D4 明文接受呢個 fail-forward;F4 個 grace-period detail 令操作員**撳之前**就知。真答案要另外批一次真試 |
+| R1 | ~~`warning` seat 派唔到新 licence~~ | ~~Med~~ **冇咗** | — | 🟢 **2026-08-12 真試過:派得到**(HTTP 200,`consumed` 0→1,移返後 0)。風險**降級為零**,而且反過嚟變成本單最硬嘅證據:今日個 gate 對嗰 27 個 SKU 係**純粹誤擋**。F4 照做,理由改成「呢個 SKU 靠緊過期訂閱撐住」 |
 | R2 | `owned` 語意改動令讀緊佢嘅嘢誤讀 | Med | High | E2 breakdown 做**必須**唔係 nice-to-have;H1 畫面標示 |
 | R3 | 新欄加咗但唔流出 API(BUG-011 個縫) | Med | Med | E2 明文要 DTO 宣告;controller 已查證係直返 service |
 | R4 | n8n 路被連累 | Low | High | D2 訂死「既有 test 一條都唔使改」做驗收條件 |
@@ -129,7 +129,11 @@ spec_refs:
 
 ## 7. Open Questions
 
-- **OQ-1** — `warning` seat 派唔派得新 licence?**要真派一次先答得到**(要 owner 批)。本單唔靠佢(fail-forward + 提示),但答咗就決定得到 F4 嗰句提示要唔要升級做 warning tone
+- ✅ **OQ-1 答咗**(2026-08-12,Chris 批准真試)—— **`warning` seat 派得到新 licence**。
+  **方法**:揀 `AAD_PREMIUM_P2`(`enabled=0` / `warning=10` / **`consumed=0`** ⇒ 冇任何人受影響),直接打 Graph `POST /users/{upn}/assignLicense`,**唔經平台**(平台今日一定擋:`0 >= 0`;而且咁樣零平台副作用 —— 唔寫 ledger、唔開 request)。
+  **實測**:BEFORE `consumed=0`、user 未持有 → `assignLicense` **HTTP 200** → AFTER(+8s)**`consumed=1`、user 真係持有** → `removeLicenses` HTTP 200 → `consumed=0`、user 冇咗。**零殘留。**
+  ⇒ ①D4 揀 B 唔止「帳面有 seat」,係**真係派得** ②今日個 gate 對嗰 27 個 SKU 係**純粹誤擋唔係保守** ③本單 R1 由 Med 降到零。
+  ⚠️ **仍然未驗嘅邊界**:`warning` 用完之後 Graph 點反應。本單唔靠佢 —— gate 本身就會喺 `consumed >= enabled + warning` 擋住。
 - **OQ-2** — `lockedOut` 今日全 tenant **得一個 SKU 非零**(`Microsoft_Teams_Rooms_Pro` locked=5)。本單只**存**唔**用**佢。將來要唔要納入判斷,等有第二個樣本先講
 
 ## 8. Spec Changelog
@@ -137,7 +141,8 @@ spec_refs:
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-12 | Initial draft(由 `ADR-0033` Accepted 落地) | Chris 剔 D4=B + ADR approved + 加 `capabilityStatus` | — |
+| 2026-08-12 | spec `proposed` → **`approved`**;**OQ-1 真試答咗**(`warning` seat 派得到)⇒ **R1 由 Med 降到零** · §2.2 出 scope 嗰條劃走 · F4 文案理由改寫 | Chris approve + 批准喺公司 tenant 真派一次 | Chris Lai |
 
 ---
 
-**Gate reminder**:`ADR-0033` **已 Accepted**(H1 三個都過)。**淨低本 spec 要由 `proposed` → `approved`**(PROCESS R1.change)先可以寫第一行 code。
+**Gate reminder**:🟢 **兩道閘 2026-08-12 齊過** —— `ADR-0033` **Accepted**(H1 三個)+ 本 spec **`approved`**。實作進度見 `checklist.md`。
