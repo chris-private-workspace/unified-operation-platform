@@ -98,7 +98,7 @@ Checklist **A-1..4 · B-1..7 · C-1..9 · D-1..6 · E-1..2 · V-1..5** 全部 ti
 ### 揭到（值得記低）
 
 1. 🔴 **spec R3 自己有個未實跑嘅推論** —— 寫住 `sn-gate:213` 會由 2 變 1。實跑**冇紅**(嗰個 fixture 係 `READY` line);真正紅嘅 `:147` / `:149` 原文冇提。**同 §9 記低嗰族(B8 / CH-023 G9)同源**,已喺 spec §4 + §7 明文更正
-2. 🔴 **root `npm run lint` 只跑 api** ⇒ web lint 從來未入過 gate,已累積 **15 條 pre-existing prettier 錯**。冇順手修(§1.3),逐檔 lint 本單掂到嘅 15 個檔 = exit 0。已入 BACKLOG
+2. **root `npm run lint` 只跑 api** ⇒ web lint 從來未入過 gate,今日數到 **15 條 pre-existing prettier 錯**。⚠️ **呢個唔係新發現** —— BACKLOG **一早有 `LINT-web`**(CH-019 2026-08-03 揭)。我第一版落 BACKLOG 開咗條新 `TD-3` 講同一件事,**即刻自己捉返兼刪咗**,改為更新既有嗰條。📌 **三次計數 25 → 16 → 15**,每次都係「只 `--fix` 自己掂過嗰幾個檔」順帶減少 —— **真正嘅代價唔係嗰 15 條,係「root lint exit 0」一直被每份 closeout 寫成「全 repo lint 綠」**。本單一樣冇順手修(§1.3),但逐檔 lint 過本單掂到嘅 15 個檔 = exit 0
 3. **兩個 falsification 都真紅**,其中 `not.toHaveBeenCalled()` 嗰條**本身就係 §9 點名嘅 vacuous 陷阱形狀** —— 拆走早退真係紅,證明佢有守住嘢
 4. **`requests.new-request-flag.test.tsx` 第一版超時** —— 因為 `withFlag` 順手連 `@/router`(拉晒全部畫面)都 import 埋落 button test。單獨跑 3941ms 綠,全 suite 並行就爆 5s。拆成兩個 loader 之後 **545ms**。⚠️ **形狀值得記**:一條「單獨跑先綠」嘅 test 係最難查嗰種
 
