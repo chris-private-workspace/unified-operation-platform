@@ -49,15 +49,18 @@ const TD = 'px-[16px] py-[13px] align-middle';
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-[6px]">
       <label className="text-[12px] text-fg-muted">{label}</label>
       {children}
+      {hint && <span className="text-[11px] text-fg-subtle">{hint}</span>}
     </div>
   );
 }
@@ -135,10 +138,18 @@ function EditSkuDialog({
             onChange={(e) => setBusinessAlias(e.target.value)}
           />
         </Field>
-        <Field label="Category">
+        {/* CH-025 B — the placeholder used to read "e.g. Base, Add-on, Power
+            Platform", which is a list of the values you might pick but reads as
+            a value you might type. A SKU sits in exactly one category (it is a
+            single column, and the Platform table groups on it), so the example
+            is now one value and the hint says so outright. */}
+        <Field
+          label="Category"
+          hint="One category per SKU — groups the Platform view"
+        >
           <Input
             value={category}
-            placeholder="e.g. Base, Add-on, Power Platform"
+            placeholder="e.g. Base"
             onChange={(e) => setCategory(e.target.value)}
           />
         </Field>

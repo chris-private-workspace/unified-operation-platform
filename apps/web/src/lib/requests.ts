@@ -21,6 +21,43 @@ export function stepsFor(item: RequestLineItem): LineItemStage[] {
   return item.procurementRequired ? PROC_STEPS : SHORT_STEPS;
 }
 
+// ── Display-only steps (CH-025 A) ────────────────────────────────
+//
+// 🔴 These are deliberately SEPARATE from `stepsFor`, and the separation is the
+// whole safety of this change.
+//
+// `stepsFor` feeds `nextStage`, which decides whether the detail screen offers
+// an "Advance stage" button. Appending a fourth entry there would make
+// `nextStage(ASSIGNED)` return 'Completed' — a value `LineItemStage` does not
+// have — so a finished line would grow a button that 400s on click.
+//
+// So the timeline gets its own list. `LineItemStage`, the backend stage machine
+// and `nextStage` are untouched; 'Completed' exists only as a label on screen.
+
+/** The step label shown after the last real stage — display only, never a stage. */
+export const COMPLETED_STEP = 'Completed';
+
+/** Steps for the per-line timeline: the real path plus a terminal marker. */
+export function displayStepsFor(item: RequestLineItem): string[] {
+  return [...stepsFor(item), COMPLETED_STEP];
+}
+
+/**
+ * Which display step the line is currently ON (0-based).
+ *
+ * An ASSIGNED line points at the TERMINAL marker rather than at the ASSIGNED
+ * dot, so the counter reads "4/4" instead of "3/4". "3/4" is the thing being
+ * fixed: it reads as one step still outstanding on a request that is finished.
+ *
+ * A CANCELLED line has no position on this path (the detail screen does not
+ * render a stepper for one); -1 says so rather than pretending it is at step 1.
+ */
+export function displayStepIndex(item: RequestLineItem): number {
+  const steps = displayStepsFor(item);
+  if (item.stage === 'ASSIGNED') return steps.length - 1;
+  return steps.indexOf(item.stage);
+}
+
 /** The next legal stage on the item's path, or null if already at the end. */
 export function nextStage(item: RequestLineItem): LineItemStage | null {
   const path = stepsFor(item);
@@ -86,7 +123,9 @@ export interface DerivedStatus {
 }
 
 /** Line items that still count — a cancelled line is not waiting for anything. */
-function activeLines(req: OnboardingRequest): RequestLineItem[] {
+function activeLines(
+  req: Pick<OnboardingRequest, 'lineItems'>,
+): RequestLineItem[] {
   return (req.lineItems ?? []).filter((i) => i.stage !== 'CANCELLED');
 }
 
@@ -102,7 +141,9 @@ function activeLines(req: OnboardingRequest): RequestLineItem[] {
  *
  * A request whose lines are ALL cancelled is not "assigned" — nothing was.
  */
-export function allLinesAssigned(req: OnboardingRequest): boolean {
+export function allLinesAssigned(
+  req: Pick<OnboardingRequest, 'lineItems'>,
+): boolean {
   const active = activeLines(req);
   return active.length > 0 && active.every((i) => i.stage === 'ASSIGNED');
 }
@@ -186,11 +227,21 @@ export function canRemoveLine(
 }
 
 /**
- * Lines can be added only to intake requests. A platform-created request already
- * pushed every line to ServiceNow, so a new local line would drift (D6).
+ * Lines can be added only to intake requests that are still running.
+ *
+ * A platform-created request already pushed every line to ServiceNow, so a new
+ * local line would drift (CH-007 D6).
+ *
+ * CH-025 C adds the second half: a request whose every line is assigned is
+ * DONE. Adding to it used to push it back to IN_PROGRESS, which is a delivered
+ * onboarding quietly coming back to life. The backend refuses this too (409) —
+ * this only decides whether the control is offered at all.
  */
-export function canAddLine(req: Pick<OnboardingRequest, 'origin'>): boolean {
-  return req.origin !== 'platform-created';
+export function canAddLine(
+  req: Pick<OnboardingRequest, 'origin' | 'lineItems'>,
+): boolean {
+  if (req.origin === 'platform-created') return false;
+  return !allLinesAssigned(req);
 }
 
 // List filter tabs (AUTH-3b). "My queue" matches requests handled by the signed-in
