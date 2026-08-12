@@ -87,6 +87,8 @@ export interface CategoryGroup {
     owned: number;
     allocated: number;
     assigned: number;
+    /** CH-028 — Σ tenantConsumed; all rows, like `assigned`. null counts 0. */
+    consumed: number;
     unallocated: number;
     /** Rows left out of `owned` / `unallocated` — otherwise the scope is silent. */
     unlimited: number;
@@ -100,9 +102,14 @@ export interface CategoryGroup {
  *
  * 🔴 The subtotal draws the same line as `/license/tenant-skus/stats`
  * (ADR-0032 D3): `owned` and `unallocated` count PREPAID rows only — adding a
- * sentinel makes the number meaningless — while `allocated` / `assigned` count
- * every row, because those are real seats on an unlimited SKU too. Two
- * different scopes in one row is only safe because `unlimited` says so.
+ * sentinel makes the number meaningless — while `allocated` / `assigned` /
+ * `consumed` count every row, because those are real seats on an unlimited SKU
+ * too. Two different scopes in one row is only safe because `unlimited` says so.
+ *
+ * CH-028 D5 — `consumed` joins the all-rows side deliberately: it is a
+ * measurement of use, not a derivation of `owned`, and FLOW_FREE alone is
+ * thousands of seats in use. It matches `totalConsumed` on the stats endpoint,
+ * so the grand-total row and these subtotals answer the same question.
  */
 export function groupByCategory(rows: TenantSkuRow[]): CategoryGroup[] {
   const groups = new Map<string, TenantSkuRow[]>();
@@ -124,6 +131,7 @@ export function groupByCategory(rows: TenantSkuRow[]): CategoryGroup[] {
         owned,
         allocated: rs.reduce((s, r) => s + r.allocatedToOpcos, 0),
         assigned: rs.reduce((s, r) => s + r.assignedToUsers, 0),
+        consumed: rs.reduce((s, r) => s + (r.tenantConsumed ?? 0), 0),
         unallocated: owned - prepaidAllocated,
         unlimited: rs.length - prepaid.length,
       },

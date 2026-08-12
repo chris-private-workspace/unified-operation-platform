@@ -616,6 +616,8 @@ export interface TenantSkuStats {
   totalOwned: number; // PREPAID SKUs only (ADR-0032 D3)
   totalAllocated: number; // all SKUs
   totalAssigned: number; // all SKUs
+  /** CH-028 — Σ tenantConsumed; all SKUs, like totalAssigned (NOT prepaid-only). */
+  totalConsumed: number;
   totalUnallocated: number; // totalOwned - Σ allocated across PREPAID SKUs
   skusOverAllocated: number;
   unlimitedSkus: number; // rows excluded from totalOwned / totalUnallocated
