@@ -67,7 +67,9 @@
   ⚠️ **代價講清楚**:`budget` 因此**冇驗到 `ok` 分支**。佢有 unit test 蓋住,而且 1 號、2 號兩撳已證咗個閘真係擋(唔係擺設)。
   - [x] **F4-4a 部署** ✅ **2026-08-10 部署 #4(`dev-211001e`)** —— build host 就係開發嗰台機(egress IP 實測 `52.187.129.166`,同 B1 記低嗰個逐字一樣)。api `--0000006` / web `--0000003` 都 `Healthy` traffic 100,舊 revision 已退場;custom domain 完好。container log 原文證到 DB 通 + schema 最新 + seed 行到,零 `failed`。詳見 `docs/13-deployment/09-dev-as-built.md`
   - [x] **F4-4b 真撳** —— 🔴 **2026-08-11 拆兩半(Chris 拍板),因為兩半卡住嘅嘢唔同**。全套步驟見 **`docs/13-deployment/10-dev-live-verification-runbook.md`**
-    - [ ] 🚧 **F4-4b-1 失敗路 @ DEV**(runbook **A5**)—— **仍然未做,而且 2026-08-12 之後理由變咗**:`B8` 已解封(custom domain 由呢台機打得通),所以**唔再係「冇路」**。佢淨低嘅價值係**單一而具體嘅一樣嘢**:400 body 捱唔捱得過真 ACA ingress + nginx proxy(同 `apiPatch` `detail` bug 同一族)。⚠️ **dialog 邏輯本機已 100% 真驗過**(今日再加三撳真 400/200),所以呢條**唔阻 W45 收官**,併入 W44 `F6` 一齊做
+    - [x] ~~**F4-4b-1 失敗路 @ DEV**(runbook **A5**)~~ ➡️ **2026-08-12 併入 W44 `F6-14`(Chris 拍板)**,**本 phase 唔再持有佢**
+      - **點解搬**:`B8` 解封之後佢唔再係「冇路」,而佢淨低嘅嘢**完全唔關本 phase 個 dialog 事** —— dialog 邏輯本機已 100% 真驗過(F3-7 兩張 blocked 截圖 + 2026-08-12 三撳真 400/200)。**佢淨係驗「一個 400 body 過唔過得到嗰個環境嘅 proxy 鏈」= 部署層問題**,唔係功能層
+      - 💡 **搬過去嗰邊會有對照組**:今日 1 號、2 號兩撳各返一個真 400 + 完整 steps(`directory` 4 步 / `budget` 6 步)⇒ DEV 撳完直接對得返
     - [x] **F4-4b-2 成功路 @ 本機**(runbook **B3**)✅ **2026-08-12 收咗**,見上面 F4-4 個表⚠️ **原本寫住卡 B8 係錯嘅**:`BACKLOG` `DEV-GRAPH-PLACEHOLDER` 行(2026-08-10 查證)證實 **DEV 個 `GRAPH_TENANT_ID` = 公司 M365 tenant `d1ea071a-…`,`GRAPH_CLIENT_ID` 同本機 `.env` 完全一致** ⇒ **兩邊同一個 tenant 同一個 Graph app,喺 DEV 撳同喺本機撳真派出去嗰個 licence 一模一樣** ⇒ 去 DEV 換唔到任何嘢返嚟,而本機仲快
       - 🔴 **順帶更正 F3-7 一個容易睇漏嘅界線**:嗰四張截圖入面,`success` / `skipped` / `overridden` **三個狀態係攔截 PATCH 造出嚟**(`progress.md:308`)⇒ **成功路到今日為止零真回應證據**,呢一格先係佢
   - 💡 **建議拆兩半**:**失敗路**用 allocation = 0 行 `budget` 閘(閘喺 tenant seat read 同 `assignLicense` 之前,有 test 釘住)⇒ **零副作用,可以放心做**,而且已涵蓋 dialog / 十步 / `whoFixes` / 400 body 過真 nginx+ACA ingress;**成功路**會喺公司 tenant **真派一個 licence**(CH-020 V5d 做過一次,留低咗一個冇收嘅 Power BI Free),要先揀定 target 同收拾方式

@@ -273,3 +273,45 @@ catalog `order_now` ⇒ ServiceNow 開**一張全新 REQ + 一張 RITM**(唔止�
 | B2 | Graph + SN test connection · sync gate | 三個都確認咗 |
 | B3 | 撳 Assign | dialog 十步 · timeline 留低 NOTE · **reload 仲喺** |
 | B4 | Entra portal un-assign | 收埋 CH-020 嗰個 |
+
+---
+
+# ✅ 2026-08-12 執行結果（v3 註記）
+
+## Track B — **收咗**
+
+Chris 批准真派一次 licence（target = 佢自己，SKU `POWERAUTOMATE_ATTENDED_RPA`）。一個 session 內**撳三次收齊三條路**：
+
+| # | 局 | HTTP | `failedAt` | steps |
+|---|---|---|---|---|
+| 1 | 原 fixture（target = 砌出嚟嘅 UPN） | **400** | `directory` | 4 步 |
+| 2 | 換真人、冇 override | **400** | `budget` | 6 步 |
+| 3 | 加 ADMIN override | **200** | — | **10 步 · `assigned`** |
+
+- **W45 `F4-4`** ✅ · **CH-023 `F3-5`** ✅（timeline NOTE 同 dialog step 逐字一樣，零 drift）
+- **Graph 側獨立覆核**：`holds true` → 移返後 `false`，`consumed 92 → 91`，**零殘留**
+- 順帶收埋 **CH-020 個九日 leftover**（Power BI Free，`consumed 3067 → 3066`）
+
+### 🔴 B0 表要加一行 —— 呢次先發現
+
+`B0` 原本問三條（派畀邊個 / 邊隻 SKU / 之後點收）。**漏咗第四條，而佢會令你白撳一次**：
+
+> **④ 條 request 個 `targetUpn` 係咪 tenant 內真實存在？**
+
+- `sync-check` 返 `FOUND` **證明唔到** —— 2026-08-12 硬對照：同一個 UPN、同一分鐘，`sync-check` = `FOUND`，而真 assign 個 `directory` 閘 = `Target user not found in Azure AD`。**兩個相反答案。**
+- ⇒ **撳之前直接打 Graph `/users/{upn}`**（scratchpad `probe-target-user.js`），唔好信 `sync-check`。
+- ⚠️ 而且 `targetUpn` 喺 `azureSyncedAt` 之後 **改唔到**（`PATCH :id` → 409，「it is the key the assignment flow uses」）。個 guard 係啱嘅 ⇒ **要換 target 就要改本機 fixture 個 DB row**。
+
+### 💡 B2 加一句：過 budget 閘揀邊條路
+
+Runbook 原文假設「先喺 ledger 加 `allocated`」。實際上：
+
+- `ledger/import` 走 CSV matrix **兼要 `businessAlias` 已 curate**（ADR-0004）⇒ 冇 alias 嘅 SKU **行唔通**
+- ⇒ **用 ADMIN `budgetOverrideReason` 更直接**，而且順帶把 `budget: overridden` 由「攔截 PATCH 造出嚟」變成**真回應**
+- ⚠️ 代價：`budget` 個 `ok` 分支就冇 live 驗到（有 unit test 蓋住）
+
+## Track A — 部分收咗
+
+- **A0**（custom domain）✅ · **A1 / `F6-5`**（`/api/docs/api` 200）✅ —— 2026-08-12 由開發機直接打得通，**`B8` 解封**
+- **A5** ➡️ 併入 **W44 `F6-14`**（Chris 拍板）—— 佢淨係驗「400 body 過唔過得到 proxy 鏈」= 部署層問題
+- **A2 / A3 / A4** 仍未做（`F6-6` 要 admin 密碼 · `F9-8` 要你本人 + 公司網 · Graph test connection **本機已驗 `ok`**，DEV 側未）

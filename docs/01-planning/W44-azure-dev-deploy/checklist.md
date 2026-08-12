@@ -114,6 +114,12 @@ last_updated: 2026-08-04
 - [x] ~~F6-10(重複)🔴 要 infra 畀 `managedEnvironments/read`,係而家最大樽頸~~ ⛔ **重複 ID,已由上面嗰條 `F6-10` 取代**(infra 2026-08-06 畀咗)。🔴 **兩條同編號嘅 item 一條 `[x]` 一條 `[ ]` 並存咗六日** —— 掃 checklist 嘅人睇到邊條就信邊條,而「最大樽頸」呢句喺已解封之後仲留住,會令下手當成阻塞。**編號重用 = 兩個真相**,同 `WEB-TEST-JSDOM`/`WEB-TEST-ENV` 同族
 - [x] ~~F6-11 替代驗證:Chris 用個人帳號喺 Azure Portal 睇 container log~~ ⛔ **唔再需要** —— B7 2026-08-06 解封,`logs show` 直接通,log 原文已入 F6-7/F6-8
 - [x] ~~F6-12 替代驗證:由企業網絡內嘅機 curl web + `/api/docs/api`~~ ⛔ **唔再需要** —— 2026-08-12 **由呢台機**直接打得通(見 F6-5),唔使搵企業網嗰部機
+- [ ] **F6-14** 🆕 **400 body 捱唔捱得過真 ACA ingress + nginx proxy**(**由 W45 `F4-4b-1` 併入嚟,Chris 2026-08-12 拍板**)
+  - **點解由 W45 搬過嚟**:`B8` 解封之後佢**唔再係「冇路」**,而佢淨低嘅嘢**完全唔關 W45 個 dialog 事** —— dialog 邏輯本機已 100% 真驗過(F3-7 兩張 blocked 截圖 + 2026-08-12 三撳真 400/200)。**佢淨係驗一樣嘢:一個 400 回應嘅 body 過唔過得到呢個環境嘅 proxy 鏈。** 嗰個係**部署層**嘅問題,唔係功能層 ⇒ 放喺 W44 先啱位
+  - **點造局**:揀一條 line item,佢個 OpCo × SKU 喺 ledger `allocatedQuantity = 0` ⇒ 撳 Assign 會被 **budget 閘**擋(閘喺 tenant seat read 同 `assignLicense` 之前,有 test 釘住)。🟢 **零副作用**
+  - ✅ 收貨:**dialog 開到(唔係一個乾巴巴嘅 toast)** ← 呢個先係「400 body 過到 proxy」嘅證據 · `failedAt` 指住 `budget` · 有 `whoFixes` · **DB 零改動**
+  - 🔴 **dialog 開唔到但本機開得到 ⇒ 就係 proxy 食咗 400 body**,唔好再查前端(同 `apiPatch` `detail` bug 同族)
+  - 💡 **本機對照組已經有咗**:2026-08-12 三撳嘅 1 號、2 號各返一個真 400 + 完整 steps(`directory` 4 步 / `budget` 6 步)⇒ **DEV 撳完直接對得返**
 
 ## F7 — n8n UAT 接線驗證(前置 F6)
 
