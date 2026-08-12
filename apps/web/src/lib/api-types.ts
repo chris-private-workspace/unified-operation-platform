@@ -281,23 +281,43 @@ export interface LedgerStats {
 }
 
 /**
+ * What `owned` is made of (ADR-0033 D1/D2). `enabled + warning` is the total;
+ * `suspended` / `lockedOut` are shown but excluded — Microsoft says those seats
+ * are unusable.
+ */
+export interface TenantSkuOwnedBreakdown {
+  enabled: number;
+  /** Subscription expired but inside the grace period — still assignable. */
+  warning: number;
+  /** Subscription cancelled — NOT counted in owned. */
+  suspended: number;
+  lockedOut: number;
+  /** 'Enabled' | 'Warning' | 'Suspended' | 'LockedOut' | 'Deleted' */
+  capabilityStatus: string;
+}
+
+/**
  * GET /license/tenant-skus → TenantSkuRowDto[] (W16). Tenant three-layer view
- * (DESIGN §5): owned (M365 prepaidUnits.enabled) → allocatedToOpcos (Σ OpCo
- * budget) → assignedToUsers. owned / tenantConsumed / unallocated are null when
- * a SKU is allocated but never synced from tenant. ADMIN / REGIONAL only — a
- * GET by OPCO_IT returns 403 (Platform view is a tenant-wide admin surface).
+ * (DESIGN §5): owned → allocatedToOpcos (Σ OpCo budget) → assignedToUsers.
+ * owned / tenantConsumed / unallocated are null when a SKU is allocated but
+ * never synced from tenant. ADMIN / REGIONAL only — a GET by OPCO_IT returns
+ * 403 (Platform view is a tenant-wide admin surface).
  */
 export interface TenantSkuRow {
   skuCatalogId: string;
   sku: LedgerSkuRef;
   seatModel: SeatModel; // ADR-0032 D1 — curated
+  /** ASSIGNABLE seats (ADR-0033 D2): enabled + warning. Was enabled-only. */
   owned: number | null;
+  /** Mandatory companion to `owned` (D2) — a sum with no breakdown is unreadable. */
+  ownedBreakdown: TenantSkuOwnedBreakdown | null;
   tenantConsumed: number | null;
   allocatedToOpcos: number;
   assignedToUsers: number;
   unallocated: number | null; // owned - allocatedToOpcos; null when unlimited
   overAllocated: boolean; // allocatedToOpcos > owned; false when unlimited
-  noPrepaidSeats: boolean; // derived (ADR-0032 D2): prepaid, 0 owned, but in use
+  /** derived (ADR-0032 D2, narrowed by ADR-0033 D5): 0 ASSIGNABLE but in use */
+  noPrepaidSeats: boolean;
 }
 
 /**

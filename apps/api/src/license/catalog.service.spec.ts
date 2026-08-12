@@ -15,13 +15,25 @@ const sku = (
   part: string,
   prepaid: number,
   consumed: number,
+  // CH-027 / ADR-0033 — the other three buckets default to 0 so existing cases
+  // read unchanged, and the grace-period case can opt in explicitly.
+  extra: Partial<{
+    suspendedUnits: number;
+    warningUnits: number;
+    lockedOutUnits: number;
+    capabilityStatus: string;
+  }> = {},
 ) => ({
   skuId,
   skuPartNumber: part,
   prepaidEnabled: prepaid,
+  suspendedUnits: 0,
+  warningUnits: 0,
+  lockedOutUnits: 0,
   consumedUnits: consumed,
   capabilityStatus: 'Enabled',
   appliesTo: 'User',
+  ...extra,
 });
 
 describe('CatalogService', () => {
@@ -96,7 +108,49 @@ describe('CatalogService', () => {
     // one snapshot per SKU, carrying tenant totals.
     expect(prisma.tenantSkuSnapshot.create).toHaveBeenCalledTimes(2);
     expect(prisma.tenantSkuSnapshot.create).toHaveBeenCalledWith({
-      data: { skuCatalogId: 'c1', prepaidEnabled: 100, consumedUnits: 80 },
+      data: {
+        skuCatalogId: 'c1',
+        prepaidEnabled: 100,
+        suspendedUnits: 0,
+        warningUnits: 0,
+        lockedOutUnits: 0,
+        consumedUnits: 80,
+        capabilityStatus: 'Enabled',
+      },
+    });
+  });
+
+  /**
+   * CH-027 acceptance C1 — the snapshot has to persist what the tenant actually
+   * reported, all four buckets and Microsoft's own verdict. Values are spelled
+   * out rather than read back off the fixture: an assertion that recomputes the
+   * implementation from the same source always passes.
+   */
+  it('stores every prepaidUnits bucket and capabilityStatus on the snapshot', async () => {
+    graph.getSubscribedSkus.mockResolvedValue([
+      sku('guid-viva', 'VIVA', 0, 30, {
+        suspendedUnits: 50,
+        capabilityStatus: 'Suspended',
+      }),
+    ]);
+    prisma.skuCatalog.findUnique.mockResolvedValue({
+      id: 'c-viva',
+      skuId: 'guid-viva',
+    });
+    prisma.skuCatalog.update.mockResolvedValue({ id: 'c-viva' });
+
+    await service.syncFromTenant();
+
+    expect(prisma.tenantSkuSnapshot.create).toHaveBeenCalledWith({
+      data: {
+        skuCatalogId: 'c-viva',
+        prepaidEnabled: 0,
+        suspendedUnits: 50,
+        warningUnits: 0,
+        lockedOutUnits: 0,
+        consumedUnits: 30,
+        capabilityStatus: 'Suspended',
+      },
     });
   });
 

@@ -58,8 +58,17 @@ describe('N8nLicenseProvider', () => {
 
       const result = await provider.listTenantSkus();
 
+      // ADR-0033 D3 — assignableUnits === prepaidEnabled here, and that is the
+      // honest answer, not a placeholder: workflow 2002 sends one seat number.
+      // The consequence is deliberate — on this provider the tenant seat gate
+      // keeps its pre-CH-027 behaviour until n8n itself starts sending more.
       expect(result).toEqual([
-        { skuId: 'guid-1', prepaidEnabled: 100, consumedUnits: 42 },
+        {
+          skuId: 'guid-1',
+          prepaidEnabled: 100,
+          consumedUnits: 42,
+          assignableUnits: 100,
+        },
       ]);
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe(`${BASE}/wf2-license-check`);

@@ -142,6 +142,8 @@ spec_refs:
 |---|---|---|---|
 | 2026-08-12 | Initial draft(由 `ADR-0033` Accepted 落地) | Chris 剔 D4=B + ADR approved + 加 `capabilityStatus` | — |
 | 2026-08-12 | spec `proposed` → **`approved`**;**OQ-1 真試答咗**(`warning` seat 派得到)⇒ **R1 由 Med 降到零** · §2.2 出 scope 嗰條劃走 · F4 文案理由改寫 | Chris approve + 批准喺公司 tenant 真派一次 | Chris Lai |
+| 2026-08-12 | **實作完成**(A–H 全部);**acceptance D2 字面守唔到 —— 改咗 n8n `listTenantSkus` 1 條形狀 assert**(`toEqual` 要加 `assignableUnits`)。行為 assert 一條唔改,`license-ops.contract.spec.ts` 跨 provider 等價原封不動 ⇒ D2 意圖守住 | 契約加欄必然掃到形狀 assert,`toEqual` 唔可能唔改 | — |
+| 2026-08-12 | **F4 加咗一條反面 acceptance**(`enabled` 夠用嗰陣 `detail` 必須 `undefined`)—— 原文只講「靠 `warning` 撐起嗰陣要有」,單獨嘅話 `graceSeats > 0` 就滿足到,而咁樣每個 `SPE_E3` assign 都會被標成 grace | 起 test 嗰陣發現原 acceptance 唔約束到條件 | — |
 
 ---
 

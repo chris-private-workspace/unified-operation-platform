@@ -102,6 +102,38 @@ describe('AssignService', () => {
     assignedQuantity,
   });
 
+  /**
+   * A /subscribedSkus row in the shape GraphService returns since CH-027
+   * (ADR-0033 — four prepaidUnits buckets). The three new ones default to 0, so
+   * every pre-CH-027 case below keeps its exact behaviour; the grace-period
+   * cases opt in explicitly.
+   *
+   * 🔴 0 rather than omitted: `assignableUnits` adds two of these together, and
+   * one `undefined` makes the whole seat gate compare against NaN — which never
+   * refuses, i.e. the fixture would silently disable the gate it is testing.
+   */
+  const tenantSku = (
+    prepaidEnabled: number,
+    consumedUnits: number,
+    extra: Partial<{
+      suspendedUnits: number;
+      warningUnits: number;
+      lockedOutUnits: number;
+      capabilityStatus: string;
+    }> = {},
+  ) => ({
+    skuId: 'guid-1',
+    skuPartNumber: 'SPE_E3',
+    prepaidEnabled,
+    suspendedUnits: 0,
+    warningUnits: 0,
+    lockedOutUnits: 0,
+    consumedUnits,
+    capabilityStatus: 'Enabled',
+    appliesTo: 'User',
+    ...extra,
+  });
+
   const arrangeHappy = () => {
     prisma.requestLineItem.findUnique.mockResolvedValue(readyItem());
     prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow());
@@ -112,16 +144,7 @@ describe('AssignService', () => {
       usageLocation: 'HK',
       accountEnabled: true,
     });
-    graph.getSubscribedSkus.mockResolvedValue([
-      {
-        skuId: 'guid-1',
-        skuPartNumber: 'SPE_E3',
-        prepaidEnabled: 100,
-        consumedUnits: 80,
-        capabilityStatus: 'Enabled',
-        appliesTo: 'User',
-      },
-    ]);
+    graph.getSubscribedSkus.mockResolvedValue([tenantSku(100, 80)]);
     tx.requestLineItem.update.mockResolvedValue({
       id: 'li1',
       stage: 'ASSIGNED',
@@ -548,16 +571,7 @@ describe('AssignService', () => {
         usageLocation: 'HK',
         accountEnabled: true,
       });
-      graph.getSubscribedSkus.mockResolvedValue([
-        {
-          skuId: 'guid-1',
-          skuPartNumber: 'SPE_E3',
-          prepaidEnabled: 100,
-          consumedUnits: 100, // full
-          capabilityStatus: 'Enabled',
-          appliesTo: 'User',
-        },
-      ]);
+      graph.getSubscribedSkus.mockResolvedValue([tenantSku(100, 100)]); // full
 
       await expect(
         service.assignLineItem('li1', undefined, ADMIN),
@@ -698,16 +712,7 @@ describe('AssignService', () => {
     it('does not bypass the tenant seat gate', async () => {
       arrangeHappy();
       prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(10, 10));
-      graph.getSubscribedSkus.mockResolvedValue([
-        {
-          skuId: 'guid-1',
-          skuPartNumber: 'SPE_E3',
-          prepaidEnabled: 100,
-          consumedUnits: 100,
-          capabilityStatus: 'Enabled',
-          appliesTo: 'User',
-        },
-      ]);
+      graph.getSubscribedSkus.mockResolvedValue([tenantSku(100, 100)]);
 
       await expect(
         service.assignLineItem('li1', undefined, ADMIN, REASON),
@@ -1056,16 +1061,7 @@ describe('AssignService', () => {
      */
     it('names `seats` when the tenant has none left, with budget green', async () => {
       arrangeHappy();
-      graph.getSubscribedSkus.mockResolvedValue([
-        {
-          skuId: 'guid-1',
-          skuPartNumber: 'SPE_E3',
-          prepaidEnabled: 100,
-          consumedUnits: 100, // full
-          capabilityStatus: 'Enabled',
-          appliesTo: 'User',
-        },
-      ]);
+      graph.getSubscribedSkus.mockResolvedValue([tenantSku(100, 100)]); // full
 
       await expectBlockedAt('seats', 'procurement', false);
     });
@@ -1108,18 +1104,16 @@ describe('AssignService', () => {
       expect(res.steps).toHaveLength(10);
     });
 
-    it('refuses a prepaid SKU with no prepaid seats, and stops calling it "no seats left"', async () => {
+    /**
+     * CH-027 acceptance F2 — VIVA's real live shape. `enabled` 0 and the seats
+     * sit in `suspended`, i.e. the subscription was cancelled: nothing is
+     * assignable, so this still refuses. It is the ONLY reason left for this
+     * branch after ADR-0033 D5 narrowed it.
+     */
+    it('refuses a prepaid SKU with nothing assignable, and stops calling it "no seats left"', async () => {
       arrangeHappy();
-      // POWER_BI_PRO on the live tenant: 0 owned, 91 in use (ADR-0032 Context).
       graph.getSubscribedSkus.mockResolvedValue([
-        {
-          skuId: 'guid-1',
-          skuPartNumber: 'SPE_E3',
-          prepaidEnabled: 0,
-          consumedUnits: 91,
-          capabilityStatus: 'Enabled',
-          appliesTo: 'User',
-        },
+        tenantSku(0, 30, { suspendedUnits: 50, capabilityStatus: 'Suspended' }),
       ]);
 
       const body = await blockedBody();
@@ -1132,25 +1126,98 @@ describe('AssignService', () => {
       });
       // Hard-coded expectation, not one derived from the fixture: a message
       // rebuilt from the same values would pass no matter what it said.
+      //
+      // 🔴 It says "available", not "enabled", and it does NOT claim the
+      // subscription is cancelled as fact — the seam carries no capabilityStatus
+      // (ADR-0033 D3), so this path only knows the count is zero.
       expect(body.message).toBe(
-        'No assignable seats for SPE_E3 in the tenant (M365 reports 0 enabled, 91 in use). ' +
-          'Usually the subscription lapsed — expired seats keep working but stop counting as enabled. ' +
+        'No assignable seats for SPE_E3 in the tenant (M365 reports 0 available, 30 in use). ' +
+          'Usually the subscription was cancelled — expired seats keep working through the grace period, cancelled ones do not. ' +
           'Check it in M365 admin, or mark this SKU unlimited in SKU Catalog if it is not licensed per seat.',
       );
     });
 
-    it('leaves the ordinary "seats used up" message word for word', async () => {
+    // ── CH-027 / ADR-0033 D4 — the gate counts grace-period seats ─────────────
+
+    /**
+     * Acceptance F1 — POWER_BI_PRO's real live shape (0 enabled, 790 warning,
+     * 91 in use). Before CH-027 this was one of 32 SKUs the gate refused, 27 of
+     * which the tenant still had seats for. It assigns now, and the 2026-08-12
+     * live probe is why that is safe rather than optimistic: Graph accepted an
+     * assignment against a warning-only SKU (HTTP 200, consumed 0→1).
+     */
+    it('assigns from the expiry grace period when enabled alone would refuse', async () => {
       arrangeHappy();
       graph.getSubscribedSkus.mockResolvedValue([
-        {
-          skuId: 'guid-1',
-          skuPartNumber: 'SPE_E3',
-          prepaidEnabled: 100,
-          consumedUnits: 100,
-          capabilityStatus: 'Enabled',
-          appliesTo: 'User',
-        },
+        tenantSku(0, 91, { warningUnits: 790 }),
       ]);
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.outcome).toBe('assigned');
+      expect(graph.assignLicense).toHaveBeenCalled();
+    });
+
+    /**
+     * Acceptance F4 — passing is not the whole story. The seat came out of an
+     * expired subscription, and that has a deadline the operator can act on.
+     */
+    it('says so on the `seats` step when the assignment uses a grace-period seat', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([
+        tenantSku(0, 91, { warningUnits: 790 }),
+      ]);
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      const seats = res.steps.find((s) => s.key === 'seats');
+      // `ok` — the check ran and passed. Not `skipped` (nothing was skipped) and
+      // not `overridden` (nobody went past anything).
+      expect(seats?.status).toBe('ok');
+      // Hard-coded, for the same reason as the refusal message above.
+      expect(seats?.detail).toBe(
+        'SPE_E3 has 0 enabled seats and 790 in the expiry grace period, 91 in use — ' +
+          'this assignment uses a grace-period seat. ' +
+          'Those seats stop working when the grace period ends.',
+      );
+    });
+
+    /**
+     * The other half of F4, and the one that actually constrains the condition:
+     * a tenant with a grace period it is not yet drawing on must NOT get the
+     * note. Without this, `graceSeats > 0` alone would pass F4 and label every
+     * ordinary assignment on SPE_E3 as grace-period.
+     */
+    it('stays silent when enabled seats alone cover the assignment', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([
+        tenantSku(100, 80, { warningUnits: 4477 }),
+      ]);
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      const seats = res.steps.find((s) => s.key === 'seats');
+      expect(seats?.status).toBe('ok');
+      expect(seats?.detail).toBeUndefined();
+    });
+
+    /**
+     * Acceptance F3 — Microsoft_Teams_Rooms_Basic's real shape (22 of 22 used,
+     * no grace period). ADR-0033 D4's own table lists this among the 11 SKUs
+     * that stay refused, and every one of them is refused correctly.
+     */
+    it('still refuses a SKU that is genuinely used up', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([tenantSku(22, 22)]);
+
+      const body = await blockedBody();
+      expect(body.failedAt).toBe('seats');
+      expect(body.message).toBe('No available seats for SKU SPE_E3');
+    });
+
+    it('leaves the ordinary "seats used up" message word for word', async () => {
+      arrangeHappy();
+      graph.getSubscribedSkus.mockResolvedValue([tenantSku(100, 100)]);
 
       const body = await blockedBody();
       expect(body.message).toBe('No available seats for SKU SPE_E3');

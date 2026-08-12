@@ -24,15 +24,60 @@ export function platformStatus(row: TenantSkuRow): PlatformStatus {
   if (row.seatModel === 'unlimited')
     return { label: 'Unlimited', tone: 'neutral' };
   if (row.overAllocated) return { label: 'Over-allocated', tone: 'danger' };
-  // "No seats enabled", not "no prepaid seats": OQ-5 (2026-08-12 Graph probe)
-  // showed all 15 such SKUs DO have seats — they sit in prepaidUnits.warning
-  // (lapsed) or .suspended (cancelled), neither of which we read. Saying "no
-  // prepaid seats" would send the reader to buy something they already own.
-  if (row.noPrepaidSeats) return { label: 'No seats enabled', tone: 'warn' };
+  /**
+   * ADR-0033 D5 — the label reads Microsoft's own capabilityStatus rather than
+   * inferring "cancelled" from suspended > 0. Deriving it here would re-create a
+   * verdict the vendor already published, and the two would drift.
+   *
+   * CH-026 called this "No seats enabled", which was accurate about what we had
+   * measured (`enabled` was 0) and wrong about what it meant: 11 of those 15
+   * SKUs had usable seats in the grace period. Those now pass this branch
+   * entirely — `owned` includes them.
+   */
+  if (row.noPrepaidSeats)
+    return {
+      label:
+        row.ownedBreakdown?.capabilityStatus === 'Suspended'
+          ? 'Subscription suspended'
+          : 'No seats available',
+      tone: 'warn',
+    };
   if (row.owned === null) return { label: 'Not synced', tone: 'neutral' };
   if (row.owned > 0 && row.unallocated === 0)
     return { label: 'Fully allocated', tone: 'warn' };
   return { label: 'Available', tone: 'ok' };
+}
+
+/**
+ * Is this row's `owned` propped up by an expired subscription (ADR-0033 D7)?
+ *
+ * Not the same question as "warning > 0": a SKU with 4502 enabled and 242 in
+ * grace is not the story. What matters on screen is that the number the reader
+ * sees is not all clean `enabled` seats, so the threshold is simply "any grace
+ * seats at all" — but the display treats it as an annotation on `owned`, never
+ * as a status of its own (there is already a status column, and DS-8 keeps
+ * state in one place).
+ */
+export function hasGraceSeats(row: TenantSkuRow): boolean {
+  return (row.ownedBreakdown?.warning ?? 0) > 0;
+}
+
+/**
+ * The full breakdown as one line, for the Owned cell's title (ADR-0033 D2 —
+ * `owned` is a sum now, and an unexplainable sum is how SPE_E3 going 21 → 4498
+ * turns into a support ticket).
+ *
+ * The excluded buckets are named as excluded rather than hidden: "suspended 50"
+ * with no qualifier reads as part of the total.
+ */
+export function ownedBreakdownText(row: TenantSkuRow): string | undefined {
+  const b = row.ownedBreakdown;
+  if (!b) return undefined;
+  const parts = [`enabled ${b.enabled}`, `expiry grace period ${b.warning}`];
+  if (b.suspended > 0) parts.push(`suspended ${b.suspended} (not counted)`);
+  if (b.lockedOut > 0) parts.push(`locked out ${b.lockedOut} (not counted)`);
+  parts.push(`M365 status ${b.capabilityStatus}`);
+  return parts.join(' · ');
 }
 
 export interface CategoryGroup {

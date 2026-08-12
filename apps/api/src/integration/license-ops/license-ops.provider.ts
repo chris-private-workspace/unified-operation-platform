@@ -39,6 +39,21 @@ export interface TenantSkuSeats {
   prepaidEnabled: number;
   /** Total assigned across the whole tenant. */
   consumedUnits: number;
+  /**
+   * How many seats THIS provider says can be assigned right now (ADR-0033 D3).
+   *
+   * A conclusion, not a bucket — which is the whole point. Graph reports four
+   * prepaidUnits buckets and returns `enabled + warning` here (an expired
+   * subscription's seats still assign — verified against the live tenant on
+   * 2026-08-12: HTTP 200, consumed 0→1). n8n sends no such breakdown, so its
+   * provider returns `prepaidEnabled` and that path keeps behaving exactly as
+   * it does today.
+   *
+   * 🔴 The buckets themselves stay out of this interface for the same reason
+   * capabilityStatus / appliesTo did: they are Graph vocabulary, and a non-Graph
+   * implementation would have to invent them.
+   */
+  assignableUnits: number;
 }
 
 /** The directory facts an assignment needs. No displayName / accountEnabled:

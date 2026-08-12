@@ -41,12 +41,25 @@ export class GraphLicenseProvider extends LicenseOperationsProvider {
         err,
       );
     }
-    // Narrow deliberately (see TenantSkuSeats): capabilityStatus / appliesTo are
-    // Graph concepts, and nothing on the assign path reads them.
+    // Narrow deliberately (see TenantSkuSeats): capabilityStatus / appliesTo and
+    // the three extra prepaidUnits buckets are Graph concepts. What crosses the
+    // seam is this provider's conclusion, not its raw vocabulary.
     return skus.map((s) => ({
       skuId: s.skuId,
       prepaidEnabled: s.prepaidEnabled,
       consumedUnits: s.consumedUnits,
+      /**
+       * ADR-0033 D4 — `enabled + warning`, and the two exclusions are the
+       * decision:
+       *   suspended — the subscription is cancelled; Microsoft says so in
+       *               capabilityStatus, and honouring that is the mirror image
+       *               of the bug this whole change fixes.
+       *   lockedOut — locked by definition.
+       * `warning` is in because those seats demonstrably still assign, not
+       * because the number looks available (verified 2026-08-12 on the live
+       * tenant: AAD_PREMIUM_P2, enabled 0 / warning 10 → assign returned 200).
+       */
+      assignableUnits: s.prepaidEnabled + s.warningUnits,
     }));
   }
 

@@ -86,11 +86,17 @@ export class CatalogService {
           });
       existing ? updated++ : created++;
 
+      // ADR-0033 D1 — the snapshot records what the tenant reported, all four
+      // buckets of it. No combining happens here: this is the measurement.
       await this.prisma.tenantSkuSnapshot.create({
         data: {
           skuCatalogId: record.id,
           prepaidEnabled: s.prepaidEnabled,
+          suspendedUnits: s.suspendedUnits,
+          warningUnits: s.warningUnits,
+          lockedOutUnits: s.lockedOutUnits,
           consumedUnits: s.consumedUnits,
+          capabilityStatus: s.capabilityStatus,
         },
       });
     }

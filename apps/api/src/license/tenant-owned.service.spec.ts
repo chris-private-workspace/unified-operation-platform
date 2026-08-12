@@ -19,6 +19,35 @@ const cat = (
   seatModel,
 });
 
+/**
+ * CH-027 / ADR-0033 — a snapshot in the state the migration leaves existing
+ * rows in: three new buckets at 0, capabilityStatus 'Enabled'.
+ *
+ * 🔴 This IS acceptance B2. Every pre-CH-027 expectation below keeps its exact
+ * number through this helper, which is the proof that `owned` does not move for
+ * anyone until a fresh sync writes real values (D6).
+ */
+const snap = (
+  skuCatalogId: string,
+  prepaidEnabled: number,
+  consumedUnits: number,
+  extra: Partial<{
+    suspendedUnits: number;
+    warningUnits: number;
+    lockedOutUnits: number;
+    capabilityStatus: string;
+  }> = {},
+) => ({
+  skuCatalogId,
+  prepaidEnabled,
+  suspendedUnits: 0,
+  warningUnits: 0,
+  lockedOutUnits: 0,
+  consumedUnits,
+  capabilityStatus: 'Enabled',
+  ...extra,
+});
+
 describe('TenantOwnedService', () => {
   let service: TenantOwnedService;
   let prisma: {
@@ -45,9 +74,9 @@ describe('TenantOwnedService', () => {
   it('picks the latest snapshot per SKU and derives unallocated / overAllocated', async () => {
     // Two snapshots for sku-e3, newest first (findMany orderBy capturedAt desc).
     prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
-      { skuCatalogId: 'sku-e3', prepaidEnabled: 2000, consumedUnits: 1500 },
-      { skuCatalogId: 'sku-e3', prepaidEnabled: 999, consumedUnits: 1 }, // older → ignored
-      { skuCatalogId: 'sku-e1', prepaidEnabled: 100, consumedUnits: 90 },
+      snap('sku-e3', 2000, 1500),
+      snap('sku-e3', 999, 1), // older → ignored
+      snap('sku-e1', 100, 90),
     ]);
     prisma.opcoSkuLedger.groupBy.mockResolvedValue([
       {
@@ -107,8 +136,8 @@ describe('TenantOwnedService', () => {
 
   it('aggregates tenant stats (owned null counts as 0)', async () => {
     prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
-      { skuCatalogId: 'sku-e3', prepaidEnabled: 2000, consumedUnits: 1500 },
-      { skuCatalogId: 'sku-e1', prepaidEnabled: 100, consumedUnits: 90 },
+      snap('sku-e3', 2000, 1500),
+      snap('sku-e1', 100, 90),
     ]);
     prisma.opcoSkuLedger.groupBy.mockResolvedValue([
       {
@@ -141,7 +170,7 @@ describe('TenantOwnedService', () => {
   // Dynamics 365 SKU flows through owned / allocated / total exactly like M365.
   it('includes a D365 SKU in owned/total identically (category is not a gate)', async () => {
     prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
-      { skuCatalogId: 'sku-d365', prepaidEnabled: 500, consumedUnits: 300 },
+      snap('sku-d365', 500, 300),
     ]);
     prisma.opcoSkuLedger.groupBy.mockResolvedValue([
       {
@@ -186,7 +215,7 @@ describe('TenantOwnedService', () => {
 
   it('reports an unlimited SKU without deriving anything from the sentinel', async () => {
     prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
-      { skuCatalogId: 'sku-pbi', prepaidEnabled: 1000000, consumedUnits: 3064 },
+      snap('sku-pbi', 1000000, 3064),
     ]);
     prisma.opcoSkuLedger.groupBy.mockResolvedValue([
       {
@@ -217,18 +246,23 @@ describe('TenantOwnedService', () => {
 
   it('flags a prepaid SKU that has 0 owned but is in use (derived, not curated)', async () => {
     prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
-      { skuCatalogId: 'sku-pbipro', prepaidEnabled: 0, consumedUnits: 91 },
+      // VIVA's real live shape: enabled 0, seats sitting in `suspended` because
+      // the subscription was CANCELLED — nothing assignable, so the flag stands.
+      snap('sku-viva', 0, 30, {
+        suspendedUnits: 50,
+        capabilityStatus: 'Suspended',
+      }),
       // 0 owned AND nobody using it is an ordinary empty SKU, not this state.
-      { skuCatalogId: 'sku-idle', prepaidEnabled: 0, consumedUnits: 0 },
+      snap('sku-idle', 0, 0),
     ]);
     prisma.skuCatalog.findMany.mockResolvedValue([
-      cat('sku-pbipro', 'POWER_BI_PRO'),
+      cat('sku-viva', 'VIVA'),
       cat('sku-idle', 'IDLE_SKU'),
     ]);
 
     const rows = await service.listTenantSkus();
     const byId = Object.fromEntries(rows.map((r) => [r.skuCatalogId, r]));
-    expect(byId['sku-pbipro']).toMatchObject({
+    expect(byId['sku-viva']).toMatchObject({
       seatModel: 'prepaid',
       owned: 0,
       noPrepaidSeats: true,
@@ -240,11 +274,130 @@ describe('TenantOwnedService', () => {
     });
   });
 
+  // ── CH-027 / ADR-0033 ────────────────────────────────────────────────────
+  // Shapes taken verbatim from the 2026-08-12 read-only /subscribedSkus probe.
+
+  /** Acceptance E1 — the headline number, on the SKU that moves the most. */
+  it('counts grace-period seats in owned (SPE_E3: 21 enabled + 4477 warning)', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      snap('sku-e3', 21, 677, { warningUnits: 4477 }),
+    ]);
+    prisma.opcoSkuLedger.groupBy.mockResolvedValue([
+      {
+        skuCatalogId: 'sku-e3',
+        _sum: { allocatedQuantity: 700, assignedQuantity: 650 },
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([cat('sku-e3', 'SPE_E3')]);
+
+    const [row] = await service.listTenantSkus();
+
+    // 4498 spelled out, not 21 + 4477 recomputed: an expectation that redoes the
+    // implementation's arithmetic passes no matter what the implementation is.
+    expect(row.owned).toBe(4498);
+    expect(row.unallocated).toBe(3798);
+    // Before CH-027 this row read owned 21 against 700 allocated — a phantom
+    // over-allocation nobody could have acted on.
+    expect(row.overAllocated).toBe(false);
+    expect(row.noPrepaidSeats).toBe(false);
+  });
+
+  /** Acceptance E2 — the breakdown is mandatory, not decorative (D2). */
+  it('publishes the breakdown behind owned, capabilityStatus included', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      snap('sku-e3', 21, 677, {
+        warningUnits: 4477,
+        suspendedUnits: 3,
+        lockedOutUnits: 5,
+        capabilityStatus: 'Warning',
+      }),
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([cat('sku-e3', 'SPE_E3')]);
+
+    const [row] = await service.listTenantSkus();
+
+    expect(row.ownedBreakdown).toEqual({
+      enabled: 21,
+      warning: 4477,
+      suspended: 3,
+      lockedOut: 5,
+      capabilityStatus: 'Warning',
+    });
+    // The two excluded buckets are visible but NOT in the total.
+    expect(row.owned).toBe(4498);
+  });
+
+  it('leaves ownedBreakdown null for a SKU that was never synced', async () => {
+    prisma.opcoSkuLedger.groupBy.mockResolvedValue([
+      {
+        skuCatalogId: 'sku-x',
+        _sum: { allocatedQuantity: 50, assignedQuantity: 10 },
+      },
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([cat('sku-x', 'ADDON')]);
+
+    const [row] = await service.listTenantSkus();
+
+    // null, not a row of zeroes: zeroes would claim we measured and found none.
+    expect(row.ownedBreakdown).toBeNull();
+    expect(row.owned).toBeNull();
+  });
+
+  /**
+   * Acceptance G1 — the narrowing, both sides of it. POWER_BI_PRO and VIVA both
+   * report enabled 0 and both were flagged before CH-027; only one of them
+   * actually has nothing to assign.
+   */
+  it('narrows noPrepaidSeats to SKUs with no assignable seats at all', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      // Subscription LAPSED — 790 seats still usable. Was flagged, must not be.
+      snap('sku-pbipro', 0, 91, { warningUnits: 790 }),
+      // Subscription CANCELLED — still flagged, and now for the right reason.
+      snap('sku-viva', 0, 30, {
+        suspendedUnits: 50,
+        capabilityStatus: 'Suspended',
+      }),
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-pbipro', 'POWER_BI_PRO'),
+      cat('sku-viva', 'VIVA'),
+    ]);
+
+    const rows = await service.listTenantSkus();
+    const byId = Object.fromEntries(rows.map((r) => [r.skuCatalogId, r]));
+
+    expect(byId['sku-pbipro'].noPrepaidSeats).toBe(false);
+    expect(byId['sku-pbipro'].owned).toBe(790);
+    expect(byId['sku-viva'].noPrepaidSeats).toBe(true);
+    expect(byId['sku-viva'].owned).toBe(0);
+    // Acceptance G2's source: the label reads Microsoft's verdict, it does not
+    // infer "cancelled" from suspended > 0.
+    expect(byId['sku-viva'].ownedBreakdown?.capabilityStatus).toBe('Suspended');
+  });
+
+  it('keeps unlimited SKUs out of the grace-period arithmetic entirely', async () => {
+    prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
+      snap('sku-pbi', 1000000, 3064, { warningUnits: 12 }),
+    ]);
+    prisma.skuCatalog.findMany.mockResolvedValue([
+      cat('sku-pbi', 'POWER_BI_STANDARD', 'Power Platform', 'unlimited'),
+    ]);
+
+    const [row] = await service.listTenantSkus();
+
+    // owned is still the sum — the read-model reports what the tenant said —
+    // but every DERIVATION stays suppressed exactly as ADR-0032 D3 left it.
+    expect(row.owned).toBe(1000012);
+    expect(row.unallocated).toBeNull();
+    expect(row.overAllocated).toBe(false);
+    expect(row.noPrepaidSeats).toBe(false);
+  });
+
   it('excludes unlimited SKUs from the owned totals but not from allocated / assigned', async () => {
     prisma.tenantSkuSnapshot.findMany.mockResolvedValue([
-      { skuCatalogId: 'sku-e3', prepaidEnabled: 2000, consumedUnits: 1500 },
-      { skuCatalogId: 'sku-pbi', prepaidEnabled: 1000000, consumedUnits: 3064 },
-      { skuCatalogId: 'sku-flow', prepaidEnabled: 10000, consumedUnits: 4525 },
+      snap('sku-e3', 2000, 1500),
+      snap('sku-pbi', 1000000, 3064),
+      snap('sku-flow', 10000, 4525),
     ]);
     prisma.opcoSkuLedger.groupBy.mockResolvedValue([
       {
