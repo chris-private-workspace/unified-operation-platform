@@ -1,7 +1,7 @@
 ---
 change_id: CH-025
 title: "Request 完成之後真係要收得晒 + Category 欄唔好教錯人"
-status: proposed
+status: approved
 created: 2026-08-12
 target_completion: 2026-08-13
 affects_components: [apps/web, apps/api/fulfilment]
@@ -15,7 +15,7 @@ spec_refs:
 
 > **Spec version**:1.0(initial)
 > **Owner**:Chris Lai
-> **Approved by**:_(待填)_
+> **Approved by**:Chris Lai(2026-08-12,scope + acceptance 原樣批;OQ-1 未答 ⇒ 用 spec default「算完成」)
 > **分類**:Change(< 1 日)—— 三項都係改既有 feature 嘅行為 / 文案
 
 ## 1. Context (Why)
@@ -73,7 +73,10 @@ Chris 2026-08-12 提出四點,其中三點收喺本單(第四點 unlimited SKU �
 
 - [ ] **A1** 一條 `ASSIGNED` 嘅 short-path line:stepper 出 **4 個** dot,最後嗰個係 **✓**,文字 `Step 4/4`
 - [ ] **A2** procurement path 同款:**7 個** dot,`Step 7/7`
-- [ ] **A3** 未完成嘅 line(`READY`)行為**逐字不變**:3 dots、`Step 2/3`、第 2 個帶 ring
+- [ ] **A3**(🔴 **2026-08-12 render 時更正,見下**)未完成嘅 line(`READY`)第 2 個 dot 仍然帶 ring、**冇 tick**、`Add line item` 仍然出;但**分母跟住變 4**(`Step 2/4`)
+
+> 🔴 **A3 原文寫錯咗,而錯法值得記**。原文係「**逐字不變**:3 dots、`Step 2/3`」—— 但**佢同 A1 唔可能同時成立**:第 4 個 dot 要嘛由頭到尾都喺(未完成嗰陣分母就係 4),要嘛派完先突然出現(**timeline 會撳一下由 3 個 dot 變 4 個**,讀落似 bug)。寫 spec 嗰陣冇諗到呢兩者互斥,render 出嚟見到 `Step 2/4` 先發現。
+> **揀咗「由頭到尾 4 個」** —— 操作員一開始就見到「呢條路 4 步、最後一步係 Completed」,呢個預期性本身就係 Chris 要嘅嘢。⇒ A3 改成守真正應該不變嗰啲(ring 位置 · 冇 tick · 掣仲喺),而唔係守一個同 A1 打對台嘅數字。
 - [ ] **A4** 🔴 `ASSIGNED` 嘅 line **冇** `Advance stage` 掣(即 `nextStage` 冇被污染)—— test 直接 assert `nextStage(ASSIGNED) === null`
 - [ ] **B1** Edit SKU dialog 個 Category placeholder **冇逗號**,而且有一句講明一個 SKU 一個 category
 - [ ] **B2** CSV import 路(如果有同款暗示)一齊改;冇就喺 progress 明文寫「查過,冇」
@@ -109,6 +112,7 @@ Chris 2026-08-12 提出四點,其中三點收喺本單(第四點 unlimited SKU �
 |---|---|---|---|
 | 2026-08-12 | Initial draft | Chris 四點 review 其中三點 | — |
 | 2026-08-12 | 問題 1 揀「真係加第 4 個 dot」而唔係「最後一步填實」 | Chris 拍板;連帶要 §1.2 個分家設計 + R1 | Chris Lai |
+| 2026-08-12 | **更正 A3** —— 原文要求未完成嘅 line「逐字不變 3 dots / `Step 2/3`」,**同 A1 互斥**(第 4 個 dot 唔可以「只喺派完先出現」,否則 timeline 會撳一下自己變長)。改成:分母跟住變 4,守 ring 位置 / 冇 tick / 掣仲喺 | 寫 spec 時冇察覺兩條 acceptance 打對台;render 出嚟見到 `Step 2/4` 先發現(§3 A3 blockquote) | AI(自揭,已向 Chris surface) |
 
 ---
 

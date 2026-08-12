@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   allLinesAssigned,
+  canAddLine,
   deriveStatus,
+  displayStepIndex,
+  displayStepsFor,
   licenceRequestNumbers,
   matchesFilter,
+  nextStage,
 } from './requests';
 import type {
   LineItemStage,
@@ -197,6 +201,109 @@ describe('licenceRequestNumbers (CH-024 C)', () => {
       lineItems: [{ ...line('CANCELLED'), serviceNowNumber: 'RITM0047290' }],
     });
     expect(licenceRequestNumbers(r)).toEqual(['RITM0047290']);
+  });
+});
+
+/**
+ * CH-025 A — the timeline gets a terminal marker the stage machine does not
+ * have.
+ *
+ * 🔴 The last test in this block is the one that matters. `SHORT_STEPS` feeds
+ * BOTH the stepper and `nextStage`, so appending 'Completed' to it directly
+ * would make a finished line offer an "Advance stage" button that posts a value
+ * `LineItemStage` has no member for — a 400 produced by a display change.
+ */
+describe('displayStepsFor / displayStepIndex (CH-025 A)', () => {
+  const short = (stage: LineItemStage) => ({
+    ...line(stage),
+    procurementRequired: false,
+  });
+  const proc = (stage: LineItemStage) => ({
+    ...line(stage),
+    procurementRequired: true,
+  });
+
+  it('short path gains a fourth step', () => {
+    expect(displayStepsFor(short('READY'))).toEqual([
+      'REQUESTED',
+      'READY',
+      'ASSIGNED',
+      'Completed',
+    ]);
+  });
+
+  it('procurement path gains a seventh', () => {
+    expect(displayStepsFor(proc('QUOTING'))).toHaveLength(7);
+  });
+
+  it('an assigned line sits on the terminal marker — 4 of 4, not 3 of 4', () => {
+    const item = short('ASSIGNED');
+    expect(displayStepIndex(item)).toBe(3);
+    expect(displayStepsFor(item)).toHaveLength(4);
+  });
+
+  it('an assigned procurement line reads 7 of 7', () => {
+    expect(displayStepIndex(proc('ASSIGNED'))).toBe(6);
+  });
+
+  it('an unfinished line is unchanged — READY is still step 2', () => {
+    expect(displayStepIndex(short('READY'))).toBe(1);
+  });
+
+  it('a cancelled line has no position on the path', () => {
+    expect(displayStepIndex(short('CANCELLED'))).toBe(-1);
+  });
+
+  /**
+   * 🔴 The whole safety of CH-025 A in one assertion. If the terminal marker
+   * ever leaks into `stepsFor`, this goes from null to 'Completed' and the
+   * detail screen grows a button that 400s.
+   */
+  it('🔴 the stage machine is untouched: nothing follows ASSIGNED', () => {
+    expect(nextStage(short('ASSIGNED'))).toBeNull();
+    expect(nextStage(proc('ASSIGNED'))).toBeNull();
+    // …and the real path still ends at ASSIGNED, not at the marker.
+    expect(nextStage(short('READY'))).toBe('ASSIGNED');
+  });
+});
+
+/**
+ * CH-025 C — a finished onboarding stays finished. The backend 409s this too;
+ * these decide only whether the control is offered.
+ */
+describe('canAddLine — completed requests (CH-025 C)', () => {
+  it('refuses once every line is assigned', () => {
+    expect(
+      canAddLine({
+        origin: 'onboarding-intake',
+        lineItems: [line('ASSIGNED')],
+      }),
+    ).toBe(false);
+  });
+
+  it('still allows while one line is outstanding', () => {
+    expect(
+      canAddLine({
+        origin: 'onboarding-intake',
+        lineItems: [line('ASSIGNED'), line('READY')],
+      }),
+    ).toBe(true);
+  });
+
+  // Mirrors allLinesAssigned: nothing was delivered, so nothing is finished.
+  it('an all-cancelled request is not complete — adding stays open', () => {
+    expect(
+      canAddLine({
+        origin: 'onboarding-intake',
+        lineItems: [line('CANCELLED')],
+      }),
+    ).toBe(true);
+  });
+
+  it('platform-created still loses regardless of stage (CH-007 D6 unchanged)', () => {
+    expect(
+      canAddLine({ origin: 'platform-created', lineItems: [line('READY')] }),
+    ).toBe(false);
   });
 });
 

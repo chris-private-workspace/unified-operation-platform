@@ -45,11 +45,12 @@ import {
   canEditUpn,
   canRemoveLine,
   deriveStatus,
+  displayStepIndex,
+  displayStepsFor,
   licenceRequestNumbers,
   nextStage,
   STAGE_LABEL,
   STAGE_TONE,
-  stepsFor,
 } from '@/lib/requests';
 import {
   buildLedgerIndex,
@@ -683,8 +684,12 @@ export function RequestDetail() {
               />
             ) : (
               req.lineItems.map((item) => {
-                const steps = stepsFor(item);
-                const stepNo = steps.indexOf(item.stage) + 1;
+                // CH-025 A — the TIMELINE's steps, which carry a terminal
+                // 'Completed' marker the stage machine does not have. `next`
+                // below still comes off `stepsFor`, so a finished line grows no
+                // "Advance stage" button.
+                const steps = displayStepsFor(item);
+                const stepNo = displayStepIndex(item) + 1;
                 const next = nextStage(item);
                 const cancelled = item.stage === 'CANCELLED';
                 const isReady = item.stage === 'READY';
@@ -794,7 +799,9 @@ export function RequestDetail() {
                       )}
                       {!cancelled && (
                         <div className="mt-[2px] flex items-center gap-[10px]">
-                          <Stepper steps={steps} current={item.stage} />
+                          {/* index, not stage name: an ASSIGNED line points at
+                              the terminal marker, which has no stage of its own. */}
+                          <Stepper steps={steps} current={stepNo - 1} />
                           <span className="font-mono text-[11px] text-fg-subtle">
                             Step {stepNo}/{steps.length}
                           </span>
