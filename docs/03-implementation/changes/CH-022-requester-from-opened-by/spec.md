@@ -1,6 +1,6 @@
 # CH-022 — Requester sys_id 由 REQ 個 `opened_by` 攞(ADR-0030 落地)
 
-- **Status**:`approved`(2026-08-10 — Chris)
+- **Status**:✅ **completed**(2026-08-12 — A7 live 驗收咗;approved 2026-08-10 — Chris)
 - **ADR**:**ADR-0030**(**Accepted** 2026-08-10 ⇒ H1 gate 已過)
 - **Owner**:Chris Lai
 - **BACKLOG**:`INTAKE-REQUESTER`
@@ -95,6 +95,7 @@ requesterSysId 冇  → resolveRequester(payload.requesterEmail)(outbound 路,�
 |---|---|---|---|
 | 2026-08-10 | Initial draft | `INTAKE-REQUESTER` 診斷收晒,根因確認為接縫語意錯配;ADR-0030 提出修法 | Chris |
 | 2026-08-10 | approved + 實作完成(A1–A6) | ADR-0030 Accepted ⇒ H1 gate 過 | Chris |
+| 2026-08-12 | **A7 live 收 ⇒ status `completed`** | 本機真撳一次,SN 真出 `RITM0047389`;`requested_for` 逐字等於 `REQ0044067` 個 `opened_by` | Chris |
 
 ### 實作實績(2026-08-10)
 
@@ -118,7 +119,33 @@ requesterSysId 冇  → resolveRequester(payload.requesterEmail)(outbound 路,�
 
 ### A7 狀態
 
-🔴 **仍然未做 ⇒ 本 CH 未算完成**。
+🟢🟢 **✅ 收咗(2026-08-12,本機,Chris 拍板喺本機撳)** —— 四個證據,冇一個靠 intake 回應:
+
+| 證據 | 真值 | 意義 |
+|---|---|---|
+| api log | `Ordered ServiceNow request REQ0044083 (1 RITM)` · `Raised ServiceNow licence request REQ0044083 for cmsq0p4ou… (1 RITM)` | **零** `Could not raise the ServiceNow licence request` —— 就係 08-07 三次全部掛嗰句 |
+| SN `sc_req_item` | `RITM0047389`,`cat_item = efe38adedbef6f80a98e75868c961936`,count = **1** | 逐字等於下面「副作用」段講嗰個 O365 catalog item;一張,唔多唔少 |
+| SN `sc_request` | `REQ0044083` `requested_for = 7ee1a1921b877ed40148eacfe54bcb5e` | **逐字等於 `REQ0044067` 個 `opened_by`** ⇒ ADR-0030 修法真生效 |
+| 本機 DB 重讀 | line item `serviceNowNumber = RITM0047389` / `sysId = e6897e53…` | 由 DB 讀返,唔係 intake 回應嗰份 |
+
+📌 **fixture 刻意咁揀,唔係將就**:`requesterEmail` 送咗 `no-such-sn-user@example.com`(SN **必然**反查唔到)—— **舊 code 就係死喺呢一格**。單照開得成 ⇒ **`A1`(intake 路完全冇 call `findUserSysIdByEmail`)嘅 live 版**,順帶連 `A5`(requesterEmail 送乜都唔阻塞)一齊收。
+
+🔴 **intake 個回應證明唔到 RITM 開咗,唔好用佢做證據** —— `created` 喺 `raiseLicenceRequest` **之前**就 snapshot(`intake-adapter.service.ts:232` vs `:238`)⇒ 回應入面 line item 個 `serviceNowSysId` **永遠係 null**,即使 RITM 真係開咗。上表後三行全部係**平台以外**或**事後重讀**攞返嚟。同「revision `Healthy` 證明唔到 DB 通」同族。
+
+**三個配置點**(全部行 shell env,冇改 `.env`,守 §4.4):
+
+- `SERVICENOW_O365_CATALOG_ITEM_SYS_ID` —— 用**返 DEV 同一個值**(`aca.params.dev.json`),唔係造一個假值
+- `DEFAULT_ONBOARDING_SKU_ID` = `SPE_E3` `05e9a617-0261-4cee-bb44-138d3ef5d965`。⚠️ 本機 catalog **零個 SKU 有 `businessAlias`**(實測 `IS NOT NULL` → 0 rows)⇒ 只可以靠 GUID,而 ADR-0020 D4 本來就係咁要求
+- `OPS_NOTIFICATION_MAILBOX` = Chris 個地址;OpCo 揀 **`PFU-HK`** —— 實測 24 個 active OpCo 入面 **23 個冇 `OPCO_IT` 用戶**,唯一有嘅係 `RHK`(`opco.it.rhk@rapo.com.hk`)⇒ **收件人淨係一個**
+
+🟢 **順帶第二次 live 驗到 CH-021**:`Sent 'onboarding-intake' via ACS (operation 6d83b7d6-…)` · `notified 1 recipient(s)` —— 亦順帶再證咗 shell env 真係入到 process(唔傳就會 log `nobody`)。
+
+🔴 **08-11 拍板「留返 DEV 做」嗰個前提,2026-08-12 打咗折**:當時理由係「本機要造兩個配置,DEV 零個」。實測兩件事推翻咗佢 ——
+
+1. **DEV 一樣缺 `DEFAULT_ONBOARDING_SKU_ID`**:全 repo grep,`patch-deploy-dev.ps1` / `aca-dev.json` **零命中**,而佢係 DB-then-env ⇒ 只剩 DB override 一條路,而 seed 唔設佢 ⇒ 差距係 **1 vs 0,唔係 2 vs 0**。(⚠️ DEV DB 個值**未實測** —— 打唔到 private endpoint,要登入 UI 先驗到。呢句係推論,標明。)
+2. **兩邊 `SERVICENOW_INSTANCE_URL` 逐字一樣**(`https://ricohapdev.service-now.com`,實測)⇒ 開出嚟嗰張單一模一樣,**去 DEV 換唔到嘢返嚟**。同 W45 `F4-4` / CH-023 `G9` 嗰個 Graph tenant 論證**同一族第三次**。
+
+⚠️ **留低咗一張真單**:`REQ0044083` / `RITM0047389` 仲喺 `ricohapdev`(`state=1`)。平台冇 cancel 功能(H3 out-of-scope),要收就要喺 SN 側做 —— **待 Chris 決定**。同 CH-020 leftover **同族**:呢種「驗證留低嘅真嘢」冇任何 checklist 會自動提醒,所以寫喺呢度。
 
 > ## 🔴 2026-08-11 更正 —— 上面原本寫嘅「路 1」唔通，會白撳一次
 >
