@@ -1210,7 +1210,9 @@ Chris 原本要求「順手填埋 `GRAPH_TENANT_ID`」(基於今日早些時候�
 
 ### Action items
 
-- 🚧 **`F9-8` SSO 嗰半** —— 要 Chris 本人喺瀏覽器撳一次(Entra 互動 + MFA)。**唔再係環境問題,係差一個人。**
+- ✅ ~~🚧 `F9-8` SSO 嗰半 —— 要 Chris 本人喺瀏覽器撳一次(Entra 互動 + MFA)。**唔再係環境問題,係差一個人。**~~ 🟢🟢 **同日收咗** —— Chris 本人測試,確認 SSO 登入可以 ⇒ **`F9-8` 全收,`AUTH-2b`(掛咗一個月)同時 closed**。
+  🔴 **兩半證據來源唔同,已喺 checklist 標明**:break-glass = **AI tool 驗**(`F6-6`,有 HTTP 狀態 + `/api/me` body);SSO = **Chris 人手驗**(Entra 互動要真人帳號 + MFA,AI 結構上做唔到)。**兩者都算數,但唔可以寫成同一種證據** —— 沿用 `CH-015` 先例。
+  📌 **值得記低嘅唔係佢收咗,係佢點解掛咗咁耐**:由 **08-07 ADR-0028** 起,原本嗰個 blocker(等 IT 開 SPA app registration)就已經消失,之後**由頭到尾淨係差一撳**。而 BACKLOG 兩個 `AUTH-2b` entry **狀態一路唔同**(B 區仲寫住 `🔴 blocked on IT app reg`,C 區已經改咗 `🟡 唔再 blocked`)⇒ **邊個掃 BACKLOG 揀工作,睇到邊個 entry 就信邊個**。同族。
 - 🚧 **F7 五條** —— target = ADR-0017 三接縫真切嗰個 phase(BACKLOG `N8N-SEAMS`)。
 - 🔴 **`R10` 正解 = 用 `LicenseOperationsProvider` seam 把 DEV 切去一個唔會真寫嘅 provider** —— **seam 已經喺度,冇人切過**。未切之前靠操作紀律。
 - **`F1-12`**(infra 攞 ACR `scheduleRun/action`)/ **`F2-9`** / **`F4-4`** —— 三條都已標 🚧 + 理由 + target,唔阻 close。
