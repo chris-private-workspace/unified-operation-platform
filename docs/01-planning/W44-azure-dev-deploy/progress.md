@@ -2,7 +2,7 @@
 phase: W44-azure-dev-deploy
 plan_ref: ./plan.md
 checklist_ref: ./checklist.md
-status: in-progress    # in-progress | closed
+status: closed         # in-progress | closed
 ---
 
 # Phase W44 — Progress
@@ -1149,4 +1149,80 @@ Chris 原本要求「順手填埋 `GRAPH_TENANT_ID`」(基於今日早些時候�
 
 ---
 
-**End of W44 progress**(進行中)
+## Day 8 — 2026-08-13:**Closeout** —— 一日收咗四條「卡咗一個星期」嘅 live 驗,而三條根本冇再卡過
+
+**零部署、零 code 改動。** DEV 仍然行 `dev-86ed450`。本日全部產出 = 用 `B8` 解封之後嘅通路把驗證收返 + doc sync。
+
+### 1. Step 0(每次 live 驗第一件事)—— 30 秒,四個 endpoint 真打
+
+| Endpoint | 結果 |
+|---|---|
+| `/` | **200**(561 B) |
+| `/api/auth/sso/status` | **200** `{"enabled":true}` |
+| `/api/me`(無憑證) | **401**(唔係 502/504) |
+| `/api/docs/api-json` | **200**(62,834 B) |
+
+### 2. 🟢🟢 `F6-6` — break-glass 真登入 DEV(**本 phase 第一次**)
+
+`POST /api/auth/login` → **200** · `Set-Cookie: uop_access, uop_refresh` · `GET /api/me` → **200** `role: ADMIN` · `mustChangePassword: false`(由讀 code 嘅推論**升做實測**)。⇒ ADR-0006 §7 個 rotating refresh 設計喺 ACA ingress 後面完好,`Secure` cookie 冇被擋。
+
+### 3. 🟢🟢 `F6-14` — 400 body 完整捱過 ACA ingress + nginx
+
+`PATCH …/assign` body `{}` ⇒ **400** · `application/json` · **290 B**,`outcome` / `failedAt` / `steps[]` / `whoFixes` 齊,ADR-0029 刻意保留嘅舊 shape `message` 同時在 ⇒ **`AssignResultDialog` 喺 DEV 一定開得到**。`outcome=blocked` ⇒ 零副作用。
+
+> 🔴 **執行之前嗰次唯讀探測,先至係本日最高價值嘅 30 秒 —— 已升做 RISK `R10`。**
+> 探到 DEV 得 **9 條 line item、全部 `RAPO/IT`、全部真嘢**,其中**三條 `READY` 而兩個 sync gate 都已經開咗** ⇒ 撳落去**直達 Graph,只剩 budget 一道閘**;而 DEV 個 `GRAPH_TENANT_ID` 就係**公司 M365 tenant** ⇒ **閘一唔中就真派一個 licence 畀一個真人**。
+> 改揀 `REQ0043934`(兩個 gate 都 null)⇒ **結構上到唔到 Graph**。**R3 deviation**:本項原本寫 `failedAt` 要指住 `budget`;換閘**對驗證目標零損失**(本項自己寫明「淨係驗 400 body 過唔過 proxy」,而兩道閘行 ADR-0029 同一條組裝路),但換返嚟**零真派風險**。
+
+### 4. 🟢 `F2-13` / `F9-9` / `F3-7e`
+
+- **`F2-13`** — `runningStatus` 被 unset 嘅疑慮,由**行為**收:PATCH 部署喺 08-06,**七日後四個 endpoint 全部真答** ⇒ 真被 unset 個 app 唔可能行到今日。⚠️ 誠實界線:**冇直接讀個 field**,收嘅係「就算改過都冇造成後果」。
+- **`F9-9`** — 🔴 **原來一早做咗** :`RISK_REGISTER` **R8 已存在**,來源欄寫住「W44 F9(2026-08-06)」,內文逐字有 `2028-07-28`。**只係冇勾**,而個 `[ ]` 令 CLAUDE.md §0 同 `SESSION_SUMMARY` 一路寫住「仍未入 RISK_REGISTER」carry 咗幾個 session。
+- **`F3-7e`** — seed 無條件重寫 `passwordHash` 已寫入 BACKLOG `DEPLOY-harden`(連同 R8 揭出嘅「**Graph app `27d329e5-…` expiry 冇人知**」)。
+
+### 5. `F8` doc sync —— 順帶揪到三份檔各自留住一份已死嘅陳述
+
+| 檔 | 死咗嘅陳述 | 幾耐 |
+|---|---|---|
+| `09-dev-as-built.md` | 「ACA 預設 FQDN 喺 private DNS **一定**有記錄 ⇒ F6-4/5/6 即刻收得」 | 08-10 被推翻,**冇更正過** |
+| `SESSION_SUMMARY.md` | **同一句嘅第二份副本** | 同上 |
+| `SESSION_SUMMARY.md` | **「W44 進行中,仍未部署」** | 08-06 起唔啱,**carry 咗七日** |
+| `01-topology.md` | `VITE_ENTRA_*` build-time 烘死 · 「卡 Entra app registration」 | **ADR-0028(08-07)早就推翻** |
+
+⇒ 全部已加更正 blockquote(**原文一個字冇刪**,保留做方法論記錄)。
+
+---
+
+## Retro
+
+### 做啱咗嘅
+
+1. **`Step 0` 真打,唔靠上次記錄** —— CLAUDE.md 明文要求嘅 30 秒動作。本 phase 由 08-06 到 08-12 **錯過兩次方向**(先當通、再當唔通),兩次都係靠推論。今日一打就知,零猜測。
+2. **落 assign 之前唯讀探測** —— 呢個係本日**唯一阻止咗一次真派 licence** 嘅動作,亦係 `R10` 嘅來源。同 W45 嗰次(用唯讀 `sync-check` 探假 UPN)同一個習慣,而嗰次都係喺造成後果之前捉到。
+3. **換閘而唔係換目標** —— 撞到「安全」同「照 checklist 字面做」衝突嗰陣,先問返「本項到底要驗乜」,答案(400 body 過唔過 proxy)令換閘變成零成本。**R3 log 咗,冇靜靜改。**
+4. **`F8-7` 唔為咗勾而寫 memory** —— 三條理由寫晒落 checklist,最硬嗰條係「再寫一份就係第六份副本」,而本日正正修緊三份副本造成嘅問題。
+
+### 做錯 / 睇漏咗嘅
+
+1. 🔴 **「卡環境」呢個標籤自己會過期,而冇人負責令佢過期** —— `B8` 08-12 解封,但 `F6-6` / `F6-14` / `F9-8` 三條**照舊寫住「卡 B8」**,冇人回頭掃。今日一打就通晒。⇒ **解封一個 blocker 之後,要即刻掃返所有標住佢嘅 item**,唔可以等下次揀工作嗰陣先發現。
+2. 🔴 **「更正咗一個地方」唔等於「更正咗」** —— 「ACA 預設 FQDN」個推論喺 CLAUDE.md 更正咗,但 `09-dev-as-built.md` 同 `SESSION_SUMMARY.md` **兩份副本原封不動**。而 `SESSION_SUMMARY` 係 **hook 每 session 無條件注入**嗰份 ⇒ 下個 session 讀到嘅係死咗嘅版本。
+3. 🔴 **`F9-9` 做咗但冇勾,同 `BUG-010` 同一日、同一形狀** —— 兩件都係「**狀態寫兩個地方,一個冇跟住更新**」。本日連 `BUG-010` 嗰次計,呢個形狀**一日內中兩次**。
+
+### Action items
+
+- 🚧 **`F9-8` SSO 嗰半** —— 要 Chris 本人喺瀏覽器撳一次(Entra 互動 + MFA)。**唔再係環境問題,係差一個人。**
+- 🚧 **F7 五條** —— target = ADR-0017 三接縫真切嗰個 phase(BACKLOG `N8N-SEAMS`)。
+- 🔴 **`R10` 正解 = 用 `LicenseOperationsProvider` seam 把 DEV 切去一個唔會真寫嘅 provider** —— **seam 已經喺度,冇人切過**。未切之前靠操作紀律。
+- **`F1-12`**(infra 攞 ACR `scheduleRun/action`)/ **`F2-9`** / **`F4-4`** —— 三條都已標 🚧 + 理由 + target,唔阻 close。
+
+### Phase N+1 kickoff trigger
+
+**而家零個 phase 未收。** 下一個由 `BACKLOG.md` 揀 —— 候選:**CH-026 `G-7`**(Chris 落 UI curate 22 個 SKU)· **DEPLOY-harden**(今日新入兩項)· **AUTH-2b**(⚠️ 實際上淨係差 `F9-8` 嗰一撳)· **N8N-SEAMS**(解封 F7)· TD(`LINT-web` 16 / `WEB-TEST-JSDOM` 6)。
+
+### Commits
+
+見本次 closeout commit(doc-only)。
+
+---
+
+**End of W44 progress**(**closed 2026-08-13**)

@@ -49,6 +49,22 @@
 | Logs | **Log Analytics** workspace | container log | RCI 標準(PAR Appendix) |
 | ~~Redis~~ | ~~Azure Cache for Redis~~ | — | **暫不開**:BullMQ 未 wired(只 `@nestjs/schedule` @Cron) |
 
+## 資源清單(DEV)—— `RG-RAPO-UOP-DEV`(2026-08-13 補,W44 `F8-2`)
+
+> **細節唔喺呢度** —— DEV 嘅完整 as-built(含每個 blocker 點解封)住喺 **`09-dev-as-built.md`**;本段只講**同 UAT 結構上唔同嘅嘢**,免得兩份各自漂移。
+> 🔴 **「Azure UAT」係誤名** —— 上面 UAT 嗰個**唔係企業 UAT**,只係一個自建測試環境(自建 RG / ACR / ACA env,**冇 VNet 整合**,住喺公網),**同企業網絡零連繫** ⇒ 兩個方向都接唔通 n8n。**DEV 先至係真正接得通企業網絡嗰個。**
+
+| 項 | UAT(上面) | **DEV** | 點解要緊 |
+|---|---|---|---|
+| ACA environment | 自建,公網 | **企業共用 `acaen-rapo-dev`**,住喺**另一個 RG**(`RG-RAPO-ContainerAPP-DEV`) | ⇒ 我哋個 SP 冇 `managedEnvironments/join/action` ⇒ `az deployment group create` 撞 **`LinkedAuthorizationFailed`** |
+| VNet | 冇 | **`vnetConfiguration.internal = true`**,`staticIp = 10.160.71.70`(私有 IP) | ⇒ **ACA 預設 FQDN 靠 private DNS zone,而嗰個 zone 冇 link 到企業網 ⇒ 呢條路行唔通** |
+| 對外 hostname | ACA 預設 FQDN | **`rapo-uop-web-dev.rci-t.com`**(custom domain,infra 綁 SNI cert + 企業 DNS A record) | ⇒ **唯一可達路徑**;`ENTRA_REDIRECT_URI` 亦係佢 |
+| Ingress 佈局 | web external + api external | **ADR-0027 Option A:api 收返 internal,對外淨係得 web 一個 hostname** | ⇒ api 靠 `/api` prefix。🔴 **`/docs/api` 會畀 SPA fallback 食咗返 HTML,真路徑係 `/api/docs/api`** —— 最易誤判成「api 唔通」嗰個位 |
+| PostgreSQL | public access(`0.0.0.0`) | **private endpoint**(hub VNet PE) | ⇒ 由 ACA 入面先連得到;`B3` 已證(19 個 migration 真跑過) |
+| ACR | 自建 | **共用 `acrrci3ailanding1`** | ⇒ ACA 由 VNet 內 pull(已證);⚠️ push 側行緊一台**唔喺公司網**嘅 build host,**繞開公司 proxy,唔係長期方案** |
+| 部署方式 | `az deployment group create` | 🔴 **raw ARM PATCH**(`az rest --method patch`,body **唔含 `environmentId`**) | ⇒ CLI(`containerapp update` / `registry set`)做 read-modify-write 會連 `environmentId` 一齊送 ⇒ **一樣 403**。腳本 `deploy/azure/patch-deploy-dev.ps1`。🟢 PATCH 比 full PUT 安全:**唔 unset 冇送嘅 property** ⇒ infra 配嘅 `customDomains`+SNI / `workloadProfileName` 掂唔到(已對數) |
+| 可達性 | 公網 | **只喺企業網 / 特定出口可達** | 🔍 **公網打唔到係功能正常嘅表現,唔係故障** —— 開呢個環境正正就係為咗「只喺企業網內可達 + 打得入 n8n」 |
+
 ## as-built vs hardening 目標
 
 四樣嘢同 W32 原藍圖唔同。**全部唔係設計妥協,而係公司網 proxy 只放行 management plane、擋晒 data-plane 嘅後果**(見 `04-deploy-runbook.md §0`)。喺唔受限網路部署,四樣都可以直接做原本嗰套。
@@ -100,6 +116,16 @@ Key Vault ──(Managed Identity)──▶ ACA secret ref ──▶ container e
 ACA 支援直接由 Key Vault reference 注入 secret;`uop-api` 用 system-assigned Managed Identity + KV `get` 權限。**做唔到嘅原因唔係設計,係環境** —— KV data-plane(`vault.azure.net`)喺公司網被 SSL-MITM 擋。喺唔受限網路部署就用得。
 
 ## 認證(dev 帳密 / Azure SSO — dual-provider)
+
+> 🔴 **2026-08-13 更正(W44 `F8-2`):本節嘅 SSO 描述已被 `ADR-0028` 取代。原文保留喺下面。**
+>
+> **`ADR-0003`(MSAL SPA)已 superseded**。而家行 **server-side authorization code exchange**:前端只負責把用戶送去 Entra、再交返個 `code`;**API 用 client secret 喺 server 側換 token** → 驗 `id_token` → upsert `AppUser` → 發**平台自己**嘅 httpOnly cookie ⇒ **SSO 同 break-glass 由嗰一點開始完全一樣**(`auth.service.grantSession`)。
+>
+> 🔴 **連帶:`VITE_ENTRA_*` 已經全部消失**(vite 會把佢哋烘死落 bundle)。四個 `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` / `ENTRA_CLIENT_SECRET` / `ENTRA_REDIRECT_URI` 而家由 **API 嘅 runtime env** 讀 ⇒ **改 Entra 配置唔使重 build web image**(見 `apps/api/.env.example` 認證段)。⇒ 下面原文寫「啟 SSO 要重 build web image」**已經唔啱**。
+>
+> 🟢 **scope 只用 `openid profile email`** ⇒ **唔再需要 Application ID URI / 自訂 scope** —— 嗰兩樣正正係三輪往返都攞唔到、卡住 `B9` 嗰啲。⇒ 下面原文寫「卡 Entra app registration」對 **DEV 已經唔成立**。
+>
+> **DEV 現況(2026-08-13 實測)**:`GET /api/auth/sso/status` → **`{"enabled":true}`**(四個 env 真係落咗)· break-glass 登入 **200 + role `ADMIN`** 已驗(`F6-6`)· 🚧 **真人 SSO 登入仍未驗** —— 要 Chris 本人做 Entra 互動登入 + MFA,AI 做唔到。
 
 專案要求:**本地開發用帳密登入,Azure 環境用 Entra SSO**(ADR-0005 dual-provider,兩者並存)。
 

@@ -34,7 +34,10 @@ last_updated: 2026-08-04
 - [x] F1-9 寫 `docs/13-deployment/09-dev-as-built.md`(座標 + 六處差異 + 四條 infra 問題)
 - [x] F1-10 把四條問題交畀 Chris → infra team(**2026-08-04 已答**;Q3 網絡 ✅ / Q4 join ✅ / Q2 部分 / **Q1 答咗但實測用唔到**)
 - [x] F1-11 ✅ **第二輪已發已答**:~~Q1~~ 部分(pull 側撤銷,push 側未解)· **Q3 ✅** n8n = `http://rapo-n8n-uat.rci-t.com/` · **Q4 ✅** https · ~~Q2~~ 自解
-- [ ] F1-12 🔴 **第三輪(只剩 ACR 一條)** —— 回應 infra 問「what is the deployment detail error?」,附兩個確切 error(**(a) 權限 / (b) 網絡,要分開講**)+ 明講「就算放行 firewall 我哋一樣 build 唔到」⇒ **收窄到兩個可行解**。精簡版 ② 已存 plan 附錄 C
+- [ ] F1-12 🚧 **第三輪(只剩 ACR 一條)** —— 回應 infra 問「what is the deployment detail error?」,附兩個確切 error(**(a) 權限 / (b) 網絡,要分開講**)+ 明講「就算放行 firewall 我哋一樣 build 唔到」⇒ **收窄到兩個可行解**。精簡版 ② 已存 plan 附錄 C
+  - **2026-08-13 標 defer(closeout 決定)**:🟢 **B1 唔再阻塞**(2026-08-05 換一台唔喺公司網嘅 build host 解封,兩個 image 真 push 上 `acrrci3ailanding1`)⇒ 本條**由「阻塞解除手段」降級成「技術債清理」**。
+  - 🔴 **但唔可以刪** —— 現行做法**繞開公司 proxy**,唔係長期方案;**解法 ①(SP 攞 registry `read` + `scheduleRun/action`)仍然最乾淨,infra 唔應該撤走**(⚠️ `AcrPush` **唔包** `scheduleRun/action`,呢個細節係第三輪要講清楚嗰樣)。
+  - **理由 = 外部溝通,唔係平台側做得完**;**target = 下次同 infra 有往返嗰陣一併提**(或者 build host 唔再用得嗰日 —— 嗰陣就會由技術債變返阻塞)
 
 ## F2 — DEV 專用 ARM template(**F0-6 已解封**)✅
 
@@ -51,7 +54,9 @@ last_updated: 2026-08-04
 - [x] F2-11 ✅ **`az deployment group what-if` —— R6 由「部署後對數」提前變成「部署前證明」**。結果:**零 resource 被 Delete** · 只有兩個 container app `Modify`,其餘 **9 個資源全部 `Ignore`**(Redis / PG / App Insights / KV / 2 NIC / 2 PE / alert rule)· **`customDomains` 同 `workloadProfileName` 唔喺 delta ⇒ 保留** · web `external` 唔喺 delta ⇒ 保持 true · `registries` + `secrets` `Create`(what-if 自己 mask 咗值)。api delta 只有預期嗰四樣:`allowInsecure` false→true · `external` true→false · `targetPort` 80→3000 · 三個 default unset
 - [x] F2-12 ⚠️ **三個 property 會被 ARM unset,評估為無害,刻意唔寫返**:`exposedPort`(只對 TCP transport 有意義)· `traffic`(`activeRevisionsMode: Single` 下 ACA 自動全部去 latest)· `maxInactiveRevisions`(unset 即用預設 100)。理由唔係「應該冇事」而係**UAT `aca.json` 同樣三個都冇寫,而 UAT 三次部署都成功** —— 有實證先當佢無害
 
-- [ ] F2-13 🆕 ⚠️ **2026-08-05 重跑 what-if 發現被 unset 嘅係四個唔係三個** —— 多咗 `properties.runningStatus: Running → ''`。佢係 read-only status field,ARM **應該**唔會真改,**但呢個係推論冇實證** ⇒ 照 F2-12 自己立嘅標準,唔可以當已驗,留 F6-9 對數專登睇
+- [x] F2-13 🆕 ⚠️ **2026-08-05 重跑 what-if 發現被 unset 嘅係四個唔係三個** —— 多咗 `properties.runningStatus: Running → ''`。佢係 read-only status field,ARM **應該**唔會真改,**但呢個係推論冇實證** ⇒ 照 F2-12 自己立嘅標準,唔可以當已驗,留 F6-9 對數專登睇
+  - 🟢 **2026-08-13 收 —— 由行為實證,唔再係推論**:PATCH 部署喺 **2026-08-06**,而 **2026-08-13(七日後)**四個 endpoint 全部真答(`/` 200 · `/api/auth/sso/status` 200 · `/api/me` 401 · `/api/docs/api-json` 200 62,834 B)。`runningStatus` 係「呢個 app 行唔行緊」嘅 read-only 反映 —— **佢若然真係被 unset 成 `''`,app 唔可能連續行足七日兼今日仲逐個 endpoint 答緊**
+  - ⚠️ **誠實界線**:**冇直接讀返個 field**(要 `az`,而部署 SP 憑證唔喺 repo,要 Chris 自己 `az login`)。呢度收嘅係**行為證據**唔係 field 讀取 —— 分別在於:field 讀取會答「ARM 有冇改過佢」,行為證據答「就算改過都冇造成後果」。**對本項嘅風險(PATCH 會唔會整停個 app)嚟講,後者已經足夠**
 
 ## F3 — params 檔 + secret 策略(**B2 已解封**)
 
@@ -72,7 +77,7 @@ last_updated: 2026-08-04
 - [x] F4-1 ~~upstream 改 https+external~~ **唔需要** —— Option A 之後 DEV 同 UAT 一模一樣(`http://` + internal FQDN),`API_UPSTREAM` 本來就係 env 渲染
 - [x] F4-2 `Host $proxy_host` 規則**原樣適用**(api 仍係 internal ingress,正正係嗰條規則存在嘅原因)
 - [x] F4-3 `apps/web/nginx.conf.template` **零 diff** ⇒ 對 UAT 零影響
-- [ ] F4-4 🚧 實際渲染出嚟嘅 `nginx.conf` 逐行睇 —— **卡 B1**(起唔到 web container:`docker pull` base image 撞 Docker Hub 503)⇒ **移去 F6 部署後驗**
+- [ ] F4-4 🚧 實際渲染出嚟嘅 `nginx.conf` 逐行睇 —— ~~卡 B1~~ **2026-08-13 更新:阻塞冇咗,但本條仍然未做,而且已經冇乜價值**。①**行為面已經證晒**:`F6-5`(`/api/docs/api` + `/api/docs/api-json` 200,而 `/docs/api` 畀 SPA fallback 食咗 ⇒ **`/api` proxy 同 SPA fallback 兩條規則都行緊兼分得清**)+ `F6-14`(**400 body 290 bytes 完整過 proxy** ⇒ 唔會截 body / 唔會改寫 error) ②淨低唔覆蓋嘅只有「conf 入面有冇寫咗但未觸發過嘅規則」。**理由 = 讀實作換返嚟嘅嘢,行為驗證已經覆蓋咗絕大部分**;**target = 下次真要改 nginx 行為嗰陣順手做**(嗰陣讀佢先有意義)
 
 ## F5 — image build + push ✅ **B1 已解封(2026-08-05 Day 3)**
 
@@ -101,8 +106,8 @@ last_updated: 2026-08-04
 - [x] F6-3 verify:**兩個 revision 都 `Healthy`** —— api `--0000002` `RunningAtMaxScale` · web `--0000001` `Running`,replicas 各 1。🟢 **順帶證到 ACA 由 VNet 內 pull 到 `acrrci3ailanding1`**
 - [x] F6-4 verify:`https://rapo-uop-web-dev.rci-t.com/` —— 🟢 **Chris 由公司網絡實測,login 頁面 render 到**。B8(infra 漏建 DNS)已解決;**係 https 唔係 http** ⇒ `APP_BASE_URL` 填 https **證實填啱**(F3-3 當時對抗 infra 寫嘅 http),cookie `Secure` 擔心同時消除
 - [x] F6-5 verify:`GET https://rapo-uop-web-dev.rci-t.com/api/docs/api` = **200**(驗 nginx `/api` proxy → internal api)—— 🟢 **2026-08-12 由呢台機實測**:`/api/docs/api` **200 Swagger UI** · `/api/docs/api-json` **200 真 OpenAPI JSON** · `/api/me` **401 `Missing credentials`**(唔係 502/504 ⇒ api 真係喺度兼 guard 正常)· `/api/auth/sso/status` → `{"enabled":true}`。⚠️ **路徑係 `/api/docs/api` 唔係 `/docs/api`** —— 打後者會畀 SPA fallback 食咗返 HTML,係最易誤判成「api 唔通」嗰個位
-- [ ] F6-6 verify:break-glass login = 200 + role ADMIN(`admin@uop.local`,密碼 = `aca.params.dev.json` 個 `localAdminInitialPassword`)—— 🔴 **B8 解封之後,呢條卡嘅唔再係「有冇路」,係「有冇憑證」**
-- [ ] ~~F6-4b 由公司網絡打 **ACA 預設 FQDN** 收 F6-4/5/6 嘅實質內容~~ ⛔ **作廢(2026-08-11 前提被推翻 · 2026-08-12 已無需要)**。①原文嗰句「internal env 喺 hub VNet private DNS **一定**有記錄」係**推論唔係實測**,2026-08-10 Chris 實測 ACA 預設 FQDN **一樣訪問唔到**(env `vnetConfiguration.internal=true` 而 `staticIp=10.160.71.70` 私有 IP,靠嘅 private DNS zone 冇 link 到企業網)②2026-08-12 **custom domain 由呢台機直接打得通** ⇒ 呢條繞路兩個理由都冇咗
+- [x] F6-6 verify:break-glass login = 200 + role ADMIN —— 🟢🟢 **2026-08-13 真收**。`POST /api/auth/login`(`admin@uop.local`,密碼由 `aca.params.dev.json` 個 `localAdminInitialPassword` 直接餵入變數,**從未印出**)→ **200**,`Set-Cookie` 兩個:**`uop_access` + `uop_refresh`**(= ADR-0006 §7 rotating refresh 設計,證到 cookie 過得到 ACA ingress 兼 `Secure` 冇擋);跟住 `GET /api/me` **200** → `{"email":"admin@uop.local","displayName":"Local Admin","role":"**ADMIN**","opcoScopeId":null,"mustChangePassword":false}`。⇒ **本 phase 第一次真人登入 DEV**;順帶證實 `F3-7e` 講嘅 `mustChangePassword` **冇被 seed 設**(default false)
+- [x] ~~F6-4b 由公司網絡打 **ACA 預設 FQDN** 收 F6-4/5/6 嘅實質內容~~ ⛔ **作廢(2026-08-11 前提被推翻 · 2026-08-12 已無需要)**。①原文嗰句「internal env 喺 hub VNet private DNS **一定**有記錄」係**推論唔係實測**,2026-08-10 Chris 實測 ACA 預設 FQDN **一樣訪問唔到**(env `vnetConfiguration.internal=true` 而 `staticIp=10.160.71.70` 私有 IP,靠嘅 private DNS zone 冇 link 到企業網)②2026-08-12 **custom domain 由呢台機直接打得通** ⇒ 呢條繞路兩個理由都冇咗
 - [x] F6-7 verify:**PG v18 migration 真跑得過**(G8)—— 🟢 **已證(container log 原文)**:`19 migrations found` → 逐個 `Applying migration …` → `The following migration(s) have been applied:`,**零 error**
 - [x] F6-8 verify:seed 完成 —— 🟢 **已證(原文)**:`Seeded local admin (admin@uop.local).` + **`Seeded 24 OpCos + admin + RHK OPCO_IT user.`** —— 精確 24 個
 - [x] F6-7b **B3 — ACA 連到 private endpoint 嘅 PG** —— 🟢 **已證**:migration 真跑咗 19 個,冇連接根本做唔到。**呢個係本環境存在嘅意義,而佢通咗**
@@ -114,14 +119,22 @@ last_updated: 2026-08-04
 - [x] ~~F6-10(重複)🔴 要 infra 畀 `managedEnvironments/read`,係而家最大樽頸~~ ⛔ **重複 ID,已由上面嗰條 `F6-10` 取代**(infra 2026-08-06 畀咗)。🔴 **兩條同編號嘅 item 一條 `[x]` 一條 `[ ]` 並存咗六日** —— 掃 checklist 嘅人睇到邊條就信邊條,而「最大樽頸」呢句喺已解封之後仲留住,會令下手當成阻塞。**編號重用 = 兩個真相**,同 `WEB-TEST-JSDOM`/`WEB-TEST-ENV` 同族
 - [x] ~~F6-11 替代驗證:Chris 用個人帳號喺 Azure Portal 睇 container log~~ ⛔ **唔再需要** —— B7 2026-08-06 解封,`logs show` 直接通,log 原文已入 F6-7/F6-8
 - [x] ~~F6-12 替代驗證:由企業網絡內嘅機 curl web + `/api/docs/api`~~ ⛔ **唔再需要** —— 2026-08-12 **由呢台機**直接打得通(見 F6-5),唔使搵企業網嗰部機
-- [ ] **F6-14** 🆕 **400 body 捱唔捱得過真 ACA ingress + nginx proxy**(**由 W45 `F4-4b-1` 併入嚟,Chris 2026-08-12 拍板**)
+- [x] **F6-14** 🟢🟢 **2026-08-13 真收** —— **400 body 捱唔捱得過真 ACA ingress + nginx proxy**(**由 W45 `F4-4b-1` 併入嚟,Chris 2026-08-12 拍板**)
   - **點解由 W45 搬過嚟**:`B8` 解封之後佢**唔再係「冇路」**,而佢淨低嘅嘢**完全唔關 W45 個 dialog 事** —— dialog 邏輯本機已 100% 真驗過(F3-7 兩張 blocked 截圖 + 2026-08-12 三撳真 400/200)。**佢淨係驗一樣嘢:一個 400 回應嘅 body 過唔過得到呢個環境嘅 proxy 鏈。** 嗰個係**部署層**嘅問題,唔係功能層 ⇒ 放喺 W44 先啱位
   - **點造局**:揀一條 line item,佢個 OpCo × SKU 喺 ledger `allocatedQuantity = 0` ⇒ 撳 Assign 會被 **budget 閘**擋(閘喺 tenant seat read 同 `assignLicense` 之前,有 test 釘住)。🟢 **零副作用**
   - ✅ 收貨:**dialog 開到(唔係一個乾巴巴嘅 toast)** ← 呢個先係「400 body 過到 proxy」嘅證據 · `failedAt` 指住 `budget` · 有 `whoFixes` · **DB 零改動**
   - 🔴 **dialog 開唔到但本機開得到 ⇒ 就係 proxy 食咗 400 body**,唔好再查前端(同 `apiPatch` `detail` bug 同族)
   - 💡 **本機對照組已經有咗**:2026-08-12 三撳嘅 1 號、2 號各返一個真 400 + 完整 steps(`directory` 4 步 / `budget` 6 步)⇒ **DEV 撳完直接對得返**
+  - 🟢🟢 **實際結果(2026-08-13)** —— `PATCH /api/fulfilment/requests/{id}/line-items/{liId}/assign`,body `{}`(**刻意唔送 `budgetOverrideReason`**)⇒ HTTP **400** · `Content-Type: application/json` · **body 290 bytes 完整到齊**:<br>`{"outcome":"blocked","failedAt":"sync-azure","steps":[{"key":"stage","status":"ok"},{"key":"sync-azure","status":"failed","detail":"Phase 1 sync gate not passed: azureSyncedAt is null","retryable":true,"whoFixes":"identity"}],"message":"Phase 1 sync gate not passed: azureSyncedAt is null"}`<br>⇒ **`outcome` / `failedAt` / `steps[]` / `whoFixes` 逐個過得到 proxy**,而 ADR-0029 刻意保留嘅舊 shape `message` **同時在** ⇒ **dialog 喺 DEV 一定開得到**(前端解析本機已 100% 驗過)。零副作用:`outcome=blocked`,`azureSyncedAt` 仍然 null
+  - ⚠️ **R3 deviation —— 擋住嘅係 `sync-azure` 唔係 `budget`,係刻意換閘**:唯讀探測(零副作用)發現 DEV 得 9 條 line item 全部 `RAPO/IT`,而**三條 `READY` 嘅兩個 sync gate 都已經開咗** ⇒ 撳落去**直達 Graph**,budget 閘一唔中就**真派 licence 畀一個真人**(DEV 同本機打同一個公司 tenant,見 CLAUDE.md §9 `DEV-GRAPH-PLACEHOLDER`)。改揀 **`REQ0043934`**(兩個 gate 都 null)⇒ **結構上到唔到 Graph**。🔴 **換閘對本項驗證目標零損失** —— 本項自己寫明「**佢淨係驗一樣嘢:一個 400 回應嘅 body 過唔過得到呢個環境嘅 proxy 鏈**」,而 `sync-azure` 個 400 同 `budget` 個 400 行 ADR-0029 **同一條組裝路**
+  - 🚧 **淨低冇驗**:`budget` 閘**喺 DEV** 嗰條路(本機 2026-08-12 已驗過完整 6 步)。**理由 = 唔想為咗驗一個已知組裝路而擔真派風險**;**target = 有一條「alloc=0 而 sync gate 未開」嘅 fixture 嗰陣順帶做**,或者 Chris 明示批准喺 DEV 撳一條已開閘嘅
 
 ## F7 — n8n UAT 接線驗證(前置 F6)
+
+> 🚧 **全段剩低嗰五條(`F7-7`..`F7-11`)2026-08-13 標 defer(closeout 決定)** —— **全部卡同一樣嘢:n8n 側嘅配置同 n8n owner 嘅配合**,唔係平台側做得完嘅工作。
+> **具體缺口**:`N8N_OUTBOUND_WEBHOOK_URL` / key 未配 · 2004 secret 仍 `CHANGE_ME_SHARED_SECRET` · 2004 patchUrl hardcode DEV host · 三個接縫(outbound webhook / `LicenseOperationsProvider` / `TicketUpdateProvider`)一次都未真切過。
+> 🟢 **本 phase 對 F7 嘅實質貢獻已經收咗,而且係最難嗰半**:`F7-0` 證到**企業網 → DEV intake endpoint 真係打得通**(故意錯 key → **401** fail-closed,一個回應同時證 DNS / TLS / nginx `/api` proxy / internal api / guard 五樣)—— 嗰個正正係 **W36–W42 一路做唔到嗰件事**(舊環境結構上冇入口)。**入口通咗,剩低係 n8n 側配置。**
+> **Target = ADR-0017 三個接縫真切嗰個 phase**(BACKLOG `N8N-SEAMS`)。喺嗰個 phase 開之前,呢五條唔會有進展 —— 留喺 W44 只會令本 phase 永遠收唔到尾。
 
 - [x] F7-0 🟢🟢 **企業網 → DEV intake endpoint 真係打得通(2026-08-07,探針 1)** —— 由公司網瀏覽器 console 打 `POST /api/requests/intake` 帶**故意錯**嘅 `X-Intake-Key` ⇒ **401**。一個回應同時證五樣:①企業 DNS 解析到 `rapo-uop-web-dev.rci-t.com` ②TLS ③web nginx `/api` proxy ④internal api 收到 ⑤`IntakeKeyGuard` 正確 fail-closed。🔴 **呢個就係 W36–W42 一路做唔到嗰件事** —— 唔係漏做,係舊環境結構上冇入口。**零寫入**
 - [x] F7-0b 🟢 **探針 2 過 = 400**(2026-08-07)—— 啱 key + `mode:2`,`@IsIn([1])` 擋住,**零寫入** ⇒ 證咗 key 啱兼且 body 到達 controller。⚠️ 途中兩個坑,兩個都同服務無關:①header placeholder 用咗中文,而 HTTP header 係 **ISO-8859-1** ⇒ `fetch` 喺送出去之前就 throw,錯誤讀落似伺服器問題但 request 根本未發出 ②🔴 **key 第二次入咗對話記錄**(見 F7-0c)
@@ -207,17 +220,21 @@ last_updated: 2026-08-04
 - [ ] F7-11 三個接縫逐個確認:outbound webhook(`N8N_OUTBOUND_WEBHOOK_*`)· `LicenseOperationsProvider` · `TicketUpdateProvider`
 
 - [x] F3-7d 🔴 **Default onboarding SKU 揀錯咗又改返(2026-08-07)** —— Chris 為 F7 設咗 `defaultOnboardingSkuId` = `18a4bd3f-…`,即 `Microsoft_365_E5_(no_Teams)`(`N8N-INTAKE-HANDOFF.md §0` 個表標 ❌ 歐盟變體)。**已改回 `06ebc4ee-1bb5-47dd-8120-11324bc54e06`(`SPE_E5`)**。🔴 呢個失敗**零錯誤訊息** —— GUID 格式啱、SKU 真實存在、ADR-0020 存在性驗證通過、派 licence 成功,只係每個新同事攞到冇 Teams 嘅 E5。⇒ **「用 GUID」防手滑,防唔到揀錯**;人手填 SKU GUID 之後要對返 `N8N-INTAKE-HANDOFF.md §0` 個表
-- [ ] F3-7e 🆕 ⚠️ **`admin@uop.local` 密碼每次容器重啟都會被 seed 重設** —— `seed.ts:105` 個 `update` 無條件寫 `passwordHash`,所以喺 UI 改咗密碼之後,下一次 restart / 新 revision 就會變返 `LOCAL_ADMIN_INITIAL_PASSWORD` 個值。🟢 `mustChangePassword` **冇設**(default false)⇒ 首次登入唔會被強制改密碼。DEV 可接受(break-glass 本來就係應急路徑),但**上 prod 之前要處理** —— 記入 DEPLOY-harden
+- [x] F3-7e 🆕 ⚠️ **`admin@uop.local` 密碼每次容器重啟都會被 seed 重設** —— `seed.ts:105` 個 `update` 無條件寫 `passwordHash`,所以喺 UI 改咗密碼之後,下一次 restart / 新 revision 就會變返 `LOCAL_ADMIN_INITIAL_PASSWORD` 個值。🟢 `mustChangePassword` **冇設**(default false)⇒ 首次登入唔會被強制改密碼。DEV 可接受(break-glass 本來就係應急路徑),但**上 prod 之前要處理** —— 記入 DEPLOY-harden。🟢 **2026-08-13 做咗**:已寫入 `BACKLOG.md` `DEPLOY-harden` 行(連同 R8 個 Graph app expiry 未知)。順帶,`mustChangePassword` **冇設**呢句由 `F6-6` **實測確認**(`/api/me` 真返 `"mustChangePassword":false`)—— 原本佢係讀 code 得出嘅推論
 
 ## F8 — doc sync + closeout
 
-- [ ] F8-1 `09-dev-as-built.md` 補實際部署結果
-- [ ] F8-2 `01-topology.md` 加 DEV 欄
-- [ ] F8-3 `04-deploy-runbook.md` 加 DEV 分支說明(唔改 UAT 段落)
-- [ ] F8-4 CLAUDE.md §0 + §9 更新
-- [ ] F8-5 `SESSION_SUMMARY.md` 更新
-- [ ] F8-6 `RISK_REGISTER.md` 加本 phase risk
-- [ ] F8-7 memory 更新(`azure-uat-deployment` 加 DEV,或者新開一則)
+- [x] F8-1 `09-dev-as-built.md` 補實際部署結果 —— 新增 **`2026-08-13 · 驗證(無新部署)`** 段(Step 0 四個 endpoint · `F6-6` · `F6-14` 連唯讀探測 · `F2-13`)。🔴 **順帶修一個真 stale**:`🟢 但 B8 唔 block 驗證 —— ACA 預設 FQDN 係另一條路` **整段結論早喺 2026-08-10 被推翻,但呢份 as-built 從來冇更正過** ⇒ 已加更正 blockquote(原文一個字冇改,保留做方法論記錄)
+- [x] F8-2 `01-topology.md` 加 DEV 欄 —— 新增 **`## 資源清單(DEV)`**(七行對照表:ACA env 喺另一個 RG / VNet internal / custom domain / ADR-0027 Option A ingress / PG private endpoint / 共用 ACR / **raw ARM PATCH** / 可達性)。🔴 **順帶修第二個真 stale**:認證段仲寫住 `VITE_ENTRA_*` **build-time 烘死**同「卡 Entra app registration」,而 **ADR-0028 早就推翻晒**(改 runtime API env、scope 只用 `openid profile email` ⇒ 唔再需要 Application ID URI)
+- [x] F8-3 `04-deploy-runbook.md` 加 DEV 分支說明(唔改 UAT 段落)—— 新增 **`## 🔴 0-pre. 你要部署邊個環境?`** 分岔表,擺喺 §0 之前(照跑 UAT 流程會喺第 5 步撞 403)。含「點解 `az containerapp update` 一樣 403」、smoke 要打 custom domain 唔係 ACA FQDN、`/api/docs/api` 唔係 `/docs/api`、撳 assign 前要探 gate(R10)、`az account show` 先驗身份。**UAT 段落逐字不變**
+- [x] F8-4 CLAUDE.md §0 + §9 更新 —— §0 phase 格轉 **W44 closed**(四條收咗 + 兩注 🚧 + `R10`);§9 修咗「仍未做 = F9-7 + F9-8」嗰句(F9-7 一早做咗、break-glass 已驗)
+- [x] F8-5 `SESSION_SUMMARY.md` 更新 —— 🔴 **一次過修五處 stale**:①「淨返 W44 一個 phase 未收」②「W44 = …卡環境」③**「W44 進行中,仍未部署」**(由 08-06 起就唔啱,**carry 咗七日**)④「仍未做 = F9-7 + F9-8」⑤**「B8 唔 block 驗證 —— ACA 預設 FQDN」**(同 `F8-1` 嗰個同源,兩份檔各有一份副本)⑥ AUTH-2b pending 描述。**呢份係 hook 每 session 無條件注入嗰份,過時代價最大**(§14)
+- [x] F8-6 `RISK_REGISTER.md` 加本 phase risk —— 🟢 **新增 `R10`「叫做 DEV 嘅環境對真 production M365 tenant 有寫權」**(由 `F6-14` 執行前嗰次唯讀探測揭出:9 條 line item 全部真嘢,3 條 `READY` 兩個 gate 都開 ⇒ 撳落去只剩 budget 一道閘)。🟢 **`R8`(憑證靜靜過期)早喺 `F9` 加咗**,見 `F9-9`
+- [x] F8-7 memory 更新(`azure-uat-deployment` 加 DEV,或者新開一則)—— 🔴 **評估後決定唔寫,理由三條**(照 `BUG-008` 個「RISK_REGISTER:評估後唔加」先例,唔靜靜跳過):
+  1. **`azure-uat-deployment` 呢一則唔存在** —— 現行 memory index 得一則(`no-context-budget-talk`)。本項寫嗰陣個 memory 系統唔同,前提已經冇咗。
+  2. **memory 規則明文唔存 repo 已記錄嘅嘢**,而 DEV 部署嘅每一樣嘢今日都已經有 repo 家:`09-dev-as-built.md`(as-built + 部署記錄)· `01-topology.md`(DEV 對照表)· `04-deploy-runbook.md`(部署分岔)· `10-dev-live-verification-runbook.md`(live 驗步驟)· `CLAUDE.md` §9(runtime 實況)· `RISK_REGISTER` `R10`。
+  3. 🔴 **最硬嗰條**:再寫一份 memory = **第六份副本**。而本 phase 收尾**同一日撞到三份互相矛盾嘅副本**(`09-dev-as-built` 同 `SESSION_SUMMARY` 各留一份已被推翻嘅「ACA 預設 FQDN」推論 · `SESSION_SUMMARY` 寫住「仍未部署」而實際部署咗 5 次)⇒ **加副本就係加漂移點**,同 `F8-1`/`F8-5` 啱啱先修嗰啲一模一樣。
+  ⇒ **要記嘅嘢已經有家,而個家搵得返。**
 
 ## F9 — Entra SSO 接線(🆕 plan v1.4;🔴 **卡 B9**)
 
@@ -234,28 +251,30 @@ last_updated: 2026-08-04
 - [x] F9-11 🆕 **`jwt-auth.guard.ts` 改成同時接受同一 tenant 嘅兩個 issuer**(`…/v2.0` + `https://sts.windows.net/{tid}/`)。🔴 **`audience` 保持單一精確值** —— 放寬佢先至係真窿。新增 test `verifies against BOTH tenant issuer forms`,同時 assert audience 冇被放寬。**879 test / 68 suite 全過**(之前 878)。⚠️ 型別陷阱:`@types/jsonwebtoken` 個 `issuer` 要**非空 tuple** 唔收 `string[]`。**唔開 ADR** —— 冇改 vendor / 邊界 / storage,亦冇推翻 ADR-0002,屬 §5.1 明文嘅「唔屬架構改動」
 - [x] F9-6 ~~重 build web image 傳 3 個 build-arg~~ → **web image 唔再需要任何 Entra build-arg**(ADR-0028)。`Dockerfile` 嗰四個 `ARG VITE_ENTRA_*` 已拆走,`.env.example` 亦改寫成「呢度冇嘢要填」。⇒ **一個 web image 通行所有環境**,改 Entra 配置唔使重 build。仍然要 build 一次,但係因為前端 code 變咗,唔係因為配置
 - [x] F9-7 🟢 **部署 #2 完成(2026-08-07)** —— image `dev-3971ad3` build + **真 push**(api `sha256:eecd2521…` / web `sha256:070c4967…`),PATCH 兩個 app 都 `exit 0`。四個 `ENTRA_*` 已落(`ENTRA_CLIENT_SECRET` 走 secretRef 唔係明文 env)。`AUTH_JWT_SECRET` 保留;`ENTRA_API_AUDIENCE` 冇設(Bearer 路徑保留但瀏覽器唔行佢)。🟢 **container log 原文證到 `[EntraSsoService] Entra SSO is configured (server-side code exchange).`** ⇒ 四個 env 真係到位兼且 service 認得,唔係靠 `Healthy` 推論。順帶:`19 migrations found` · `Seeded 24 OpCos + admin + RHK OPCO_IT user.` · `Nest application successfully started`,零 `WARN: … failed`。infra 配置實測完好(`customDomains` + `SniEnabled` · `external:true` · `workloadProfileName:Consumption` · `environmentId`)
-- [ ] F9-8 🔴 verify:**SSO 登入通 + break-glass 仍然通** —— 兩邊都要驗,唔可以只驗新嗰邊。⚠️ **要喺公司網做** —— build host 喺 Azure 段,`rapo-uop-web-dev.rci-t.com` → `No such host is known`(符合 B8:企業內部 DNS)
+- [ ] F9-8 🟡 **一半收咗(2026-08-13)** verify:**SSO 登入通 + break-glass 仍然通** —— 兩邊都要驗,唔可以只驗新嗰邊。⚠️ ~~**要喺公司網做** —— build host 喺 Azure 段,`rapo-uop-web-dev.rci-t.com` → `No such host is known`(符合 B8:企業內部 DNS)~~ 🔴 **呢個前提 2026-08-13 被推翻** —— **本台機直接打得通**(Step 0 四個 endpoint 全部真答),`B8` 已解封
+  - 🟢 **break-glass 嗰半 ✅ 收** —— 見 `F6-6`:login **200** + `Set-Cookie: uop_access, uop_refresh` + `GET /api/me` **200** role **`ADMIN`**
+  - 🚧 **SSO 嗰半仍然未驗,而且 AI 做唔到** —— `/api/auth/sso/status` 今日返 **`{"enabled":true}`**(⇒ 四個 `ENTRA_*` env 真係喺度、login 頁個掣着住),但**真登入要喺 Entra 互動頁輸入公司帳號 + MFA** ⇒ **必須 Chris 本人喺瀏覽器撳一次**。**理由 = 需要真人憑證,唔係技術阻塞**(呢個分別要緊:之前寫住卡 `B8` 係環境問題,而家淨係差一個人);**target = Chris 開 browser 撳 `Continue with Microsoft Entra ID` 嗰 30 秒**。**收貨** = 撳完落到 `/` 而唔係彈返 login · `GET /api/me` 返佢自己個 email 兼 `authProvider` 唔係 `local`
 - [x] F9-17 🆕 **bundle 實證:前端真係唔再知道任何 Entra 座標** —— `dist/assets/*.js` grep `msal|login.microsoftonline|VITE_ENTRA|acquireTokenSilent|PublicClientApplication|access_as_user` **零命中**;**對照組**同時證到 grep 方法有效(`/auth/sso/status` · `/auth/entra/start` · `/auth/entra/callback` 三條都搵到)。`msal-vendor` chunk 亦已消失
 - [ ] F9-18 🆕 🔴 **未拆嘅風險:infra 把 redirect URI 加咗喺邊個 platform?** ADR-0028 要 **Web**,而我哋當初要求嘅係 **SPA**(plan §附錄 C 第四輪原文)。若係 SPA,server-side exchange 會撞 **`AADSTS9002327`**(SPA client-type 只可以經 cross-origin 兌換)。⚠️ **試過用假 code 打 token endpoint 想提前拆佢,但個測試冇區分度** —— 真 redirect_uri / 錯 redirect_uri / 錯 secret **三個都返同一個 `AADSTS9002313`**(假 code 令 Entra 喺檢查嗰兩樣之前就 reject)⇒ **證明唔到任何嘢,已棄用**。要靠 F9-8 一次真登入先知;若真係撞到,修法好具體(叫 infra 把 redirect URI 由 SPA platform 搬去 **Web** platform)
-- [ ] F9-9 🔴 client secret **expiry 2028-07-28** 入 `RISK_REGISTER.md`(到期會**靜靜咁全部 401**)
+- [x] F9-9 client secret **expiry 2028-07-28** 入 `RISK_REGISTER.md`(到期會**靜靜咁全部 401**)—— 🔴 **2026-08-13 對數發現:呢條一早做咗,只係冇勾。** `RISK_REGISTER.md` **R8** 已存在,來源欄寫住「W44 F9(2026-08-06)」,內文逐字有 `2028-07-28`。⚠️ **而本條留住 `[ ]` 令 CLAUDE.md §0 同 `SESSION_SUMMARY` 一路寫住「仍未入 RISK_REGISTER」,連續 carry 咗幾個 session** ⇒ **同族**(狀態寫兩個地方,一個冇跟住更新)。🟢 **順帶**:R8 揭到真正未做嗰半 —— **Graph app `27d329e5-…`(`App-N8N-LicenseManagement`)嘅 secret expiry 冇人知**(查佢要 `Application.Read.All`,兩個 SP 都冇),而 **assign / 對帳 / drift 全部行呢個 app** ⇒ 已喺 R8 mitigation ② 標 🔴,**跟進屬 DEPLOY-harden 唔屬本 phase**
 - [x] F9-12 🆕 **ADR-0028 Accepted**(Chris 2026-08-07:「跟隨番 infra 那一邊的配置去改動本項目的 SSO auth 流程」)。`ADR-0003` Status → `Superseded by ADR-0028`,`adr/README.md` index 同步
 - [x] F9-13 🆕 **API 側實作**:`entra-sso.service.ts`(state + PKCE + code exchange + id_token 驗證,scope 只用 `openid profile email`)· `entra-user.ts`(`oid` upsert,guard 同 SSO 共用,順帶處理 email 撞本地帳號嘅 P2002)· `GET /auth/sso/status` + `GET /auth/entra/start` + `POST /auth/entra/callback` · state cookie(httpOnly · SameSite=Strict · 10 分鐘 · callback **驗證之前**就清)
 - [x] F9-14 🆕 **cookie session 收返兩個 provider**:`jwt-auth.guard` 個 `resolveLocalUser` → `resolveSessionUser`、`auth.service.refreshSession` —— 兩處嘅 `authProvider:'local'` 過濾拆走(留住 `active`)。🔴 唔拆就會「SSO 登入睇落成功,15 分鐘後靜靜死」,而錯誤訊息會指向 token
 - [x] F9-15 🆕 **前端去 MSAL 化**:刪 `msal.ts` + `@azure/msal-browser`/`msal-react` 兩個 dep + `msal-vendor` chunk;`api.ts` 成個 `authHeader()`(silent acquire / interaction-required)拆走 —— cookie 自己會送。新 `sso.ts`(start + redirect 回程)· `dev-bypass.ts`(`AUTH_DEV_BYPASS` 搬屋)· login 掣改由 `GET /auth/sso/status` **runtime** gate
 - [x] F9-16 🆕 **測試**:api **900 test / 69 suite 全過**(之前 879/68)· web **282 test**,新增 `sso.test.ts` 6 條全過。permission matrix snapshot 只多咗三條新 public route(逐行核對過)。⚠️ web 有 **6 個既有失敗**(`local-profile.test.ts` ×5 + `reset-password.test.tsx` ×1),已用 `git stash` 對照證實**同 ADR-0028 無關**,見 BACKLOG
-- [ ] F9-10 🟢 順帶記低:Graph app `App-N8N-LicenseManagement` 有 `LicenseAssignment.Read.All` · `User.Read.All` · `LicenseAssignment.ReadWrite.All` ⇒ **F3-7 接真 Graph 冇權限障礙**
+- [x] F9-10 🟢 順帶記低:Graph app `App-N8N-LicenseManagement` 有 `LicenseAssignment.Read.All` · `User.Read.All` · `LicenseAssignment.ReadWrite.All` ⇒ **F3-7 接真 Graph 冇權限障礙**。—— **2026-08-13 勾:呢條係一句 note 唔係一個 action,記低咗就係做完**(照 `F6-13` 喺本 checklist 自己立嘅標準);留住 `[ ]` 只會令下手以為仲有嘢要做
 
 ---
 
 ## Cross-Cutting
 
-- [ ] All deliverables committed to git
-- [ ] All open-question status changes reflected in decision tracker(R4)
-- [ ] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)
-- [ ] Pending / next-candidate changes synced to `BACKLOG.md`(R7)
-- [ ] `progress.md` retro section written
-- [ ] `progress.md` frontmatter status flipped to `closed`
-- [ ] Phase N+1 kickoff trigger noted in retro
+- [x] All deliverables committed to git —— closeout commit(**doc-only,零 code**)
+- [x] All open-question status changes reflected in decision tracker(R4)—— 本次 closeout **冇 open question 狀態變動**;`F9-9` 嗰個唔係 OQ,係一個做咗冇勾嘅 item
+- [x] All architectural-adjacent decisions documented as ADR(per CLAUDE.md §5)—— 本 phase 兩個:**ADR-0027**(DEV ingress 拓撲,Option A)· **ADR-0028**(SSO server-side code exchange,supersedes ADR-0003),兩個都 **Accepted**。**本次 closeout 零新架構決定** —— `F6-14` 換閘係 **R3 deviation 唔係 H1**(冇改任何 lock 咗嘅嘢,只係揀咗另一條測試路徑)
+- [x] Pending / next-candidate changes synced to `BACKLOG.md`(R7)—— W44 段加 closeout 摘要(四條收咗 / 兩注 🚧 / `R10` / 三份死陳述)· `DEPLOY-harden` row 加兩項(`F3-7e` seed 重寫密碼 · R8 個 Graph app expiry 未知)
+- [x] `progress.md` retro section written —— Day 8 + Retro(做啱四項 / 做錯三項 / action items / N+1 trigger)
+- [x] `progress.md` frontmatter status flipped to `closed`
+- [x] Phase N+1 kickoff trigger noted in retro —— **而家零個 phase 未收**;候選 = CH-026 `G-7` · DEPLOY-harden · AUTH-2b(實際上淨係差 `F9-8` 一撳)· N8N-SEAMS · TD
 
 ---
 

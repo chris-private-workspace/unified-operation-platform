@@ -25,8 +25,8 @@
 
 🔴 **PR merge 之後一定要逐個 commit 查有冇入齊,唔可以睇個 `MERGED` 就算** —— **PR #87 實測只 merge 咗 6 個入面嘅頭 2 個**,靠 checkout 之後見到舊版 working tree 先揭穿。方法:`git merge-base --is-ancestor <sha> origin/main` 逐個行(#88 六個已咁樣查過,全部 `True`)。
 
-**淨返 W44 一個 phase 未收**(🔴 **2026-08-12 更正** —— 下面 W45 同 CH-023 兩行**已經 closed**,原文保留做背景;呢段一過時就正正係 §14 警告嗰種「下個 session 用錯前提開始」):
-- **W44 = 部署上新 Azure DEV 環境** —— 已部署三次,🔴 **卡環境**(F6 卡 `B8` private DNS · F9 卡 `B9` SSO 真人驗)。詳見下面整段。
+🟢 **W44 2026-08-13 closed ⇒ 而家零個 phase 未收**(下面原文保留)(🔴 **2026-08-12 更正** —— 下面 W45 同 CH-023 兩行**已經 closed**,原文保留做背景;呢段一過時就正正係 §14 警告嗰種「下個 session 用錯前提開始」):
+- **W44 = 部署上新 Azure DEV 環境** —— 🟢 **2026-08-13 closed**。~~已部署三次,🔴 卡環境(F6 卡 `B8` private DNS · F9 卡 `B9` SSO 真人驗)~~ ⇒ **已部署 5 次**;`B8` 2026-08-12 解封(custom domain 由呢台機直接打得通),`B7` 2026-08-06 解封。**收尾收咗** `F6-6`(break-glass 真登入 DEV:200 + `uop_access`/`uop_refresh` + role `ADMIN`)· `F6-14`(**400 body 290 B 完整過 ACA ingress + nginx**,`steps[]`/`failedAt`/`whoFixes` 齊)· `F2-13` · `F9-9`(原來一早做咗)。🚧 **淨低**:`F9-8` **SSO 嗰半**(要 Chris 本人 Entra 互動 + MFA —— **唔再係環境問題,係差一個人**)· **F7 五條 n8n 接線**(target = ADR-0017 三接縫 phase)。🔴 **新 RISK `R10`**:**叫做「DEV」嘅環境對真 production M365 tenant 有寫權** ⇒ 撳 assign 之前一律先唯讀探測。
 - ✅ **W45 = assign 過程可見性(ADR-0029)—— 2026-08-12 `F4-4` live 收 ⇒ closed**。⚠️ **下面「卡 `B8`」嗰句已經唔啱** —— 真正卡住嘅係「要唔要真派一個 licence」呢個**決定**(本機同 DEV 打緊同一個 tenant / 同一個 Graph app);失敗路已併入 W44 `F6-14`。以下保留做背景 —— 🟢 **實作全部收晒**(後端十步回傳 `{outcome, failedAt?, steps[]}` · 前端 `AssignResultDialog` · light+dark 真 render 驗過)。🔴 **淨低 F4-4 live 驗,卡同一個 `B8`**。🔴 **branch 座標(2026-08-11 最新)**:W44 三個 phase 嘅 code 全部落咗 `main`(PR **#77** / **#78** / **#79**)—— ⚠️ **「本地已經冇任何 feature branch」呢句 2026-08-12 已經唔啱**(而家 8 條已 merge 未刪,見上面)。`chore/b8-live-verification` 已 merge 兼刪。剩低嘅嘢**全部係 live 驗**(W44 F6-4/5/6 + F9-8 · W45 F4-4b · CH-023 G9),卡同一個 `B8`,**由 `main` 開一條新 branch 一齊做**。
 - ✅ **CH-023 = assign 之後 ServiceNow 側結果留得低 —— 2026-08-12 `F3-5` live 收 ⇒ closed**(驗到嘅正正係 `skipped` 分支 = 本 CH 個 driver;NOTE 同 dialog step 逐字一樣,零 drift)。⚠️ 下面「卡 `B8`」同樣唔啱。以下保留做背景 —— 🟢 **實作收晒**(`f219676`)。🔴 **`ADR-0031`(`AssignAttempt` 新表)= Rejected** —— Chris 揀咗 Option A(一條 `RequestEvent` NOTE)。**呢個係一個「提案被自己嘅代價否決」嘅例**,值得記形狀:D4「refusal 路開始寫狀態」係全份提案入面**唯一推翻既有約束**嘅位(第二次軟化 `ADR-0016 D6`),而佢**淨係為 refusal 路存在**;而 refusal「邊道閘擋住」係撳嗰刻見到、改完即刻再撳嘅嘢,**本身唔係「三日後要翻查」嗰種事實** ⇒ 覆蓋面大過需求。⇒ 零 schema / 零 migration / **零前端**。ADR-0031 全文保留唔改寫,將來要「翻查每次嘗試」由 D1-D6 重開。
 
@@ -51,7 +51,7 @@
 >
 > **檔名 / ADR 標題刻意保留**(改名會令 git history 永久對唔上,W36 判斷)⇒ 讀 `07-uat-as-built.md` / ADR-0012 嗰陣,把「UAT」讀成「**第一個 Azure 環境(自建測試)**」;兩個檔頂都有更正 blockquote。
 >
-> **真正接得通企業網絡嘅環境 = `RG-RAPO-UOP-DEV`**(infra 2026-08-04 交付 · 企業共用 ACA env `acaen-rapo-dev` + hub VNet PE + custom domain `rapo-uop-web-dev.rci-t.com`)—— **W44 進行中,仍未部署**。
+> **真正接得通企業網絡嘅環境 = `RG-RAPO-UOP-DEV`**(infra 2026-08-04 交付 · 企業共用 ACA env `acaen-rapo-dev` + hub VNet PE + custom domain `rapo-uop-web-dev.rci-t.com`)—— 🟢 **已部署 5 次**(#1 = 2026-08-06 raw ARM PATCH;現行 `dev-86ed450`),**W44 2026-08-13 closed**。~~W44 進行中,仍未部署~~ ⚠️ **原文呢句由 08-06 起就唔啱,carry 咗七日** —— 正正係 §14 警告嗰種。
 >
 > **已解封 / 已交付**:**ADR-0027 Accepted**(Chris 揀 **Option A** —— api ingress 收返 internal,對外只剩 web 一個 hostname;🔴 **cookie / CORS / 前端一個字唔變**,兩個選項嘅分別只在 machine-to-machine)· `deploy/azure/aca-dev.json`(**唔建 ACA env**,只 update 兩個既有 app;`validate` **Succeeded**)· `aca.params.dev.json`(gitignored,已證)· **`what-if` 已跑**:零 Delete、9 個無關資源 `Ignore`、**custom domain + `workloadProfileName` 保留** · PG database **`platform` 已自建**(management plane,唔使連到 PG)· `nginx.conf.template` **零改動**(Option A 令 F4 消失)· vendor **暫時全 placeholder**(F3-6 拍板:部署成功再逐個接)。
 >
@@ -81,14 +81,16 @@
 > **而家嘅 flow**:前端只送人去 Entra + 交返 `code` → **API 用 client secret 喺 server 側換 token** → 驗 `id_token`(aud = client id,**唔需要任何自訂 scope**)→ upsert `AppUser` → 發**平台自己**嘅 httpOnly cookie ⇒ **SSO 同 break-glass 由 `auth.service.grantSession` 開始完全一樣**。三條 route:`GET /auth/sso/status` · `GET /auth/entra/start` · `POST /auth/entra/callback`。
 > 🔴 **`VITE_ENTRA_*` 已經冇咗,MSAL 兩個 dep 已移除。** 四個 `ENTRA_TENANT_ID`/`ENTRA_CLIENT_ID`/`ENTRA_CLIENT_SECRET`/`ENTRA_REDIRECT_URI` 由 **API runtime** 讀 ⇒ **改配置唔使重 build web image**(舊設計嗰個「估錯要重 build 10 分鐘」嘅風險已消失)。範本喺 `apps/api/.env.example` 認證段。
 > ⚠️ **兩個「紅得靜」陷阱已處理,但形狀要記住**:①guard(`resolveSessionUser`)同 `refreshSession` 原本硬性 `authProvider:'local'` —— 唔拆嘅話 SSO **登入睇落成功**然後每個 request 401,錯誤指向 token 唔指向 provider 過濾 ②state cookie 喺 callback **驗證之前**就清,免得失敗後 reload replay 用過嘅 code。
-> 🔴 **仍未做 = F9-7(PATCH 四個 env)+ F9-8(驗 SSO 通 **兼且** break-glass 仍然通)。未有任何一次真人登入嘅證據。**
+> 🟢 **F9-7(PATCH 四個 env)一早做咗** —— 2026-08-12 打 `/api/auth/sso/status` 返 `{"enabled":true}` 先發現(**唔係新做,係發現咗做過**)。🟢 **F9-8 嘅 break-glass 嗰半 2026-08-13 收咗**(`F6-6`)。🚧 **淨低 SSO 嗰半 —— 仍然零真人登入證據**:要 Entra 互動 + MFA ⇒ **AI 做唔到,要 Chris 本人撳一次**。⚠️ **唔再係環境阻塞** —— 路通、掣着、env 齊,**淨係差一個人**。
 > 🟢 **可回退**:`login.tsx` 本地表單永遠喺;SSO 未配置 → `/auth/sso/status` 返 `{enabled:false}`,個掣自動暗住。
 > 🟢 **Graph app 權限齊**(`LicenseAssignment.Read.All` / `User.Read.All` / `LicenseAssignment.ReadWrite.All`)⇒ F3-7 接真 Graph 冇障礙。🔴 client secret **exp 2028-07-28** 要入 RISK。
 > 💡 **測 Entra 一定要用真瀏覽器** —— 命令列打 authorize endpoint 會攞到「200 冇錯誤」嘅**假陽性**(現代登入頁係 SPA,錯誤由 JS 畫)。跑一個**故意錯**嘅對照 case 先信自己個測試。
 >
 > ⚠️ **呢台機嘅 az session 唔穩定** —— 一日內撞過 **4 個唔同 SP**(`d2f094a3` / `a19dfe76` / `2ae44f00` / ACR `4a6e1474`),錯身份會畀出**誤導性 error**(403 睇落似權限未落,其實係身份唔啱)。⇒ **做 az 操作一律用獨立 `AZURE_CONFIG_DIR` 登入 SP**(憑證喺 `apps/api/.env` 尾段)。
 > 🔴 **B8(新)= 企業 DNS 冇我哋條記錄**。2026-08-06 由**公司網絡**(DNS `10.160.92.1`)實測:`rapo-n8n-uat.rci-t.com` → **`10.160.71.243`** ✅ 但 `rapo-uop-web-dev.rci-t.com` → **Non-existent domain** ⇒ **infra 漏咗建** ⇒ custom domain **連喺企業網都訪問唔到**。⚠️ 之前「ACA 綁 custom domain 要 hostname 驗證 ⇒ DNS 應該配好」呢個推論**已被一條 `nslookup` 推翻**。
-> 🟢 **B8 唔 block 驗證** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` + `/api/docs/api` ⇒ **F6-4/5/6 即刻收得**,custom domain 嗰半留 B8 解封後補驗。
+> ⛔ ~~🟢 **B8 唔 block 驗證** —— 由**公司網絡**打 **ACA 預設 FQDN**(internal env 喺 hub VNet private DNS 一定有記錄):`https://aca-rapo-uop-web-dev.nicesea-c3849dba.eastasia.azurecontainerapps.io/` + `/api/docs/api` ⇒ **F6-4/5/6 即刻收得**,custom domain 嗰半留 B8 解封後補驗。~~
+> 🔴 **上面成句已被實測推翻(2026-08-10),原文保留做方法論記錄。** 個「**一定**」係推論唔係實測 —— ACA 預設 FQDN **一樣訪問唔到**(env `internal=true`,`staticIp=10.160.71.70` 私有 IP,靠嘅 private DNS zone **冇 link 到企業網**);而「F6-4/5/6 即刻收得」跟住錯,**被當成事實用咗四日**。
+> 🟢 **實際結局(2026-08-12 / 08-13)**:`F6-5` / `F6-6` / `F6-14` 全部**經 custom domain `https://rapo-uop-web-dev.rci-t.com/`** 收咗,**ACA 預設 FQDN 由頭到尾冇用過一次**。⇒ **凡要 live 驗,第一件事係真打一次 custom domain**(30 秒,兩個結果都有路行)。
 > 🔴 **仍要一次直接驗證先收尾**(row count / admin 帳號 / API 200):**最快 = 上面條 ACA FQDN**;其次 ①infra 畀 `managedEnvironments/**read**`(純唯讀,比 join 細)②Chris 個人帳號睇 Azure Portal log。
 > 💡 **方法論(值得帶去下一個環境)**:直接路封死唔等於冇路 —— **部署權限 / 觀測權限 / metrics 係三套唔同嘢**,而 metrics 一直喺我哋 RG Contributor 範圍內,四日嚟冇人諗過用。同 Day 3「有咩前提我根本冇寫落嚟」同一族。
 >
@@ -119,7 +121,7 @@
 - **FE-Assets 鏈 ✅**:W13-17(allocation import[ADR-0004 curation-as-scope]+ ledger read/write + By-OpCo inline edit[ADR-0007])。
 - **ADR-0008 request 建單 rollout 全 4 階段 ✅**(2026-07-15):W24 **甲** inbound intake(n8n→平台 `POST /requests/intake` m2m)/ W25 **乙** outbound direct(平台→SN + 前端 `/requests/new`)/ W26 **丙** n8n outbound(`N8nWorkflowProvider` env 選路)/ W27 **丁** D365 scope(平台早 SKU-agnostic → confirm+test+doc)。
 
-**當前 pending(rolling JIT,待 Chris 揀)**:🔴 **AUTH-2b**(真 SSO e2e — ⚠️ **唔再卡 IT 開 SPA app reg**:ADR-0028 之後現有 app registration 直接用得,code 亦已齊;剩返嘅係 **W44 F9-7 PATCH 四個 `ENTRA_*` env + F9-8 live 驗證**。`W10/AUTH-2b-RUNBOOK.md` 個 MSAL 前提**已過時**)· **DEPLOY**(生產部署 + 真數 curation)· honest-gap 三項(activity feed / Drift Resolve / AI-Assist)· 🟡 AUTH-4c-C(email reset)/ DD-2(npm vuln)。
+**當前 pending(rolling JIT,待 Chris 揀)**:🔴 **AUTH-2b**(真 SSO e2e — ⚠️ **唔再卡 IT 開 SPA app reg**:ADR-0028 之後現有 app registration 直接用得,code 亦已齊;剩返嘅**淨係 `F9-8` 嗰半個 SSO 真登入** —— `F9-7`(四個 `ENTRA_*` env)**一早做咗**、break-glass 2026-08-13 已驗(`F6-6`)、`sso/status` 返 `{"enabled":true}` 掣着住 ⇒ **要 Chris 本人喺瀏覽器撳一次 `Continue with Microsoft Entra ID`**(Entra 互動 + MFA,AI 做唔到)。`W10/AUTH-2b-RUNBOOK.md` 個 MSAL 前提**已過時**)· **DEPLOY**(生產部署 + 真數 curation)· honest-gap 三項(activity feed / Drift Resolve / AI-Assist)· 🟡 AUTH-4c-C(email reset)/ DD-2(npm vuln)。
 **Deploy-time carry(非 repo)**:真 SN/n8n 建單合約對齊(`docs/05-usage/SERVICENOW-CONTRACT-ALIGNMENT.md` 🅐–🅙 待 SN owner 填)· 真 D365 SKU curation(`W27/CURATION-D365.md` runbook)。
 
 **誠實資料原則**:缺 endpoint(handler name / AI parse / My queue …)一律 EmptyState/coming-soon/略去,絕不砌假數。前端 = **H6 保護**,token-only 唔 eyeball,**寫前對 prototype render 睇**(computed 查證,唔靠畫面名估),跑 `ui-design` skill,vite dev 5173 —— 見 [[ui-design-fidelity]]。

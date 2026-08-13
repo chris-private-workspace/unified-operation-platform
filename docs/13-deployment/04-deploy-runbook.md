@@ -4,6 +4,24 @@
 > **前置閘**:RCI 正式部署需過 PAR(見 `05-rci-par-process.md`)。W33 UAT 已喺 `rcitest` sub 實跑;PAR 由 owner 另行處理,不阻 UAT。
 > 佔位:`<rg>` / `<acr>` / `<pg>` / `<kv>` / `<env>` / `<law>` / `<loc>`(= `eastasia`)。
 
+## 🔴 0-pre. 你要部署邊個環境?(2026-08-13 補,W44 `F8-3`)
+
+> **本 runbook 由頭到尾講嘅係 UAT。部署 DEV(`RG-RAPO-UOP-DEV`)行嘅係另一套,照跑會喺第 5 步撞 403。** 以下係分岔位;**UAT 段落一個字冇改。**
+
+| | UAT(本檔) | **DEV** |
+|---|---|---|
+| Deploy 指令 | `az deployment group create`(§5) | 🔴 **行唔通** —— 撞 **`LinkedAuthorizationFailed`**(SP 冇 `managedEnvironments/join/action`,而個 env 係**企業共用兼住喺另一個 RG** `RG-RAPO-ContainerAPP-DEV`)。改行 **raw ARM PATCH**:`deploy/azure/patch-deploy-dev.ps1`(**先 dry-run**,佢會印 masked body 畀你對) |
+| 🔴 點解唔可以用 `az containerapp update` / `registry set` | — | 佢哋做 **read-modify-write**,會**連 `environmentId` 一齊送返去** ⇒ 觸發同一個 linked auth ⇒ **一樣 403**。**必須** raw ARM PATCH 而 body **唔含 `environmentId`** |
+| 🟢 副作用 | ARM full PUT 會 unset 冇送嘅 property | **PATCH 唔會** ⇒ infra 配嘅 `customDomains`+SNI cert / `workloadProfileName` **結構上掂唔到**(已對數,全部完好) |
+| Params / template | `aca.params.uat.json` · `aca.json` | `aca.params.dev.json`(**gitignored**)· `aca-dev.json` |
+| Smoke(§7)打邊個 URL | ACA 預設 FQDN | 🔴 **`https://rapo-uop-web-dev.rci-t.com/`** —— **ACA 預設 FQDN 解析唔到**(env `internal=true`,`staticIp` 係私有 IP,靠嘅 private DNS zone 冇 link 到企業網)。⚠️ **api 係 `/api/docs/api` 唔係 `/docs/api`** —— 打後者會畀 SPA fallback 食咗返 HTML,係最易誤判成「api 唔通」嗰個位 |
+| 登入驗證 | — | break-glass `admin@uop.local`,密碼 = `aca.params.dev.json` 個 `localAdminInitialPassword`。⚠️ **每次容器重啟 seed 都會無條件重設佢**(`prisma/seed.ts`)⇒ 喺 UI 改咗都會變返 |
+| 🔴 撳 assign 之前 | — | **先唯讀探測 gate 狀態**(RISK **R10**)—— DEV 個 Graph app 打嘅係**真 production M365 tenant**,成功嘅 assign = **真派 licence 畀真人** |
+
+**完整 DEV as-built(含每個 blocker 點樣解封)** → **`09-dev-as-built.md`**;**live 驗證逐步** → **`10-dev-live-verification-runbook.md`**。
+
+🔴 **做任何 `az` 操作之前一律先 `az account show` 驗身份** —— 呢台機一日內撞過 **4 個唔同 SP**,錯身份會畀出**完全誤導**嘅 error(例如講網絡問題而其實係權限)。部署 SP 憑證**唔喺 repo**,要 Chris 喺 terminal 自己 `az login`。
+
 ## ⚠️ 0. 環境規律(先讀 —— 決定成套做法)
 
 公司網 proxy **只放行 Azure management plane(`management.azure.com`),SSL-MITM / 503 擋晒所有 data-plane**:Docker Hub CDN、ACR `/v2/`、Key Vault `vault.azure.net`、`aka.ms`(az 擴充 / bicep)、Log Analytics query。**驗證過嘅後果**:
