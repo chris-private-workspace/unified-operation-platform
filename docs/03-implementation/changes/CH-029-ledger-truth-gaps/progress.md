@@ -153,6 +153,53 @@ Chris 批准停 `ai-doc-extraction-db` ⇒ 起本機 stack(`ensure-infra` 真連
 
 📌 **兩次撞同一個坑之後,已經把具體 recipe 寫入 `restart-stack` skill 硬規則 3** —— 之前嗰度只寫咗「要 recreate」,而真正貴嘅唔係知道要 recreate,係**每次都要 `docker inspect` 撬返個 compose 路徑同 project name**。順帶記低咗最快嘅決定性診斷:**`HostConfig.PortBindings` 仍然寫住 `5433` 而 host 零 listener** ⇒ 唔使再試 start/restart。
 
+## Day 1(再續)—— 部署 #7 + D-C live 驗
+
+### 部署 #7(`dev-2a68f8d`,由 `main` `2a68f8d` build)
+
+跟 `04-deploy-runbook.md` §0-pre 個 DEV 分支,同部署 #6 一模一樣嘅次序。全部 `exit 0`:
+`az account show`(**`d2f094a3-…` = 部署 SP**,sub `rcitest` —— §9 話呢台機撞過四個 SP,所以呢步唔可以省)→ `docker login` → **真試 pull 兩個 base image**(`docker login` 成功證明唔到 `build` 得 —— W44 Day 7 同族)→ build ×2 → push ×2(api `sha256:5cd7f8b7…` / web `sha256:04fb8a94…`)→ params **字串替換**(`lengthDelta = 0`,2 處;**唔用 JSON round-trip**,嗰個會重排成個含 secret 嘅檔)→ dry-run → `-Send`。
+
+**dry-run 四個 sanity 全部 `False`**:`environmentId` · `workloadProfileName` · web 個 `external` · web 個 `customDomains` ⇒ **infra 配嘅 custom domain + SNI binding 結構上掂唔到**。
+
+### 驗證:刻意唔睇 revision status
+
+`docker-entrypoint.sh` 令 migrate/seed 失敗 **NON-FATAL** ⇒ `Healthy` 證明唔到新 code 上咗。改睇**只有新 code 先出到嘅嘢**:
+
+| 睇乜 | 結果 |
+|---|---|
+| `AssignStepDto.key` enum | **11 個**,而 **`holding` 喺 `budget` 同 `seats` 之間** —— run order 係 contract,而佢真係捱到出 wire |
+| `ReconcileResultDto` | 有 **`skippedUnlimited`**,description 逐字係新嗰句;`checked` 個 description 亦更新咗 |
+| web bundle | `Not already licensed` · `Already licensed` · `ledger unchanged` · `over-allocated` · `unlimited skipped` · `holding` **六個全中** |
+
+🟢 **今次多咗一種部署 #6 冇嘅證據**:輪詢嗰陣 **第 1 次 `200` 但**冇**`holding`,第 2 次(+10 秒)`200` **有** —— **同一個 URL 由舊變新**。呢個比「新字串喺度」更強:佢排除咗「一直都喺度 / CDN 舊 cache」兩個解釋。
+
+### D-C live 驗(DEV)
+
+```
+POST /api/license/reconcile → 201
+{"checked":101,"opened":0,"updated":56,"resolved":16,"skippedUnlimited":22,"drift":56}
+```
+
+**三個預測數全中**(`skippedUnlimited` 22 · `resolved` 16 · `drift` 72 → 56)。
+
+🟢 **獨立對數,冇信 endpoint 自己報嗰個** —— 自己由 `/license/catalog` 攞 `seatModel`,join `alert.sku.skuId`(⚠️ **nested,唔係平面 `alert.skuId`**;OQ-3 嗰次就係喺呢度撞過)⇒ **BEFORE 72 open / 其中 16 unlimited → AFTER 56 open / 其中 0 unlimited**。
+
+🟢 **D4「講得出點解 resolve」亦 live 驗到**:`/admin/audit?action=drift.resolve` → **`total = 16`**,**16/16** 全部 `reason = unlimited-sku` · `source = manual-reconcile` · `OPEN → RESOLVED` · `actorType = user`。⇒ **唔係「靜靜消失」係「主動收返」,而且同一般 delta 歸零嗰種 resolve 分得返。**
+
+### 🔴 D-A 唯讀探測(R10),仲未撳
+
+DEV **13 條 line item(9 `ASSIGNED` / 4 `READY`)**,其中 **3 條 `READY` 兼兩道 sync gate 都開** —— 同 R10 當初記低嗰個「3 條」一模一樣(總數由 9 升到 13)。
+
+🔴 **新 gate 本身唔係保護**:佢**只喺個人真係已持有嗰陣先短路**。揀錯人 = 真派一個 licence 畀真人。⇒ **要一個先經 Graph 讀確認過已持有嗰個 SKU 嘅 target**,而**呢步唔可以由我自己揀**。
+
+### ⚠️ 同一日再撞兩次「shape 估錯」,兩次都喺落結論之前捉到
+
+1. `/admin/audit` 個 list key 係 **`entries`** 唔係 `items`/`entries` 之外嗰啲 —— 我第一次寫 `$a.items` fallback 落 `$a` 本身,結果印出「1 row,全部欄空,`reason=unlimited-sku` 0 條」。**嗰個 0 睇落就係一個乾淨嘅否定結論**,而佢完全係錯嘅。
+2. `/fulfilment/requests` 個 shape —— 一次數到 0 條 line item、一次數到 130 條(真相係 **13**)。
+
+**兩次都係靠「個結果睇落唔合理」而唔係事先查 shape。** 呢個係本 repo 同一族第 5、6 次。⇒ **凡係要落一個「N 條」嘅結論,先 print 一次 top-level keys。** 今次第二次撞完就即刻咁做,而嗰一步 30 秒就分晒真假。
+
 ## 🚧 未做
 
 - [ ] **live 驗 D-A** —— 要一個**真係已經持有某 SKU** 嘅 user 兼一張 `READY` line item。🔴 **RISK `R10`**:DEV 對真 production M365 tenant 有寫權 ⇒ 撳之前一律先唯讀探測。
