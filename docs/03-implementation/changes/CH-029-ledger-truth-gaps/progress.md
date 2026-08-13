@@ -106,11 +106,51 @@ D-B 要「面向操作員嘅解釋」,所以 scope note 要**指名**兩張卡(`
 
 ---
 
+## Day 1(續)—— F5-4 H6 真 render 收咗
+
+Chris 批准停 `ai-doc-extraction-db` ⇒ 起本機 stack(`ensure-infra` 真連線探測過、`kill-zombies` dry-run **0 條殭屍**、api `:3100/docs/api` **30 秒 200**)。
+
+### 🟢🟢 「本機 render 唔到負數」呢個結論被自己推翻咗,而且推翻得好
+
+上面原本寫住:本機 `totalAllocated = 0` ⇒ `totalUnallocated` 一定正數 ⇒ 負數分支要造假 row 先睇到 ⇒ 跟 CH-028 先例唔造。
+
+**但嗰個推理入面混咗兩件事**:CH-028 拒絕嘅係「**造一個 row 去偽造一個顯示狀態**」(嗰個 row 本身冇意義,只為湊一張 `—`)。而呢度要嘅係「**一個真嘅 over-allocation**」—— 插一行 `OpcoSkuLedger` `allocatedQuantity = 75930`,係一件**業務上完全講得通**嘅事(一個 OpCo 分咗多過 tenant 有嘅 seat),而 `totalUnallocated` 跟住變負**係真嘅計算行為,唔係我畫出嚟嘅畫面**。
+
+⇒ **API 真回 `{"totalOwned":50779,"totalAllocated":75930,"totalUnallocated":-25151,"skusOverAllocated":1}`** —— `-25151` **同 DEV 嗰個數逐字一樣**(揀 75930 就係為咗撞返佢),而 KPI 真出 **`25151 over-allocated (prepaid SKUs)`**。
+
+📌 **分界線值得寫低**:**造 input 唔等於造 output。** 前者係 fixture,後者係造假。
+
+### 收到嘅嘢
+
+| | 結果 |
+|---|---|
+| KPI 負數 | `25151 over-allocated (prepaid SKUs)` · light + dark |
+| KPI 正數(冇 regression) | `50779 unallocated (prepaid SKUs)` · light + dark |
+| 🟢 **兩個讀法唔打對台** | 同一屏,KPI 讀「`25151` over-allocated」而表格 grand total 個 `Unalloc.` 格仍然係 **`-25151` 兼 `text-danger`** —— 一個散文一個數字欄,**同一個數兩種呈現**。D5「唔改計算」喺畫面上睇得到 |
+| scope note | 1134px 下 4 行,兩個粗體指名 · **頁面零橫向溢出** |
+| dialog(已持有路) | summary **`6 checks passed · 2 skipped`**(同 unit test 逐字一樣)· banner **`Already licensed · nothing assigned, ledger unchanged`**,**560px 下實測 17px = 一行冇 wrap** · 展開見到 **8 道閘**,`Not already licensed` 帶 minus icon + 兩行 detail · 一個 primary |
+
+### 🔴 dialog 嗰四張係 intercept,唔係真回應
+
+本機**一條 `READY` line item 都冇**(W45 嗰條一早 `ASSIGNED`)⇒ ①暫時 flip 條 line 返 `READY`②喺瀏覽器攔住個 PATCH,body **逐字抄自 `assign.service.ts` 已持有路**。**沿用 W45 `F3-7` 手法同埋佢嗰句 caveat** —— 呢啲截圖證嘅係 **render**,唔係 server;server 嗰半由 13 條 unit test + falsification 釘住。
+
+**要真回應就要一個真係已持有某 SKU 嘅人**,而本機 Graph 打緊真 production tenant ⇒ 揀錯人就會**真派一個 licence**(R10 同一形狀)。⇒ 留返 `F5-7`,而且**撳之前一定要先唯讀探測**。
+
+### 清理(逐項實證,唔靠記憶)
+
+- ledger fixture:`DELETE 1` ⇒ 返返 **1 行**(`w45fixtureledger0001`,CH-028 `F4-7` 嗰個 leftover)· `fixture_rows_left = 0`
+- line item:revert 到 `ASSIGNED` / `assignedAt = 2026-08-12 10:23:07.685` —— **pre-state 係開頭 `select` 出嚟嘅,唔係憑記憶打**
+- `RequestEvent` `ASSIGN` **仍然係 1 條** ⇒ 個 intercepted PATCH 由頭到尾冇到過 API
+- 🔴 **H4**:九張截圖**用完即刪**(`git status --untracked-files=all` 實測**零剩餘**)—— 三張帶住真 UPN,一張都唔可以 commit
+
+### 🔴 收工撞返 §9 記低嗰個 port 陷阱,而且今次冇修好
+
+交還 5433 之後:`ai-doc-extraction-db` **`Up` 但 `Ports` 只有 `5432/tcp`**,真 TCP connect **`False`**;`docker restart` 唔會重新 attach(§9 已經寫過)。`docker inspect` 更加確認咗個形狀 —— **`HostConfig.PortBindings` 仲寫住 `5433`**,即係**個容器以為自己 publish 咗,而 host 零 listener**。
+
+⇒ 記錄低嘅修法係 `docker compose up -d postgres` **recreate**,而個 compose file 喺 `C:\Users\rci.ChrisLai\ai-document-extraction-project\docker-compose.yml` —— **另一個項目,`up -d` 可能套用比而家跑緊嗰個更新嘅 config** ⇒ **冇自行做,等 Chris 批。** ⚠️ 影響範圍:容器內部同 docker network 冇事,**淨係 host `localhost:5433` 通唔到**。
+
 ## 🚧 未做
 
-- [ ] **F5-4 H6 light + dark 真 render** —— 🔴 **卡住**:本機 5433 畀 `ai-doc-extraction-db` 佔住(實測 `Up 4 hours (healthy)`),停佢係另一個項目嘅事,**要 Chris 批**。
-  - ⚠️ 而且**負數嗰個分支本機 render 唔到** —— 本機 `totalAllocated = 0` ⇒ `totalUnallocated` 一定係正數。要造 allocation fixture 先睇到 `over-allocated` 嗰句。**跟 CH-028 `F4-4` 先例**:唔為咗湊一張截圖去造假 row,由 unit test 蓋住(兩條,正負各一)。
-  - ⇒ 本機真 render 驗到嘅係:**正數分支冇 regression** + scope note 排版 + dialog 兩句 banner。
 - [ ] **live 驗 D-A** —— 要一個**真係已經持有某 SKU** 嘅 user 兼一張 `READY` line item。🔴 **RISK `R10`**:DEV 對真 production M365 tenant 有寫權 ⇒ 撳之前一律先唯讀探測。
 - [ ] **live 驗 D-C** —— DEV 跑一次 `reconcile`,睇 `skippedUnlimited` 同 `resolved`。**預期**:`skippedUnlimited = 22`(DEV 已 curate),OPEN alert **72 → 56**,而 16 個 unlimited alert 變 `RESOLVED`(唔係消失)。⚠️ reconcile 對 Graph 唯讀,**R10 唔適用**。
 - [ ] **部署 #7** —— DEV 要有 code 先驗得到 D-A / D-C。

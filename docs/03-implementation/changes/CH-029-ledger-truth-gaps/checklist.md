@@ -57,7 +57,14 @@
 - [x] F5-1 api **1012 → 1040 / 73 → 74 suites** 全綠(+28 拆得開:7+13+6+2)
 - [x] F5-2 web **362 → 368 passed**;6 條紅逐個對得返 `WEB-TEST-JSDOM` ⇒ **零新增**
 - [x] F5-3 api tsc 0 · web tsc 0 · api lint 0 · **web lint 16(pre-existing,實測落係三個我冇掂過嘅檔)**
-- [ ] F5-4 🚧 **H6 light + dark 真 render** —— 🔴 卡本機 5433(`ai-doc-extraction-db` 實測 `Up 4 hours`,停佢**要 Chris 批**)。⚠️ 而且**負數分支本機 render 唔到**(本機 `totalAllocated = 0`)⇒ 跟 CH-028 `F4-4` 先例,唔造假 row 湊截圖
+- [x] F5-4 ✅ **H6 light + dark 真 render 收咗**(2026-08-13,Chris 批准停 `ai-doc-extraction-db`)
+  - 🟢🟢 **負數分支真 render 到,而且唔使 intercept** —— 原本寫住「本機 render 唔到」(本機 `totalAllocated = 0`)。**解法唔係造假一個顯示狀態,係造一個真 allocation** ⇒ 插一行 `OpcoSkuLedger`(`allocatedQuantity = 75930`,marker id `ch029-render-fixture-DELETE-ME`)⇒ **API 真回 `totalUnallocated: -25151`**(**同 DEV 嗰個數逐字一樣**),KPI 真出 `25151 over-allocated (prepaid SKUs)`,light + dark 兩張。**驗完 `DELETE 1`,ledger 返返 1 行**(`w45fixtureledger0001`,`alloc=0`/`assigned=1` = CH-028 `F4-7` 嗰個 leftover)
+  - 🟢 **順帶證咗兩個讀法唔會打對台**:同一屏,KPI 讀「`25151` over-allocated」而表格 grand total 個 `Unalloc.` 格仍然係 **`-25151` 兼 `text-danger`** —— **一個係散文一個係數字欄,同一個數兩種呈現,冇矛盾**(D5「唔改計算」喺畫面上睇得到)
+  - 🟢 **正數分支冇 regression**:`50779 unallocated (prepaid SKUs)`,light + dark
+  - 🟢 **scope note** 新句真 render(1134px 下 4 行,`Allocated to OpCos` / `Available seats` 兩個粗體指名),**頁面零橫向溢出**(`documentElement.scrollWidth <= clientWidth`)
+  - 🟢 **`AssignResultDialog` 已持有路** light + dark、收埋 + 展開四張:summary **`6 checks passed · 2 skipped`**(同 unit test 逐字一樣)· banner **`Already licensed · nothing assigned, ledger unchanged`** —— **560px 下實測 17px = 一行,冇 wrap**(舊嗰句短啲,所以呢個係真問題唔係假設)· 展開見到 **8 道閘**,`Not already licensed` 帶 `skipped` minus icon + 兩行 detail · 一個 primary(`Done`,Ricoh red)
+  - 🔴 **dialog 嗰四張係 intercept 唔係真回應** —— 本機**冇任何 `READY` line item**(W45 嗰條一早 `ASSIGNED`),所以①暫時 flip 條 line 返 `READY`(pre-state 先 `select` 出嚟,revert 用嗰個值唔靠記憶)②喺瀏覽器攔住個 PATCH,body **逐字抄自 `assign.service.ts` 已持有路**(由 13 條 unit test + falsification 釘住)。**沿用 W45 `F3-7` 手法同埋佢嗰句 caveat。** 驗完 revert 到 `ASSIGNED` / `assignedAt = 2026-08-12 10:23:07.685`(**逐字等於 pre-state**),`RequestEvent` `ASSIGN` **仍然係 1 條** ⇒ 證明個 PATCH 由頭到尾冇到過 API
+  - 🔴 **H4**:九張截圖全部**用完即刪**(`git status --untracked-files=all` 實測**零剩餘**)—— 其中三張帶住真 UPN,**一張都唔可以 commit**
 - [x] F5-5 BACKLOG(R7)+ CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃(§14)
 - [x] F5-6 commit + PR
 - [ ] F5-7 🚧 **live 驗**(要部署 #7)——
