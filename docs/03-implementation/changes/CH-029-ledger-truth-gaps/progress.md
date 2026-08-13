@@ -147,7 +147,11 @@ Chris 批准停 `ai-doc-extraction-db` ⇒ 起本機 stack(`ensure-infra` 真連
 
 交還 5433 之後:`ai-doc-extraction-db` **`Up` 但 `Ports` 只有 `5432/tcp`**,真 TCP connect **`False`**;`docker restart` 唔會重新 attach(§9 已經寫過)。`docker inspect` 更加確認咗個形狀 —— **`HostConfig.PortBindings` 仲寫住 `5433`**,即係**個容器以為自己 publish 咗,而 host 零 listener**。
 
-⇒ 記錄低嘅修法係 `docker compose up -d postgres` **recreate**,而個 compose file 喺 `C:\Users\rci.ChrisLai\ai-document-extraction-project\docker-compose.yml` —— **另一個項目,`up -d` 可能套用比而家跑緊嗰個更新嘅 config** ⇒ **冇自行做,等 Chris 批。** ⚠️ 影響範圍:容器內部同 docker network 冇事,**淨係 host `localhost:5433` 通唔到**。
+⇒ 記錄低嘅修法係 `docker compose up -d postgres` **recreate**,而個 compose file 喺 `C:\Users\rci.ChrisLai\ai-document-extraction-project\docker-compose.yml` —— **另一個項目,`up -d` 可能套用比而家跑緊嗰個更新嘅 config** ⇒ 冇自行做,先問。
+
+🟢 **Chris 批咗,同日修好。** 做之前先查兩件事(因為「`up -d` 可能套用更新 config」係我自己 flag 嘅風險,唔查就等於冇 flag 過):①running image = **`postgres:15-alpine`**(**pinned tag** ⇒ 唔會偷偷升 major)②只指名 `postgres` 一個 service。**結果**:`Recreated` → `0.0.0.0:5433->5432/tcp` 返嚟、**真 TCP connect `True`**、`pg_isready` `accepting connections`、`ai_document_extraction` 個 DB **仲喺**(named volume)、同項目其餘四個容器 **uptime 完全冇動**(`azurite` 5 小時 / `pgadmin` 21 小時 / `ocr`+`mapping` 2 日)。
+
+📌 **兩次撞同一個坑之後,已經把具體 recipe 寫入 `restart-stack` skill 硬規則 3** —— 之前嗰度只寫咗「要 recreate」,而真正貴嘅唔係知道要 recreate,係**每次都要 `docker inspect` 撬返個 compose 路徑同 project name**。順帶記低咗最快嘅決定性診斷:**`HostConfig.PortBindings` 仍然寫住 `5433` 而 host 零 listener** ⇒ 唔使再試 start/restart。
 
 ## 🚧 未做
 
