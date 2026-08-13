@@ -214,6 +214,156 @@ describe('ReconcileService', () => {
   });
 
   /**
+   * CH-029 / ADR-0034 D4 — a SKU with no seat account cannot have a seat
+   * account that disagrees.
+   *
+   * On the live tenant this is 16 of 72 open alerts (22%), led by FLOW_FREE at
+   * a delta of 4,524 — a number that corresponds to nothing anyone can act on,
+   * because ADR-0032 already established these SKUs have no denominator.
+   */
+  describe('unlimited SKUs take no part (CH-029 / ADR-0034 D4)', () => {
+    const unlimited = (openAlert: unknown) => {
+      graph.getSubscribedSkus.mockResolvedValue([liveSku('guid-1', 4524)]);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c1', skuId: 'guid-1', seatModel: 'unlimited' },
+      ]);
+      prisma.opcoSkuLedger.aggregate.mockResolvedValue({
+        _sum: { assignedQuantity: 0 },
+      });
+      prisma.driftAlert.findFirst.mockResolvedValue(openAlert);
+    };
+
+    // 4,524 vs 0 is the largest delta on the live tenant. If any threshold or
+    // "only small deltas" logic ever creeps in, this is the case it would break.
+    it('opens no alert however large the delta', async () => {
+      unlimited(null);
+
+      const res = await service.reconcile();
+
+      expect(prisma.driftAlert.create).not.toHaveBeenCalled();
+      expect(res).toMatchObject({ opened: 0, updated: 0, skippedUnlimited: 1 });
+    });
+
+    /**
+     * The falsification half. Asserting "no alert" alone would still pass if
+     * the skip were implemented by computing everything and then discarding it;
+     * this pins that the work is genuinely not done.
+     */
+    it('does not even sum the ledger for one', async () => {
+      unlimited(null);
+
+      await service.reconcile();
+
+      expect(prisma.opcoSkuLedger.aggregate).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 D4's extension, and the reason it is not a one-off cleanup script:
+     * skipping alone would leave those 16 alerts OPEN for ever, because no code
+     * would ever look at them again. A script would clear today's and leave the
+     * next SKU somebody curates as unlimited in exactly the same state.
+     */
+    it('resolves an alert it already had rather than stranding it OPEN', async () => {
+      unlimited({ id: 'a1', status: 'OPEN' });
+
+      const res = await service.reconcile();
+
+      expect(prisma.driftAlert.update).toHaveBeenCalledWith({
+        where: { id: 'a1' },
+        data: { status: 'RESOLVED', resolvedAt: expect.any(Date) },
+      });
+      expect(res).toMatchObject({ resolved: 1, skippedUnlimited: 1 });
+    });
+
+    /**
+     * Two different reasons now close an alert — the totals reconciled, or the
+     * SKU turned out to have no totals. An audit row that cannot say which
+     * would make "the books balanced" and "the question was withdrawn" look
+     * identical a year from now. `reason` is already a whitelisted metadata key
+     * (ADR-0009), so this widens nothing.
+     */
+    it('records WHY it resolved, distinguishably from a real reconcile', async () => {
+      unlimited({ id: 'a1', status: 'OPEN' });
+
+      await service.reconcile('actor-1');
+
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          action: 'drift.resolve',
+          targetId: 'a1',
+          metadata: { source: 'manual-reconcile', reason: 'unlimited-sku' },
+        }),
+      );
+    });
+
+    /**
+     * The ordinary resolve must NOT pick up a reason — otherwise the key says
+     * nothing and the two cases are indistinguishable again, this time in the
+     * other direction. W29 F2c pinned this shape; it stays byte-for-byte.
+     */
+    it('leaves the ordinary delta-reached-zero resolve without a reason', async () => {
+      graph.getSubscribedSkus.mockResolvedValue([liveSku('guid-1', 3)]);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c1', skuId: 'guid-1', seatModel: 'prepaid' },
+      ]);
+      prisma.opcoSkuLedger.aggregate.mockResolvedValue({
+        _sum: { assignedQuantity: 3 },
+      });
+      prisma.driftAlert.findFirst.mockResolvedValue({
+        id: 'a1',
+        status: 'OPEN',
+      });
+
+      await service.reconcile('actor-1');
+
+      expect(audit.log).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ metadata: { source: 'manual-reconcile' } }),
+      );
+    });
+
+    /**
+     * Mixed catalog — the case a single-SKU fixture cannot reach. Without it,
+     * a `continue` misplaced one level up would skip the whole run and every
+     * test above would still be green.
+     */
+    it('leaves prepaid SKUs in the same run fully reconciled', async () => {
+      graph.getSubscribedSkus.mockResolvedValue([
+        liveSku('guid-1', 4524),
+        liveSku('guid-2', 5),
+      ]);
+      prisma.skuCatalog.findMany.mockResolvedValue([
+        { id: 'c1', skuId: 'guid-1', seatModel: 'unlimited' },
+        { id: 'c2', skuId: 'guid-2', seatModel: 'prepaid' },
+      ]);
+      prisma.opcoSkuLedger.aggregate.mockResolvedValue({
+        _sum: { assignedQuantity: 3 },
+      });
+      prisma.driftAlert.findFirst.mockResolvedValue(null);
+
+      const res = await service.reconcile();
+
+      expect(prisma.driftAlert.create).toHaveBeenCalledTimes(1);
+      expect(prisma.driftAlert.create).toHaveBeenCalledWith({
+        data: {
+          skuCatalogId: 'c2',
+          ledgerAssignedSum: 3,
+          tenantConsumed: 5,
+          delta: 2,
+        },
+      });
+      // `checked` still counts every active SKU the run walked — which is why
+      // `skippedUnlimited` has to travel with it, or the scope silently shrinks.
+      expect(res).toMatchObject({
+        checked: 2,
+        opened: 1,
+        skippedUnlimited: 1,
+      });
+    });
+  });
+
+  /**
    * W29 F2c — resolving a drift alert is decided by the code (delta hit 0), but
    * WHO set the run going is a separate question an auditor will ask
    * (Chris, 2026-07-21).

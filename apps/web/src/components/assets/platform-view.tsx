@@ -120,7 +120,13 @@ export function PlatformView() {
   return (
     <div className="flex flex-col gap-[16px]">
       {/* Reconciliation tiles (M365 owned → allocated → assigned). */}
-      <div className="grid grid-cols-1 gap-[16px] sm:grid-cols-3">
+      {/* testid: CH-029 made the scope note below name these cards outright, so
+          a bare getByText('Available seats') now matches twice — the same trap
+          CH-028 F3-8 hit. Assertions about the TILES scope themselves here. */}
+      <div
+        data-testid="tenant-kpis"
+        className="grid grid-cols-1 gap-[16px] sm:grid-cols-3"
+      >
         {/* ADR-0032 D3 / OQ-4 — renamed from "Owned in M365". A total that
             excludes a fifth of the SKUs cannot keep calling itself what M365
             owns, and the sub-line names what was left out rather than letting
@@ -150,8 +156,17 @@ export function PlatformView() {
             // "prepaid SKUs" is not decoration: this figure is scoped to them
             // while the value above it counts every SKU, so subtracting one
             // from the other would not reconcile.
+            //
+            // CH-029 / ADR-0034 D5 — the FIGURE is untouched (Chris: "the
+            // negative is honest"). What changed is that a negative one is read
+            // out loud instead of printed raw: "-25151 unallocated" is not a
+            // sentence anyone can act on, while "25151 over-allocated" is the
+            // same fact stated the way `skusOverAllocated` already states it in
+            // the card below. Presentation only — nothing here recomputes.
             stats.data
-              ? `${stats.data.totalUnallocated} unallocated (prepaid SKUs)`
+              ? stats.data.totalUnallocated < 0
+                ? `${-stats.data.totalUnallocated} over-allocated (prepaid SKUs)`
+                : `${stats.data.totalUnallocated} unallocated (prepaid SKUs)`
               : ' '
           }
         />
@@ -461,9 +476,14 @@ export function PlatformView() {
           tenant reported at that sync. Where they differ, Drift tracks it. SKUs
           marked <span className="font-medium text-fg-muted">Unlimited</span>{' '}
           have no purchased seat count, so they are left out of the owned totals
-          — their allocations and assignments still count. Seat model, tenant
-          counts and per-OpCo allocations are set in SKU Catalog / Settings ›
-          Integrations → Import.
+          — their allocations and assignments still count, which is why{' '}
+          <span className="font-medium text-fg-muted">Allocated to OpCos</span>{' '}
+          minus{' '}
+          <span className="font-medium text-fg-muted">Available seats</span>{' '}
+          does not reconcile: only the unallocated figure is scoped to prepaid
+          SKUs. When it turns negative, prepaid SKUs have been allocated beyond
+          the seats available for them. Seat model, tenant counts and per-OpCo
+          allocations are set in SKU Catalog / Settings › Integrations → Import.
         </span>
       </p>
     </div>

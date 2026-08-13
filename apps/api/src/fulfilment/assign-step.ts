@@ -1,7 +1,7 @@
 /**
  * ADR-0029 — the per-step result an assign reports back.
  *
- * WHY THIS EXISTS: `POST …/assign` runs seven gates and three side-effects in
+ * WHY THIS EXISTS: `POST …/assign` runs eight gates and three side-effects in
  * one atomic call, and today the caller learns only that "something" refused.
  * The operator cannot tell which gate stopped them, and — the part that costs
  * real time — cannot tell WHO fixes it. `sync-azure` is chased through Entra
@@ -17,11 +17,24 @@
  */
 
 /**
- * The seven gates, in the order `assign.service.ts` actually runs them.
+ * The eight gates, in the order `assign.service.ts` actually runs them.
  *
  * 🔴 Order is part of the contract, not a formatting choice. It is what lets a
  * reader say "it got to `budget`, so directory and both syncs were fine" — the
  * steps before the failure are evidence, not decoration.
+ *
+ * 🔴 CH-029 / ADR-0034 D1 — `holding` sits between `budget` and `seats`, and
+ * both sides of that are arguments, not taste:
+ *   - AFTER `budget`, because ADR-0016 D5 put the budget gate ahead of the
+ *     Graph inventory read on the principle that busting your own OpCo's
+ *     allocation must not cost a vendor round-trip. `holding` IS a vendor
+ *     round-trip, so putting it earlier would contradict that decision.
+ *   - BEFORE `seats`, because somebody who already holds the licence consumes
+ *     no seat. Behind `seats`, a tenant with none left would refuse an assign
+ *     that needs none — and `seats` has no override (`budget` does), so the
+ *     operator would be told to buy seats to satisfy a request already
+ *     satisfied. W44 F7-7 (n8n asking to skip users who already hold E5) is
+ *     exactly the scarce-seat case where that would bite.
  *
  * 🔴 `budget` and `seats` are SEPARATE and must stay separate. The mockup
  * (`IT Ops Platform.dc.html:1444-1450`) folds them into one `precheck`, and
@@ -39,6 +52,7 @@ export const ASSIGN_GATE_KEYS = [
   'directory', // Graph findUser resolved the target
   'usage-location', // user has one, or the caller supplied an override
   'budget', // OpCo allocation (ADR-0016; admin-overridable)
+  'holding', // does the user already hold this SKU (CH-029 / ADR-0034 D1)
   'seats', // tenant prepaid seats (Graph inventory)
 ] as const;
 

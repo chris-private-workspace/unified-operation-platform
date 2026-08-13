@@ -33,6 +33,10 @@ describe('license-ops seam boundary (W38 OQ-1 / OQ-2)', () => {
       file: 'fulfilment/sync-check.service.ts',
       why: "CH-015 — the on-demand half of the same gate. It writes through the sweep's own openSyncGate, so routing ITS lookup through n8n would reopen the hole ADR-0015 closed, from the side nobody is watching.",
     },
+    {
+      file: 'fulfilment/holding-check.service.ts',
+      why: 'CH-029 / ADR-0034 D1 — the whole point of this gate is that it stands BEFORE the provider. Only n8n can report `already_assigned`, so asking the seam would make the ledger decision depend on which provider is configured — the exact swap D0 forbids, and the one W39 OQ-1 had to concede to. Asking Graph directly is D0 applied, not relaxed.',
+    },
   ];
 
   describe.each(MUST_STAY_DIRECT)('$file', ({ file, why }) => {

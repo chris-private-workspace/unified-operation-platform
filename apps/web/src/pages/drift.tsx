@@ -52,7 +52,14 @@ export function Drift() {
         reconcile.mutate(undefined, {
           onSuccess: (res) =>
             flash(
-              `Reconciliation complete · checked ${res.checked} · opened ${res.opened} · resolved ${res.resolved}`,
+              // CH-029 / ADR-0034 D4 — `checked` counts every active SKU the
+              // run walked, so with unlimited ones now excluded it would
+              // overstate the scope on its own. Named only when it happened:
+              // a "· 0 skipped" on every tenant that curates nothing is noise.
+              `Reconciliation complete · checked ${res.checked} · opened ${res.opened} · resolved ${res.resolved}` +
+                (res.skippedUnlimited > 0
+                  ? ` · ${res.skippedUnlimited} unlimited skipped`
+                  : ''),
               'ok',
             ),
           onError: (err) => flash((err as Error).message, 'danger'),

@@ -21,6 +21,7 @@ import {
   pickAuditMetadata,
 } from '../audit/audit-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
+import { HoldingCheckService } from './holding-check.service';
 import {
   ASSIGN_GATE_KEYS,
   type AssignStep,
@@ -176,6 +177,10 @@ describe('AssignService', () => {
       findUser: jest.fn(),
       getSubscribedSkus: jest.fn(),
       assignLicense: jest.fn().mockResolvedValue(undefined),
+      // CH-029 / ADR-0034 D1 — defaults to "holds nothing", so every test
+      // written before this gate existed still exercises the path it was
+      // written for rather than the new short-circuit.
+      getUserAssignedSkuIds: jest.fn().mockResolvedValue([]),
     };
     snow = { addWorkNote: jest.fn().mockResolvedValue(undefined) };
     // W40 / ADR-0017 seam ④. Stubbed at the abstraction: unlike seam ② there is
@@ -216,6 +221,16 @@ describe('AssignService', () => {
         {
           provide: LicenseOperationsProvider,
           useFactory: (g: GraphService) => new GraphLicenseProvider(g),
+          inject: [GraphService],
+        },
+        // CH-029 — the REAL HoldingCheckService over the same GraphService
+        // mock, for the reason the seam provider is wired the same way above:
+        // stubbing it would move the fail-open decision (D6) outside the tested
+        // chain, and "UNKNOWN means assign anyway" is precisely what has to be
+        // proved rather than assumed.
+        {
+          provide: HoldingCheckService,
+          useFactory: (g: GraphService) => new HoldingCheckService(g),
           inject: [GraphService],
         },
         { provide: ServiceNowService, useValue: snow },
@@ -968,6 +983,10 @@ describe('AssignService', () => {
         'directory',
         'usage-location',
         'budget',
+        // CH-029 / ADR-0034 D1 — between budget and seats. Written out rather
+        // than derived here on purpose: this list is the hand-checked mirror
+        // that `expectBlockedAt` compares the CONTRACT against.
+        'holding',
         'seats',
         'assign',
         'ledger',
@@ -1100,8 +1119,9 @@ describe('AssignService', () => {
       expect(seats?.detail).toBe(
         'POWER_BI_STANDARD is marked unlimited — it has no prepaid seat count to check.',
       );
-      // Still ten steps in run order: skipping a check is not dropping it.
-      expect(res.steps).toHaveLength(10);
+      // Still every step in run order: skipping a check is not dropping it.
+      // (11 since CH-029 added `holding`.)
+      expect(res.steps).toHaveLength(11);
     });
 
     /**
@@ -1306,6 +1326,325 @@ describe('AssignService', () => {
       // Same rule as the timeline and the audit row: an override that did not
       // happen must not be claimed anywhere, or R4's count stops being honest.
       expect(res.steps.find((s) => s.key === 'budget')?.status).toBe('ok');
+    });
+  });
+
+  /** The ASSIGN event written INSIDE the transaction (not the CH-023 NOTE). */
+  const assignEvent = () =>
+    tx.requestEvent.create.mock.calls.find(
+      (c: any) => c[0].data.type === 'ASSIGN',
+    )?.[0].data;
+
+  /**
+   * CH-029 / ADR-0034 — the person already has the licence.
+   *
+   * Chris, 2026-08-13: "如果用戶已經有相關 license,現在可以再重新 assign?" The
+   * answer was yes, and the ledger counted it a second time — not as a bug, but
+   * as W39 OQ-1's deliberate outcome. What changed is where the question gets
+   * asked: the platform now asks Graph itself, BEFORE the provider, so the
+   * answer no longer depends on which provider happens to be configured.
+   */
+  describe('assignLineItem — the target already holds the SKU (CH-029)', () => {
+    const alreadyHeld = () => {
+      arrangeHappy();
+      graph.getUserAssignedSkuIds.mockResolvedValue(['guid-1']);
+    };
+
+    it('never calls the provider — the gate stands in front of it', async () => {
+      alreadyHeld();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(graph.assignLicense).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 The one line this whole change exists for, and the H1 trigger:
+     * `assignedQuantity` has counted every successful assign since W36 and now
+     * counts every assign that CHANGED something. `POWERAUTOMATE_ATTENDED_RPA`
+     * (alloc 0 / assigned 1 / In M365 90) is the live proof that a ledger
+     * number, once wrong, never corrects itself.
+     */
+    it('does not move the ledger', async () => {
+      alreadyHeld();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tx.opcoSkuLedger.upsert).not.toHaveBeenCalled();
+    });
+
+    /**
+     * ADR-0034 D3 = option A. Not B (stop at READY — the request would never
+     * close and operators would build a backlog of lines that are, in fact,
+     * done) and not C (a new stage — that touches the stage machine, a §5.1
+     * locked decision, and would have made this a Phase rather than a Change).
+     */
+    it('still marks the line ASSIGNED and recomputes the request status', async () => {
+      alreadyHeld();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tx.requestLineItem.update).toHaveBeenCalledWith({
+        where: { id: 'li1' },
+        data: { stage: 'ASSIGNED', assignedAt: expect.any(Date) },
+      });
+      expect(tx.request.update).toHaveBeenCalled();
+    });
+
+    it('reports holding / seats / assign / ledger as skipped, and still succeeds', async () => {
+      alreadyHeld();
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      // `assigned`, not `blocked`: nothing refused. The person has what the
+      // request asked for, which is the target state (ADR-0034 D2).
+      expect(res.outcome).toBe('assigned');
+      expect(res.failedAt).toBeUndefined();
+      const status = (key: string) =>
+        res.steps.find((s) => s.key === key)?.status;
+      expect(status('holding')).toBe('skipped');
+      expect(status('seats')).toBe('skipped');
+      expect(status('assign')).toBe('skipped');
+      expect(status('ledger')).toBe('skipped');
+      // Every step still reported, in run order — skipping is not dropping.
+      expect(res.steps).toHaveLength(11);
+    });
+
+    /**
+     * Asserted as "Graph inventory was never read", not merely as "it
+     * succeeded": that is the falsification. Remove the skip branch and
+     * `getSubscribedSkus` returning [] makes `!tenantSku` refuse, so this goes
+     * red. Asserting the outcome alone would let a version that still pays for
+     * the round-trip pass. (Same shape as CH-026 E-5.)
+     */
+    it('does not read tenant seat inventory — no seat is being consumed', async () => {
+      alreadyHeld();
+      graph.getSubscribedSkus.mockResolvedValue([]);
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.outcome).toBe('assigned');
+      expect(graph.getSubscribedSkus).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 The CONDITION D3 rests on, not a nicety. `assignedAt` gets a value
+     * while the ledger does not move, so the timeline is the only place that
+     * can tell this run apart from an ordinary one — and whoever reconciles a
+     * ledger three days from now has nothing else to go on.
+     */
+    it('says on the timeline that nothing was assigned', async () => {
+      alreadyHeld();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      /**
+       * TWO assertions, and the second one is why the first is worth anything.
+       *
+       * Hard-coded expectation FIRST: CH-023 shipped a `toBe(\`… ${step.detail}\`)`
+       * that could never fail, because code and test drew the value from the
+       * same place. This one pins the words.
+       */
+      expect(assignEvent().message).toBe(
+        'The target user already holds SPE_E3 in M365 — ' +
+          'no licence was assigned and the ledger was not incremented',
+      );
+      // …and THIS one pins that it is still derived from the step rather than
+      // written twice, which is what stops the dialog and the timeline saying
+      // different things about the same call.
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+      expect(assignEvent().message).toBe(
+        res.steps.find((s) => s.key === 'holding')?.detail,
+      );
+    });
+
+    /**
+     * Both things really happened: the gate refused on the allocation and an
+     * admin took responsibility for going past it, and only afterwards did it
+     * turn out the licence was already there. ADR-0016 D6 requires the override
+     * on the timeline; ADR-0034 D3 requires the already-held fact. Neither may
+     * evict the other.
+     */
+    it('keeps a budget override visible alongside the already-held note', async () => {
+      alreadyHeld();
+      prisma.opcoSkuLedger.findUnique.mockResolvedValue(ledgerRow(3, 3));
+
+      await service.assignLineItem(
+        'li1',
+        undefined,
+        ADMIN,
+        'urgent onboarding, CFO approved',
+      );
+
+      const message = assignEvent().message as string;
+      expect(message).toContain('already holds SPE_E3');
+      expect(message).toContain('OpCo budget overridden (3/3)');
+      expect(message).toContain('urgent onboarding, CFO approved');
+    });
+  });
+
+  /**
+   * CH-029 / ADR-0034 D6 — the read fails.
+   *
+   * fail-OPEN, deliberately: this gate is accounting accuracy, not a safety
+   * boundary. Refusing here would stop a licence somebody actually needs in
+   * order to protect a number — the opposite trade-off from the ADR-0016 budget
+   * gate it sits beside, which enforces a business rule and rightly refuses.
+   */
+  describe('assignLineItem — the holding read fails (ADR-0034 D6)', () => {
+    const readFails = () => {
+      arrangeHappy();
+      graph.getUserAssignedSkuIds.mockRejectedValue(
+        Object.assign(new Error('AADSTS700038: expired credential'), {
+          statusCode: -1,
+        }),
+      );
+    };
+
+    it('assigns anyway rather than refusing', async () => {
+      readFails();
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(res.outcome).toBe('assigned');
+      expect(graph.assignLicense).toHaveBeenCalled();
+    });
+
+    // i.e. it degrades to EXACTLY the pre-CH-029 behaviour, double-count risk
+    // included. That is the accepted cost of fail-open, stated out loud.
+    it('still moves the ledger', async () => {
+      readFails();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 The whole of D6's second half. A gate that reports `ok` when it never
+     * answered is indistinguishable from one that is not running at all, and
+     * the ADR names precisely that silent degradation as the residual risk —
+     * with this sentence as its only defence.
+     */
+    it('does NOT report the step as ok', async () => {
+      readFails();
+
+      const res = await service.assignLineItem('li1', undefined, ADMIN);
+
+      const holding = res.steps.find((s) => s.key === 'holding');
+      expect(holding?.status).not.toBe('ok');
+      expect(holding?.detail).toContain('Could not confirm');
+    });
+
+    /**
+     * …and it outlives the dialog. A step nobody expanded, in a modal that gets
+     * dismissed, is not a defence against a risk whose whole shape is "nobody
+     * noticed for months".
+     */
+    it('records the uncertainty on the request timeline', async () => {
+      readFails();
+
+      await service.assignLineItem('li1', undefined, ADMIN);
+
+      expect(assignEvent().message).toBe(
+        'Could not confirm whether the target user already holds SPE_E3 — ' +
+          'the M365 lookup failed, so the licence was assigned anyway. ' +
+          'If they already had it, the ledger now counts it twice',
+      );
+    });
+  });
+
+  /**
+   * H5 / ADR-0034 D1 — one decision, both provider paths.
+   *
+   * This is the test the ADR asks for by name, and it needs a second wiring:
+   * the suite's default provider is the real GraphLicenseProvider, and Graph's
+   * POST is idempotent — it can never answer `already_assigned`. Only n8n can,
+   * which is exactly the extra knowledge W39 OQ-1 refused to act on because
+   * acting on it would have made switching provider switch ledger semantics
+   * (ADR-0017 D0). Moving the question upstream of the provider is what makes
+   * the two agree without anybody having to trust n8n.
+   */
+  describe('assignLineItem — one decision, both provider paths (H5)', () => {
+    /** An n8n-shaped provider: it CAN report already_assigned, and does. */
+    const n8nLike = () => ({
+      findUser: jest.fn().mockResolvedValue({
+        userPrincipalName: 'new.user@rhk.com',
+        usageLocation: 'HK',
+      }),
+      listTenantSkus: jest.fn().mockResolvedValue([
+        {
+          skuId: 'guid-1',
+          prepaidEnabled: 100,
+          consumedUnits: 80,
+          assignableUnits: 100,
+        },
+      ]),
+      assignLicense: jest
+        .fn()
+        .mockResolvedValue({ status: 'already_assigned' }),
+    });
+
+    /** Same mocks, same service, a different seam ② implementation behind it. */
+    const withProvider = async (licenseOps: unknown) => {
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          AssignService,
+          { provide: PrismaService, useValue: prisma },
+          { provide: GraphService, useValue: graph },
+          { provide: LicenseOperationsProvider, useValue: licenseOps },
+          {
+            provide: HoldingCheckService,
+            useFactory: (g: GraphService) => new HoldingCheckService(g),
+            inject: [GraphService],
+          },
+          { provide: ServiceNowService, useValue: snow },
+          { provide: TicketUpdateProvider, useValue: tickets },
+          { provide: OutboundFailureService, useValue: failures },
+          { provide: AuditService, useValue: audit },
+        ],
+      }).compile();
+      return moduleRef.get(AssignService);
+    };
+
+    it('short-circuits the n8n path too — same skip, same untouched ledger', async () => {
+      arrangeHappy();
+      graph.getUserAssignedSkuIds.mockResolvedValue(['guid-1']);
+      const n8n = n8nLike();
+
+      const res = await (
+        await withProvider(n8n)
+      ).assignLineItem('li1', undefined, ADMIN);
+
+      expect(n8n.assignLicense).not.toHaveBeenCalled();
+      expect(tx.opcoSkuLedger.upsert).not.toHaveBeenCalled();
+      expect(res.steps.find((s) => s.key === 'assign')?.status).toBe('skipped');
+      // The Graph path asserts the identical three things above; that they are
+      // asserted TWICE, once per implementation, is the point of this describe.
+    });
+
+    /**
+     * The other half, and the one that keeps this honest: W39 OQ-1's handling
+     * of a provider-reported `already_assigned` is deliberately UNCHANGED. It
+     * is now only reachable when the holding read could not answer (D6) or when
+     * something raced — and in both of those, counting it is still right.
+     *
+     * Without this, "we fixed the double-count" could quietly have meant "we
+     * changed what the provider's answer means", which is the D0 violation the
+     * whole ADR was written to avoid.
+     */
+    it('leaves the provider-reported already_assigned path exactly as W39 left it', async () => {
+      arrangeHappy();
+      graph.getUserAssignedSkuIds.mockResolvedValue([]); // platform says: not held
+      const n8n = n8nLike();
+
+      const res = await (
+        await withProvider(n8n)
+      ).assignLineItem('li1', undefined, ADMIN);
+
+      expect(n8n.assignLicense).toHaveBeenCalled();
+      expect(tx.opcoSkuLedger.upsert).toHaveBeenCalled();
+      expect(res.steps.find((s) => s.key === 'assign')?.status).toBe('ok');
     });
   });
 

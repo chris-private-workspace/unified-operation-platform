@@ -142,6 +142,29 @@ export class GraphService implements OnModuleInit {
     }
   }
 
+  /**
+   * Which SKUs this user currently holds, as GUIDs.
+   *
+   * CH-029 / ADR-0034 D1 — read-only, and deliberately its own call rather than
+   * an extra `$select` on `findUser`: on the assign path `findUser` runs through
+   * the LicenseOperationsProvider seam, and D1 is explicit that this fact must
+   * NOT come from a switchable provider. Riding along on the seam's lookup would
+   * make the answer depend on which provider is configured, which is the exact
+   * thing ADR-0017 D0 keeps on the platform.
+   *
+   * Throws on a missing user rather than returning [] — "has no licences" and
+   * "does not exist" are different facts, and the caller (holding-check) treats
+   * an unanswerable read as unknown, not as a clean no.
+   */
+  async getUserAssignedSkuIds(userIdOrUpn: string): Promise<string[]> {
+    const u = await this.client
+      .api(`/users/${encodeURIComponent(userIdOrUpn)}`)
+      .select(['assignedLicenses'])
+      .get();
+    const rows = (u?.assignedLicenses ?? []) as { skuId?: string }[];
+    return rows.map((r) => r.skuId).filter((id): id is string => !!id);
+  }
+
   /** usageLocation is mandatory before a license can be assigned. */
   async setUsageLocation(userId: string, usageLocation: string): Promise<void> {
     await this.client.api(`/users/${userId}`).patch({ usageLocation });
