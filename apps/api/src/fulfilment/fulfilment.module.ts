@@ -26,6 +26,7 @@ import { ActivityController } from './activity.controller';
 import { ActivityService } from './activity.service';
 import { SyncSweepService } from './sync-sweep.service';
 import { SyncCheckService } from './sync-check.service';
+import { HoldingCheckService } from './holding-check.service';
 import { ServiceNowImportController } from './servicenow-import.controller';
 import { ServiceNowImportService } from './servicenow-import.service';
 
@@ -129,6 +130,12 @@ export async function requestSubmissionProviderFactory(
     // boundary rule it lives under (GraphService, never the n8n-switchable
     // provider — ADR-0017 D0) is easier to guard on a class that has one job.
     SyncCheckService,
+    // CH-029 / ADR-0034 D1 — "does this person already hold this SKU". Separate
+    // from AssignService for the same boundary reason SyncCheckService is: it
+    // must reach GraphService DIRECTLY and never the n8n-switchable seam (D0),
+    // and that rule is easier to guard — and is guarded — on a class with one
+    // job. Assign injects this service, not GraphService.
+    HoldingCheckService,
     // ADR-0008 D3 / Phase 丙 (W26): outbound provider picked by the connector
     // config resolver (DB-then-env since W34 / ADR-0013) — see
     // requestSubmissionProviderFactory above.

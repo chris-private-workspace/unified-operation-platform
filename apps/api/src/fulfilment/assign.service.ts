@@ -29,6 +29,7 @@ import {
   type TicketTransition,
 } from './outbound-failure-fields';
 import { SYNC_GATE_MESSAGE } from './sync-gate-messages';
+import { HOLDING_STATUS, HoldingCheckService } from './holding-check.service';
 import { scrubPii } from '../integration/scrub-pii';
 import {
   type AssignResult,
@@ -55,6 +56,11 @@ export class AssignService {
     // ADR-0017 seam ④ (W40). Same rule as seam ② above: this service must never
     // learn which implementation it got.
     private readonly tickets: TicketUpdateProvider,
+    // CH-029 / ADR-0034 D1. Its own service, not GraphService inline: this fact
+    // must NOT come through seam ②, and the W38 boundary test enforces that by
+    // forbidding a GraphService import in this file (same rule SyncCheckService
+    // lives under).
+    private readonly holding: HoldingCheckService,
     private readonly snow: ServiceNowService,
     private readonly failures: OutboundFailureService,
     private readonly audit: AuditService,
@@ -319,6 +325,59 @@ export class AssignService {
     }
 
     /**
+     * ── Already-held gate (CH-029 / ADR-0034 D1) ──
+     *
+     * The platform asks Graph ITSELF whether this person already has this SKU,
+     * rather than letting the provider tell it afterwards. Only n8n can report
+     * `already_assigned`; Graph's POST is idempotent and says nothing — so
+     * acting on the provider's answer would mean swapping the provider also
+     * swaps ledger semantics, which ADR-0017 D0 forbids and which W39 OQ-1 had
+     * to concede to. Asking first is not a softening of D0: the decision stays
+     * on the platform and BOTH provider paths receive the same one.
+     *
+     * Position is argued in assign-step.ts: after `budget` (ADR-0016 D5 — a
+     * busted OpCo allocation must not cost a vendor round-trip) and before
+     * `seats` (nobody consumes a seat for a licence they already hold, and
+     * `seats` has no override to get past).
+     */
+    const holdingStatus = await this.holding.check(
+      request.targetUpn,
+      item.sku.skuId,
+    );
+    const alreadyHeld = holdingStatus === HOLDING_STATUS.HELD;
+    if (alreadyHeld) {
+      // `skipped`, not `failed` (ADR-0034 D2): this is not a refusal. The
+      // person already has what the request asked for, which is the target
+      // state — so `outcome` stays `assigned` and the line still closes (D3).
+      steps.push({
+        key: 'holding',
+        status: 'skipped',
+        detail:
+          `The target user already holds ${item.sku.skuPartNumber} in M365 — ` +
+          'no licence was assigned and the ledger was not incremented',
+      });
+    } else if (holdingStatus === HOLDING_STATUS.UNKNOWN) {
+      /**
+       * ADR-0034 D6 — fail-open, but LOUD. Not `ok`: claiming a check passed
+       * when it never answered is how this gate would quietly degrade back to
+       * the pre-CH-029 behaviour with nobody noticing. The ADR names that as
+       * the residual risk and names this sentence as the only defence against
+       * it, which is why it also reaches the request timeline below and not
+       * just this response.
+       */
+      steps.push({
+        key: 'holding',
+        status: 'skipped',
+        detail:
+          `Could not confirm whether the target user already holds ${item.sku.skuPartNumber} — ` +
+          'the M365 lookup failed, so the licence was assigned anyway. ' +
+          'If they already had it, the ledger now counts it twice',
+      });
+    } else {
+      pass('holding');
+    }
+
+    /**
      * ── Tenant seat gate ──
      *
      * 🔴 A SEPARATE step from `budget`, and this is the whole argument for not
@@ -329,7 +388,20 @@ export class AssignService {
      * CH-026 / ADR-0032 D4 — the gate now says what it means for the two cases
      * where it used to be accidentally right or plainly wrong.
      */
-    if (item.sku.seatModel === SEAT_MODEL.UNLIMITED) {
+    if (alreadyHeld) {
+      /**
+       * CH-029 — a licence the user already has consumes no further seat, so
+       * there is nothing to check it against. Same reasoning as the unlimited
+       * branch below, and the same reason ADR-0016 D5 gives for skipping the
+       * Graph inventory read: a check we are not going to make must not cost a
+       * vendor round-trip.
+       */
+      steps.push({
+        key: 'seats',
+        status: 'skipped',
+        detail: `No seat is needed — ${item.sku.skuPartNumber} is already on the user`,
+      });
+    } else if (item.sku.seatModel === SEAT_MODEL.UNLIMITED) {
       /**
        * `skipped`, not `ok` (assign-step.ts): nothing was checked. An unlimited
        * SKU has no purchased-seat count to check against, and until now it
@@ -418,40 +490,83 @@ export class AssignService {
     }
 
     // ── The assignment itself (external side-effect, BEFORE the DB transaction) ──
-    // A transport failure throws (503) exactly as before; what comes back here
-    // is a semantic outcome (ADR-0017 D2, W38 plan §7 D1).
-    const outcome = await this.licenseOps.assignLicense(
-      request.targetUpn,
-      item.sku.skuId,
-      { usageLocation },
-    );
-    // W39 OQ-1 (Chris, 2026-07-28): 'already_assigned' is treated EXACTLY like
-    // 'assigned' — ledger increment included.
-    //
-    // Only the n8n provider can report it; Graph's POST is idempotent and says
-    // nothing, so on that path a replay has always counted as a fresh assign.
-    // Acting on n8n's extra knowledge here would mean switching provider also
-    // switches ledger semantics, which is precisely what D0 forbids. The
-    // double-count risk is real but PRE-EXISTING: fixing it is a separate
-    // change that has to fix both paths at once, not a side effect of 庚.
-    if (
-      outcome.status !== 'assigned' &&
-      outcome.status !== 'already_assigned'
-    ) {
-      // Still loud for everything else. 'not_synced' cannot reach here (the
-      // findUser gate above already returned 400) and 'no_seats' is produced by
-      // neither provider — the seat check is the platform's own, and workflow
-      // 2003 deliberately does not do one. So this stays a genuine "should not
-      // happen", not a swallowed case.
-      // H4: the status word only — outcome.details must never be echoed.
-      throw new ServiceUnavailableException(
-        `License provider returned an outcome this path does not handle: ${outcome.status}`,
+    if (alreadyHeld) {
+      // CH-029 / ADR-0034 D2 — the provider is not called at all. Skipping the
+      // call is the point: it is what makes the ledger decision below the same
+      // one on BOTH provider paths, instead of depending on whether the one in
+      // use happens to report `already_assigned`.
+      steps.push({
+        key: 'assign',
+        status: 'skipped',
+        detail: 'Nothing to assign — the licence is already on the user',
+      });
+    } else {
+      // A transport failure throws (503) exactly as before; what comes back here
+      // is a semantic outcome (ADR-0017 D2, W38 plan §7 D1).
+      const outcome = await this.licenseOps.assignLicense(
+        request.targetUpn,
+        item.sku.skuId,
+        { usageLocation },
       );
+      /**
+       * W39 OQ-1 (Chris, 2026-07-28): 'already_assigned' is treated EXACTLY
+       * like 'assigned' — ledger increment included. Only the n8n provider can
+       * report it; Graph's POST is idempotent and says nothing, so on that path
+       * a replay has always counted as a fresh assign. Acting on n8n's extra
+       * knowledge HERE would mean switching provider also switches ledger
+       * semantics, which is precisely what D0 forbids.
+       *
+       * 🔴 CH-029 / ADR-0034 — that comment used to end "fixing it is a
+       * separate change that has to fix both paths at once". This is that
+       * change, and it fixes both paths by NOT touching this line: the gate
+       * moved UPSTREAM of the provider (see `holding` above), so a licence the
+       * user already has never reaches here at all. Reaching this line with
+       * `already_assigned` now means one of two things — the holding read
+       * failed (D6 fail-open, and the step above says so), or it raced — and in
+       * both of those the pre-existing behaviour is still the right one.
+       */
+      if (
+        outcome.status !== 'assigned' &&
+        outcome.status !== 'already_assigned'
+      ) {
+        // Still loud for everything else. 'not_synced' cannot reach here (the
+        // findUser gate above already returned 400) and 'no_seats' is produced by
+        // neither provider — the seat check is the platform's own, and workflow
+        // 2003 deliberately does not do one. So this stays a genuine "should not
+        // happen", not a swallowed case.
+        // H4: the status word only — outcome.details must never be echoed.
+        throw new ServiceUnavailableException(
+          `License provider returned an outcome this path does not handle: ${outcome.status}`,
+        );
+      }
+      // 'already_assigned' counts as ok here for the same reason it counts for
+      // the ledger (W39 OQ-1): the provider distinction must not leak into
+      // platform semantics.
+      pass('assign');
     }
-    // 'already_assigned' counts as ok here for the same reason it counts for
-    // the ledger (W39 OQ-1): the provider distinction must not leak into
-    // platform semantics.
-    pass('assign');
+
+    /**
+     * CH-029 / ADR-0034 D3 — an already-held line still moves to `ASSIGNED`
+     * (option A), which leaves one genuine tension: `assignedAt` gets a value
+     * while the ledger does not move. The timeline is the ONLY place that can
+     * tell those two runs apart afterwards, so saying so there is a CONDITION
+     * of D3, not a nicety — without it, nobody reconciling a ledger three days
+     * later can find out which lines counted and which did not.
+     *
+     * Derived from the `holding` step rather than phrased again here, for the
+     * reason CH-023 gives: two copies of one sentence eventually disagree about
+     * the same call. The `undefined` case (an ordinary assign) keeps today's
+     * wording byte-for-byte, override clause included.
+     */
+    const holdingNote = steps.find((s) => s.key === 'holding')?.detail;
+    // ADR-0016 D6: an override has to be visible on the request's own timeline,
+    // not only in the admin-only audit log — the people reading this request are
+    // the ones who need to know the budget was busted. It survives the
+    // already-held path too: the gate really did refuse and an admin really did
+    // go past it, whatever happened afterwards.
+    const overrideSuffix = budgetOverridden
+      ? ` — OpCo budget overridden (${assignedBefore}/${allocated}): ${overrideReason}`
+      : '';
 
     // ── Atomic domain writes (OD2) — only assignedQuantity moves (DESIGN §5) ──
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -459,20 +574,29 @@ export class AssignService {
         where: { id: lineItemId },
         data: { stage: LineItemStage.ASSIGNED, assignedAt: new Date() },
       });
-      await tx.opcoSkuLedger.upsert({
-        where: {
-          opcoId_skuCatalogId: {
+      /**
+       * 🔴 CH-029 / ADR-0034 D2 — the one line this whole change exists for.
+       * No licence moved in M365, so no seat may move in the ledger either.
+       * This is the H1 trigger: `assignedQuantity` has counted every successful
+       * assign since W36, and it now counts every assign that CHANGED
+       * something instead.
+       */
+      if (!alreadyHeld) {
+        await tx.opcoSkuLedger.upsert({
+          where: {
+            opcoId_skuCatalogId: {
+              opcoId: request.opcoId,
+              skuCatalogId: item.sku.id,
+            },
+          },
+          create: {
             opcoId: request.opcoId,
             skuCatalogId: item.sku.id,
+            assignedQuantity: 1,
           },
-        },
-        create: {
-          opcoId: request.opcoId,
-          skuCatalogId: item.sku.id,
-          assignedQuantity: 1,
-        },
-        update: { assignedQuantity: { increment: 1 } },
-      });
+          update: { assignedQuantity: { increment: 1 } },
+        });
+      }
       await tx.requestEvent.create({
         data: {
           requestId: request.id,
@@ -481,12 +605,9 @@ export class AssignService {
           fromStage: LineItemStage.READY,
           toStage: LineItemStage.ASSIGNED,
           actorId: actor.id,
-          // ADR-0016 D6: an override has to be visible on the request's own
-          // timeline, not only in the admin-only audit log — the people reading
-          // this request are the ones who need to know the budget was busted.
-          message: budgetOverridden
-            ? `Assigned ${item.sku.skuPartNumber} — OpCo budget overridden (${assignedBefore}/${allocated}): ${overrideReason}`
-            : `Assigned ${item.sku.skuPartNumber}`,
+          message: holdingNote
+            ? `${holdingNote}${overrideSuffix}`
+            : `Assigned ${item.sku.skuPartNumber}${overrideSuffix}`,
         },
       });
       // ADR-0016 D6 — the override also lands in the platform audit trail, in
@@ -521,7 +642,18 @@ export class AssignService {
       });
       return li;
     });
-    pass('ledger');
+    if (alreadyHeld) {
+      // The counterpart of the skipped upsert above. `skipped` rather than
+      // absent: the step WAS reached and a decision was made about it, which is
+      // a different fact from a step the run never got to (see AssignResult).
+      steps.push({
+        key: 'ledger',
+        status: 'skipped',
+        detail: 'Ledger unchanged — no seat was consumed',
+      });
+    } else {
+      pass('ledger');
+    }
 
     // ── ServiceNow write-back (mirror only, non-fatal — OD4) ──
     const note = `License ${item.sku.skuPartNumber} assigned via platform.`;
@@ -666,7 +798,8 @@ export class AssignService {
 
     // H4: never log the target UPN (PII) — sku + ids only.
     this.logger.log(
-      `Assigned line item ${lineItemId} (${item.sku.skuPartNumber}, request ${request.id})`,
+      `${alreadyHeld ? 'Closed already-held' : 'Assigned'} line item ${lineItemId} ` +
+        `(${item.sku.skuPartNumber}, request ${request.id})`,
     );
     const result: AssignResult = { outcome: 'assigned', steps };
     /**

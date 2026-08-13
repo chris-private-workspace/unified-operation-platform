@@ -125,10 +125,13 @@ export interface CatalogSyncResult {
 
 /** POST /license/reconcile → ReconcileResultDto */
 export interface ReconcileResult {
-  checked: number; // active SKUs checked
+  checked: number; // active SKUs walked (the skipped ones included)
   opened: number;
   updated: number;
+  /** Delta reached zero — or the SKU is unlimited (CH-029 / ADR-0034 D4). */
   resolved: number;
+  /** Left out for having no seat account at all (CH-029 / ADR-0034 D4). */
+  skippedUnlimited: number;
   drift: number; // OPEN drift alerts remaining after this run
 }
 
@@ -689,7 +692,7 @@ export interface RequestLineItem {
 // as a TS error at the point of use rather than as a wrong screen.
 
 export type AssignStepKey =
-  // The seven gates, in the order the backend runs them. Order is contract:
+  // The eight gates, in the order the backend runs them. Order is contract:
   // it is what lets a reader say "it reached `budget`, so both syncs were fine".
   | 'stage'
   | 'sync-azure'
@@ -697,6 +700,10 @@ export type AssignStepKey =
   | 'directory'
   | 'usage-location'
   | 'budget'
+  // CH-029 / ADR-0034 D1 — between budget and seats, and both sides are
+  // arguments: a busted OpCo allocation must not cost a vendor round-trip
+  // (ADR-0016 D5), and somebody who already holds the licence needs no seat.
+  | 'holding'
   | 'seats'
   // …then the three side-effects.
   | 'assign'

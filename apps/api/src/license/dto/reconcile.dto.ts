@@ -27,10 +27,29 @@ export class DriftAlertDto {
 
 /** Summary of a POST /license/reconcile run. */
 export class ReconcileResultDto {
-  @ApiProperty({ description: 'active SKUs checked' }) checked!: number;
+  @ApiProperty({
+    description: 'active SKUs walked (includes the skipped ones)',
+  })
+  checked!: number;
   @ApiProperty() opened!: number;
   @ApiProperty() updated!: number;
-  @ApiProperty() resolved!: number;
+  @ApiProperty({
+    description:
+      'alerts closed this run — the delta reached zero, or the SKU is unlimited (CH-029 / ADR-0034 D4)',
+  })
+  resolved!: number;
+  /**
+   * CH-029 / ADR-0034 D4. Declared here as well as on the service interface
+   * because this DTO is the OpenAPI truth: a field the service returns but the
+   * DTO never declares is invisible to every generated client, and BUG-011 is
+   * the day that cost a bug fix (a new read-model field that no route ever
+   * emitted, with three green test layers around it).
+   */
+  @ApiProperty({
+    description:
+      'active SKUs left out because seatModel is unlimited — they have no seat account to reconcile',
+  })
+  skippedUnlimited!: number;
   @ApiProperty({ description: 'OPEN drift alerts after this run' })
   drift!: number;
 }

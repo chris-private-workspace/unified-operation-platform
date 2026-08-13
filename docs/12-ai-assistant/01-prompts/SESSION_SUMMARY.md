@@ -5,7 +5,9 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 1012 test(73 suites)· web 362 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0034**(🟢 **0034 = Accepted 2026-08-13**;落地單 = **CH-029**,`approved` 未開工)(🔴 **0031 = Rejected**,見下)· CH 到 **029**(🔴 **029 = `proposed`,三條 OQ 未答,零 code**) · BUG 到 **011**(✅ closed)。
+**當前座標(2026-08-11)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 1040 test(74 suites)· web 368 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0034**(🟢 **0034 = Accepted 2026-08-13**;落地單 = **CH-029**,**實作 + test 已收**)(🔴 **0031 = Rejected**,見下)· CH 到 **029**(🟢 **029 = 實作收晒 2026-08-13,淨低 H6 真 render + live 驗**) · BUG 到 **011**(✅ closed)。
+
+⚠️ **上面呢句 2026-08-13 更正過兩處,而兩處都係同一格入面自己同自己唔同步**:CH-029 喺同一句出現兩次,一處寫 `approved 未開工`、另一處寫 `proposed,三條 OQ 未答` —— 而**兩個都已經過時**。⇒ **改一個 ID 嘅狀態之前,先 grep 成份檔數吓佢有幾多個 entry**(呢個形狀 2026-08-13 一日內中咗六次)。
 
 🟢 **CH-021 ✅ closed(2026-08-11)** —— onboarding intake 通知(該 OpCo `OPCO_IT` + `OPS_NOTIFICATION_MAILBOX`),**A12 live 真寄兼 Chris 確認收到**。🔴 **A12 喺本機做,唔喺 DEV**:本機 ACS 憑證係真值,`ACS_SENDER_ADDRESS` 逐字等於 `CH-012-verify A4`(真送達過)⇒ DEV 換唔到嘢返嚟;而 **canonical intake 路零外部副作用**(唔掂 SN、唔掂 Graph)。⚠️ **fixture 一定要揀冇 `OPCO_IT` 用戶嘅 OpCo** —— seed 嗰個係 `opco.it.rhk@rapo.com.hk`,**真公司 domain**,用預設 RHK 會真寄畀佢。
 

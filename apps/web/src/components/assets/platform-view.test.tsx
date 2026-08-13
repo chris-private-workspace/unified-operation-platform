@@ -179,9 +179,14 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
 
     // CH-027 / ADR-0033 D7 — "Prepaid seats" lasted one day: D2 made the total
     // count grace-period seats too, so the label had to stop saying prepaid.
-    expect(screen.getByText('Available seats')).toBeInTheDocument();
-    expect(screen.queryByText('Prepaid seats')).not.toBeInTheDocument();
-    expect(screen.queryByText('Owned in M365')).not.toBeInTheDocument();
+    //
+    // Scoped to the tiles since CH-029: the scope note now names these cards in
+    // prose, so an unscoped getByText matches twice and — worse — a scoped-out
+    // version would pass on the PROSE alone even if the label itself regressed.
+    const kpis = within(screen.getByTestId('tenant-kpis'));
+    expect(kpis.getByText('Available seats')).toBeInTheDocument();
+    expect(kpis.queryByText('Prepaid seats')).not.toBeInTheDocument();
+    expect(kpis.queryByText('Owned in M365')).not.toBeInTheDocument();
     // The count is the whole point: a total that quietly shrank by four million
     // has to say how many SKUs went with it.
     expect(screen.getByText('22 unlimited SKUs excluded')).toBeInTheDocument();
@@ -190,6 +195,46 @@ describe('PlatformView — seat model rendering (CH-026)', () => {
     expect(
       screen.getByText('200 unallocated (prepaid SKUs)'),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * CH-029 / ADR-0034 D5 — on DEV the real figure is −25,151, and the figure
+   * itself STAYS (Chris: "the negative is honest"; `skusOverAllocated` was 68,
+   * so it is not lying). What changed is that it is read out loud: "−25151
+   * unallocated" is not a sentence anybody can act on.
+   */
+  it('reads a negative unallocated total as over-allocation, not as a minus sign', () => {
+    arrange(
+      [row({ skuCatalogId: 'e3', owned: 2000 })],
+      stats({ totalUnallocated: -25151, skusOverAllocated: 68 }),
+    );
+
+    render(<PlatformView />);
+
+    const kpis = within(screen.getByTestId('tenant-kpis'));
+    expect(
+      kpis.getByText('25151 over-allocated (prepaid SKUs)'),
+    ).toBeInTheDocument();
+    // 🔴 The falsification half: a version that merely dropped the sign would
+    // pass the line above while saying the opposite of what is true.
+    expect(kpis.queryByText(/unallocated/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The other side of the same condition. Without it, "always say
+   * over-allocated" would satisfy the test above and mislabel every healthy
+   * tenant.
+   */
+  it('still reads a positive one as unallocated', () => {
+    arrange([row({ skuCatalogId: 'e3', owned: 2000 })]);
+
+    render(<PlatformView />);
+
+    const kpis = within(screen.getByTestId('tenant-kpis'));
+    expect(
+      kpis.getByText('200 unallocated (prepaid SKUs)'),
+    ).toBeInTheDocument();
+    expect(kpis.queryByText(/over-allocated/)).not.toBeInTheDocument();
   });
 
   it('says nothing about unlimited SKUs when there are none', () => {

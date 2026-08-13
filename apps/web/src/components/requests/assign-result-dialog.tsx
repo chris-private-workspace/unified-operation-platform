@@ -31,14 +31,15 @@ import type {
  *     Faking a run would be inventing a timeline the server never reported.
  *  2. **No Retry button.** W45 plan §2.2 puts retry out of scope, and DS-3
  *     allows one primary action — which is Done.
- *  3. **Ten steps, not five, and `budget` / `seats` stay apart.** The
+ *  3. **Eleven steps, not five, and `budget` / `seats` stay apart.** The
  *     prototype folds them into one `precheck`; 2026-08-07 on DEV hit both
  *     layers on real traffic and the remedies do not overlap (raise the OpCo
  *     allocation vs. buy tenant seats). Folding them produces a screen that
  *     cannot say which limit stopped you — W45 plan §3.1.
  *
- * The seven gates ARE collapsed for reading (plan §3.2) — one summary line that
- * expands. That is a display choice; the API still reports all ten separately.
+ * The gates ARE collapsed for reading (plan §3.2) — one summary line that
+ * expands. That is a display choice; the API still reports every step
+ * separately. (CH-029 added an eighth gate, `holding`.)
  */
 
 /** Plan §3, verbatim. Operator-facing, so no key ever reaches the screen raw. */
@@ -49,6 +50,7 @@ const STEP_LABEL: Record<AssignStepKey, string> = {
   directory: 'User found in directory',
   'usage-location': 'Usage location set',
   budget: 'OpCo allocation',
+  holding: 'Not already licensed',
   seats: 'Tenant seat available',
   assign: 'Licence applied via provider',
   ledger: 'Ledger updated',
@@ -90,6 +92,7 @@ const GATE_KEYS: AssignStepKey[] = [
   'directory',
   'usage-location',
   'budget',
+  'holding',
   'seats',
 ];
 
@@ -177,6 +180,20 @@ export function AssignResultDialog({
     ? result.steps.find((s) => s.key === result.failedAt)
     : undefined;
 
+  /**
+   * CH-029 / ADR-0034 D2-D3 — an already-held line ends `assigned` and moves to
+   * ASSIGNED, but no licence moved and no seat was counted. The banner used to
+   * say "ledger updated" unconditionally, which on that path is simply untrue,
+   * and it is the one line an operator reads without expanding anything.
+   *
+   * Read off the `ledger` step rather than re-deriving from `holding`: the step
+   * list is what the server actually reported about the ledger, and one screen
+   * inferring a second opinion about it is how a dialog starts disagreeing with
+   * its own rows.
+   */
+  const ledgerSkipped =
+    result.steps.find((s) => s.key === 'ledger')?.status === 'skipped';
+
   return (
     <Dialog
       open
@@ -197,7 +214,7 @@ export function AssignResultDialog({
         </span>
 
         {/* Scrolls on its own so the subject line and the outcome banner stay
-            put — ten expanded steps outrun a laptop viewport. Dialog itself is
+            put — eleven expanded steps outrun a laptop viewport. Dialog itself is
             overflow-hidden and is left alone (shared primitive). */}
         <div className="flex max-h-[46vh] flex-col overflow-y-auto">
           {/* Pre-flight — collapsed by default (plan §3.2). The API still
@@ -260,7 +277,9 @@ export function AssignResultDialog({
               className="mt-[1px] shrink-0 text-ok"
             />
             <span className="text-[12px] leading-[1.45] text-ok">
-              License assigned · ledger updated
+              {ledgerSkipped
+                ? 'Already licensed · nothing assigned, ledger unchanged'
+                : 'License assigned · ledger updated'}
             </span>
           </div>
         ) : (

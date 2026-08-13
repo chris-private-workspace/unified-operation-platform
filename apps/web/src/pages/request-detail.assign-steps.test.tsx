@@ -108,6 +108,8 @@ const GATES_OK: AssignStep[] = [
   { key: 'directory', status: 'ok' },
   { key: 'usage-location', status: 'ok' },
   { key: 'budget', status: 'ok' },
+  // CH-029 / ADR-0034 — the eighth gate, between budget and seats.
+  { key: 'holding', status: 'ok' },
   { key: 'seats', status: 'ok' },
 ];
 
@@ -314,7 +316,7 @@ describe('assign success — what actually happened downstream (G7 / F3-4)', () 
     // its own mono element (DS-5), so the summary is deliberately split across
     // two nodes and only `textContent` sees what the operator actually reads.
     expect(screen.getByText(/checks passed/).textContent).toBe(
-      '7 checks passed',
+      '8 checks passed',
     );
     // Collapsed by default — the individual gates are behind the toggle.
     expect(screen.queryByText('Account synced to Azure AD')).toBeNull();
@@ -343,5 +345,103 @@ describe('assign success — what actually happened downstream (G7 / F3-4)', () 
     );
     expect(primaries.length).toBe(1);
     expect((primaries[0] as HTMLElement).textContent).toBe('Done');
+  });
+});
+
+/**
+ * CH-029 / ADR-0034 D2-D3 — the person already had it.
+ *
+ * The run ends `assigned` and the line closes, but no licence moved and no seat
+ * was counted. Everything below is about the operator being able to READ that
+ * difference: the outcome word is identical to an ordinary success, so if the
+ * screen does not say so, nothing does.
+ */
+describe('assign success — the licence was already there (CH-029)', () => {
+  const ALREADY_HELD: AssignStep[] = [
+    ...GATES_OK.filter((s) => s.key !== 'holding' && s.key !== 'seats'),
+    {
+      key: 'holding',
+      status: 'skipped',
+      detail:
+        'The target user already holds O365_E3 in M365 — no licence was assigned and the ledger was not incremented',
+    },
+    {
+      key: 'seats',
+      status: 'skipped',
+      detail: 'No seat is needed — O365_E3 is already on the user',
+    },
+    {
+      key: 'assign',
+      status: 'skipped',
+      detail: 'Nothing to assign — the licence is already on the user',
+    },
+    {
+      key: 'ledger',
+      status: 'skipped',
+      detail: 'Ledger unchanged — no seat was consumed',
+    },
+    { key: 'ticket', status: 'ok', detail: 'RITM close requested' },
+  ];
+
+  /**
+   * 🔴 The banner is the ONE line an operator reads without expanding anything,
+   * and until CH-029 it said "ledger updated" unconditionally. On this path
+   * that is simply untrue, and it is untrue about the exact number the whole
+   * change exists to protect.
+   */
+  it('does not claim the ledger was updated', () => {
+    assignSucceeds({ outcome: 'assigned', steps: ALREADY_HELD });
+
+    expect(screen.queryByText(/ledger updated/)).toBeNull();
+    expect(screen.getByText(/Already licensed/)).toBeTruthy();
+  });
+
+  /**
+   * A skipped gate is not a passed one — assign-step.ts says so in as many
+   * words. Counting these as passes would put "8 checks passed" on a run where
+   * two of them never ran.
+   */
+  it('counts the skipped gates as skipped, not as passed', () => {
+    assignSucceeds({ outcome: 'assigned', steps: ALREADY_HELD });
+
+    const summary = screen.getByText(/checks passed/).textContent;
+    expect(summary).toBe('6 checks passed · 2 skipped');
+  });
+
+  it('says why, in the operator’s own words, once expanded', () => {
+    assignSucceeds({ outcome: 'assigned', steps: ALREADY_HELD });
+
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByText(/already holds O365_E3 in M365/)).toBeTruthy();
+    expect(screen.getByText('Not already licensed')).toBeTruthy();
+  });
+
+  /**
+   * ADR-0034 D6 — the read failed, so the assign went ahead blind. The
+   * degradation is silent by construction (the outcome is a normal success),
+   * which is why the step is not allowed to read like a check that passed.
+   */
+  it('shows an unconfirmed holding check as skipped, never as passed', () => {
+    assignSucceeds({
+      outcome: 'assigned',
+      steps: [
+        ...GATES_OK.filter((s) => s.key !== 'holding'),
+        {
+          key: 'holding',
+          status: 'skipped',
+          detail:
+            'Could not confirm whether the target user already holds O365_E3 — the M365 lookup failed, so the licence was assigned anyway. If they already had it, the ledger now counts it twice',
+        },
+        { key: 'assign', status: 'ok' },
+        { key: 'ledger', status: 'ok' },
+        { key: 'ticket', status: 'ok', detail: 'RITM close requested' },
+      ],
+    });
+
+    expect(screen.getByText(/checks passed/).textContent).toBe(
+      '7 checks passed · 1 skipped',
+    );
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByText(/Could not confirm/)).toBeTruthy();
   });
 });
