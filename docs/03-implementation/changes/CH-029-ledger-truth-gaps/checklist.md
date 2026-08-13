@@ -67,6 +67,12 @@
   - 🔴 **H4**:九張截圖全部**用完即刪**(`git status --untracked-files=all` 實測**零剩餘**)—— 其中三張帶住真 UPN,**一張都唔可以 commit**
 - [x] F5-5 BACKLOG(R7)+ CLAUDE.md §0/§9 + `SESSION_SUMMARY.md` 座標掃(§14)
 - [x] F5-6 commit + PR
-- [ ] F5-7 🚧 **live 驗**(要部署 #7)——
-  - **D-A**:要一個真係已持有某 SKU 嘅 user + 一張 `READY` line。🔴 **RISK `R10`**:DEV 對真 production tenant 有寫權 ⇒ 撳之前一律先唯讀探測
-  - **D-C**:DEV 跑一次 `reconcile`。**預期 `skippedUnlimited = 22`、OPEN alert 72 → 56、16 個變 `RESOLVED`**。reconcile 對 Graph 唯讀 ⇒ R10 唔適用
+- [x] F5-8 ✅ **部署 #7(`dev-2a68f8d`)2026-08-13 做咗** —— `az account show` 先驗身份(`d2f094a3-…` = 部署 SP,sub `rcitest`)→ `docker login` ACR →**真試 pull `node:20-slim` + `nginx:1.27-alpine`**(login 成功證明唔到 build 得,W44 Day 7 同族)→ build ×2 → push ×2(api `sha256:5cd7f8b7…` / web `sha256:04fb8a94…`)→ params 字串替換(**`lengthDelta = 0`**,2 處)→ dry-run(**四個 sanity 全 `False`**:`environmentId` / `workloadProfile` / `external` / `customDomains` ⇒ infra 配嘅 custom domain + SNI 結構上掂唔到)→ `-Send`(**兩個 PATCH exit 0**)
+- [x] F5-7a ✅ **D-C live 驗收咗(DEV,2026-08-13)** ——
+  - `POST /api/license/reconcile` → **201** `{"checked":101,"opened":0,"updated":56,"resolved":16,"skippedUnlimited":22,"drift":56}` ⇒ **`skippedUnlimited` 22 · `resolved` 16 · `drift` 72 → 56,三個預測數全中**
+  - 🟢 **獨立對數,唔信 endpoint 自己報嗰個**:自己由 `/license/catalog` 攞 `seatModel` join `alert.sku.skuId`(⚠️ **nested,唔係平面 `alert.skuId`** —— OQ-3 嗰次就係喺呢度撞過)⇒ **BEFORE 72 open / 16 unlimited → AFTER 56 open / **0** unlimited**
+  - 🟢 **D4「講得出點解 resolve」live 驗到**:`/admin/audit?action=drift.resolve` → **`total = 16`**,而且 **16/16** 全部 `metadata.reason = unlimited-sku` · `metadata.source = manual-reconcile` · `before.status OPEN → after.status RESOLVED` · `actorType = user` ⇒ **「主動收返」唔係「靜靜消失」,而且分得返同一般 delta 歸零嘅 resolve**
+- [ ] F5-7b 🚧 **D-A live 驗 —— 要 Chris 決定先做得** ——
+  - 🟢 **唯讀探測做咗**(R10 要求):DEV **13 條 line item(9 `ASSIGNED` / 4 `READY`)**,其中 **3 條 `READY` 兼兩道 sync gate 都開** ⇒ 撳落去**直達 Graph**,只剩 budget 一道閘
+  - 🔴 **而呢個新 gate 本身唔係保護** —— 佢只喺「**個人真係已經持有**」嗰陣先短路。揀錯人 = **真派一個 licence 畀真人**
+  - ⇒ **要一個先經 Graph 讀確認過已持有嗰個 SKU 嘅 target**,先撳得。**呢步唔可以由我自己揀。**
