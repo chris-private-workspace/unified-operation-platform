@@ -513,6 +513,49 @@ this.issuer = [
 
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 
+### 2026-08-13 · **驗證 —— 無新部署**(W44 closeout `F8-1`)
+
+DEV 仍然行 `dev-86ed450`(部署 #5)。本次**冇 push 任何 image、冇 PATCH 任何 revision** —— 純粹用 `B8` 解封之後嘅通路,把一路卡住嘅驗證收返。
+
+**Step 0(每次 live 驗第一件事,唔靠上次記錄)** —— `https://rapo-uop-web-dev.rci-t.com/` 四個 endpoint 真打:
+
+| Endpoint | 結果 |
+|---|---|
+| `/` | **200**(561 B,SPA shell) |
+| `/api/auth/sso/status` | **200** `{"enabled":true}` |
+| `/api/me`(無憑證) | **401**(唔係 502/504 ⇒ api 真喺度兼 guard 正常) |
+| `/api/docs/api-json` | **200**(62,834 B 真 OpenAPI) |
+
+#### 🟢🟢 `F6-6` — break-glass 登入(**本 phase 第一次真人登入 DEV**)
+
+`POST /api/auth/login`(`admin@uop.local`,密碼由 `aca.params.dev.json` 讀入變數、**全程冇印出**)→ **200**,`Set-Cookie` 兩個:**`uop_access` + `uop_refresh`** ⇒ ADR-0006 §7 嘅 rotating refresh 設計喺 ACA ingress 後面**完好**,`Secure` cookie 冇被擋。跟住 `GET /api/me` → **200**:
+
+```json
+{"email":"admin@uop.local","displayName":"Local Admin","role":"ADMIN","opcoScopeId":null,"opcoScope":null,"mustChangePassword":false}
+```
+
+⇒ role 真係 **`ADMIN`**;`mustChangePassword: false` **由讀 code 嘅推論升做實測**(見 `F3-7e`)。
+
+#### 🟢🟢 `F6-14` — 400 body 捱唔捱得過 ACA ingress + nginx proxy
+
+`PATCH /api/fulfilment/requests/{id}/line-items/{liId}/assign`,body `{}`(**刻意唔送 `budgetOverrideReason`**)⇒ **400** · `application/json` · **290 B 完整**:
+
+```json
+{"outcome":"blocked","failedAt":"sync-azure","steps":[{"key":"stage","status":"ok"},{"key":"sync-azure","status":"failed","detail":"Phase 1 sync gate not passed: azureSyncedAt is null","retryable":true,"whoFixes":"identity"}],"message":"Phase 1 sync gate not passed: azureSyncedAt is null"}
+```
+
+⇒ `outcome` / `failedAt` / `steps[]` / `whoFixes` **逐個過得到 proxy**,而 ADR-0029 刻意保留嘅舊 shape `message` **同時在** ⇒ **`AssignResultDialog` 喺 DEV 一定開得到**(前端解析本機已 100% 驗過)。`outcome=blocked` ⇒ **零副作用**。
+
+> 🔴 **執行之前嗰次唯讀探測,先至係本次最要緊嘅產出 —— 已升做 RISK `R10`。**
+> DEV 得 **9 條 line item、全部 `RAPO/IT`、全部真嘢**,而其中**三條 `READY` 嘅兩個 sync gate 都已經開咗** ⇒ 撳落去**直達 Graph,只剩 budget 一道閘**;而 DEV 個 `GRAPH_TENANT_ID` 就係**公司 M365 tenant** ⇒ **閘一唔中就真派一個 licence 畀一個真人**。
+> 改揀 **`REQ0043934`**(兩個 gate 都 null)⇒ **結構上到唔到 Graph**。**換閘對驗證目標零損失**(本項驗嘅係「400 body 過唔過 proxy」,而兩道閘行 ADR-0029 **同一條組裝路**),但換返嚟**零真派風險**。
+> 🔴 **唔好靠 budget 閘做安全網** —— 佢係業務規則唔係安全邊界,`budgetOverrideReason` 一送就過。
+
+#### 🟢 `F2-13` — `runningStatus` 被 unset 嘅疑慮,由行為收咗
+
+部署 #1(raw ARM PATCH)喺 **2026-08-06**;**七日後(08-13)四個 endpoint 全部真答** ⇒ `runningStatus`(read-only status field)若然真係被 unset 成 `''`,個 app 唔可能一路行到今日仲逐個答。
+⚠️ **誠實界線**:**冇直接讀返個 field**(要 `az`,而部署 SP 憑證唔喺 repo,要 Chris 自己 `az login`)。呢度收嘅係**行為證據** —— 佢答嘅唔係「ARM 有冇改過佢」,而係「**就算改過都冇造成後果**」。對本項要防嘅風險(PATCH 會唔會整停個 app)嚟講已經足夠。
+
 ### 2026-08-10 · 部署 #5(`dev-86ed450`)— **CH-023 ServiceNow 結果留 timeline 上機**
 
 **內容**:CH-023(`f219676`)+ merge 咗嘅 `main`(PR #77 + #78)。走同一條 raw ARM PATCH 路,零流程改動。
@@ -691,7 +734,18 @@ nslookup rapo-uop-web-dev.rci-t.com → Non-existent domain  ❌
 **要 infra 做**:喺企業 DNS 為 **`rapo-uop-web-dev.rci-t.com`** 建一條記錄指向 `acaen-rapo-dev` 個 internal static IP(ACA custom domain 通常仲要一條 `asuid.rapo-uop-web-dev` TXT 做 hostname 驗證 —— binding 已經存在,所以嗰條可能一早有)。
 🔍 **順帶一條線索**:`rapo-n8n-uat.rci-t.com` 解析到 **`10.160.71.243`**。若 n8n 都係跑喺同一個 ACA env(registry 入面確實有個 `n8n` repo),咁條記錄好可能係指同一個 IP ——**但呢個係推論,由 infra 確認**。
 
-### 🟢 但 B8 **唔 block 驗證** —— ACA 預設 FQDN 係另一條路
+### ⛔ ~~🟢 但 B8 **唔 block 驗證** —— ACA 預設 FQDN 係另一條路~~ — **本段兩個結論都已被實測推翻**
+
+> 🔴 **2026-08-13 更正(W44 closeout `F8-1`)。原文一個字冇改,保留喺下面做方法論記錄。**
+>
+> 1. **「ACA 預設 FQDN 喺 private DNS *一定* 有記錄」** —— 嗰個「**一定**」係**推論唔係實測**。2026-08-10 Chris 實測 **ACA 預設 FQDN 一樣訪問唔到**:web ingress `external: true`**但** env `vnetConfiguration.internal = true` 而 `staticIp = 10.160.71.70`(**私有 IP**)⇒ 個 FQDN 要靠 private DNS zone `nicesea-c3849dba.eastasia.azurecontainerapps.io` 解析,而**嗰個 zone 冇 link 到企業網**。
+> 2. **「F6-4/5/6 可以即刻收」** —— 上面一錯,呢句跟住錯,**而佢被當成事實用咗四日**。
+>
+> 🟢 **真相仲有第三層(2026-08-11 再更正)**:「咁即係兩個 hostname 都打唔到」呢個收尾**自己又係一個冇標明嘅推論** —— 08-10 **只實測過 ACA 預設 FQDN**;**custom domain 行嘅係企業 DNS 一條 A record,係另一條解析路**。本檔上面 `🟢 B8 已解決(2026-08-06 稍後)` 嗰段就記住 custom domain **當時已經實測開到**。
+>
+> ⇒ **實際結局:`F6-5` / `F6-6` / `F6-14` 全部經 custom domain `https://rapo-uop-web-dev.rci-t.com/` 收咗**(2026-08-12 / 08-13),**ACA 預設 FQDN 呢條路由頭到尾冇用過一次**。
+>
+> 📌 **方法論**:同一族錯誤(**由一個相關但唔對位嘅觀察,推去一個更強嘅結論**)喺本 phase 出現咗四次。⇒ **凡要 live 驗,第一件事係真打一次 `https://rapo-uop-web-dev.rci-t.com/`** —— 30 秒,兩個結果都有路行,唔使推。全套見 `10-dev-live-verification-runbook.md`。
 
 custom domain 只係**一個** hostname。app 本身仲有 ACA 預設 FQDN,而佢喺 hub VNet 嘅 private DNS **一定有記錄**(internal env 就係咁註冊)。⇒ 喺**公司網絡**嘅機直接打:
 
