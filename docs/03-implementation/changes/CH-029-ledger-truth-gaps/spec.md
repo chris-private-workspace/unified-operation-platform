@@ -1,11 +1,12 @@
 ---
 change_id: CH-029
 title: "Ledger 同 M365 真相之間三個語意缺口(double-count · totalUnallocated 負數 · unlimited SKU 嘅 drift)"
-status: proposed          # proposed | approved | done
+status: proposed          # 🔴 三條 OQ 2026-08-13 答晒,但 ADR-0034 未 Accepted ⇒ 仍然 proposed,未可開工
 created: 2026-08-13
-target_completion: TBD    # 🔴 未定 —— 見 §5,三條 OQ 未答之前唔開工
+target_completion: TBD    # 🔴 待 ADR-0034 Accepted;估 2.5–3 日(見 §6)
 affects_components: [apps/api/fulfilment, apps/api/license, apps/web]
 spec_refs:
+  - **ADR-0034**(決策 SSOT · 🔴 **Proposed,待 Chris approve**)
   - ADR-0017 D0(只換執行器唔換決策者)· W39 OQ-1(Chris 2026-07-28)
   - ADR-0032 / CH-026(unlimited seat model)
   - ADR-0015(對帳方案甲 · drift 語意)
@@ -108,13 +109,13 @@ CH-026 spec §4 **明文標低咗要另開**:
 
 ## 3. Deliverable(🔴 形態未定 —— 視乎 §5 點答)
 
-> **本節刻意唔寫實作方案。** 三條 OQ 每條都可以令對應 deliverable 由「改 code」變成「只寫低理由」,而反過來亦然。**先答 OQ,再寫 §3。**
+> 🟢 **§5 三條 OQ 2026-08-13 答晒 ⇒ 本節而家寫得實。** 🔴 **但實作仍然唔可以開始** —— A 同 C 觸 H1,要 **ADR-0034 Accepted** 先。
 
-| # | 對應 | 要交出嘅嘢(無論點答都要有) |
-|---|---|---|
-| D-A | §1.1 | 一個**明確寫低**嘅 double-assign 語意 —— 改或者唔改都要有 ADR 級記錄,唔可以再留喺一個 code comment 度 |
-| D-B | §1.2 | `totalUnallocated` 喺 unlimited 存在時嘅**定義**,加上 UI 點呈現(負數 / `—` / 換算法) |
-| D-C | §1.3 | Drift 對 unlimited SKU 嘅**處理規則**,加上「跑一次真 reconcile 會出幾多個 alert」嘅**實測數字** |
+| # | 對應 | Deliverable(OQ 答完之後) | 觸 H1? |
+|---|---|---|---|
+| **D-A** | §1.1 | **assign 之前查 M365**:喺 `assignLicense` 之前加一道 gate,由**平台自己**打 Graph 問「呢個 user 而家持唔持有呢個 SKU」。持有 → 唔再 call provider、**ledger 唔加**、回一個 ADR-0029 step(`skipped` 而唔係 `failed`)。⚠️ **要決定 skip 咗之後 stage 點走**(仍然推去 `ASSIGNED`?)—— 呢個係 ADR-0034 要答嘅 | 🔴 **係** |
+| **D-B** | §1.2 | **零計算改動**(OQ-2 = 誠實)。只做兩樣:①確認 Platform view 見到負數 KPI 時**唔會誤導**(可能加一句文案)②把「`totalAllocated` 包 unlimited 而 `totalUnallocated` 只計 prepaid」呢個**已知範圍差**由 CH-026 progress 一個決定項,升做**面向操作員嘅解釋** | ❌ 唔觸 |
+| **D-C** | §1.3 | **Drift 跳過 `seatModel = unlimited`**(實測效果 **72 → 56**,見 §5)。⚠️ 要答「咁 `FLOW_FREE` 4,524 個真實使用者平台仲要唔要知」—— ADR-0034 要處理 | 🔴 **係** |
 
 ---
 
@@ -130,7 +131,19 @@ CH-026 spec §4 **明文標低咗要另開**:
 
 ---
 
-## 5. Open questions(🔴 全部未答 —— 答完先 approve)
+## 5. Open questions —— 🟢 **三條 2026-08-13 全部由 Chris 答咗**
+
+| OQ | 答案 | 後果 |
+|---|---|---|
+| **OQ-1(A)** | **② assign 之前查 M365** | 🔴 仍然 H1(改 assign critical path + ledger 語意)⇒ **ADR-0034**。🟢 **但唔使軟化 ADR-0017 D0**,見下面 |
+| **OQ-2(B)** | **負數係誠實,唔改計算** | scope 由「改 code」縮成「確認呈現」。**唔觸 H1,唔改 CH-026 決定 #4** |
+| **OQ-3(C)** | **先攞一個實測數** | 🟢 **2026-08-13 跑咗,數喺下面** |
+
+🟢🟢 **OQ-1 揀 ② 有一個重要副作用,值得寫入 ADR**:查嘅係**平台自己**(Graph read),**唔係**靠 provider 回報 ⇒ **道閘企喺 provider 之前**,所以兩條 provider 路(Graph / n8n)行為**自動一致**。
+⇒ **W39 OQ-1 當時嗰個兩難消失咗**。當時個問題係「n8n 報 `already_assigned` 而 Graph 唔報,聽邊個?」,答案係「兩個都當 `assigned`,否則換 provider = 換語意(違反 D0)」。而 ② **唔使聽任何一個 provider** —— 平台自己知。
+⇒ **② 唔係推翻 D0,佢係 D0 嘅正確應用**(決策留喺平台)。**ADR-0017 一個字唔使改。**
+
+---
 
 ### OQ-1(A)— 重複 assign 應該點?
 
@@ -154,7 +167,29 @@ CH-026 spec §4 **明文標低咗要另開**:
 - **B:照計但分類** —— 仍然開 alert,但標成另一類(唔要求 resolve)。
 - **C:換 delta 定義** —— 對 unlimited SKU 改用另一個比較基準。🔴 **最貴,最觸 H1。**
 
-⚠️ **答 OQ-3 之前建議先攞一個數**:真跑一次 reconcile,睇實際會出幾多個 alert、幾多個屬 unlimited。**呢個係 §3 D-C 要求嘅實測**,但佢會打真 Graph(**R10**),要 Chris 明示批准先做。
+### 🟢 OQ-3 嘅實測數(2026-08-13,喺 **DEV** 跑)
+
+**點解喺 DEV 唔喺本機**:DEV 有**真 allocation 數據**(`totalAllocated = 58,814`),本機係 **0** ⇒ 本機跑出嚟嘅 drift 數字冇代表性。
+**副作用範圍**:reconcile 對 **Graph 係唯讀**(`getSubscribedSkus`),寫入只落自己個 DB(`DriftAlert`)⇒ **R10 唔適用**(R10 講嘅係真派 licence)。
+
+`POST /api/license/reconcile` → **201** `{"checked":101,"opened":1,"updated":71,"resolved":0,"drift":72}`
+⚠️ **DEV 一早已經有 71 個 OPEN alert** —— 本次只新開 **1** 個,即係呢個狀態**唔係我哋造成**。
+
+| 指標 | 數 |
+|---|---|
+| OPEN drift alert 總數 | **72** |
+| **屬 `seatModel = unlimited`** | **16(22.2%)** · delta 總和 **8,211** |
+| 屬 prepaid | 56 · delta 總和 17,687 |
+| 🔴 **72 個入面 `ledgerAssignedSum ≠ 0` 嘅** | **只有 4 個** |
+
+**最大嗰幾個 unlimited alert**:`FLOW_FREE` **4,524** · `POWER_BI_STANDARD` 3,065 · `POWERAPPS_DEV` 236 · `CCIBOTS_PRIVPREV_VIRAL` 156。
+
+**三個由呢組數讀到嘅事實**:
+1. **22 個 unlimited SKU 只有 16 個出 alert** —— 另外 6 個 `In M365 = 0` 而 ledger 也是 0 ⇒ `delta = 0` 唔開。**所以「跳過 unlimited」嘅實際效果係 72 → 56(−22.2%)**,唔係 −22 個。
+2. 🔴 **68/72 個 alert 嘅 `ledgerAssignedSum` 係 0** —— 即係「**M365 有人用,但平台 ledger 完全冇記錄**」。⇒ **今日大部分 drift alert 唔係「平台同 M365 拉開咗」,係「平台由頭到尾未記錄過」。**
+3. ⚠️ **第 2 點大過本單 scope** —— 佢指向 allocation / baseline import(ADR-0014 `assigned` baseline)嗰條線,**唔喺本單處理**,但要記低,因為佢會令「drift alert 有幾多個」呢個指標**長期唔可讀**。
+
+⚠️ **一個過程中嘅錯誤,記低**:第一次分析用咗 `alert.skuId` join,但 `DriftAlert` 個 shape 係 **`alert.sku.skuId`**(nested)⇒ 成張表 `isUnlimited` 全部 `False`、`part` 全部空。**同日第三次「搵錯 field / 字串」**(web bundle 搜錯字串 · `tenant-skus` 平面 `skuPartNumber`)。**三次都係喺落結論之前捉到,但三次都係靠「個結果睇落唔合理」而唔係靠事先查 shape。**
 
 ---
 
@@ -162,7 +197,16 @@ CH-026 spec §4 **明文標低咗要另開**:
 
 **寫本 spec 嗰刻嘅判斷**:三件事共用一條線(ledger vs M365 真相),所以**一單開**好過散三單 —— Chris 2026-08-13 亦係咁揀。
 
-🔴 **但如果 OQ-1 答 ② 或 ③、又或者 OQ-3 答 C,本單就唔係 <3 日,應該升做 Phase**(PROCESS §2)。⇒ **OQ 答完之後要重新分類,唔好硬塞落 Change workflow。**
+🔴 **本 spec v1.0 寫住「若 OQ-1 答 ② 就應該升做 Phase」。OQ-1 真係答咗 ②,所以要正面處理呢條,唔可以當冇寫過。**
+
+**重新評估之後:維持 Change,但理由要講清楚。**
+
+v1.0 嗰個升級條件建基於一個**假設** —— 「② 要同時處理兩條 provider 路」,而嗰句係由 `assign.service.ts` comment 嘅 `fixing it… has to fix both paths at once` 讀返嚟。
+**查證之後發現呢個假設對 ② 唔成立**:② 係**平台自己**打 Graph 問,道閘企喺 provider **之前** ⇒ **兩條路自動一致,冇「兩條路」要 fix**。嗰句 comment 講嘅係「靠 provider 回報」嗰類修法(即係 OQ-1 嘅 ③ 方向),唔係 ②。
+
+**重估工作量**:D-A ≈ 1–1.5 日(gate + Graph read + 兩條路 test + ADR)· D-B ≈ 0.5 日(零計算改動)· D-C ≈ 1 日 ⇒ **合計 2.5–3 日,貼近 Change 上限但未過。**
+
+⚠️ **但呢個判斷有一個真實風險,寫低咗先**:D-A 個「skip 咗之後 stage 點走」如果答案係「要新 stage / 新狀態」,就會掂到 **stage machine**(§5.1 lock 決策)⇒ **嗰刻要即刻停手升 Phase**。**ADR-0034 要先答呢條。**
 
 ---
 
@@ -193,3 +237,4 @@ CH-026 spec §4 **明文標低咗要另開**:
 | 日期 | 版本 | 改動 | 決策者 |
 |---|---|---|---|
 | 2026-08-13 | 1.0 | 開單(`proposed`)。起因 = Chris 問「已經有 license 可唔可以再 assign」,查證後連埋同日浮面嘅另外兩件。**三條 OQ 全部未答,未 approve,零 code。** | Chris Lai(開單)· AI(查證 + 起草) |
+| 2026-08-13 | 1.1 | **三條 OQ 全部答咗**(**OQ-1 = ② assign 前查 M365** · **OQ-2 = 負數係誠實** · **OQ-3 = 先攞實測數**)。§5 補實測(DEV `reconcile` 201,**72 個 OPEN alert,16 個[22.2%]屬 unlimited**,🔴 **68/72 個 `ledgerAssignedSum = 0`**)· §3 deliverable 寫實 · §6 **正面處理咗「OQ-1 答 ② 要升 Phase」呢條自訂規則**(重估後維持 Change,理由 = 嗰個升級條件建基於一個對 ② 唔成立嘅假設;但標低咗一個會即刻推翻呢個判斷嘅風險)。**寫咗 `ADR-0034`(Proposed)。仍然零 code。** | Chris Lai(答 OQ)· AI(實測 + 起草) |
