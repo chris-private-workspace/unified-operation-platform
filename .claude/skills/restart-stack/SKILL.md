@@ -61,6 +61,29 @@ Backend endpoint **冇 `/api` prefix**(`:3100/me` 200、`:3100/api/me` 404);vite
    創建,`up -d` 只會 start 返佢,唔會套用新 ports → 要 `up -d --force-recreate <svc>`。
    `ensure-infra.ps1` 已經自動處理呢個 case。
    **同一時間亦唔好假設容器喺度** —— 嗰次 redis 係完全冇跑,而舊版腳本只係 `ps` 印咗出嚟就算。
+
+   🔴 **收工交還 5433 嗰陣會撞返同一個形狀,而 `ensure-infra.ps1` 幫唔到手**(佢只管 UOP 自己
+   兩個容器)。2026-08-12 同 08-13 各中一次,兩次都係:`docker stop ai-doc-extraction-db` →
+   用完 → `docker start` 佢返 ⇒ **`Up (healthy)` 但 `Ports` 只有 `5432/tcp`,host 零 listener**,
+   而 **`docker restart` 唔會重新 attach**。
+   💡 **最快嘅決定性診斷 = `docker inspect`**:`HostConfig.PortBindings` **仍然寫住 `5433`**
+   ⇒ 容器以為自己 publish 咗,而 host 冇 ⇒ 唔使再試 start/restart,直接 recreate。
+   ✅ **修法(實測有效,唔使 `cd` 入去,亦唔使估 project name)**:
+
+   ```powershell
+   docker compose -f "C:\Users\rci.ChrisLai\ai-document-extraction-project\docker-compose.yml" `
+     --project-directory "C:\Users\rci.ChrisLai\ai-document-extraction-project" `
+     --project-name ai-document-extraction-project up -d postgres
+   ```
+
+   ⚠️ **佢係另一個項目,做之前要 Chris 批。** 兩件事做之前先查清(2026-08-13 都查過):
+   ①`docker inspect <c> --format '{{.Config.Image}}'` —— 實測 `postgres:15-alpine`(**pinned tag**,
+   `up -d` 唔會偷偷升 major)②只指名 `postgres` 一個 service ⇒ 同項目其餘容器
+   (`azurite` / `pgadmin` / `ocr` / `mapping`)**uptime 實測完全冇動**。
+   🟢 **data 用 named volume(`…_postgres_data`),recreate 唔會冧** —— 但**驗返**:
+   `psql -c "select datname from pg_database where datistemplate = false"` 要見返佢個真 DB。
+   🔴 **收貨標準仍然係真 TCP connect**(`Test-NetConnection -Port 5433`)+ `pg_isready`,
+   **唔係 `docker ps` 個 `Up (healthy)`** —— 呢條 hard rule 對交還嗰一刻同樣適用。
 4. **冷啟動係「慢,唔係 hang」** —— 只輪詢 endpoint(timeout ≥10s / 次),**絕不**因為一兩次 fail 就殺進程。
    ⚠️ **但呢條唔可以無限延伸,否則會變成第二種誤判**:`verify.ps1` 跑完 90s 仍然 `port 3100 FREE`
    **而且** leak watch 明顯偏少(得 web 鏈 ≈ 9 個)⇒ 唔係慢,係嗰條 api 鏈**已經死咗**。
