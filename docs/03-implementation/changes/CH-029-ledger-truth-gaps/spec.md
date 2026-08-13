@@ -1,12 +1,12 @@
 ---
 change_id: CH-029
 title: "Ledger 同 M365 真相之間三個語意缺口(double-count · totalUnallocated 負數 · unlimited SKU 嘅 drift)"
-status: proposed          # 🔴 三條 OQ 2026-08-13 答晒,但 ADR-0034 未 Accepted ⇒ 仍然 proposed,未可開工
+status: approved          # 🟢 2026-08-13 —— 三條 OQ + ADR-0034 全部由 Chris 答晒/approve ⇒ 可以開工
 created: 2026-08-13
-target_completion: TBD    # 🔴 待 ADR-0034 Accepted;估 2.5–3 日(見 §6)
+target_completion: TBD    # 估 2.5–3 日(見 §6);未排期
 affects_components: [apps/api/fulfilment, apps/api/license, apps/web]
 spec_refs:
-  - **ADR-0034**(決策 SSOT · 🔴 **Proposed,待 Chris approve**)
+  - **ADR-0034**(決策 SSOT · 🟢 **Accepted** 2026-08-13 —— D3 揀 A · D4 擴成「跳過 + resolve」· D6 fail-open)
   - ADR-0017 D0(只換執行器唔換決策者)· W39 OQ-1(Chris 2026-07-28)
   - ADR-0032 / CH-026(unlimited seat model)
   - ADR-0015(對帳方案甲 · drift 語意)
@@ -15,10 +15,12 @@ spec_refs:
 
 # CH-029 — Ledger 同 M365 真相之間嘅三個語意缺口
 
-> **Spec version**:1.0(**proposed** —— 三條 OQ 未答,**未 approve,未開工**)
-> **Owner**:Chris Lai
-> **分類**:Change(**待確認會唔會升做 Phase**,見 §6)
-> 🔴 **觸發 H1** —— 見 **§4**。**一行 code 都未寫,亦唔應該寫**,直到 §5 三條 OQ 答完 + ADR 寫好。
+> **Spec version**:1.2(**approved** 2026-08-13)
+> **Owner**:Chris Lai · **Approved by**:**Chris Lai**(2026-08-13)
+> **決策 SSOT**:**`ADR-0034`**(**Accepted** 2026-08-13 —— **D3 揀 A**[照推 `ASSIGNED`]· **D4 擴成「跳過 + 主動 resolve」** · **D6 fail-open + 大聲**)
+> **分類**:**Change**(維持 —— D3 揀咗 A ⇒ **唔掂 stage machine,唔使升 Phase**;估 2.5–3 日,見 §6)
+> 🔴 **觸發 H1 ×2 + H5** —— 見 **§4**。🟢 **兩道閘 2026-08-13 同日過**(ADR Proposed→**Accepted** · spec proposed→**approved**)⇒ **而家開得工**。
+> ⚠️ **實作紀律**(ADR 尾段明列):**H5 兩條 provider 路都要 test** · **falsification 要真跑真紅** · **test 唔可以淨係喺 UI 層砌 fixture**。
 
 ---
 
@@ -237,4 +239,5 @@ v1.0 嗰個升級條件建基於一個**假設** —— 「② 要同時處理�
 | 日期 | 版本 | 改動 | 決策者 |
 |---|---|---|---|
 | 2026-08-13 | 1.0 | 開單(`proposed`)。起因 = Chris 問「已經有 license 可唔可以再 assign」,查證後連埋同日浮面嘅另外兩件。**三條 OQ 全部未答,未 approve,零 code。** | Chris Lai(開單)· AI(查證 + 起草) |
+| 2026-08-13 | 1.2 | **ADR-0034 三條未決全部答咗 ⇒ Accepted;spec 轉 `approved`,可以開工**。**D3 = A**(照推 `ASSIGNED`)⇒ **唔掂 stage machine,分類維持 Change** · **D6 = fail-open + 大聲**(呢道 gate 係帳目準確性優化唔係安全邊界;⚠️ 同 ADR-0016 budget gate 性質唔同,將來加新 gate 要問返)· **D4 由「跳過」擴成「跳過 + 主動 resolve」**(一次性 script 只解決今日嗰 16 個,下次 curate 新 unlimited SKU 又會留低 ⇒ 放喺 reconcile 先係結構性;語意亦更準 —— 唔係「唔理」係「主動收返」) | Chris Lai(三條全答)· AI(起草) |
 | 2026-08-13 | 1.1 | **三條 OQ 全部答咗**(**OQ-1 = ② assign 前查 M365** · **OQ-2 = 負數係誠實** · **OQ-3 = 先攞實測數**)。§5 補實測(DEV `reconcile` 201,**72 個 OPEN alert,16 個[22.2%]屬 unlimited**,🔴 **68/72 個 `ledgerAssignedSum = 0`**)· §3 deliverable 寫實 · §6 **正面處理咗「OQ-1 答 ② 要升 Phase」呢條自訂規則**(重估後維持 Change,理由 = 嗰個升級條件建基於一個對 ② 唔成立嘅假設;但標低咗一個會即刻推翻呢個判斷嘅風險)。**寫咗 `ADR-0034`(Proposed)。仍然零 code。** | Chris Lai(答 OQ)· AI(實測 + 起草) |
