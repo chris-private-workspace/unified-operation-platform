@@ -513,6 +513,50 @@ this.issuer = [
 
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 
+### 2026-08-13 · 部署 #6(`dev-53965f3`)— **DEV-SYNC:追返落後嘅五個 CH**
+
+**點解要有呢次部署**:同日較早做 `CH-026 G-7` 落手前唯讀查 DEV,發現 **row 冇 `seatModel`、stats 冇 `unlimitedSkus` 同 `totalConsumed`** ⇒ **DEV 跑緊嘅 `dev-86ed450`(部署 #5,08-10)冇 CH-024 / 025 / 026 / 027 / 028** —— 嗰五單全部 **08-12** 先 merge。呢個 gap **之前冇任何地方記低過**,連 W44 closeout 都冇捉到,**因為 closeout 只問「DEV 通唔通」,冇問「DEV 上面係邊個版本」**。
+
+**流程**(全程行 §0-pre 個 DEV 分支,唔係 UAT runbook):
+
+| 步 | 做咗乜 | 結果 |
+|---|---|---|
+| 0 | `az account show` **先驗身份**(呢台機撞過 4 個 SP) | `d2f094a3-…` = **部署 SP**,sub `30dac177…` **同腳本 hardcode 嗰個逐字對上** |
+| 1 | `docker login acrrci3ailanding1.azurecr.io`(params 檔嗰組 `4a6e1474`,**唔用 `az acr login`**) | **`Login Succeeded`** |
+| 2 | 🔴 **真試 `docker pull node:20-slim` + `nginx:1.27-alpine`** | **兩個都 `exit 0`** ⇒ 本地 build 冇阻塞 |
+| 3 | `docker build` × 2(context = repo root) | 兩個都 **`exit 0`** ⇒ BUG-008 嗰道 `RUN test -f dist/main.js` gate 過咗 |
+| 4 | `docker push` × 2 | api `sha256:e3b2044a…` · web `sha256:89bfcf59…` |
+| 5 | 改 `aca.params.dev.json` 個 image tag | **字串替換唔用 JSON round-trip** ⇒ 2 處、`lengthDelta = 0`、JSON 仍然 parse |
+| 6 | `patch-deploy-dev.ps1`(dry-run) | api secrets **9** / env **25** · web 1 / 1 · **`has environmentId: False`** · **`has workloadProfile: False`**(兩者都必須 False) |
+| 7 | `patch-deploy-dev.ps1 -Send` | 兩個 **`PATCH exit = 0`**,腳本 exit 0 |
+
+> 🔴 **步 2 唔係多餘** —— `09` 本檔上面記住「本地 `docker build` 兩重失敗:Docker Hub CDN **503** + ACR firewall」,而 `docker login` 成功**證明唔到** `docker build` 得(**同 W44 Day 7「`docker login` vs `push`」同族**)。所以真 pull 一次先算數。結果:**兩個 base image 都 `Image is up to date`** ⇒ 本機早有 cache,**呢台機好可能就係當初解封 B1 嗰台 build host**。
+
+#### 驗證 —— 唔睇 revision status,睇新版本特徵
+
+🔴 **刻意唔用 `revision.Healthy` 做判準**:entrypoint 令 migrate/seed 失敗 **NON-FATAL**,所以 `Healthy` 證明唔到 DB 通(本檔已記低呢個陷阱)。改為打 API 睇**只有新 code 先出到嘅欄**:
+
+| 證據 | 結果 |
+|---|---|
+| `GET /api/license/tenant-skus` row | **有 `seatModel`**(CH-026)⇒ 順帶證明 **migration 真跑咗** —— 冇嗰條 column,Prisma query 會爆 500 |
+| `GET /api/license/tenant-skus/stats` | `{"totalOwned":4240459,…,"totalConsumed":**25292**,…,"unlimitedSkus":**0**}` ⇒ **`totalConsumed` = CH-028 · `unlimitedSkus` = CH-026** |
+| break-glass login | **200**(驗證過程本身要登入)⇒ auth + DB 都通 |
+
+**web image 側**(冇版本 endpoint,唔用瀏覽器登入 —— 會令密碼出現喺對話):直接 fetch `/assets/index-d33tGxDI.js`(239,313 B)搜字串:
+
+| 字串 | 屬 | 結果 |
+|---|---|---|
+| `In M365` | CH-028 | ✅ |
+| `unlimited excluded` | CH-026(同 `platform-view.tsx:388` 逐字一樣) | ✅ |
+| `Unlimited` | CH-026 | ✅ |
+| `grace` | CH-027 | ✅ |
+| `Completed` | CH-025 | ✅ |
+| **`No seats enabled`** | **ADR-0033 移走咗嘅舊字串** | **❌ 唔喺度 —— 呢個先係最強證據**(一個「應該唔喺度」嘅字串真係唔喺度,證明唔係舊 bundle) |
+
+> ⚠️ **第一次搜錯字串,差啲推錯結論**:原本搜 `unlimited SKUs excluded` 同 `No seats enabled`,兩個都 False,一度懷疑 web image 冇上到。實查 source 之後先知 —— 前者**只存在於 test 檔**(實際 code 係 `unlimited excluded`,KPI 嗰句係拼出嚟),後者**已經被 ADR-0033 移走**。⇒ **同一族(由唔對位嘅觀察推去更強結論)當日第 N 次,今次喺落結論之前捉到。**
+
+🚧 **淨低**:**DEV 側嘅 `G-7` 未做** —— `totalOwned` 喺 DEV 仍然係 **4,240,459**、`unlimitedSkus` **0**。同日喺**本機**做嘅 curate 唔會跟住 code 過嚟(佢係 DB 資料唔係 code)。DEV 而家**做得到**(有 `seatModel` 欄),要唔要做係另一個決定。
+
 ### 2026-08-13 · **驗證 —— 無新部署**(W44 closeout `F8-1`)
 
 DEV 仍然行 `dev-86ed450`(部署 #5)。本次**冇 push 任何 image、冇 PATCH 任何 revision** —— 純粹用 `B8` 解封之後嘅通路,把一路卡住嘅驗證收返。
