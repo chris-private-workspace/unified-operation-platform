@@ -1,6 +1,6 @@
 # ADR-0034 — Assign 之前由平台自己查 M365 有冇持有;Drift 跳過 unlimited SKU
 
-**Status**: 🔴 **Proposed**(待 Chris Lai approve —— **D3 有一條要佢揀**,見下)
+**Status**: **Accepted**(Chris Lai,2026-08-13 —— **D3 揀 A**[照推 `ASSIGNED`]· **D4 由「跳過」擴成「跳過 + 主動 resolve」** · **D6 fail-open + 大聲**)
 **Date**: 2026-08-13
 **Deciders**: Chris Lai
 **Supersedes / Amends**: **唔推翻任何嘢。**
@@ -89,21 +89,33 @@ delta !== 0 → 開(或 refresh)OPEN DriftAlert                  // :83
 - `outcome` **唔係 `blocked`** —— 呢個唔係拒絕,係「已經係目標狀態」
 - **ledger `assignedQuantity` 唔加** ← **呢個就係本 ADR 觸 H1 嘅位**
 
-### D3 — 🔴 **skip 咗之後,line item stage 點走?(要 Chris 揀)**
+### D3 — skip 咗之後,line item **照推去 `ASSIGNED`** 🟢 **(Chris 2026-08-13 揀 A)**
 
-| 選項 | 意思 | 代價 |
+| 選項 | 意思 | 結果 |
 |---|---|---|
-| **A(建議)** | **照推去 `ASSIGNED`** —— 因為對操作員嚟講「呢個人有咗呢個 licence」係真嘅,單應該收得 | 語意輕微拉扯:`assignedAt` 有值但 ledger 冇加。要喺 timeline 寫清楚「已持有,平台冇再派」 |
-| **B** | 停喺 `READY`,要人手處理 | 單永遠收唔到,操作員要另外搵路 close ⇒ 實務上會製造積壓 |
-| **C** | 新 stage(例如 `ALREADY_HELD`) | 🔴 **掂到 stage machine(§5.1 lock 決策)⇒ 即刻要升 Phase + 另開 ADR**。**唔建議** |
+| 🟢 **A —— 採納** | **照推去 `ASSIGNED`** | 對操作員嚟講「呢個人有咗呢個 licence」**係真嘅**,單應該收得。**唔掂 stage machine ⇒ 唔使升 Phase** |
+| B | 停喺 `READY`,要人手處理 | 單永遠收唔到 ⇒ 實務上製造積壓。**冇採納** |
+| C | 新 stage(`ALREADY_HELD`) | 🔴 會掂到 stage machine(§5.1 lock 決策)⇒ 要升 Phase + 另開 ADR。**冇採納** |
 
-🔴 **`CH-029` spec §6 明文寫住:如果 D3 答案係 C,就要即刻停手升 Phase。**
+**A 要承擔嘅語意拉扯,同埋點處理**:`assignedAt` 有值但 **ledger 冇加**。
+⇒ **`RequestEvent` timeline 必須寫明「已持有,平台冇再派」** —— 否則三日後冇人分得出「呢條 line 加咗 ledger」定「冇加」,而 ledger 對唔上嗰陣就會查唔到源頭。**呢個唔係 nice-to-have,係 A 成立嘅條件。**
+(手法同 `CH-023` 一樣:由 `steps` 個對應 step 推導文案,**唔另寫一份**,否則 dialog 同 timeline 各自漂。)
 
-### D4 — Drift **跳過** `seatModel = unlimited` 嘅 SKU
+### D4 — Drift 對 `seatModel = unlimited` **跳過,兼且主動 resolve 既有 OPEN alert** 🟢 **(Chris 2026-08-13 擴闊)**
 
-- `reconcile` 唔再對 unlimited SKU 開 / update DriftAlert
-- **既有嘅 unlimited alert 點算**:🔴 **本 ADR 唔自動清** —— 見 Consequences
+- `reconcile` 唔再對 unlimited SKU **開 / update** DriftAlert
+- 🟢 **兼且:遇到 unlimited SKU 而佢有 OPEN alert ⇒ 順手 `resolve` 佢**
+- 🔴 **點解唔用一次性 script 清走** —— 咁只解決今日嗰 16 個。**下次有人 curate 一個新 SKU 做 `unlimited`,佢個舊 alert 又會留低**,而嗰陣冇人記得要清。放喺 `reconcile` 入面先係**結構性**解決。
+- 📌 **順帶令語意更準**:唔係「唔理佢」,係「**主動收返**」—— 一個 unlimited SKU 嘅 drift alert 唔係「未處理」,係「**唔應該存在**」,而 `resolve` 正正就係咁講。
 - 🟢 **`ADR-0015` 嘅 drift 語意一個字唔改** —— 改嘅係**適用範圍**:drift 係「seat 帳對唔對」,而 unlimited SKU **根本冇 seat 帳**
+
+### D6 — Graph read 失敗 ⇒ **fail-open,但要大聲** 🟢 **(Chris 2026-08-13)**
+
+- Graph read(查有冇持有)失敗 ⇒ **照 assign 落去**(= 退返今日行為,最壞情況係 double count,**而今日本身就係咁**)
+- 🔴 **但個 step 必須明確講「無法確認是否已持有」,唔可以扮成 `ok`** —— 否則就變成一個「靜靜退化」嘅 gate:睇落有守門,實際冇
+- **點解唔 fail-closed**:呢道 gate 係**帳目準確性優化**,唔係**安全邊界**。fail-closed 等於「為咗防一個帳目誤差,而阻止一個真實需要嘅 licence 派出去」。
+- ⚠️ **同 `ADR-0016` budget gate 唔同,分別要記住**:budget gate 係**業務規則**(唔准超支)⇒ 擋得有道理;呢個係**帳目準確性** ⇒ 擋唔過。**兩者都叫「gate」但性質唔同,將來加新 gate 要問返呢條。**
+- **先例**:`ADR-0020`(default SKU 注入 fail-soft)· `CH-011`(email 失敗 fail-soft)—— 同一個判斷家族
 
 ### D5 — `totalUnallocated` 出負數:**維持,唔改計算**
 
@@ -134,18 +146,28 @@ Chris 2026-08-13 裁決「負數係誠實」。DEV 實測 `−25,151`,而 `skusO
 
 ### 負面 / 要接受嘅代價
 
-- 🔴 **每次 assign 多一個 Graph read** —— 延遲增加,而且多一個失敗點。**要決定 read 失敗時 fail-open 定 fail-closed**(⚠️ 本 ADR **未答**,實作前要補)
+- 🔴 **每次 assign 多一個 Graph read** —— 延遲增加,而且多一個失敗點。🟢 **失敗行為已由 D6 定死:fail-open + 大聲**。⚠️ **要接受嘅殘留風險**:Graph read 長期失敗嘅話,系統會**靜靜退化返今日行為**(繼續 double count)而唔會有人主動發現 —— **唯一防線就係 D6 要求嘅「step 講明無法確認」**,所以嗰句唔可以省
 - 🔴 **既有嘅錯數唔會自動修正**:
   - `POWERAUTOMATE_ATTENDED_RPA` 個 leftover **維持**(`CH-028 F4-7`,Chris 已決定暫時唔動)
-  - **既有 16 個 unlimited drift alert 唔會自動 resolve** —— `reconcile` 跳過佢哋之後,佢哋會**永遠停喺 OPEN**(因為冇 code 再掂佢哋)。⚠️ **呢個係一個真陷阱**:「跳過」同「清走」係兩件事,實作要明文處理,否則會留低 16 個永不消失嘅 alert
+  - 🟢 **既有 16 個 unlimited drift alert 會被自動 resolve**(**D4 擴闊之後**)—— 起初本 ADR 只寫「跳過」,而咁樣會令佢哋**永遠停喺 OPEN**(冇 code 再掂)。Chris 2026-08-13 揀咗「跳過 + 主動 resolve」⇒ **陷阱消失,而且將來 curate 新 unlimited SKU 都自動處理**
 - **`skipped` 呢個 outcome 會令 `AssignResultDialog` 個 summary 要再改一次**(CH-026 已經改過一次:`6 checks passed · 1 skipped`)
 - 🔴 **本 ADR 唔碰嘅一件大事**:實測顯示 **68/72 個 alert 嘅 `ledgerAssignedSum = 0`**,即「M365 有人用但平台由頭到尾冇記錄」。⇒ **今日大部分 drift 唔係『拉開咗』,係『未記錄過』。** 呢個指向 allocation / `assigned` baseline(`ADR-0014`)嗰條線,**明文唔喺本 ADR 範圍**,但唔處理嘅話「drift alert 有幾多個」呢個指標長期唔可讀
 
-### 未答,實作前必須補
+### 🟢 原本三條「未答」2026-08-13 全部答齊
 
-1. **D3 揀邊個**(A / B / C)—— C 會令本單升 Phase
-2. **Graph read 失敗時 fail-open 定 fail-closed** —— fail-open = 有機會 double-count(退返今日行為);fail-closed = Graph 一有事就連 assign 都做唔到
-3. **既有 16 個 unlimited alert 點處理**(留住 / 一次過 resolve / 標成 obsolete)
+| # | 問題 | 答案 |
+|---|---|---|
+| 1 | D3 揀邊個 | 🟢 **A —— 照推 `ASSIGNED`** ⇒ **唔掂 stage machine,唔使升 Phase** |
+| 2 | Graph read 失敗 fail-open 定 fail-closed | 🟢 **fail-open + 大聲** ⇒ 新增 **D6** |
+| 3 | 既有 16 個 unlimited alert | 🟢 **跳過 + 主動 resolve** ⇒ **D4 擴闊咗**(唔用一次性 script) |
+
+⇒ **本 ADR 冇未決項,可以開工。**
+
+### 🔴 實作時仲要守嘅三條(唔係未決,係執行紀律)
+
+1. **H5** —— 改到 assign critical path ⇒ 必須同步 test,而且 **Graph / n8n 兩條 provider 路都要**(雖然 D1 令兩條路行為一致,但 test 要證到佢真係一致)
+2. **falsification 要真跑真紅** —— 拆走新 gate 之後,**只應該有新嗰幾條紅**;若果常態路都紅,即係 gate 位置錯咗(`CH-026` E-1 同一手法)
+3. **test 唔可以淨係喺 UI 層砌 fixture** —— `W45 apiPatch` + `BUG-011 pendingRestart` 兩次教訓:**bug 住喺兩層之間**,而每層 test 都喺自己嗰層邊緣停低
 
 ---
 
