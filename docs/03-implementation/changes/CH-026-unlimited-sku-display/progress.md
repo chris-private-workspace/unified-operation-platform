@@ -74,7 +74,34 @@ last_updated: 2026-08-12
 2. **A-2 migration 未對真 DB 跑過** 🚧
    SQL 係**手寫**嘅(`prisma migrate dev` 要連 DB)。`prisma generate` 過到 = schema 有效,但 `ALTER TABLE` 本身**未真行過**。⚠️ 唔可以當「migration OK」。
    **點收**:stack 放返 → `npm run prisma:deploy -w @uop/api` → 睇 `_prisma_migrations` 有無新行。
-3. **G-7 人手 curate 22 個 SKU** 🚧 —— 本來就唔喺本單(Chris 落 UI 做)。
+3. ~~**G-7 人手 curate 22 個 SKU** 🚧 —— 本來就唔喺本單(Chris 落 UI 做)。~~ 🟢🟢 **2026-08-13 做咗**(Chris 批准由 AI 經 API 做;環境 = **本機**,因為 **DEV 跑緊 `dev-86ed450` 冇 CH-026 code**)。22 × `PATCH /license/catalog/:id` ⇒ **22/22 全部 200**;`totalOwned` **4,270,779 → 50,779**、`unlimitedSkus` 0 → **22**;light + dark 真 render 過。詳見 `checklist.md` `G-7`。
+   ⇒ **本單三條「未收」而家全部收晒**(D-9 / A-2 / G-7)。
+
+---
+
+## Day N+1 — 2026-08-13:G-7 收官
+
+**點解今日做得到而 08-12 做唔到**:兩個阻塞都消失咗 —— ①Chris 批准停 `ai-doc-extraction-db` 借 5433 ②Chris 拍板「22 個全部標 unlimited」,即係 curate 嘅**業務決定**有咗答案(spec 明文呢個唔應該由 AI 揀)。
+
+🔴 **落手之前查到一件本來唔知嘅事:DEV 做唔到 G-7。**
+本來打算喺 DEV curate(啱啱 W44 收尾先驗過可以登入),但唯讀查 `GET /api/license/tenant-skus` 發現 **row 冇 `seatModel`、stats 冇 `unlimitedSkus`、亦冇 `totalConsumed`** ⇒ **DEV 跑緊嘅 `dev-86ed450`(08-10 部署)根本冇 CH-026,亦冇 CH-024/025/027/028** —— 嗰五單全部 **08-12** 先 merge。
+⇒ **DEV 落後 `main` 五個 CH**,而呢件事**冇任何地方記低過**(W44 closeout 都冇提)。已寫入 BACKLOG。
+
+**執行**:22 × `PATCH /license/catalog/:id` body `{"seatModel":"unlimited"}` —— 行 spec §3.1 B 兩條 curation 路之一,**唔直接改 DB**(咁樣先過到 `@IsIn(SEAT_MODELS)` validate,亦有正常 audit)。
+
+**三條獨立路徑對數**(同 CH-028 H6 同一手法 —— 唔靠單一 endpoint 自己講自己啱):
+
+| 路徑 | 值 |
+|---|---|
+| `GET /tenant-skus/stats` 出嘅 `totalOwned` | **50,779** |
+| 我自己由 79 個 prepaid row 加返 `owned` 總和 | **50,779** |
+| 算術:4,270,779 − 4,220,000(= 4×1M + 50K + 17×10K) | **50,779** |
+
+**真 render(light + dark)**:KPI `Available seats` = **50779** + `22 unlimited SKUs excluded`;unlimited 行 `Unlimited`(sans)/ `—` / neutral badge / **冇 owned bar**;常態行(`AAD_PREMIUM_P2` 帶 `0 + 10 grace`)**一個字冇郁**;🔴 **`4,270,779` 喺頁面上完全搵唔返**。
+
+⚠️ **今日順帶睇到嘅兩樣**:
+1. **KPI 實際叫 `Available seats` 唔係本單寫嘅 `Prepaid seats`** —— CH-027 之後改咗。本單幾份 doc 嗰個名當作已被覆蓋,**唔改 code**。
+2. **`FLOW_FREE` `In M365 = 4,521`** —— spec §4 標低「unlimited SKU 嘅 drift 點計」係獨立問題,而佢喺呢個名單度最搶眼:一個 `owned` 唔再入 total 嘅 SKU,`tenantConsumed` 有四千幾。**仍然未處理,仍然要另開。**
 
 ### 決定 / 偏離(R3)
 
