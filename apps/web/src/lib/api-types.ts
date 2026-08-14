@@ -854,6 +854,10 @@ export interface OnboardingRequest {
   // exempt from the gate.
   serviceNowUserSyncedAt: string | null;
   serviceNowUserSysId: string | null;
+  // ADR-0035 — the licence REQ THIS PLATFORM raised, as opposed to
+  // `serviceNowNumber` above (the onboarding REQ n8n raised). Null on every
+  // request raised before ADR-0035, so the UI must fall back rather than blank.
+  serviceNowLicenceReqNumber: string | null;
   createdAt: string;
   updatedAt: string;
   opco?: OpcoRef;

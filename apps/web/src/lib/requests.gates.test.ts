@@ -61,6 +61,7 @@ function req(over: Partial<OnboardingRequest> = {}): OnboardingRequest {
     azureSyncedAt: '2026-08-01T00:00:00Z',
     serviceNowUserSyncedAt: '2026-08-01T00:05:00Z',
     serviceNowUserSysId: 'sys-1',
+    serviceNowLicenceReqNumber: null,
     createdAt: '2026-08-01',
     updatedAt: '2026-08-01',
     lineItems: [line('READY')],
