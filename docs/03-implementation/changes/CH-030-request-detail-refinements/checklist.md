@@ -84,3 +84,12 @@
 - [x] **F-3** `CLAUDE.md` §0/§9 座標
 - [x] **F-4** `SESSION_SUMMARY.md` —— 🔴 **順手更正咗一句 stale**:佢寫住 CH-029「淨低 H6 真 render + live 驗」,而兩樣 08-13 都收咗(淨低 `D-A`);改之前有跟該檔自己嗰條規矩先 grep 數 entry(4 個,其中 line 10 / 24 唔使改)
 - [x] **F-5** commit 對應 checklist 項(R2)
+
+---
+
+## 收尾(Chris 2026-08-14 兩個決定)
+
+- [x] **G-1** **OD-1 backfill = 唔做** —— spec §5 由 🚧 改 ✅,明標「已收嘅決定,唔係遺留待辦」
+- [x] **G-2** **render fixture 清返** —— `cmsq0p4ou…` 還原;🔴 原值由**證據**推返(timeline 零 `STAGE_CHANGE` + `advanceStage` 一定寫 event ⇒ `REQUESTED`;`openSyncGate` 同 transaction 寫 `azureSyncedAt` 而佢原本 NULL ⇒ `accountCreatedAt` NULL)
+- [x] **G-3** 還原後逐欄驗過對得返原始形狀,`status` 仍 `OPEN`
+- [x] **G-4** `ai-doc-extraction-db` 還原 —— **真 TCP probe 5433 = `True`**

@@ -77,7 +77,7 @@ Licence request REQ0044083 raised in ServiceNow by the platform (RITM0047389)
 - **Negative**
   - 🔴 **`Request` 上面嘅 ServiceNow 欄由 4 個變 5 個**(`serviceNowSysId` / `serviceNowNumber` / `serviceNowStatus` / `serviceNowUserSysId` / 新嗰個),而佢哋分別指住**三樣唔同嘢**。命名混淆嘅風險**上升咗**,而呢個正正係 `schema.prisma` 當初想避開嘅氣味。**緩解 = schema comment 寫明分別**(見 Decision),但緩解唔等於消除。
   - 要一個 migration。
-  - **舊 request 加咗欄都係 null** ⇒ 要 backfill 先睇到數,而 backfill 就係 Option A 條 parse(CH-030 §5 OD-1 建議唔做)。**即係話呢個決定解決唔到已經存在嘅單** —— 只對之後開嘅生效。
+  - **舊 request 加咗欄都係 null** ⇒ 要 backfill 先睇到數,而 backfill 就係 Option A 條 parse。**Chris 2026-08-14 拍板唔 backfill**(CH-030 §5 `OD-1`)⇒ **呢個決定確定只對 ADR-0035 之後開嘅 request 生效,已經存在嗰批永遠靠 D5 條回退路顯示 RITM。** 要查舊單個 REQ,timeline NOTE 一直都喺度。
 
 - **Neutral**
   - `RequestLineItem.serviceNowNumber`(RITM)**一個字唔改**。
