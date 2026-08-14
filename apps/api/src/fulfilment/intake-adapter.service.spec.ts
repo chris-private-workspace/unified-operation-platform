@@ -89,6 +89,9 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
       request: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
+        // CH-030 F1 / ADR-0035 — the licence REQ number, written in the same
+        // transaction as the RITMs.
+        update: jest.fn(),
       },
       opco: { findUnique: jest.fn() },
       skuCatalog: { findUnique: jest.fn(), findMany: jest.fn() },
@@ -737,8 +740,7 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
             ],
           }),
         );
-        // OQ-2: the platform's own REQ lands on the LINE, never on the request —
-        // Request.serviceNowSysId stays the onboarding REQ (the idempotency key).
+        // OQ-2: each RITM lands on its own LINE.
         expect(prisma.requestLineItem.update).toHaveBeenCalledWith({
           where: { id: 'li-1' },
           data: {
@@ -746,6 +748,63 @@ describe('IntakeAdapterService (ADR-0017 D4)', () => {
             serviceNowNumber: 'RITM0055',
           },
         });
+      });
+
+      /**
+       * CH-030 F1 / ADR-0035 — the REQ above those RITMs now has somewhere to
+       * live. Before this it survived only inside a timeline sentence.
+       */
+      it('records the licence REQ number on the request itself', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+
+        await adapter.intakeFlat(flatPayload());
+
+        // 'r1' is the id `happyMocks` has request.create hand back.
+        expect(prisma.request.update).toHaveBeenCalledWith({
+          where: { id: 'r1' },
+          data: { serviceNowLicenceReqNumber: 'REQ0044200' },
+        });
+      });
+
+      /**
+       * 🔴 ADR-0035 D2 — the restriction IS the decision.
+       *
+       * `serviceNowNumber` is @unique and is this row's idempotency key. A
+       * second column that could be looked up would give the intake upsert two
+       * candidate keys, which is precisely what schema.prisma refused for years.
+       * This asserts the write is keyed on `id` and touches nothing else.
+       */
+      it('keys that write on the row id, never on the new column', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockResolvedValue(submitted());
+
+        await adapter.intakeFlat(flatPayload());
+
+        const call = prisma.request.update.mock.calls[0][0];
+        expect(Object.keys(call.where)).toEqual(['id']);
+        // The onboarding REQ's own identifiers are not in the payload at all —
+        // this write must never be able to move the idempotency key.
+        expect(Object.keys(call.data)).toEqual(['serviceNowLicenceReqNumber']);
+      });
+
+      /**
+       * 🔴 The half that would rot silently. A refused submit raised no ticket,
+       * so writing a REQ number would name one that does not exist — and the
+       * screen would show it as confidently as a real one.
+       */
+      it('records no licence REQ number when the submit was refused', async () => {
+        flatMocks();
+        prisma.requestLineItem.findMany.mockResolvedValue([pendingLine()]);
+        submission.submit.mockRejectedValue(new Error('ServiceNow said no'));
+
+        await adapter.intakeFlat(flatPayload());
+
+        expect(prisma.request.update).not.toHaveBeenCalled();
+        // It did not fail silently either — the repair path was queued.
+        expect(failures.record).toHaveBeenCalled();
       });
 
       /**

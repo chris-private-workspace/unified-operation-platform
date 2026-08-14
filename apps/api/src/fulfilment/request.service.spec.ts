@@ -527,5 +527,33 @@ describe('RequestService', () => {
         NotFoundException,
       );
     });
+
+    /**
+     * CH-030 A5 — BUG-011's shape, guarded one layer earlier.
+     *
+     * There, `IntegrationController.list()` assembled its response field by
+     * field, so a new column on the read-model reached the API only if somebody
+     * also remembered to add it there — and three layers of tests stayed green
+     * while it did not.
+     *
+     * 🔴 This query has the opposite property, and asserting it is the point:
+     * `include` with no top-level `select` returns every scalar, so ADR-0035's
+     * new column reaches the client without anyone listing it. That is a
+     * property of the QUERY, not a promise — swapping in a `select` whitelist
+     * would drop it again, silently, and this is what would go red.
+     *
+     * Asserting the query rather than the payload on purpose: prisma is mocked
+     * here, so any assertion about the returned object would only be checking
+     * what this file itself put in the mock.
+     */
+    it('does not whitelist Request columns, so new ones reach the client', async () => {
+      prisma.request.findUnique.mockResolvedValue({ id: 'r1', opcoId: 'o1' });
+
+      await service.getRequestDetail('r1', ADMIN);
+
+      const query = prisma.request.findUnique.mock.calls[0][0];
+      expect(query.select).toBeUndefined();
+      expect(query.include).toBeDefined();
+    });
   });
 });

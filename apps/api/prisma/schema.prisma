@@ -265,6 +265,27 @@ model Request {
   serviceNowUserSyncedAt DateTime?
   serviceNowUserSysId    String? // sys_user sys_id of the target, once SN has them
 
+  // ── ADR-0035: the licence REQ **this platform** raised ──────────────────
+  //
+  // 🔴 NOT the same ticket as `serviceNowNumber` above, and the difference is
+  // the whole reason this column needed an ADR:
+  //   serviceNowNumber → the ONBOARDING REQ n8n raised. @unique, and this
+  //                      row's idempotency key, so it can never change.
+  //   this             → the O365 User License Maintenance Request the
+  //                      PLATFORM raised for this joiner (ADR-0025 D2). Its
+  //                      RITMs live on RequestLineItem.serviceNowNumber.
+  //
+  // 🔴 Deliberately NOT @unique, and deliberately never used in a `where` /
+  // `upsert` / `findUnique` clause. That restriction IS the decision: the
+  // original objection recorded below ("two candidate idempotency keys") is
+  // about a second KEY, not a second reference — a column that cannot be
+  // looked up cannot become one. Putting this in a lookup re-opens exactly
+  // the problem ADR-0035 argued its way around.
+  //
+  // Written once, in the same transaction as the RITMs (intake-adapter); null
+  // on every row raised before ADR-0035 and on every failed submission.
+  serviceNowLicenceReqNumber String?
+
   lineItems         RequestLineItem[]
   events            RequestEvent[]
   outboundFailures  OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)

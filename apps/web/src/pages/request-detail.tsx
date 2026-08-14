@@ -500,6 +500,7 @@ export function RequestDetail() {
             done={synced}
             title="Synced to Azure AD"
             sub="directory replication"
+            at={req.azureSyncedAt}
           />
           <div className="h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
           {/* ADR-0025 D4 — gate ②, shown as a third check point rather than as a
@@ -512,6 +513,7 @@ export function RequestDetail() {
             done={snSynced}
             title="Synced to ServiceNow"
             sub="target user record"
+            at={req.serviceNowUserSyncedAt}
           />
           <div className="ml-auto flex items-center gap-[8px]">
             {/* 🔴 CH-024 D — line items FIRST, gates second. This branch used to
@@ -802,8 +804,14 @@ export function RequestDetail() {
                           {/* index, not stage name: an ASSIGNED line points at
                               the terminal marker, which has no stage of its own. */}
                           <Stepper steps={steps} current={stepNo - 1} />
+                          {/* CH-030 F2 — the step's NAME, not just its number.
+                              `stepper.tsx` renders dots only and puts the label
+                              in `title=`, so until this the one word that says
+                              a line is finished ("Completed", CH-025 A) lived
+                              in a hover tooltip. Read off the same `steps`
+                              array the dots use, so the two cannot disagree. */}
                           <span className="font-mono text-[11px] text-fg-subtle">
-                            Step {stepNo}/{steps.length}
+                            Step {stepNo}/{steps.length} · {steps[stepNo - 1]}
                           </span>
                         </div>
                       )}
@@ -939,22 +947,10 @@ export function RequestDetail() {
         </div>
 
         <div className="flex flex-col gap-[16px]">
-          <Card
-            title={
-              <span className="flex items-center gap-[8px]">
-                <Sparkles size={16} strokeWidth={2} className="text-purple" />
-                AI Assist
-              </span>
-            }
-            action={<Badge tone="purple">Preview</Badge>}
-          >
-            <EmptyState
-              icon={<Sparkles size={18} strokeWidth={2} />}
-              title="Coming soon"
-              description="Parsing the free-text remark into SKU suggestions is a planned AI feature — not yet available."
-            />
-          </Card>
-
+          {/* CH-030 F4 — the timeline first. "AI Assist" is a Preview card whose
+              body is an EmptyState reading "Coming soon", so it was holding the
+              top of the right column with nothing in it while the one panel
+              that answers "what happened to this request" sat below the fold. */}
           <Card title="Operational history">
             {req.events.length === 0 ? (
               <EmptyState
@@ -992,6 +988,22 @@ export function RequestDetail() {
                 ))}
               </div>
             )}
+          </Card>
+
+          <Card
+            title={
+              <span className="flex items-center gap-[8px]">
+                <Sparkles size={16} strokeWidth={2} className="text-purple" />
+                AI Assist
+              </span>
+            }
+            action={<Badge tone="purple">Preview</Badge>}
+          >
+            <EmptyState
+              icon={<Sparkles size={18} strokeWidth={2} />}
+              title="Coming soon"
+              description="Parsing the free-text remark into SKU suggestions is a planned AI feature — not yet available."
+            />
           </Card>
         </div>
       </div>
@@ -1119,15 +1131,20 @@ function OverrideBudgetDialog({
 }
 
 /**
- * CH-024 C — the two ServiceNow tickets behind one onboarding, named.
- *
- * 🔴 They are NOT two views of the same ticket:
+ * CH-024 C — the ServiceNow tickets behind one onboarding, named.
+ * CH-030 F1 / ADR-0035 — split into three, because there ARE three:
  *
  *   Onboarding request — the REQ n8n raised when the joiner was onboarded. It
  *     is also this row's idempotency key (`@unique`), so it never changes.
  *   Licence request    — the `O365 User License Maintenance Request` THIS
- *     platform raised (ADR-0025 D2), carried as a RITM on each line item, and
- *     the one the platform closes after assigning.
+ *     platform raised (ADR-0025 D2). Until ADR-0035 it had nowhere to be
+ *     stored, so this row is absent on anything raised before then.
+ *   Licence item(s)    — the RITMs underneath that request, one per SKU, and
+ *     the ones the platform closes after assigning.
+ *
+ * 🔴 CH-024 C named the RITMs "Licence request", which is the one ticket they
+ * are not. That was not a wording slip: the REQ was genuinely unavailable, so
+ * the label pointed at the nearest thing on hand.
  *
  * Before this the header printed only the first, twice, and an operator had no
  * way to learn the second existed — while `schema.prisma` warns in as many
@@ -1139,8 +1156,12 @@ function OverrideBudgetDialog({
  * different and much louder claim than "none has been raised".
  */
 function ServiceNowTickets({ req }: { req: OnboardingRequest }) {
-  const licence = licenceRequestNumbers(req);
-  if (!req.serviceNowNumber && licence.length === 0) return null;
+  // CH-030 F1 / ADR-0035 — the REQ and its RITMs are now separate rows.
+  // Before this the RITMs were labelled "Licence request", which is the one
+  // ticket they are NOT: they are the items underneath it.
+  const licenceReq = req.serviceNowLicenceReqNumber;
+  const ritms = licenceRequestNumbers(req);
+  if (!req.serviceNowNumber && !licenceReq && ritms.length === 0) return null;
   return (
     <div className="flex flex-col gap-[7px] rounded-md border border-border bg-card px-[11px] py-[9px]">
       {req.serviceNowNumber && (
@@ -1150,11 +1171,22 @@ function ServiceNowTickets({ req }: { req: OnboardingRequest }) {
           sub="raised in ServiceNow — the source of this onboarding"
         />
       )}
-      {licence.length > 0 && (
+      {/* 🔴 ADR-0035 D5 — null on every request raised before that ADR, so this
+          row simply does not appear for them. The RITM row below is unchanged
+          and unconditional, which is what keeps an old request showing exactly
+          what it showed yesterday rather than going blank. */}
+      {licenceReq && (
         <TicketRef
-          label={licence.length > 1 ? 'Licence requests' : 'Licence request'}
-          numbers={licence}
-          sub="raised by this platform, closed on assign"
+          label="Licence request"
+          numbers={[licenceReq]}
+          sub="raised by this platform for this joiner"
+        />
+      )}
+      {ritms.length > 0 && (
+        <TicketRef
+          label={ritms.length > 1 ? 'Licence items' : 'Licence item'}
+          numbers={ritms}
+          sub="one per SKU — closed on assign"
         />
       )}
     </div>
@@ -1204,14 +1236,31 @@ function EditField({
   );
 }
 
+/**
+ * CH-030 F3 — `at` is OPTIONAL, and the one step that does not get one is the
+ * point of the change.
+ *
+ * 🔴 `accountCreatedAt` is not, in practice, when the account was created.
+ * Neither n8n intake path sends it (`intake-adapter.service.ts` refuses to
+ * infer it from `sentAt`), so `open-sync-gate.ts` fills it with `?? now` when
+ * the gate opens — the same instant it writes `azureSyncedAt`. Printing both
+ * would put an identical timestamp on two steps and let the screen claim the
+ * account was created and replicated in the same second. That claim would be
+ * ours, not the data's.
+ *
+ * The other two ARE the platform's own observations (it saw the user in Graph /
+ * in ServiceNow at that moment), so they say what they mean.
+ */
 function SyncStep({
   done,
   title,
   sub,
+  at,
 }: {
   done: boolean;
   title: string;
   sub: string;
+  at?: string | null;
 }) {
   return (
     <div className="flex items-center gap-[10px]">
@@ -1228,6 +1277,13 @@ function SyncStep({
       <div className="flex flex-col leading-[1.25]">
         <span className="text-[12.5px] font-medium">{title}</span>
         <span className="text-[11px] text-fg-subtle">{sub}</span>
+        {/* Absent, not a dash: a shut gate has no time, and "—" reads as "we
+            looked and found nothing" (same rule as ServiceNowTickets). */}
+        {at && (
+          <span className="font-mono text-[11px] text-fg-subtle">
+            {formatDateTime(at)}
+          </span>
+        )}
       </div>
     </div>
   );

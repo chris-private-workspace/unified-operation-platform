@@ -1,7 +1,7 @@
 ---
 change_id: CH-030
 title: "Request detail 四項修正(licence REQ 號碼 · stepper 步名 · sync 時間戳 · 右欄次序)"
-status: proposed          # 等 Chris approve §3 acceptance + ADR-0035 Accepted 先開工
+status: approved          # 🟢 2026-08-14 —— Chris 批 spec + ADR-0035 ⇒ 可以開工
 created: 2026-08-14
 target_completion: TBD    # 估 0.5–1 日(見 §6)
 affects_components: [apps/api/prisma, apps/api/fulfilment, apps/web]
@@ -16,9 +16,9 @@ spec_refs:
 
 # CH-030 — Request detail 四項修正
 
-> **Spec version**:1.0(**proposed** 2026-08-14)
-> **Owner**:Chris Lai · **Approved by**:_(待批)_
-> **決策 SSOT**:**`ADR-0035`**(F1 嗰項;其餘三項純顯示,唔需要 ADR)
+> **Spec version**:1.0(**approved** 2026-08-14)
+> **Owner**:Chris Lai · **Approved by**:**Chris Lai**(2026-08-14)
+> **決策 SSOT**:**`ADR-0035`**(🟢 **Accepted** 2026-08-14;F1 嗰項,其餘三項純顯示唔需要 ADR)
 > **分類**:**Change**(四項都係改現有行為,冇新 feature;估 0.5–1 日)
 > 🔴 **觸發 H1(F1 改 Prisma schema)+ H6(F2/F3/F4 前端)** —— 見 **§4**。
 
@@ -164,7 +164,7 @@ CH-025 A 加咗第四點 + 終點 ✓,**但冇加字** —— 所以「已完成
 
 | # | 條 | 觸發乜 | 處理 |
 |---|---|---|---|
-| **H1** | 架構 | **F1 改 Prisma schema**,而且**推翻 `schema.prisma:313` 一個明文決定** | **ADR-0035**(Proposed)。🔴 開工前要 Chris 批 |
+| **H1** | 架構 | **F1 改 Prisma schema**,而且**推翻 `schema.prisma:313` 一個明文決定** | **ADR-0035** 🟢 **Accepted**(Chris,2026-08-14)⇒ 閘已過 |
 | **H5** | Test | F1 掂到 intake outbound 路 —— **唔屬** critical path 定義(assign / ledger / 對帳 / stage / sync gate),但既有 `intake-adapter.service.spec.ts` 要跟住更新 | A3 + A4 |
 | **H6** | Design | F2/F3/F4 全部前端 | E3 + `ui-design` skill |
 

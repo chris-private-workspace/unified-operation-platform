@@ -1,7 +1,7 @@
 # ADR-0035: 平台自己開嘅 licence REQ 號碼,喺 `Request` 有個 display-only 嘅家
 
 **Date**: 2026-08-14
-**Status**: Proposed
+**Status**: **Accepted**(Chris Lai,2026-08-14)
 **Approver**: Chris Lai
 
 ## Context

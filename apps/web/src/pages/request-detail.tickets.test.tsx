@@ -20,12 +20,19 @@ import { useCurrentUser } from '@/lib/auth/use-current-user';
 import type { RequestDetail as RequestDetailType } from '@/lib/api-types';
 
 /**
- * CH-024 C — the two ServiceNow tickets behind one onboarding.
+ * CH-024 C — the ServiceNow tickets behind one onboarding.
+ * CH-030 F1 / ADR-0035 — there are THREE of them, not two.
  *
  * Tested through the render because the defect was entirely about what reached
  * the screen: the data was there all along (`RequestLineItem.serviceNowNumber`
  * has been on the wire since ADR-0008 D6) and the header simply printed the
  * onboarding REQ twice while never mentioning the licence request at all.
+ *
+ * 🔴 CH-030 is a second round of the same defect, one level down: CH-024 C put
+ * the RITMs on screen under the label "Licence request" — which is the one
+ * ticket they are not. The REQ above them genuinely had nowhere to be stored
+ * (schema.prisma), so the label pointed at the nearest thing available. These
+ * tests now hold BOTH shapes: post-ADR-0035 (all three) and pre (RITMs only).
  */
 
 vi.mock('@/hooks/queries', () => ({
@@ -91,6 +98,10 @@ function show(over: Partial<RequestDetailType> = {}) {
       azureSyncedAt: '2026-08-01T01:00:00Z',
       serviceNowUserSyncedAt: '2026-08-01T01:05:00Z',
       serviceNowUserSysId: 'u-sys',
+      // CH-030 F1 / ADR-0035 — the default fixture is a request raised AFTER
+      // that ADR, so it carries all three tickets. The pre-ADR shape (this
+      // field null, RITMs present) has its own test below.
+      serviceNowLicenceReqNumber: 'REQ0044083',
       createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-01T00:00:00Z',
       opco: { code: 'RHK', displayName: 'RHK Co' },
@@ -122,15 +133,35 @@ beforeEach(() => {
   }
 });
 
-describe('request detail — the two ServiceNow tickets (CH-024 C)', () => {
-  it('names both, with the number that belongs to each', () => {
+describe('request detail — the ServiceNow tickets (CH-024 C / CH-030 F1)', () => {
+  it('names all three, with the number that belongs to each', () => {
     show();
 
     expect(screen.getByText('Onboarding request')).toBeTruthy();
     expect(screen.getByText('REQ0012345')).toBeTruthy();
+    // CH-030 F1 — the licence REQ, which before ADR-0035 had nowhere to be
+    // stored and so could never appear here.
     expect(screen.getByText('Licence request')).toBeTruthy();
+    expect(screen.getByText('REQ0044083')).toBeTruthy();
+    // The RITMs are now labelled as what they are: the items underneath it.
+    expect(screen.getByText('Licence item')).toBeTruthy();
     // Twice: the header panel and the line item that owns it.
     expect(screen.getAllByText('RITM0047290')).toHaveLength(2);
+  });
+
+  /**
+   * 🔴 The two REQ numbers must not be readable as one ticket. Asserting they
+   * are DIFFERENT strings is the point: a regression that fed the onboarding
+   * REQ into the licence row would still satisfy every "is it on screen" check
+   * above, because the number would be on screen — just the wrong one.
+   */
+  it('keeps the onboarding REQ and the licence REQ apart', () => {
+    show();
+
+    const onboarding = screen.getByText('REQ0012345');
+    const licence = screen.getByText('REQ0044083');
+    expect(onboarding).not.toBe(licence);
+    expect(screen.queryAllByText('REQ0012345')).toHaveLength(1);
   });
 
   it('says which system raised each one', () => {
@@ -140,8 +171,28 @@ describe('request detail — the two ServiceNow tickets (CH-024 C)', () => {
       screen.getByText('raised in ServiceNow — the source of this onboarding'),
     ).toBeTruthy();
     expect(
-      screen.getByText('raised by this platform, closed on assign'),
+      screen.getByText('raised by this platform for this joiner'),
     ).toBeTruthy();
+    expect(screen.getByText('one per SKU — closed on assign')).toBeTruthy();
+  });
+
+  /**
+   * 🔴 ADR-0035 D5 — the regression that would matter most in practice.
+   *
+   * Every request raised before ADR-0035 has `serviceNowLicenceReqNumber`
+   * null, which is most of the ones in the database today. If the RITM row had
+   * been made conditional on the REQ row, this change would have BLANKED the
+   * licence section on every existing request — a strictly worse screen than
+   * the one being fixed, and invisible in any test that only feeds new data.
+   */
+  it('still shows the RITMs on a request raised before ADR-0035', () => {
+    show({ serviceNowLicenceReqNumber: null } as any);
+
+    expect(screen.queryByText('Licence request')).toBeNull();
+    expect(screen.queryByText('REQ0044083')).toBeNull();
+    // The half that existed yesterday is untouched.
+    expect(screen.getByText('Licence item')).toBeTruthy();
+    expect(screen.getAllByText('RITM0047290')).toHaveLength(2);
   });
 
   /**
@@ -158,9 +209,13 @@ describe('request detail — the two ServiceNow tickets (CH-024 C)', () => {
   });
 
   it('omits the licence section entirely when no ticket has been raised', () => {
-    show({ lineItems: [LINE({ serviceNowNumber: null })] } as any);
+    show({
+      serviceNowLicenceReqNumber: null,
+      lineItems: [LINE({ serviceNowNumber: null })],
+    } as any);
 
     expect(screen.queryByText('Licence request')).toBeNull();
+    expect(screen.queryByText('Licence item')).toBeNull();
     // Not "—": an empty value reads as a MISSING ticket, which is a louder and
     // different claim than "none has been raised yet".
     expect(screen.queryByText(/RITM/)).toBeNull();
@@ -176,8 +231,10 @@ describe('request detail — the two ServiceNow tickets (CH-024 C)', () => {
       ],
     } as any);
 
-    expect(screen.getByText('Licence requests')).toBeTruthy();
+    expect(screen.getByText('Licence items')).toBeTruthy();
     expect(screen.getAllByText('RITM0047290')).toHaveLength(2);
     expect(screen.getAllByText('RITM0047291')).toHaveLength(2);
+    // Still ONE licence REQ above them — several items, one request.
+    expect(screen.getAllByText('REQ0044083')).toHaveLength(1);
   });
 });

@@ -328,8 +328,8 @@ export class IntakeAdapterService {
     try {
       // Zipped by index: the provider returns one entry per line in the order it
       // was given, and fails closed rather than returning a different count.
-      await this.prisma.$transaction(
-        submitted.lineItems.map((item, i) =>
+      await this.prisma.$transaction([
+        ...submitted.lineItems.map((item, i) =>
           this.prisma.requestLineItem.update({
             where: { id: lines[i].id },
             data: {
@@ -338,7 +338,19 @@ export class IntakeAdapterService {
             },
           }),
         ),
-      );
+        // ADR-0035 D3 — the parent REQ, in the SAME transaction as its RITMs.
+        // Not a separate write: the two are one fact ("this is the ticket the
+        // platform raised"), and a half-written version of it is the state that
+        // sends someone looking for a REQ whose items are recorded elsewhere.
+        //
+        // Keyed on `id`, never on the new column itself (D2).
+        this.prisma.request.update({
+          where: { id: requestId },
+          data: {
+            serviceNowLicenceReqNumber: submitted.serviceNowNumber ?? null,
+          },
+        }),
+      ]);
     } catch (err) {
       this.logger.warn(
         `ServiceNow request ${
