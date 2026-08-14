@@ -200,11 +200,72 @@ DEV **13 條 line item(9 `ASSIGNED` / 4 `READY`)**,其中 **3 條 `READY` 兼兩
 
 **兩次都係靠「個結果睇落唔合理」而唔係事先查 shape。** 呢個係本 repo 同一族第 5、6 次。⇒ **凡係要落一個「N 條」嘅結論,先 print 一次 top-level keys。** 今次第二次撞完就即刻咁做,而嗰一步 30 秒就分晒真假。
 
-## 🚧 未做
+## ✅ 原本「未做」嗰三項,全部收咗
 
-- [ ] **live 驗 D-A** —— 要一個**真係已經持有某 SKU** 嘅 user 兼一張 `READY` line item。🔴 **RISK `R10`**:DEV 對真 production M365 tenant 有寫權 ⇒ 撳之前一律先唯讀探測。
-- [ ] **live 驗 D-C** —— DEV 跑一次 `reconcile`,睇 `skippedUnlimited` 同 `resolved`。**預期**:`skippedUnlimited = 22`(DEV 已 curate),OPEN alert **72 → 56**,而 16 個 unlimited alert 變 `RESOLVED`(唔係消失)。⚠️ reconcile 對 Graph 唯讀,**R10 唔適用**。
-- [ ] **部署 #7** —— DEV 要有 code 先驗得到 D-A / D-C。
+- [x] **live 驗 D-C** —— 2026-08-13 @ DEV,三個預測數全中(見 `checklist.md` `F5-7a`)
+- [x] **部署 #7** —— 2026-08-13,`dev-2a68f8d`
+- [x] **live 驗 D-A** —— 2026-08-14 **@ 本機**(見下)
+
+---
+
+## Day 3 — 2026-08-14 · D-A live 驗
+
+### 🔴 唯讀探測推翻咗「喺 DEV 撳」呢個計劃
+
+`F5-7b` 寫明要「一個**先經 Graph 讀確認過已持有**嗰個 SKU 嘅 target」。做咗嗰個讀,答案係**冇**:
+
+- DEV 三條 `READY`(兩道 gate 都開)**全部同一個人、同一個 SKU**
+- target SKU = **`POWER_BI_PRO`**,而 `jerry.wong` 持有嘅 **12 個入面冇佢**(`/users/{upn}/licenseDetails` 唯讀直接答)
+- ⚠️ `POWER_BI_PRO` 正正係 **ADR-0032 記低嗰個 `prepaidEnabled=0` 但 91 人用緊**嘅 SKU;ADR-0033 之後 `owned = enabled + warning` ⇒ **seats gate 好可能過到**
+
+⇒ 撳落去**只會驗到「未持有」嗰條路 —— 即 CH-029 之前本來就有嘅行為**,而代價係一個真 licence 落真人身上。**唔撳。**
+
+📌 **呢個就係 R10 條規矩嘅實際價值**:「撳之前先唯讀探測」唔係儀式,佢今次真係攔住咗一次冇意義嘅真派。
+
+### 改喺本機驗(Chris 拍板),而且係等價嘅
+
+§9 同族先例(W45 成功路 / CH-023 G9)講得好白:**DEV 同本機打同一個 Graph tenant、同一個 app**。而 `HoldingCheckService` **就係打 Graph** ⇒ 兩邊問同一個 user 得同一個答案。DEV 側個 gate 已由 **OpenAPI enum** 確認在 wire(11 個 key,`holding` 排喺 `budget` 同 `seats` 之間)⇒ **code 在 DEV + 行為在本機 = 齊**。
+
+**fixture**:`jerry.wong`(Graph 確認持有 `FORMS_PRO`)· 兩道 gate 開 · line → `FORMS_PRO` `READY` · 新建 ledger row `5/0`。
+
+🔴 **兩個唔明顯但關鍵嘅選擇**:
+1. **要建 ledger row** —— `budget` 排喺 `holding` **之前**,而本機 ledger 零 row(`allocated=0` ⇒ `0+1 > 0` 必擋)⇒ 唔建就**到唔到我要驗嗰道閘**
+2. **揀 `FORMS_PRO` 係 fail-safe 唔係自信** —— 佢係 `unlimited`,萬一嗰個 Graph 讀係錯嘅,真派嘅 seat 成本係零
+
+### 結果
+
+`PATCH …/assign` → **HTTP 200 `outcome: "assigned"`**
+
+| step | status |
+|---|---|
+| stage · sync-azure · sync-servicenow · directory · usage-location · budget | `ok` |
+| **holding** | **`skipped`** — `The target user already holds FORMS_PRO in M365 — no licence was assigned and the ledger was not incremented` |
+| **seats** | `skipped` — `No seat is needed` |
+| **assign** | `skipped` — `Nothing to assign` |
+| **ledger** | `skipped` — `Ledger unchanged` |
+| ticket | `failed (404)` ⚠️ 見下 |
+
+🟢🟢 **DB 側(step 講乜同 DB 做咗乜係兩件事)**:
+
+- **ledger `5 / 0` 一個字冇變** ← **成單 CH 存在嘅理由**
+- `stage = ASSIGNED` + `assignedAt` 有值 ⇒ **ADR-0034 D3 = A 落地**
+- `status` recompute 做 `COMPLETED`
+- timeline 一條 `ASSIGN` `READY → ASSIGNED`,**message 逐字係嗰個 detail** ⇒ 三日後翻查睇得返點解
+- **零 `LedgerAdjustment`**
+
+⚠️ **`ticket: failed (404)`** —— fixture 個 request 揸住假 REQ number `REQ-CH021-A12`,ADR-0026 work-note fallback 打去一張唔存在嘅單。**同 D-A 無關**,而且順帶 live 證實咗 **CH-023「timeline note 由 step 推導」**行得通。
+
+### 🔴 誠實講一個驗唔到嘅位
+
+**M365 側喺呢個場景結構上證明唔到嘢。** `FORMS_PRO` 本來就喺佢身上 —— 就算真派咗,Graph POST idempotent,`consumedUnits` 一樣唔會郁。所以「查完 M365 冇變」**唔係證據**。
+
+真證據係三樣夾埋:**ledger 冇加**(DB 查過)+ **`assign: skipped`**(回應)+ **code 明文 `the provider is not called at all`**。
+
+### 還原
+
+逐欄對得返開工前記錄(`targetUpn` / `status` / 三個 gate / `stage` / SKU / `assignedAt`)· fixture ledger row **`DELETE`**(佢係新建唔係改)· 我造嘅 2 條 event 刪咗(該 request 原本 **0 條**)。
+
+📌 **今次有跟 CH-030 嗰條新規矩** —— **改之前 `SELECT` 晒我將會寫嘅每一個欄**,包括 timeline 事件數。上一單就係因為冇做,`stage` 同 `accountCreatedAt` 要靠推先補得返。
 
 ## 🚧 明文唔喺本單(spec §2 已排除,再確認一次)
 
