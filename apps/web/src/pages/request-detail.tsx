@@ -486,7 +486,11 @@ export function RequestDetail() {
           </div>
         )}
 
-        <div className="mt-[16px] flex flex-wrap items-center gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
+        {/* CH-030 F3 — `items-start`, not `items-center`. The three steps stopped
+            being the same height the moment one of them withheld its timestamp,
+            and centring made the checkmarks and titles sit on three different
+            lines. Top-aligned, they read as one row again whatever each carries. */}
+        <div className="mt-[16px] flex flex-wrap items-start gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
           {/* CH-024 D — the first step now names WHICH account: the row is read
               left to right as one sentence, and "Account created" on its own
               left the reader to guess whether it meant AD, M365 or ServiceNow. */}
@@ -495,14 +499,18 @@ export function RequestDetail() {
             title="AD account created"
             sub="in shared tenant"
           />
-          <div className="h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
+          {/* mt aligns the rule with the 22px check circle's centre, now that the
+              row is top-aligned rather than centred. */}
+          <div className="mt-[10px] h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
           <SyncStep
             done={synced}
             title="Synced to Azure AD"
             sub="directory replication"
             at={req.azureSyncedAt}
           />
-          <div className="h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
+          {/* mt aligns the rule with the 22px check circle's centre, now that the
+              row is top-aligned rather than centred. */}
+          <div className="mt-[10px] h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
           {/* ADR-0025 D4 — gate ②, shown as a third check point rather than as a
               separate panel: it is the same kind of fact as the two beside it
               (does this person exist over there yet), and assigning needs all
@@ -515,7 +523,10 @@ export function RequestDetail() {
             sub="target user record"
             at={req.serviceNowUserSyncedAt}
           />
-          <div className="ml-auto flex items-center gap-[8px]">
+          {/* self-center: the status / actions belong to the row as a whole, not
+              to the last step, so they stay vertically centred while the steps
+              above are top-aligned. */}
+          <div className="ml-auto flex items-center gap-[8px] self-center">
             {/* 🔴 CH-024 D — line items FIRST, gates second. This branch used to
                 start at `assignable`, which is a statement about whether the
                 request COULD be assigned; once both gates opened it said "Ready

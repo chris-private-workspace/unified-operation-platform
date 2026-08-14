@@ -11,8 +11,8 @@
 - [x] **A1-1** `schema.prisma` `Request` 加 `serviceNowLicenceReqNumber String?`
 - [x] **A1-2** 🔴 **冇 `@unique`**(ADR-0035 D1)—— 加完自己 grep 一次確認
 - [x] **A1-3** comment 寫明佢同 `serviceNowNumber` 嘅分別 + 點解唔可以入 `where`(D2)
-- [ ] **A2-1** `prisma migrate dev` 生成 migration 🚧 **卡本機 5433**(`ai-doc-extraction-db` 佔住,停佢要 Chris 批)
-- [ ] **A2-2** 對本機 DB 真跑過,輸出貼落 `progress.md` 🚧 **同上**
+- [x] **A2-1** migration `20260814020512_ch030_licence_req_number` 生成
+- [x] **A2-2** 對本機 DB 真跑過 —— `Applying migration…` + `Your database is now in sync`;🔴 **SQL 只有一行 `ALTER TABLE "Request" ADD COLUMN "serviceNowLicenceReqNumber" TEXT;`,冇 `UNIQUE` 冇 index** ⇒ D1 喺 SQL 層再確認
 - [x] **A2-3** `prisma generate` 之後 tsc 認到新欄(api + web 兩邊 exit 0)
 
 ### 寫入
@@ -23,7 +23,7 @@
 - [x] **A4** **falsification**:拆走 A3-1 個寫入 ⇒ **2 紅 / 55 綠,零誤傷**
 
 ### API
-- [ ] **A5-1** 真打一次 API 確認新欄出到 wire 🚧 **卡本機 5433**
+- [x] **A5-1** 真打 `GET /fulfilment/requests/:id` —— response key 清單含 `serviceNowLicenceReqNumber`,`hasLicenceReqCol=True`
 - [x] **A5-2** 🔴 test 釘住(**BUG-011 教訓**)—— 改用 **query-shape** assert(`findUnique` 冇 top-level `select`),見 progress `D-2`
 - [x] **A5-3** `api-types.ts` 加欄 ⚠️ **`RequestDto` 刻意唔加**,見 progress `D-1`
 
@@ -69,9 +69,10 @@
 - [x] **E2-2** tsc web 0
 - [x] **E2-3** api lint 0
 - [x] **E2-4** web lint **16 = 基線**,而且**同一批三個檔**(我掂過嘅檔零 error)
-- [ ] **E3-1** `ui-design` skill DS-1…DS-12 逐條答 🚧 **等 render**
-- [ ] **E3-2** 🔴 **light 真 render** 🚧 **卡本機 5433**
-- [ ] **E3-3** 🔴 **dark 真 render** 🚧 **卡本機 5433**
+- [x] **E3-1** `ui-design` DS-1…DS-12 逐條答(見 `progress.md`)
+- [x] **E3-2** 🔴 **light 真 render** —— 三行 ticket · `Step 4/4 · Completed` · 兩個時間戳而 AD 冇 · history 喺 AI Assist 之上
+- [x] **E3-3** 🔴 **dark 真 render** —— 同上,零硬色 / 對比足夠
+- [x] **E3-4**(render 揭到,新增)🔴 修 sync row 對齊 —— AD 步冇時間 ⇒ 矮一行,`items-center` 令三個 title 唔同水平;改 `items-start` + 連接線 `mt-[10px]` + 右邊 `self-center`
 - [x] **E4** ADR-0035 → Accepted(2026-08-14)
 
 ---
@@ -79,7 +80,7 @@
 ## Doc sync(R2 / R7)
 
 - [x] **F-1** `progress.md` 寫 Day-1 entry
-- [ ] **F-2** `BACKLOG.md` 同步
-- [ ] **F-3** `CLAUDE.md` §0/§9 座標
-- [ ] **F-4** `SESSION_SUMMARY.md`
+- [x] **F-2** `BACKLOG.md` 同步
+- [x] **F-3** `CLAUDE.md` §0/§9 座標
+- [x] **F-4** `SESSION_SUMMARY.md` —— 🔴 **順手更正咗一句 stale**:佢寫住 CH-029「淨低 H6 真 render + live 驗」,而兩樣 08-13 都收咗(淨低 `D-A`);改之前有跟該檔自己嗰條規矩先 grep 數 entry(4 個,其中 line 10 / 24 唔使改)
 - [x] **F-5** commit 對應 checklist 項(R2)
