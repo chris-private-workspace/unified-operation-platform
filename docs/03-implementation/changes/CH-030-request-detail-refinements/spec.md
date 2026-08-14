@@ -183,12 +183,12 @@ Chris 2026-08-14 揀。procurement 路 6 個點,每點寫 label 會逼到換行�
 ### D3 — `Licence request` label 之後點寫
 有 REQ:`Licence request REQ0044083` + 下一行 `items RITM0047389`。冇 REQ(舊資料):維持今日行為,只印 RITM。**唔印 `—`** —— 跟 `ServiceNowTickets` 既有規矩(空 section 略過,因為「REQ —」讀落係「張單唔見咗」,係一個更大聲嘅 claim)。
 
-### 🚧 OD-1 — 舊 request 要唔要 backfill?(**未決,建議唔做**)
+### ✅ OD-1 — 舊 request 唔 backfill(**Chris 2026-08-14 拍板:唔做**)
 現存 request 冇存過個 REQ,加咗欄都係 null。號碼**攞得返** —— 喺 timeline NOTE 度 regex parse。
 
 **建議唔做**,理由:為咗幾張測試單,引入一個 **parse 英文 message 嘅一次性 script**,而嗰句文案本身冇 test 釘住格式(改文案就靜靜壞)。A7 已經保證舊資料唔會變空白。
 
-**若 Chris 要做** ⇒ 加一條 acceptance + 一個 `scripts/` 一次性 script(唔入 migration),兩個環境各跑一次(同 CH-026 `G-7` 一樣,DB 資料唔跟部署走)。
+🟢 **Chris 2026-08-14 拍板:唔做。** ⇒ **`serviceNowLicenceReqNumber` 只對 ADR-0035 之後開嘅 request 有值**,舊嗰批永遠 `null` 兼永遠行 A7 條回退路(顯示 RITM)。呢個唔係遺留待辦 —— 係一個**已收嘅決定**,唔好喺將來當成「未做嘅 backfill」重開。真係要查舊單個 REQ,timeline NOTE 一直都喺度。
 
 ---
 

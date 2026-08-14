@@ -132,9 +132,24 @@ F3 令 AD 步**矮咗一行**(佢冇時間),而個 row 一直係 `items-center` 
 
 kill list **12 條逐條核對過 trace 得返本項目**(路徑含 `unified-operation-platform` 或 `@uop/*`;`esbuild` / `conhost` 各自 ppid 對得上)⇒ `-Execute`,port 3100 / 5173 free。`docker stop uop-postgres uop-redis` → `docker start ai-doc-extraction-db` → 🔴 **真 TCP probe 5433 = `True`**(§9 嗰個「還原會靜靜失敗」嘅陷阱,唔可以睇 health flag)。
 
-### 🚧 本機測試 DB 留低咗嘅狀態
+### ✅ 收尾兩個決定(Chris 2026-08-14)
 
-`cmsq0p4ou0001xgekk80kf1mi`(CH-022 A7 嗰張已收單)俾改成 `ASSIGNED` + 三個時間戳 + `lic REQ0044083`。**冇還原** —— 本機測試 DB,唔影響任何真實系統,而且佢而家係唯一一張示範得到 ADR-0035 新形狀嘅 fixture。
+**OD-1 backfill — 唔做。** ⇒ 新欄只對 ADR-0035 之後開嘅 request 有值,舊嗰批永遠 `null` 兼永遠行 A7 條回退路。**呢個係已收嘅決定唔係遺留待辦**,唔好將來當成「未做嘅 backfill」重開。
+
+**render fixture — 清。** 已還原 `cmsq0p4ou0001xgekk80kf1mi`。
+
+🔴 **還原嗰陣揭到我自己一個做得唔夠好嘅位:改資料之前冇記低原值。** 設 fixture 嗰陣我只 query 過 `lic` / `az` / `sn`,**冇 query `stage`、`assignedAt`、`accountCreatedAt`** —— 而三個都被我覆蓋咗。「改完還原」預設咗你知道改之前係點,而我當時冇留低。
+
+**點樣補返(兩個都由證據推,唔係估)**:
+
+| 欄 | 點樣定返原值 |
+|---|---|
+| `stage` / `assignedAt` | `stage.service.ts:122` — `advanceStage` **一定**寫 `STAGE_CHANGE` event;query timeline 得**一條 NOTE、零 STAGE_CHANGE** ⇒ 從來冇 advance 過 ⇒ schema default **`REQUESTED`**,`assignedAt` NULL |
+| `accountCreatedAt` | 只有兩個 writer:canonical intake DTO(而 `intakeFlat` **明文唔設**)· `openSyncGate`(佢喺**同一個 transaction** 寫埋 `azureSyncedAt`,而嗰個原本係 NULL ⇒ 冇跑過)⇒ **NULL** |
+
+**還原後驗**:`lic` 空 · `acct`/`az`/`sn` 全 `f` · `stage REQUESTED` · `assignedAt` 空 · `ritm RITM0047389` 同 `onboard_req REQ0044067` 不變 · `status` 仍 **`OPEN`**(⇒ 順帶證實直接改 DB **冇**觸發 `recomputeRequestStatus`,status 由頭到尾冇郁過)。
+
+📌 **教訓,寫成可執行嘅一句**:**改測試資料之前,`SELECT` 一次你將會寫嘅每一個欄**(唔係只 select 你關心嗰啲)。今次補得返係因為 timeline 同 code 啱好答得到;下次可能唔會。
 
 ### Commit
 
