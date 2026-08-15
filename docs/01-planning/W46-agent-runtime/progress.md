@@ -160,3 +160,85 @@ throw 嘅代價係一個 config typo 令**成個平台起唔到身**;而 fall ba
 ### Commits
 
 - `b668f98` — `feat(agent): W46 F3+F4 —— seam ⑤ provider + OpenAI adapter + tracing 三重關`
+
+---
+
+## Day 3 — 2026-08-15(四條 gate 一次過解封 · A1 本機收 · ADR-0037)
+
+### 開場個核對,推翻咗接手文件嘅前提
+
+接手文件寫住「F5 之前有**兩條硬 gate**:OQ-1 同 OQ-7」。讀 plan 嘅時候對唔上:
+
+- §2.1 **F10** 寫住「Test:LLM **一律 mock**」,而 **A6 / A7 / A8** 每條都明文講 mock LLM
+- ⇒ **F5 / F6 / F9 嘅 code + test 結構上唔需要一個真 model**。OQ-1 真正 block 嘅係 **A14 live 驗**
+- 而 **OQ-7 就真係 gate F5** —— 但唔係因為「要先決定可唔可以送」,係因為佢其中一個候選答案(**送之前先 scrub**)會**改 F5 嘅 code shape**
+
+🔴 **兩條嘢喺 checklist 入面一直並排寫住「F5 之前(硬 gate)」,睇落一模一樣,但性質完全唔同**:一條係 config 值,一條係設計輸入。**分清楚之後,四條 gate 入面有三條當日就唔再係 gate。**
+
+📌 呢個同 §9 記低過嗰句同族:**一個標籤(「硬 gate」)可以蓋住兩件唔同嘅嘢,而個標籤唔會話你聽。**
+
+### Chris 四項拍板
+
+| # | 決定 |
+|---|---|
+| **OQ-7** | **Azure OpenAI(公司 tenant)** —— 否決 ZDR / 公共 API 標準條款 / 先 scrub |
+| **F1-6 + F1-7** | **兩個一齊做**:加 `startedById`、補 `requestId` FK |
+| **OQ-1** | **押後到 F11 live 驗** |
+| **A1** | **批准停 `ai-doc-extraction-db`** |
+
+### 🟢 A1 本機側收咗(掛咗兩日)
+
+三個 migration 對真 `uop-postgres` 由 `migrate deploy` 跑。**跑之前** `migrate status` = **22 / 24 applied,零 drift**。
+
+🔴 **證據刻意唔用 `migrate deploy` 個 summary** —— 佢係一個 summary-level 綠燈,而 §9 記低過嗰族(「PR 顯示 MERGED ≠ commit 入齊」「revision Healthy ≠ DB 通」)講嘅就係佢證明唔到下面每一件。改為直接 query catalog:
+
+- 五張 `Agent*` 表齊
+- `AgentRun.startedById` = `NOT NULL`
+- **三條 FK**:`principalId` → `AgentPrincipal` · `requestId` → `Request` (`SET NULL`) · `startedById` → `AppUser` (`RESTRICT`)
+- `ConnectorConfig` 有 `agentModel` + `agentRuntime`
+- `_prisma_migrations` 三條 `finished = t`
+
+之後 api **1099 / 77 suites 全綠(零跌)** · tsc **0** · lint **0**。用完即時還原 `ai-doc-extraction-db`,並且**真 TCP 驗過佢攞返個 port**(§9 記低過「還原會靜靜失敗」)。
+
+### 兩個 schema 決定,同一個理由
+
+**`startedById` = required + FK + `ON DELETE RESTRICT`。**
+
+nullable 睇落安全啲,但佢令「**攞唔返 scope**」變成一個到得到嘅狀態 —— 而**冇 scope 讀落就係全部 scope**。呢個正正係 ADR-0036 D0 想 keep out of the agent path 嗰個 fail-open 形狀。`RESTRICT` 再令 dangling row 結構上唔存在。
+
+**`requestId` FK = `ON DELETE SET NULL`**,同 `OutboundFailure.requestId` 逐字同一形狀。個唔一致由「寫低咗」升級成「解決咗」。
+
+⚠️ Prisma 出咗個 `not possible if the table is not empty` warning —— **成立但無害**:張表喺同一條 deploy 鏈上面前兩個 migration 先至建出嚟,零 row。DEV 側同理。
+
+### 🔴 ADR-0037 —— 而佢改咗 OQ-1 個問題本身
+
+寫之前**對已裝 package 實查**(ADR-0036 初稿就係因為假設咗 SDK 做唔到乜而要整份改寫):
+
+| 事實 | 出處 |
+|---|---|
+| `setDefaultOpenAIClient(client)` 存在 ⇒ 換得走底層 client | `@openai/agents-openai/dist/defaults.d.ts:11` |
+| `openai@7` 自己 ship `AzureOpenAI extends OpenAI` | `openai/azure.d.ts:34` |
+| 🔴 設咗 `deployment` **會改寫 base URL**,而且 non-deployment endpoint 之後用唔到 | `openai/azure.d.ts:19-20` |
+| 有 `azureADTokenProvider` ⇒ 用得 Entra,唔一定要 static key | `openai/azure.d.ts:54` |
+| 🔴 SDK 有個 `DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"` | `defaults.d.ts:3` |
+
+**兩個後果值得單獨講:**
+
+**① `agentModel` 語意變咗。** Azure 之下佢收嘅係 **deployment 名**唔係 model 名,而兩者可以完全唔同字。⇒ **OQ-1 由「揀邊個 model」變成「infra 開邊個 deployment、叫咩名」** —— 一個要**外部團隊做嘢**嘅問題。W46 由此有咗第一個外部依賴,而本項目 infra 依賴 **B1 / B4 / B7 / B8 / B9 五次每次都要等**。
+
+**② 最容易誤讀嗰句,寫咗做 E5**:trace exporter 打嘅係 **OpenAI backend**,同你把 inference 指去邊個 endpoint **完全無關**。⇒「我哋轉咗去 Azure」**唔等於**「PII 唔會出去」。D11 三重關喺呢個 ADR 之後**唔係冇咁重要,係更加係唯一防線** —— 因為身邊多咗一句聽落好安心嘅話。**呢個係本 ADR 自己製造嘅風險(R18)。**
+
+🔴 **ADR 寫成 `Proposed` 唔係 `Accepted`**:Chris 答嘅係「用邊個 provider」,而上面三個後果(E3 語意 / E4 auth 兩條路 / E5 tracing)**佢未見過**。批一個佢冇見過後果嘅決定,正正係本項目一路想避開嗰件事。
+
+### ⚠️ 兩個 doc 從來冇記過嘅環境事實
+
+1. **本 worktree 冇 `apps/api/.env`** —— `Test-Path` = `False`。主 worktree(`C:/ai-develop/unified-operation-platform`)先至有。**冇建佢**(§4.4 絕不 touch `.env*`);`docker-compose.yml` 本身就有本機 DB 憑證(`uop`/`uop`/`platform`,已 commit,唔係 secret)⇒ 根本唔使掂另一個 worktree。
+2. **`git worktree list` = 兩個 worktree**,另一條 checkout 咗 `chore/web-lint-prettier`。⇒ **兩邊共用同一個 `uop-postgres`**,今日跑 migration 之後,嗰條 branch 會見到「DB 有佢 folder 入面冇嘅三個 migration」。冇害(migration 純加嘢),但**唔知就會當成 drift 事故**。
+
+### Blockers / 未收
+
+- 🚧 **A1 DEV 側未做** —— 卡「要唔要部署」。⚠️ DEV entrypoint 令 migrate 失敗 NON-FATAL ⇒ 部署後**唔可以睇 revision status**,要照今日咁 query catalog
+- 🚧 **ADR-0037 待批**(唔 block F5,block 嘅係真接 Azure)
+- 🚧 **OQ-1** —— 押後到 F11,但佢而家係一個 infra 問題
+- 🚧 **R11–R19 未入 `RISK_REGISTER.md`**(R17–R19 由 ADR-0037 新增)
+- 🚧 一個**既有** gap 未開單:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏欄

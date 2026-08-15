@@ -126,7 +126,16 @@ model AgentRun {
   id          String   @id @default(cuid())
   principalId String
   principal   AgentPrincipal @relation(fields: [principalId], references: [id])
+  // 🔄 2026-08-15 Chris 拍板加(F1-6)—— 本 §4 原稿冇。required + FK,
+  // ON DELETE RESTRICT:tool 嘅 OpCo scope 來自呢個人,而一個隔夜先批准
+  // 嘅 run 重開之後只可能由 row 攞返。nullable 會令「冇 scope」到得到,
+  // 而冇 scope 讀落就係全部 scope(ADR-0036 D0 要擋嘅 fail-open 形狀)
+  startedById String
+  startedBy   AppUser        @relation(fields: [startedById], references: [id])
   requestId   String?        // AI-Assist 掛住一張 request
+  // 🔄 2026-08-15 Chris 拍板加 FK(F1-7)—— 原稿刻意只寫 @@index。
+  // ON DELETE SET NULL,同 OutboundFailure.requestId 逐字同一形狀
+  request     Request?       @relation(fields: [requestId], references: [id])
   status      String         // running | awaiting_approval | approved
                              // | rejected | completed | failed | aborted
   // 🔴 SDK 嘅 resumable run state。存返係為咗 approve 之後 resume 得返
@@ -231,19 +240,19 @@ model AgentProposal {
 
 ---
 
-## 7. Open Questions —— **六條 2026-08-15 全部 approved(Chris)· 🆕 OQ-7 由 F2 揭出,未答**
+## 7. Open Questions —— **七條全部有結論;淨低 OQ-1 一條真正未答(2026-08-15)**
 
 > ⚠️ **「approved」對每條嘅意思唔一樣,呢個分別要記住。** OQ-2/3/4/6 嘅 default 係一個**答案**,批咗即係定咗;**OQ-1 同 OQ-5 嘅 default 係「暫時唔答」**,批咗即係確認「維持 deferred 到指定時點」—— **唔可以當成已經答咗**。呢個正正就係 §9 記低過嗰個形狀:一格寫住「approved」而下手當咗成格都答晒。
 
 | # | 問題 | 決定 | 狀態 |
 |---|---|---|---|
-| **OQ-1** | Agent 用邊個 model? | **維持 deferred** —— 選型留返實作前;`ConnectorConfig` 可改(跟 ADR-0013 Model C,非機密欄落 DB) | 🟡 **approved as deferred** —— 🔴 **開 F3 之前一定要答** |
+| **OQ-1** | Agent 用邊個 model? | 🔄 **2026-08-15 更新兩處**。①**target 由「F5 之前」改成「F11 之前」**(Chris 批)—— 因為 §2.1 F10 同 A6/A7/A8 都明文寫住 **LLM 一律 mock** ⇒ F5 / F6 / F9 嘅 code + test **結構上唔需要一個真 model**,佢真正 block 嘅係 **A14 live 驗**。②🔴 **問題本身變咗**(ADR-0037 E3):Azure 之下 `agentModel` 收嘅係 **deployment 名**唔係 model 名 ⇒ 由「揀邊個 model」變成「**infra 喺公司個 Azure OpenAI resource 開邊個 deployment、叫咩名**」—— 而後者係一個要**外部團隊做嘢**嘅問題,唔係一個揀嘅問題 | 🟡 **approved as deferred to F11** —— 🔴 **開 A14 之前一定要答** |
 | **OQ-2** | Proposal 審批權:ADMIN only 定 ADMIN + REGIONAL? | **ADMIN + REGIONAL** —— 跟 `OutboundFailure` 先例(ADR-0011 D4):同一批人本來就睇緊呢啲 request | 🟢 **定咗** |
 | **OQ-3** | 一張 request 可唔可以有多過一個 open run? | **唔可以** —— 同時只准一個非終態 run(避免兩個 proposal 對住同一張單打架) | 🟢 **定咗** |
 | **OQ-4** | Agent 讀唔讀得到 `AuditLog`? | **讀唔到** —— 唔喺 §3 allow-list;audit 係 ADMIN-only 兼載 PII(ADR-0009 P-B) | 🟢 **定咗** |
 | **OQ-5** | `awaiting_approval` 掛幾耐算過期? | **維持 deferred** 到期二連 BullMQ 一齊決定;🔴 **但過期一定要 fail loud,唔可以靜靜當成功**(R16) | 🟡 **approved as deferred** —— 🔴 **開 G5 之前一定要答** |
 | **OQ-6** | 用唔用 SDK 嘅 guardrail 做第二層? | **用得,但唔可以入 acceptance gate**(ADR-0036 D2)—— 期二再評估要唔要真行 | 🟢 **定咗** |
-| **OQ-7** 🆕 | 🔴 **`rawRequestText` / `targetUpn` 送去第三方 model provider 做 inference,可唔可以?** | **未答** | 🔴 **開 F5 之前一定要答(硬 gate)** |
+| **OQ-7** 🆕 | 🔴 **`rawRequestText` / `targetUpn` 送去第三方 model provider 做 inference,可唔可以?** | 🟢 **答咗(Chris 2026-08-15):行公司 tenant 嘅 **Azure OpenAI**,唔准打 `api.openai.com`** ⇒ 寫成 **ADR-0037**(`Proposed`)。論據係「**收件人變咗**」唔係「內容變少咗」—— 原文仍然原文,但只喺公司同 Microsoft 之間,同平台今日打緊嘅 Graph / M365 / Entra 同一個信任面。否決:ZDR(代價其實係零,但多一個第三方兼要等審批)· 公共 API 標準條款 · **送之前先 scrub**(唯一會改 F5 code shape 嗰個 —— 等於用「功能唔 work」換「冇 PII」)· 只送摘要(個摘要 call 一樣要收原文) | 🟢 **定咗** —— ⚠️ ADR-0037 仲係 `Proposed`,而 **期二 G4(Claude Tool Runner)要重新答一次**,唔可以引用本答案(ADR-0037 E7) |
 
 ### 🔴 OQ-7 —— F2 寫 `get_request` 嗰陣揭出嚟,ADR-0036 從來冇決定過
 
@@ -300,3 +309,4 @@ scrub 咗佢就係交白卷,所以 `get_request` **必須**原文回傳(F2 已�
 | 2026-08-15 | 🟢🟢 **ADR-0036 `Accepted`(Chris)· plan `approved` · §7 六條 OQ 一併批** ⇒ **R1 gate 過,開得工**。⚠️ 同一刻 Chris 要求**呢條 doc branch 唔准 merge 落 `main`**(「一切未滿意我都認為不能夠 merge 到 main,因為這些都是會影響現有架構的內容」)⇒ 兩份文件頂加 banner;**實作 branch 由 `docs/w46-agent-runtime` 開,唔好由 `main` 開**。🔴 **一個知道咗但刻意冇修嘅缺口**:`main` 上面嘅 `CLAUDE.md §0/§9` + `SESSION_SUMMARY.md` 仍然寫住「ADR 到 **0035**」,而嗰兩份係每個 session **無條件讀入**嘅 ⇒ **由 `main` 開工嘅 session 唔知道本 phase 存在**。冇改係因為改咗都唔會到 `main`(branch 唔 merge),⇒ **呢個缺口要靠人記住,直到 branch merge 嗰日**。📌 OQ-1(model 選型)同 OQ-5(`awaiting_approval` 過期)嘅「approved」= **維持 deferred**,唔係已答 —— 見 §7 個 ⚠️ |
 | 2026-08-15 | 🟢 **F1 + F2 落地**(`329f223`,branch `feat/w46-agent-runtime`)—— 五個 model + migration + `AgentToolRegistry`(5 個 tool)+ 33 條 test;api 1077/75 全綠,falsification ×4 真紅零誤傷。**R3 deviation ×3,全部喺 checklist 標咗**:①`search_catalog` 多回 `displayName`/`skuPartNumber`/`seatModel`(唔畀 agent 有嘢 match 就等於逼佢幻覺;真防線係 `propose_line_items` 只收 GUID)②tool 契約拆咗做 `agent-tool.ts` + `tool-registry.ts` 兩個檔(plan 只寫一個檔名)③`propose_line_items` 嘅 `execute` 做成**唯讀**(D3 個順序係「平台建完先 resume」⇒ execute 再建就係建第二次)。🔴 **同時新增 `OQ-7`(inference 側 PII)—— 呢個唔係 deviation,係 ADR-0036 一個從來冇決定過嘅缺口**,列為 **F5 硬 gate** |
 | 2026-08-15 | 🟢 **F3 + F4 落地**(`b668f98`)—— seam ⑤ `AgentRuntimeProvider` + `OpenAiAgentsProvider` + factory + tracing 三重關;api **1099/77** 全綠(零跌)· tsc 0 · lint 0 · falsification ×4 真紅零誤傷。**H2**:`@openai/agents@0.16.0` 裝咗(ADR-0036 已批)。🔴🔴 **F4 揭到一個會令 A4 完全空轉嘅陷阱**:SDK 有**兩個**唔同 tracing 開關 —— `config.tracing.disabled` 係只讀 env 嘅 getter 而且 **`NODE_ENV==='test'` 時永遠 `true`**,真開關喺 `TraceProvider`(`setTracingDisabled` 寫、`createTrace()` 讀)⇒ 對住前者寫 assert,**喺 Jest 之下連 disable 嗰行刪咗都會綠**。條 test 改成三段式(開返 → 證明開到 → 起 provider → 驗關咗)。**而呢條 test 就係 R14 唯一會紅嘅嘢**,佢空轉即係三重關實際上得兩關。🔴 第二個同族陷阱:`tool()` 把 `needsApproval: true` 包成 `async () => true` ⇒ `toBe(true)` 必 fail、`toBeDefined()` 乜都捉唔到,**要 call 個 policy 先驗到**。📌 **OQ-1 冇代答** —— `agentModel` 冇 code default、未配就 503 ⇒ 唔再 block code,但**仍然 block F5**。**R3 deviation ×2**:①F3 順帶加咗 `agent` connector 落 `connectors.ts` / `ConnectorConfig` / audit whitelist / Integrations panel(D10 明文要求,但 plan §2.1 F3 冇列)②`SeamRuntimeRegistry` 新增 `recordChoice`/`choiceOf`(既有 boolean API 一個字唔改)|
+| 2026-08-15 | 🟢🟢 **四條卡住嘅嘢一次過解封(Chris 四項拍板)** —— ①**OQ-7 = Azure OpenAI(公司 tenant)** ⇒ **ADR-0037**(`Proposed`)②**`startedById` + `requestId` FK 兩個一齊做**(F1-6 / F1-7)③**OQ-1 押後到 F11**(唔再係 F5 gate)④**批准停 `ai-doc-extraction-db`** ⇒ **A1 本機側收咗**。<br>🔴 **一個核對推翻咗 handoff 嘅前提,而佢決定咗今日做到幾多**:handoff 寫「OQ-1 同 OQ-7 係 F5 兩條硬 gate」。實際上 §2.1 F10 同 A6/A7/A8 都明文寫住 **LLM 一律 mock** ⇒ **OQ-1 結構上唔可能 block F5 嘅 code + test**,佢 block 嘅係 A14。而 **OQ-7 就真係 gate F5** —— 但唔係因為「要決定可唔可以送」,係因為其中一個候選答案(先 scrub)會改 F5 嘅 code shape。⇒ **兩條「硬 gate」性質完全唔同,而佢哋喺 doc 入面一直並排寫住,睇落一模一樣。**<br>🔴 **`AGENT_MODEL` 語意被 OQ-7 個答案改咗**(ADR-0037 E3):Azure 之下佢收 **deployment 名**。⇒ OQ-1 由「揀邊個 model」變成「infra 開邊個 deployment」——**一個要外部團隊做嘢嘅問題**,而 W46 由此有咗第一個外部依賴。<br>🟢 **A1 本機**:三個 migration `migrate deploy` 真跑(跑之前 `migrate status` = 22/24、零 drift),證據係 **catalog query 唔係 migrate 個 summary** —— 五張表 · `startedById NOT NULL` · 三條 FK · `ConnectorConfig` 兩個欄 · ledger 三條 `finished = t`。api **1099 / 77 全綠零跌** · tsc 0 · lint 0。<br>⚠️ **順帶發現兩個 doc 冇記過嘅環境事實**:①**本 worktree 冇 `apps/api/.env`**(主 worktree `C:/ai-develop/unified-operation-platform` 先有)—— 但 `docker-compose.yml` 本身就有本機 DB 憑證,所以唔使掂佢 ②`git worktree list` = **兩個** worktree,而另一條 checkout 咗 `chore/web-lint-prettier` ⇒ **兩邊共用同一個 `uop-postgres`**,本機 migration 一跑就會令另一條 branch 睇到「DB 有佢冇嘅 migration」|

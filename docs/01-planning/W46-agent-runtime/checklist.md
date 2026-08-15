@@ -19,9 +19,11 @@
 - [x] F1-2 `AuditLog.actorType` 註明第四個值 `'agent'`(String 欄,**零 DDL**)
 - [x] F1-3 Migration `20260815030000_w46_agent_runtime` —— 🔴 **SQL 由 `prisma migrate diff --from-empty` 離線生成再逐字抄**,唔係手寫。本機 `uop-postgres` 冇跑(5433 畀 `ai-doc-extraction-db` 佔住,停佢要 Chris 批)
 - [x] F1-4 `prisma generate` 過(client 認得五個 model)
-- [ ] F1-5 🔴 **A1:migration 對真 DB 跑得過** —— 🚧 **本機 + DEV 兩次都未做**。本機卡「要唔要停另一個項目個 container」,DEV 卡「要唔要部署」。**Target:F5 之前**(冇真表就跑唔到一個真 run)
-- [ ] F1-6 🚧 **`AgentRun` 冇 `startedById`** —— plan §4 冇寫,F1 跟咗 plan。但 tool 嘅 OpCo scope 來自「開 run 嗰個人」,而**一個隔夜先批准嘅 run 重開之後,個人只可能由 row 攞返**。**Target:F5 之前決定**(加欄 = 一個 migration)
-- [ ] F1-7 🚧 **`AgentRun.requestId` 有 index 冇 FK** —— 同 `OutboundFailure.requestId`(有 FK)唔一致。跟咗 plan §4 逐字。**Target:Chris 一句話決定**,要加就一個 migration
+- [x] F1-5 🟢 **A1 本機側收咗**(2026-08-15,Chris 批准停 `ai-doc-extraction-db`)—— 三個 migration 對真 `uop-postgres` 由 `migrate deploy` 真跑。🔴 **證據唔係 migrate 個 summary**(佢係 summary-level 綠燈,§9 講過嗰種證明唔到下面每件事),係 catalog query 嘅真回傳:五張 `Agent*` 表齊 · `AgentRun.startedById` `NOT NULL` · **三條 FK**(`principalId` / `requestId` / `startedById`)· `ConnectorConfig` 有 `agentModel` + `agentRuntime` · `_prisma_migrations` 三條 `finished = t`。**跑之前 `migrate status` = 22/24 applied 零 drift**
+- [ ] F1-5b 🚧 **A1 DEV 側未做** —— 卡「要唔要部署」。⚠️ DEV 個 entrypoint 令 migrate 失敗 **NON-FATAL** ⇒ 部署之後**唔可以睇 revision status 當證據**,要照上面咁 query catalog
+- [x] F1-6 🟢 **`AgentRun.startedById` 加咗**(Chris 2026-08-15 拍板「兩個一齊做」)—— **required + FK → `AppUser`,`ON DELETE RESTRICT`**。🔴 **點解唔係 nullable**:nullable 令「攞唔返 scope」變成一個到得到嘅狀態,而**冇 scope 讀落就係全部 scope** —— 正正係 ADR-0036 D0 要 keep out of the agent path 嗰個 fail-open 形狀。`RESTRICT` 令 dangling 結構上唔存在
+- [x] F1-7 🟢 **`AgentRun.requestId` FK 補咗**(同一個 migration)—— `ON DELETE SET NULL`,同 `OutboundFailure.requestId` **逐字同一形狀**。呢個唔一致由「寫低咗」升級成「解決咗」
+- [x] F1-8 Migration `20260815143648_w46_agent_run_actor` —— 三句 SQL(`ADD COLUMN startedById TEXT NOT NULL` + 兩條 `ADD CONSTRAINT`)。⚠️ Prisma 出咗個 `not possible if the table is not empty` warning:**成立但無害** —— 張表喺同一條 deploy 鏈上面前兩個 migration 先至建出嚟,零 row;DEV 側同理
 
 ## F2 — `AgentToolRegistry`(H1;allow-list 喺呢度)
 
@@ -55,7 +57,8 @@
 
 ## F5 — `AI-Assist` run
 
-- [ ] F5-1 🔴 **開工前要答 OQ-7(inference 側 PII)** —— 見 plan §7。**F2 揭出嚟嘅,ADR-0036 從來冇決定過**
+- [x] F5-1 🟢 **OQ-7 答咗(Chris 2026-08-15):Azure OpenAI(公司 tenant)** ⇒ 寫成 **ADR-0037**(`Proposed`,待拍板)。🔴 **佢對 F5 code shape 嘅影響 = 零** —— 四個選項入面只有「送之前先 scrub」會改 F5,而嗰個被否決 ⇒ **F5 照原設計寫得**。⚠️ 但佢改咗**兩樣**:①`agentModel` 語意變成 **deployment 名**(ADR-0037 E3)②**OQ-1 個問題本身變咗** —— 由「揀邊個 model」變成「infra 開邊個 deployment」
+- [ ] F5-1b 🚧 **ADR-0037 仲係 `Proposed`** —— Chris 答咗 provider,但**未見過**三個查證後先浮出嚟嘅後果(E3 語意 / E4 auth 兩條路 / **E5 轉去 Azure 唔會令 tracing 變安全**)。⚠️ **唔 block F5**(見上),block 嘅係真接 Azure 嗰步
 - [ ] F5-2 讀 `rawRequestText` → `propose_line_items` → 停 `awaiting_approval` → 寫 `AgentProposal`
 - [ ] F5-3 🔴 **A8:transcript 落 `AgentMessage` 之前一律 `scrubPii`**
 - [ ] F5-4 🔴 **A7:餵一個「扮講自己做過嘢」嘅 mock LLM,assert 佢寫唔到任何 `AgentStep`**(INC-001 直接對應)
@@ -112,9 +115,11 @@
 
 | # | 項 | 理由 | Target |
 |---|---|---|---|
-| F1-5 | **兩個** migration 未對真 DB 跑(`w46_agent_runtime` 五張表 · `w46_agent_connector` 兩個欄) | 本機 5433 衝突要 Chris 批 · DEV 要部署 | F5 之前 |
-| OQ-1 | model 選型仍然未答 | F3 令佢唔再 block code(未配就 503),但**仍然 block F5** | F5 之前 |
-| F1-6 | `AgentRun` 冇 `startedById` | plan §4 冇寫;F2 暫由 caller 傳 | F5 之前 |
-| F1-7 | `AgentRun.requestId` 冇 FK | 跟 plan §4 逐字,同 `OutboundFailure` 唔一致 | Chris 一句話 |
-| OQ-7 | inference 側 PII 冇決定過 | F2 寫 `get_request` 嗰陣先揭到 | **F5 之前(硬 gate)** |
-| R11–R16 | 未入 `RISK_REGISTER.md` | living doc,ADR / plan 已記 | 期一收尾 |
+| ~~F1-5~~ | ~~三個 migration 未對真 DB 跑~~ | 🟢 **2026-08-15 本機收咗**(Chris 批准停 `ai-doc-extraction-db`) | ✅ |
+| ~~F1-6 / F1-7~~ | ~~`startedById` / `requestId` FK~~ | 🟢 **Chris 2026-08-15 拍板兩個一齊做**,已落 migration | ✅ |
+| ~~OQ-7~~ | ~~inference 側 PII 冇決定過~~ | 🟢 **Chris 2026-08-15 揀 Azure OpenAI** ⇒ ADR-0037 | ✅（ADR 待批） |
+| F1-5b | **DEV 側 migration 未跑** | 卡「要唔要部署」 | 期一收尾 |
+| ADR-0037 | `Proposed`,三個後果 Chris 未見過 | 佢答嘅係 provider,唔係嗰三樣 | **接 Azure 之前** |
+| OQ-1 | model / **deployment** 選型未答 | Chris 2026-08-15 **批准押後到 F11 live 驗**;ADR-0037 E3 令問題變成「infra 開邊個 deployment」 | **F11 之前** |
+| R11–R19 | 未入 `RISK_REGISTER.md`(🆕 R17–R19 由 ADR-0037 新增) | living doc,ADR / plan 已記 | 期一收尾 |
+| — | 🆕 **既有 gap(唔喺 W46 範圍)**:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏咗 `licenseOpsProvider` / `ticketUpdateProvider` / `acsSenderAddress` 等 ⇒ 改 seam provider 唔會出現喺 audit `before`/`after` | W39 / W40 / CH-011 三批欄都中 | 開一張 CH |
