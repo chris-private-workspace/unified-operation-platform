@@ -413,7 +413,57 @@ Chris 問「**所以 OQ-7 要批什麼?**」—— 呢條問題本身就係 `Pro
 🔴 **`E4` 同 `OQ-1` 合併做一個問題** —— 兩者都取決於「infra 點開個 Azure OpenAI resource」,分開問就會問兩次,而中間隔住嘅係本項目最貴嗰種等待(B1/B4/B7/B8/B9 五次先例)。⇒ **落一個 infra request,一次過要齊:resource · deployment 名 · E4 兩條路邊條做得到。**
 
 📌 **形狀**:`Accepted` **唔等於「每一條都答咗」**。`plan.md §7` 為 OQ-1/OQ-5 標過同一件事(「approved as deferred」),而嗰格自己就寫住「一格寫住 approved 而下手當咗成格都答晒」係本項目撞過嘅事 —— 所以呢次喺 **ADR 頂部、index、plan、checklist 四個地方**都寫明 E4 未答,唔靠一個地方。
-### 未收(**本日收工嘅真狀態,上面 Day 3–5 嗰幾行同日已經過時**)
+---
+
+## Day 7 — 2026-08-16(F7 — audit)
+
+### 做咗
+
+兩條 action(`agent.run_started` / `agent.proposal_decided`)· 兩個 event-only target(`AgentRun` / `AgentProposal`,whitelist 都係 `[]`)· `actorType` union 加 `'agent'`。
+
+api **1171 → 1184 / 81**(零跌)· tsc 0 · lint 0 · **falsification ×2 真紅零誤傷**。
+
+### 🔴 查證到一個 ADR-0036 D7 冇講嘅約束
+
+D7 要求 `AuditLog.actorType` 加一個 `'agent'`。做嘅時候先發現:
+
+> **`AuditLog.actorId` 係 FK → `AppUser`**(`schema.prisma:440-441`)
+
+⇒ 一行 `actorType: 'agent'` 嘅 row **講唔出係邊個 agent** —— `AgentPrincipal` 個 id 塞唔入去,只可以 `actorId: null`,同 `system` / `m2m` 一模一樣。**一個 principal 之下捱得住,兩個就係一個窿。**
+
+而且今日**冇任何地方 emit `'agent'`**,呢個亦係啱嘅:Tier 1 之下每個被審計嘅事件背後都真係有個人(人開 run、人批 proposal),寫 `'agent'` 係**更唔準確**唔係更準確。
+
+⇒ 兩件事都寫咗喺 `AuditEntryInput.actorType` 個 docblock,**唔寫喺 plan** —— 因為下手真係要用嗰陣,佢望住嘅係嗰行 code。
+
+### 兩個 audit 位置刻意唔同,而個分別係規則唔係漂移
+
+| | 位置 | 點解 |
+|---|---|---|
+| `agent.run_started` | **transaction 入面** | 前面冇任何不可逆嘅嘢(冇 model call、冇 line item)⇒ 一齊 rollback 零成本。ADR-0009 **D8.1**:「done but unrecorded」差過「not done」 |
+| `agent.proposal_decided` | **transaction 外面,決定之後** | 嗰陣 line item **已經真係建咗** ⇒ 為咗一個 audit 打思噎而 rollback 個決定,會留低「line item 存在但 proposal 仲係 pending」,再批一次就建兩次。`outbound-retry.service.ts:398-401` 同一句 |
+
+⇒ **同一條規則,喺兩個唔同前提下得出兩個答案**:睇 audit 之前有冇一件不可逆嘅事發生過。
+
+### 🔴 Falsification ×2,而第二個先係重點
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | `AgentRun` whitelist 由 `[]` 改成 `['status','runState']` | **1 紅** |
+| b | 把 `audit.log` 搬出 transaction 外 | **1 紅** |
+
+**(b) 證明咗條 test 唔係 `toHaveBeenCalled()` 嗰種** —— 搬咗出去佢一樣會被 call,`expect(audit.log).toHaveBeenCalled()` 會照綠。條 test 用一個 flag 記住「被 call 嗰刻 transaction 開唔開住」,而嗰個 flag 就係佢同一條空 assert 嘅全部分別。
+
+📌 同族:**A11 亦刻意唔寫 `expect(WHITELIST.AgentRun).toEqual([])`** —— 嗰種寫法只會同份檔自己講嘅嘢一致。改為餵一個**肥** row(含 transcript 同 model payload)入 `pickAuditFields`,驗佢真係乜都唔剩。
+
+### ⚠️ F7 令 A5 講嘅嘢變咗,所以 A5 改咗講法
+
+一個 run 而家會喺五張 `Agent*` 表以外寫**一行**:`agent.run_started`。呢個係 D5 明文要求嘅,但 **A5 原本嗰句「零改動」由嗰刻起就唔再係真** ⇒ 加咗一條 test 講**準確**嗰句:`Agent*` 以外**剛好一行,而且就係佢**。
+
+（一條 assert 唔更新就會變成描述緊一個已經唔存在嘅系統 —— 同 §9 講「文件過時令下個 session 用錯前提」同族,只係呢次過時嘅係 test。）
+
+---
+
+### 未收(**Day 6 收工嘅狀態;F7 已於 Day 7 收**)
 
 - 🚧 **F7** audit · **F8** 前端(🔴 後端通晒但**冇畫面撳得到**)· **F11** render + live
 - 🚧 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名)—— **同一個 infra request,未出**

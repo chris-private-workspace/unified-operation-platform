@@ -8,6 +8,8 @@ import {
 import type { AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestService } from '../fulfilment/request.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import {
   AiAssistService,
   type AiAssistRunResult,
@@ -44,7 +46,34 @@ export class AgentApprovalService {
     private readonly prisma: PrismaService,
     private readonly requests: RequestService,
     private readonly aiAssist: AiAssistService,
+    private readonly audit: AuditService,
   ) {}
+
+  /**
+   * 🔴 OUTSIDE any transaction, and after the decision is stored.
+   *
+   * By the time this runs, real work has happened — line items exist, or a
+   * rejection has been written. `outbound-retry.service.ts:398-401` states the
+   * rule for exactly this position: a repair that succeeded must not be undone
+   * by an audit hiccup. (The opposite choice is correct at run START, where
+   * nothing irreversible precedes it — see `ai-assist.service.ts`.)
+   *
+   * Approve and reject share ONE action and are told apart by `reason`, because
+   * R13 — approvals degenerating into rubber-stamping — has to be one query.
+   */
+  private async auditDecision(
+    proposal: { id: string },
+    approver: AppUser,
+    reason: string,
+  ): Promise<void> {
+    await this.audit.log(this.prisma, {
+      action: AUDIT_ACTIONS.AGENT_PROPOSAL_DECIDED,
+      targetType: 'AgentProposal',
+      targetId: proposal.id,
+      actorId: approver.id,
+      metadata: { reason },
+    });
+  }
 
   /**
    * @param approver the person accountable for the write. 🔴 They are the actor
@@ -88,6 +117,12 @@ export class AgentApprovalService {
       },
     });
 
+    await this.auditDecision(
+      proposal,
+      approver,
+      `approved: ${created.length} line item(s) created`,
+    );
+
     return this.aiAssist.resumeRun(proposal.runId, [
       { ref: proposal.interruptionRef ?? '', approved: true },
     ]);
@@ -116,6 +151,8 @@ export class AgentApprovalService {
      * moved on this path — that is acceptance A10's second half, and it is true
      * by construction here: there is no domain call in this method.
      */
+    await this.auditDecision(proposal, approver, `rejected: ${reason}`);
+
     return this.aiAssist.resumeRun(proposal.runId, [
       { ref: proposal.interruptionRef ?? '', approved: false, reason },
     ]);

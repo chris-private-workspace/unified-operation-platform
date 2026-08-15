@@ -5,6 +5,8 @@ import { AgentApprovalService } from './agent-approval.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestService } from '../fulfilment/request.service';
 import { AiAssistService } from '../agent/ai-assist.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 
 /**
  * W46 A10 — approve creates the line items and the run carries on; reject
@@ -48,6 +50,7 @@ describe('AgentApprovalService', () => {
   };
   let requests: { addLineItem: jest.Mock };
   let aiAssist: { resumeRun: jest.Mock };
+  let audit: { log: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -57,6 +60,7 @@ describe('AgentApprovalService', () => {
     };
     requests = { addLineItem: jest.fn() };
     aiAssist = { resumeRun: jest.fn() };
+    audit = { log: jest.fn().mockResolvedValue(undefined) };
 
     prisma.agentProposal.findUnique.mockResolvedValue(pendingProposal());
     prisma.agentProposal.update.mockResolvedValue({});
@@ -78,6 +82,7 @@ describe('AgentApprovalService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: RequestService, useValue: requests },
         { provide: AiAssistService, useValue: aiAssist },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(AgentApprovalService);
@@ -224,6 +229,86 @@ describe('AgentApprovalService', () => {
       expect(aiAssist.resumeRun).toHaveBeenCalledWith('run-1', [
         { ref: 'call-1', approved: false, reason },
       ]);
+    });
+  });
+
+  // ── F7 — audit ─────────────────────────────────────────────
+
+  describe('F7 — agent.proposal_decided', () => {
+    it('records approve and reject under ONE action, told apart by reason', async () => {
+      await service.approve('p1', approver);
+      const approved = audit.log.mock.calls[0][1] as Record<string, unknown>;
+
+      audit.log.mockClear();
+      prisma.agentProposal.findUnique.mockResolvedValue(pendingProposal());
+      await service.reject('p1', 'wrong SKUs', approver);
+      const rejected = audit.log.mock.calls[0][1] as Record<string, unknown>;
+
+      // 🔴 Same action on purpose. R13 is that approvals degenerate into
+      // rubber-stamping, and "how often does this person just say yes" has to
+      // be ONE query — two actions would make it two queries and a subtraction,
+      // which is how nobody runs it.
+      expect(approved.action).toBe(AUDIT_ACTIONS.AGENT_PROPOSAL_DECIDED);
+      expect(rejected.action).toBe(AUDIT_ACTIONS.AGENT_PROPOSAL_DECIDED);
+
+      expect(approved).toMatchObject({
+        targetType: 'AgentProposal',
+        targetId: 'p1',
+        actorId: 'u-admin',
+      });
+      expect((approved.metadata as { reason: string }).reason).toContain(
+        'approved',
+      );
+      expect((rejected.metadata as { reason: string }).reason).toContain(
+        'wrong SKUs',
+      );
+    });
+
+    it('🔴 A11 — passes no before/after', async () => {
+      await service.approve('p1', approver);
+
+      const entry = audit.log.mock.calls[0][1] as Record<string, unknown>;
+      expect(entry.before).toBeUndefined();
+      expect(entry.after).toBeUndefined();
+    });
+
+    it('audits AFTER the decision is stored, not inside a transaction with it', async () => {
+      await service.approve('p1', approver);
+
+      /**
+       * 🔴 The opposite choice from `agent.run_started`, and deliberately so.
+       *
+       * By this point line items EXIST. Rolling the decision back because an
+       * audit write hiccuped would leave those line items created against a
+       * proposal still marked `pending` — re-approving would create them twice.
+       * `outbound-retry.service.ts:398-401` states the same rule for the same
+       * reason: a repair that succeeded must not be undone by an audit hiccup.
+       */
+      expect(
+        prisma.agentProposal.update.mock.invocationCallOrder[0],
+      ).toBeLessThan(audit.log.mock.invocationCallOrder[0]);
+    });
+
+    it('writes no audit row when the decision itself was refused', async () => {
+      prisma.agentProposal.findUnique.mockResolvedValue(
+        pendingProposal({ status: 'executed' }),
+      );
+
+      await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('writes no audit row when the domain path threw', async () => {
+      requests.addLineItem.mockRejectedValue(new ConflictException('nope'));
+
+      await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      // The proposal is marked `failed`, and nobody decided anything — an
+      // audit row here would claim a decision that did not happen.
+      expect(audit.log).not.toHaveBeenCalled();
     });
   });
 

@@ -17,6 +17,8 @@ import {
   type AgentTurn,
 } from './agent-runtime.provider';
 import { REDACTED } from '../integration/scrub-pii';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 
 /**
  * W46 F5 — A5, A6 and A7.
@@ -82,7 +84,12 @@ describe('AiAssistService', () => {
     agentStep: { create: jest.Mock };
     agentMessage: { createMany: jest.Mock };
     agentProposal: { create: jest.Mock };
+    $transaction: jest.Mock;
   };
+  let audit: { log: jest.Mock };
+  /** Set while `$transaction`'s callback is running (see the mock below). */
+  let insideTransaction = false;
+  let auditSawOpenTransaction: boolean | null = null;
 
   /** Every `AgentStep` key written during the test, in order. */
   const stepKeys = () =>
@@ -117,6 +124,31 @@ describe('AiAssistService', () => {
       agentStep: { create: jest.fn() },
       agentMessage: { createMany: jest.fn() },
       agentProposal: { create: jest.fn() },
+      /**
+       * The interactive form, with a flag around the callback.
+       *
+       * 🔴 The flag is the point. Asserting `audit.log` merely ran, or that its
+       * first argument === the prisma mock, would pass just as happily for an
+       * audit written AFTER the transaction closed — and "the run row exists
+       * but nothing recorded it" is the state ADR-0009 D8.1 exists to rule out.
+       * This records whether it was called while the transaction was open.
+       */
+      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => {
+        insideTransaction = true;
+        try {
+          return await fn(prisma);
+        } finally {
+          insideTransaction = false;
+        }
+      }),
+    };
+    insideTransaction = false;
+    auditSawOpenTransaction = null;
+    audit = {
+      log: jest.fn().mockImplementation(() => {
+        auditSawOpenTransaction = insideTransaction;
+        return Promise.resolve();
+      }),
     };
 
     prisma.request.findUnique.mockResolvedValue({
@@ -149,6 +181,7 @@ describe('AiAssistService', () => {
         AiAssistService,
         { provide: PrismaService, useValue: prisma },
         { provide: AgentRuntimeProvider, useValue: runtime },
+        { provide: AuditService, useValue: audit },
       ],
     }).compile();
     service = moduleRef.get(AiAssistService);
@@ -343,6 +376,27 @@ describe('AiAssistService', () => {
     });
 
     /**
+     * 🔴 F7 changed what A5 can claim, so A5 says the new thing precisely
+     * rather than quietly still saying the old one.
+     *
+     * A run now writes ONE row outside the five `Agent*` tables: the
+     * `agent.run_started` audit event. That is sanctioned — ADR-0036 D5 asks
+     * for it by name — but it means "zero writes elsewhere" stopped being true
+     * the moment F7 landed, and a test that kept asserting the old sentence
+     * would be describing a system that no longer exists.
+     */
+    it('writes exactly one row outside Agent* — the audit event, and nothing else', async () => {
+      runtime.start.mockResolvedValue(awaitingTurn());
+
+      await service.startRun(admin, 'req-1');
+
+      expect(audit.log).toHaveBeenCalledTimes(1);
+      expect((audit.log.mock.calls[0][1] as { action: string }).action).toBe(
+        AUDIT_ACTIONS.AGENT_RUN_STARTED,
+      );
+    });
+
+    /**
      * 🔴 The runtime half above can only fail on a path a test happens to
      * drive. This half reads the file.
      *
@@ -432,6 +486,64 @@ describe('AiAssistService', () => {
       expect(step?.status).toBe('failed');
       expect(step?.detail).toContain(REDACTED);
       expect(step?.detail).not.toContain(UPN);
+    });
+  });
+
+  // ── F7 — audit ─────────────────────────────────────────────
+
+  describe('F7 — agent.run_started', () => {
+    it('records the event against the run, with the HUMAN as actor', async () => {
+      await service.startRun(opcoIt, 'req-1');
+
+      expect(audit.log).toHaveBeenCalledTimes(1);
+      const entry = audit.log.mock.calls[0][1] as Record<string, unknown>;
+      expect(entry).toMatchObject({
+        action: AUDIT_ACTIONS.AGENT_RUN_STARTED,
+        targetType: 'AgentRun',
+        targetId: 'run-1',
+        // 🔴 The person, not the agent. `actorType` is left at its 'user'
+        // default because a person really did start this — and `AuditLog.actorId`
+        // is a foreign key to AppUser, so an AgentPrincipal id could not go
+        // there even if we wanted it to.
+        actorId: 'u-opco',
+      });
+      expect(entry.actorType).toBeUndefined();
+    });
+
+    it('names WHICH agent in metadata — the one fact actorId cannot carry', async () => {
+      await service.startRun(admin, 'req-1');
+
+      const entry = audit.log.mock.calls[0][1] as { metadata: unknown };
+      expect(entry.metadata).toEqual({ source: 'ai-assist' });
+    });
+
+    it('🔴 A11 — passes no before/after at all', async () => {
+      await service.startRun(admin, 'req-1');
+
+      // Belt and braces with the whitelist test in audit-fields.spec.ts: that
+      // one proves the filter drops everything, this one proves the call site
+      // never even offers it. Either alone leaves the other half assumed.
+      const entry = audit.log.mock.calls[0][1] as Record<string, unknown>;
+      expect(entry.before).toBeUndefined();
+      expect(entry.after).toBeUndefined();
+    });
+
+    it('writes the audit row INSIDE the same transaction as the run row', async () => {
+      await service.startRun(admin, 'req-1');
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      // ADR-0009 D8.1 — "done but unrecorded" is worse than "not done", and
+      // here nothing irreversible precedes it, so both can roll back together.
+      expect(auditSawOpenTransaction).toBe(true);
+    });
+
+    it('writes no audit row when the request is refused before a run exists', async () => {
+      prisma.request.findUnique.mockResolvedValue(null);
+
+      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(audit.log).not.toHaveBeenCalled();
     });
   });
 

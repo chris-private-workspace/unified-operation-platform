@@ -10,6 +10,8 @@ import { Prisma, type AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertOpcoScope } from '../auth/opco-scope';
 import { scrubPii } from '../integration/scrub-pii';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import {
   AgentRuntimeProvider,
   type AgentSetup,
@@ -97,6 +99,7 @@ export class AiAssistService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly runtime: AgentRuntimeProvider,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -129,14 +132,43 @@ export class AiAssistService {
       );
     }
 
-    const run = await this.prisma.agentRun.create({
-      data: {
-        principalId: principal.id,
-        startedById: user.id,
-        requestId,
-        status: 'running',
-      },
-      select: { id: true },
+    /**
+     * Run row and audit row in ONE transaction (ADR-0009 D8.1: "done but
+     * unrecorded" is worse than "not done").
+     *
+     * 🔴 It is safe to be strict HERE and it is not safe in the approval path,
+     * and the difference is worth stating rather than looking like drift:
+     * nothing irreversible has happened at this point — no model call, no line
+     * item — so rolling both back costs nothing. By the time a PROPOSAL is
+     * decided, line items already exist, so there the audit runs outside and
+     * an audit hiccup must not undo a real side-effect (the precedent
+     * `outbound-retry.service.ts:398-401` states for the same reason).
+     */
+    const run = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.agentRun.create({
+        data: {
+          principalId: principal.id,
+          startedById: user.id,
+          requestId,
+          status: 'running',
+        },
+        select: { id: true },
+      });
+
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.AGENT_RUN_STARTED,
+        targetType: 'AgentRun',
+        targetId: created.id,
+        // 🔴 The HUMAN, with actorType left at its 'user' default. A person
+        // really did start this, and writing 'agent' would be less accurate.
+        actorId: user.id,
+        // Which agent capability — the one fact this row cannot otherwise
+        // carry, because `AuditLog.actorId` is a foreign key to AppUser and an
+        // AgentPrincipal id cannot go in it (see AuditEntryInput.actorType).
+        metadata: { source: AI_ASSIST_PRINCIPAL },
+      });
+
+      return created;
     });
 
     await this.writeStep(run.id, {

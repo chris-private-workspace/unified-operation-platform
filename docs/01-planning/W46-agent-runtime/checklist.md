@@ -79,9 +79,12 @@
 
 ## F7 — Audit
 
-- [ ] F7-1 `agent.run_started` / `agent.proposal_decided` 兩條 action(event-only)
-- [ ] F7-2 `actorType: 'agent'`
-- [ ] F7-3 🔴 **A11:`before`/`after` 係空**(H4;transcript 結構上入唔到 `AuditLog` — D5)
+- [x] F7-1 `agent.run_started`(`AiAssistService`)/ `agent.proposal_decided`(`AgentApprovalService`)。🔴 **approve 同 reject 共用一條 action,靠 `metadata.reason` 分** —— 理由同 `ASSIGN_BUDGET_OVERRIDE` 一樣:**R13(批准退化成 rubber-stamp)要一條 query 睇得晒**,拆做兩條 action 就變成兩條 query 加一次相減,而咁樣就冇人會去跑
+- [x] F7-2 🟡 **`actorType` union 加咗 `'agent'`(D7),但今日冇任何地方 emit** —— Tier 1 之下每個被審計嘅事件背後都真係有個人(人開 run、人批 proposal),寫 `'agent'` 會**更唔準確**。🔴 **順帶查證到一個 D7 冇講嘅約束**:`AuditLog.actorId` 係 **FK → `AppUser`**(`schema.prisma:440-441`)⇒ 一行 agent-actored 嘅 row **講唔出係邊個 agent**(只可以 `actorId: null`,同 `system`/`m2m` 一樣)。一個 principal 之下捱得住,**兩個就係一個窿** ⇒ 寫咗喺 `AuditEntryInput.actorType` 個 docblock,因為下手要用嗰陣就係望住嗰行
+- [x] F7-3 🔴 **A11 兩層** —— ①`audit-fields.spec.ts` 餵一個**肥** row(含 transcript 同 model payload)入 `pickAuditFields('AgentRun'|'AgentProposal')`,assert 回 `undefined`;**刻意唔用 `expect(WHITELIST.AgentRun).toEqual([])`** —— 嗰種寫法只會同份檔自己講嘅嘢一致 ②兩個 service spec 各自 assert call site **連 `before`/`after` 都冇送**。缺一就係「另一半靠假設」
+- [x] F7-4 🔴 **兩個 audit 位置刻意唔同,而個分別係規則唔係漂移** —— `run_started` **喺 transaction 入面**(前面冇任何不可逆嘅嘢,一齊 rollback 零成本,ADR-0009 D8.1);`proposal_decided` **喺 transaction 外面兼喺決定之後**(嗰陣 line item 已經真係建咗,一個 audit 打思噎唔可以反轉一件做咗嘅事 —— `outbound-retry.service.ts:398-401` 同一句)
+- [x] F7-5 🔴 **`metadata: { source: 'ai-assist' }`** —— 記低係**邊個 agent 能力**,而佢正正就係上面 F7-2 嗰個 FK 約束令 `actorId` 載唔到嘅嘢
+- [x] F7-6 🔴 **Falsification ×2 真紅零誤傷**:①`AgentRun` whitelist 由 `[]` 改成 `['status','runState']` ②把 `audit.log` 搬出 transaction 外 —— **第二個證明咗條 test 唔係 `toHaveBeenCalled()` 嗰種**(搬咗出去一樣會被 call)
 
 ## F8 — 前端(H6)
 
