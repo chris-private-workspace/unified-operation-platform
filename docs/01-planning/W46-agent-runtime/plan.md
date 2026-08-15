@@ -1,12 +1,16 @@
 # W46 — AI Agent Runtime(Tier 1)
 
-**Status**: `draft`(2026-08-15;**ADR-0036 Proposed,未批 ⇒ 未開得工**)
+**Status**: `approved`(2026-08-15;**ADR-0036 Accepted ⇒ 開得工**)
 **Created**: 2026-08-15
 **Owner**: Chris Lai
-**Branch**: 🚧 未建 —— 由 `main` 開 `feat/w46-agent-runtime`
+**Branch**: 🚧 未建 —— 🔴 由 **`docs/w46-agent-runtime`** 開 `feat/w46-agent-runtime`,**唔好由 `main` 開**(理由見下)
 **決策 SSOT**: **ADR-0036**
 
-> 🛑 **R1 gate**:本 phase 觸發 **H1 + H2 + H4**,ADR-0036 未 Accepted 之前**一行 code 都唔可以寫**。
+> 🟢 **R1 gate 已過** —— ADR-0036 **Accepted**(Chris 2026-08-15),plan 同日 approved(§7 六條 OQ 一併批)⇒ **開得工**。
+>
+> 🚧 **但本 phase 嘅文件住喺 branch `docs/w46-agent-runtime`,未 merge 落 `main`** —— Chris 2026-08-15 明確要求:「一切未滿意我都認為不能夠 merge 到 main,因為這些都是會影響現有架構的內容」。**唔開 PR、唔 merge**,直到佢再次明確同意。
+>
+> 🔴 **⇒ base 要揀啱,呢個唔係細節**:由 `main` 開嘅 branch **冇 ADR-0036 亦冇本 plan**,而 `main` 上面嘅 `CLAUDE.md §0/§9` 同 `SESSION_SUMMARY.md` 仲寫住「ADR 到 **0035**」—— 而嗰兩份係**唯一會被無條件讀入每個新 session** 嘅文件(CLAUDE.md §14 自己記低過呢個實犯:文件過時 ⇒ 下個 session 用錯前提開始)。一個由 `main` 開工嘅 session **唔會知道本 phase 存在**。
 
 ---
 
@@ -227,16 +231,25 @@ model AgentProposal {
 
 ---
 
-## 7. Open Questions
+## 7. Open Questions —— **六條 2026-08-15 全部 approved(Chris)**
 
-| # | 問題 | 影響 | Default |
+> ⚠️ **「approved」對每條嘅意思唔一樣,呢個分別要記住。** OQ-2/3/4/6 嘅 default 係一個**答案**,批咗即係定咗;**OQ-1 同 OQ-5 嘅 default 係「暫時唔答」**,批咗即係確認「維持 deferred 到指定時點」—— **唔可以當成已經答咗**。呢個正正就係 §9 記低過嗰個形狀:一格寫住「approved」而下手當咗成格都答晒。
+
+| # | 問題 | 決定 | 狀態 |
 |---|---|---|---|
-| **OQ-1** | Agent 用邊個 model? | 成本 / 質素 | 未答 —— 選型留返實作前,`ConnectorConfig` 可改 |
-| **OQ-2** | Proposal 審批權:ADMIN only 定 ADMIN + REGIONAL? | 誰審 | **ADMIN + REGIONAL**(跟 `OutboundFailure` 先例:同一批人本來就睇緊呢啲 request) |
-| **OQ-3** | 一張 request 可唔可以有多過一個 open run? | 併發 | **唔可以** —— 一張 request 同時只准一個非終態 run(避免兩個 proposal 打架) |
-| **OQ-4** | Agent 讀唔讀得到 `AuditLog`? | 洩漏面 | **讀唔到** —— 唔喺 §3 allow-list;audit 係 ADMIN-only 兼載 PII |
-| **OQ-5** | `awaiting_approval` 掛幾耐算過期? | 資源 / 準確性 | 未答 —— 但**過期一定要 fail loud**(R16);建議期二連 BullMQ 一齊決定 |
-| **OQ-6** | 用唔用 SDK 嘅 guardrail 做第二層? | 深度防禦 | **用,但唔可以入 acceptance gate**(ADR-0036 D2)—— 期二再評估 |
+| **OQ-1** | Agent 用邊個 model? | **維持 deferred** —— 選型留返實作前;`ConnectorConfig` 可改(跟 ADR-0013 Model C,非機密欄落 DB) | 🟡 **approved as deferred** —— 🔴 **開 F3 之前一定要答** |
+| **OQ-2** | Proposal 審批權:ADMIN only 定 ADMIN + REGIONAL? | **ADMIN + REGIONAL** —— 跟 `OutboundFailure` 先例(ADR-0011 D4):同一批人本來就睇緊呢啲 request | 🟢 **定咗** |
+| **OQ-3** | 一張 request 可唔可以有多過一個 open run? | **唔可以** —— 同時只准一個非終態 run(避免兩個 proposal 對住同一張單打架) | 🟢 **定咗** |
+| **OQ-4** | Agent 讀唔讀得到 `AuditLog`? | **讀唔到** —— 唔喺 §3 allow-list;audit 係 ADMIN-only 兼載 PII(ADR-0009 P-B) | 🟢 **定咗** |
+| **OQ-5** | `awaiting_approval` 掛幾耐算過期? | **維持 deferred** 到期二連 BullMQ 一齊決定;🔴 **但過期一定要 fail loud,唔可以靜靜當成功**(R16) | 🟡 **approved as deferred** —— 🔴 **開 G5 之前一定要答** |
+| **OQ-6** | 用唔用 SDK 嘅 guardrail 做第二層? | **用得,但唔可以入 acceptance gate**(ADR-0036 D2)—— 期二再評估要唔要真行 | 🟢 **定咗** |
+
+📌 **OQ-2/3/4 有一個共同後果**:三者都要變成**可驗證嘅嘢**,唔係口頭約定 ——
+- **OQ-2** → `@Roles(Role.ADMIN, Role.REGIONAL)` 落審批 endpoint,兼且要出現喺 `derivePermissions` 矩陣(期二 **G2**)
+- **OQ-3** → service 層 guard + test(⚠️ 唔好只靠 DB unique constraint —— 「非終態」係一個**狀態集合**唔係單一值,partial index 喺 Prisma 側表達唔到)
+- **OQ-4** → **A3 嗰條 allow-list test 本來就會擋住**,唔使另外寫嘢
+
+⇒ **`AuditLog` 讀唔到呢件事,係由「registry 冇註冊」保證,唔係由「我哋記住唔好加」保證** —— 呢個就係 ADR-0036 D2 想要嘅性質。
 
 ---
 
@@ -260,3 +273,4 @@ model AgentProposal {
 |---|---|
 | 2026-08-15 | 建 plan(`draft`);ADR-0036 同日 Proposed。**Chris 五項拍板**:Tier 1 · `AI-Assist` 做第一個落點 · OpenAI SDK 首選兼要支援 Claude · 開新 `AgentPrincipal` 表 · transcript 永久保留 + ADMIN 可讀 |
 | 2026-08-15 | 🔴 **改寫** —— 初稿把 target 當成 **Codex SDK**(coding agent,冇 custom tool)⇒ 被逼揀 MCP 做唯一接縫。Chris 更正 target 係 **OpenAI Agents SDK**。三處實質改動:**① 接縫由 MCP 改成 `AgentToolRegistry`**(兩邊都食 JSON Schema)· **② HITL 改用原生 `needsApproval` pause/resume**(唔再係「跑完再另外執行」)· **③ 新增 F4 tracing 三重關**(SDK 預設把 tool call 送去 OpenAI backend = H4)。工作量由 26 日跌到 21–25 日 |
+| 2026-08-15 | 🟢🟢 **ADR-0036 `Accepted`(Chris)· plan `approved` · §7 六條 OQ 一併批** ⇒ **R1 gate 過,開得工**。⚠️ 同一刻 Chris 要求**呢條 doc branch 唔准 merge 落 `main`**(「一切未滿意我都認為不能夠 merge 到 main,因為這些都是會影響現有架構的內容」)⇒ 兩份文件頂加 banner;**實作 branch 由 `docs/w46-agent-runtime` 開,唔好由 `main` 開**。🔴 **一個知道咗但刻意冇修嘅缺口**:`main` 上面嘅 `CLAUDE.md §0/§9` + `SESSION_SUMMARY.md` 仍然寫住「ADR 到 **0035**」,而嗰兩份係每個 session **無條件讀入**嘅 ⇒ **由 `main` 開工嘅 session 唔知道本 phase 存在**。冇改係因為改咗都唔會到 `main`(branch 唔 merge),⇒ **呢個缺口要靠人記住,直到 branch merge 嗰日**。📌 OQ-1(model 選型)同 OQ-5(`awaiting_approval` 過期)嘅「approved」= **維持 deferred**,唔係已答 —— 見 §7 個 ⚠️ |

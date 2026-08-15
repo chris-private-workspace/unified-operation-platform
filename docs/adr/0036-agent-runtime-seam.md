@@ -1,10 +1,16 @@
 # ADR-0036: AI Agent Runtime —— 一份 tool 定義,兩個 runtime,harness 留喺平台
 
 **Date**: 2026-08-15
-**Status**: **Proposed**
-**Approver**: Chris Lai(待批)
+**Status**: **Accepted**
+**Approver**: Chris Lai(2026-08-15)
 
-> ⚠️ **本 ADR 喺同日改寫過一次(仍 Proposed,未 Accepted ⇒ 可改)**。初稿把 OpenAI **Codex SDK** 當成 target,而 Codex SDK 係「Codex CLI 嘅 embedding API」——冇 custom tool、要 git repo、要 spawn subprocess ⇒ 初稿被逼揀 MCP 做**唯一**接縫。Chris 同日更正:target 係 **OpenAI Agents SDK**(`@openai/agents`),佢有 function tool / guardrail / human-in-the-loop / tracing。**呢個更正令 MCP 由「唯一出路」變成「唔需要」**,亦令 D3 由「另外執行」改成「原生 pause / resume」。初稿內容唔保留 —— 佢建基於一個錯嘅前提,留住只會誤導下手。
+> 🚧 **呢份文件住喺 branch `docs/w46-agent-runtime`,未 merge 落 `main`** —— Chris 2026-08-15 明確要求:「一切未滿意我都認為不能夠 merge 到 main,因為這些都是會影響現有架構的內容」。
+>
+> **`Accepted` 講嘅係「決定內容批咗、W46 開得工」,唔係「呢條 branch 可以推向 `main`」。** 未得 Chris 再次明確同意之前:**唔開 PR、唔 merge**。
+>
+> 🔴 **一個由 `main` 開工嘅 session 唔會知道有 ADR-0036** —— `main` 上面嘅 `CLAUDE.md §0/§9` 同 `SESSION_SUMMARY.md` 仲寫住「ADR 到 **0035**」,而嗰兩份係**唯一會被無條件讀入每個新 session** 嘅文件(CLAUDE.md §14 自己記低咗呢個實犯)。⇒ **要開 W46 實作,branch 由呢條開,唔好由 `main` 開。**
+
+> ⚠️ **本 ADR 喺 Accept 之前改寫過一次**。初稿把 OpenAI **Codex SDK** 當成 target,而 Codex SDK 係「Codex CLI 嘅 embedding API」——冇 custom tool、要 git repo、要 spawn subprocess ⇒ 初稿被逼揀 MCP 做**唯一**接縫。Chris 同日更正:target 係 **OpenAI Agents SDK**(`@openai/agents`),佢有 function tool / guardrail / human-in-the-loop / tracing。**呢個更正令 MCP 由「唯一出路」變成「唔需要」**,亦令 D3 由「另外執行」改成「原生 pause / resume」。初稿內容唔保留 —— 佢建基於一個錯嘅前提,留住只會誤導下手。
 
 ---
 
