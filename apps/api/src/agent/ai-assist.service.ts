@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma, type AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,7 @@ import {
   AgentRuntimeProvider,
   type AgentSetup,
   type AgentTurn,
+  type ApprovalDecision,
   type ToolExecution,
 } from './agent-runtime.provider';
 import { toTranscript } from './transcript';
@@ -161,6 +163,63 @@ export class AiAssistService {
         setup,
         `Work out the licence line items for request ${requestId}.`,
       );
+      return await this.persistTurn(run.id, turn);
+    } catch (err) {
+      await this.failRun(run.id, err);
+      throw err;
+    }
+  }
+
+  /**
+   * Continue a run a person has decided on (F6, D3 step 4).
+   *
+   * 🔴 The scope comes from `startedBy` — the person who OPENED the run — and
+   * never from whoever approved. An approver is ADMIN or REGIONAL and therefore
+   * usually unscoped, so reading scope off them would let an approval quietly
+   * widen what the agent can see halfway through its own run. That is why
+   * `startedById` is a required column with a foreign key (F1-6): after an
+   * overnight approval, this row is the only place the answer can come from.
+   *
+   * 🔴 It does NOT decide anything. The caller (the approval orchestrator) has
+   * already done the real work and recorded the decision; this replays that
+   * decision to the runtime so the agent sees the outcome and keeps reasoning.
+   */
+  async resumeRun(
+    runId: string,
+    decisions: ApprovalDecision[],
+  ): Promise<AiAssistRunResult> {
+    const run = await this.prisma.agentRun.findUnique({
+      where: { id: runId },
+      select: { id: true, status: true, runState: true, startedBy: true },
+    });
+    if (!run) throw new NotFoundException('Agent run not found');
+    if (run.status !== 'awaiting_approval') {
+      throw new ConflictException(
+        `This run is ${run.status}, so there is nothing waiting to resume`,
+      );
+    }
+
+    /**
+     * 🔴 R16 — stored in a Json column, so what comes back is whatever the SDK
+     * put in. If it is not the string this code wrote, the run is not resumable
+     * and that has to be said out loud: the alternative, starting fresh from
+     * the same input, would execute a NEW set of tool calls under an approval
+     * nobody gave for them.
+     */
+    if (typeof run.runState !== 'string' || run.runState.trim() === '') {
+      throw new ServiceUnavailableException(
+        'This run has no readable saved state and cannot be resumed (R16)',
+      );
+    }
+
+    const setup: AgentSetup = {
+      instructions: INSTRUCTIONS,
+      ctx: { runId: run.id, user: run.startedBy },
+      onToolExecuted: (record) => this.recordToolExecution(run.id, record),
+    };
+
+    try {
+      const turn = await this.runtime.resume(setup, run.runState, decisions);
       return await this.persistTurn(run.id, turn);
     } catch (err) {
       await this.failRun(run.id, err);

@@ -9,6 +9,7 @@ import { LicenseModule } from './license/license.module';
 import { FulfilmentModule } from './fulfilment/fulfilment.module';
 import { OpcoModule } from './opco/opco.module';
 import { AgentModule } from './agent/agent.module';
+import { AgentApprovalModule } from './agent-approval/agent-approval.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AgentModule } from './agent/agent.module';
     FulfilmentModule, // (D) request lifecycle
     OpcoModule, // OpCo lookup for picker selectors (GET /opcos)
     AgentModule, // W46 / ADR-0036 — agent tool registry (no domain imports, D0)
+    AgentApprovalModule, // W46 F6 — the only place that sees both sides (H1)
   ],
 })
 export class AppModule {}

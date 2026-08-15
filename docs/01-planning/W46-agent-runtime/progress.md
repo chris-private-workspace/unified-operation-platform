@@ -304,3 +304,64 @@ plan 寫「**讀** `rawRequestText`」。實作**唔係**由 service 讀完餵�
 - 🚧 **F6(proposal 審批 endpoint + resume)** —— F5 寫低咗 `AgentProposal` 同 `runState`,但**冇人撳得到**
 - 🚧 F7 audit · F8 前端 · F9 boundary spec · F11 render + live
 - 🚧 ADR-0037 待批 · OQ-1(deployment 名)· A1 DEV 側 · R11–R19 未入 RISK_REGISTER
+
+---
+
+## Day 5 — 2026-08-15(F6 — proposal 審批 + resume)
+
+### 起點係一個 H1
+
+寫 F5 收尾嗰陣先睇清楚:**審批一個 proposal 要同時掂兩邊** —— 行返既有 line item 建立路(domain)同 `runtime.resume()`(agent)。而 ADR-0036 **D0 禁止 `agent` module import 任何 domain service**,F9 仲要用 boundary spec 鎖死佢。
+
+⇒ 個審批 endpoint **結構上住唔到落 `agent`**,而佢住喺邊係 module 邊界決定(§5.1 H1 明文列咗)。停低問,**Chris 揀咗新開一個薄 module**。
+
+`AgentApprovalModule` import `AgentModule` + `FulfilmentModule`。否決咗兩個:
+
+| 放邊 | 點解唔得 |
+|---|---|
+| `agent` | 要 import domain service = **軟化 D0**,而 D0 係 ADR-0017 第五次應用,ADR-0036 明文「一個字都唔軟化」 |
+| `fulfilment` | 方向合法(domain 識得 agent,agent 唔識 domain),但令「licence 履行」孭上「agent run 幾時 resume」呢個同佢無關嘅職責,而佢已經係最大嗰個 module |
+
+🟢 **新 module 自己零 gate** —— 所有本來就有嘅檢查仍然喺 `RequestService.addLineItem` 入面跑。佢只做次序同翻譯。
+
+### 🔴 兩個人,兩種權 —— 呢個係本日最重要嗰個分辨
+
+- **批准人**(ADMIN / REGIONAL)= domain write 嘅 actor。佢負責件事發生。
+- **開 run 嗰個人** = agent 嘅**讀** scope(`resumeRun` 由 `startedBy` 攞)。
+
+撈埋一齊嘅後果好具體:批准人多數係 unscoped,所以用佢做 resume 嘅 scope,就等於**一個批准靜靜擴闊咗 agent 中途睇到嘅嘢**,而**冇任何嘢會報告** —— 每個 tool 都仍然喺度做佢被叫做嘅事。⇒ 呢個就係 `startedById` 要 required + FK 嘅實際兌現(F1-6)。
+
+### 次序係契約唔係排版
+
+`pre-resolve 全部 SKU → addLineItem × N → 標 executed → resume`。
+
+**標記一定要喺 resume 之前**:`propose_line_items.execute` 搵唔到 `executed` proposal 就 throw(D2 第二層)⇒ 掉轉次序會令個 tool **拒絕啱啱做完嗰件事**。
+
+**pre-resolve** 亦唔係整齊而已 —— proposal 可以隔夜先批,而 GUID 喺提議嗰刻驗過**唔夠**:SKU 中間可以變 inactive。
+
+### 🔴 Falsification ×3,而第二個嘅錯誤訊息自己就係證據
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | 標 `executed` 搬去 resume 之後 | **1 紅 / 13 綠** |
+| b | SKU 解析改成 lazy(喺 loop 入面逐個) | **1 紅** —— 而 jest 印出 **`Received number of calls: 1`** ⇒ **第一條 line item 真係會建咗**先至撞第二個 SKU。呢個唔係「條 test 紅咗」,係**條 test 直接演示咗佢防緊嗰個半截寫入** |
+| c | 拆走「payload `requestId` 對唔對得上 run」 | **1 紅** |
+
+### 🔴🔴 而全套跑嗰陣,W28 個權限矩陣 drift test 捉到我
+
+`permissions.spec.ts` snapshot 紅,內容係:
+
+```
++ "AgentApprovalController"
++ "POST /agent/proposals/:id/approve → roles [ADMIN,REGIONAL]"
++ "POST /agent/proposals/:id/reject  → roles [ADMIN,REGIONAL]"
+```
+
+三行全部**正確**(= OQ-2 拍板嗰個),所以係預期改動,加咗入清單 + 更新 snapshot(實測**淨係加 2 行**,零其他改動)。
+
+📌 **但值得記住嘅唔係「要更新 snapshot」,係呢件事印證咗 ADR-0036 否決 Option A 嗰個理由。** 當時寫嘅係:agent 喺 process 內直接 call domain service **唔會出現喺 `permissions.ts` 個 derive 矩陣**,W28 drift test 睇唔到佢。⇒ **W46 第一個寫入面一出現,呢條 test 當日就捉到**,唔係靠 review。一個當時只係論據嘅嘢,今日變成實測。
+
+### 未收
+
+- 🚧 **F7 audit**(`agent.run_started` / `agent.proposal_decided`)· **F8 前端**(而家後端通晒但**冇畫面撳**)· **F9 boundary spec** · **F11 render + live**
+- 🚧 ADR-0037 待批 · OQ-1(deployment 名,而佢而家係 infra 問題)· A1 DEV 側 · R11–R19 未入 `RISK_REGISTER`

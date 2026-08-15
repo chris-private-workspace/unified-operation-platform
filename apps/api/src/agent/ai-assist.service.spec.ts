@@ -6,6 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AppUser } from '@prisma/client';
 import { AiAssistService } from './ai-assist.service';
@@ -72,7 +73,12 @@ describe('AiAssistService', () => {
     requestLineItem: { create: jest.Mock; createMany: jest.Mock };
     opcoSkuLedger: { update: jest.Mock; upsert: jest.Mock };
     agentPrincipal: { upsert: jest.Mock };
-    agentRun: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    agentRun: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
     agentStep: { create: jest.Mock };
     agentMessage: { createMany: jest.Mock };
     agentProposal: { create: jest.Mock };
@@ -102,7 +108,12 @@ describe('AiAssistService', () => {
       requestLineItem: { create: jest.fn(), createMany: jest.fn() },
       opcoSkuLedger: { update: jest.fn(), upsert: jest.fn() },
       agentPrincipal: { upsert: jest.fn() },
-      agentRun: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+      agentRun: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
       agentStep: { create: jest.fn() },
       agentMessage: { createMany: jest.fn() },
       agentProposal: { create: jest.fn() },
@@ -422,6 +433,100 @@ describe('AiAssistService', () => {
       expect(step?.detail).toContain(REDACTED);
       expect(step?.detail).not.toContain(UPN);
     });
+  });
+
+  // ── resume (F6) ────────────────────────────────────────────
+
+  describe('resumeRun', () => {
+    const parkedRun = (overrides: Record<string, unknown> = {}) => ({
+      id: 'run-1',
+      status: 'awaiting_approval',
+      runState: STATE,
+      startedBy: opcoIt,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      prisma.agentRun.findUnique.mockResolvedValue(parkedRun());
+      runtime.resume.mockResolvedValue(completedTurn());
+    });
+
+    /**
+     * 🔴 The reason `startedById` is a required column with a foreign key.
+     *
+     * An approver is ADMIN or REGIONAL and therefore usually unscoped. If the
+     * resumed run took ITS scope from them, an approval would quietly widen
+     * what the agent can read halfway through its own run — and nothing would
+     * report that, because every tool would still be doing exactly what it was
+     * told.
+     */
+    it('applies the run STARTER’s scope, never the approver’s', async () => {
+      await service.resumeRun('run-1', [{ ref: 'call-1', approved: true }]);
+
+      const setup = runtime.resume.mock.calls[0][0] as AgentSetup;
+      expect(setup.ctx.user).toBe(opcoIt);
+      expect(setup.ctx.runId).toBe('run-1');
+    });
+
+    it('hands the saved state and the decision to the runtime', async () => {
+      const decisions = [{ ref: 'call-1', approved: false, reason: 'no' }];
+
+      await service.resumeRun('run-1', decisions);
+
+      expect(runtime.resume.mock.calls[0][1]).toBe(STATE);
+      expect(runtime.resume.mock.calls[0][2]).toBe(decisions);
+    });
+
+    it('completes the run when the agent finishes', async () => {
+      const result = await service.resumeRun('run-1', [
+        { ref: 'call-1', approved: true },
+      ]);
+
+      expect(result.status).toBe('completed');
+      const update = prisma.agentRun.update.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(update.data.status).toBe('completed');
+      expect(update.data.endedAt).toBeInstanceOf(Date);
+    });
+
+    it('parks again when the agent proposes something else', async () => {
+      runtime.resume.mockResolvedValue(awaitingTurn());
+
+      const result = await service.resumeRun('run-1', [
+        { ref: 'call-1', approved: true },
+      ]);
+
+      expect(result.status).toBe('awaiting_approval');
+      expect(prisma.agentProposal.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to resume a run that is not waiting on anyone', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(
+        parkedRun({ status: 'completed' }),
+      );
+
+      await expect(
+        service.resumeRun('run-1', [{ ref: 'call-1', approved: true }]),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(runtime.resume).not.toHaveBeenCalled();
+    });
+
+    it.each([[null], [''], [{ not: 'a string' }]])(
+      'refuses loudly when the saved state is unreadable: %p (R16)',
+      async (runState) => {
+        prisma.agentRun.findUnique.mockResolvedValue(parkedRun({ runState }));
+
+        // 🔴 Loudly, and specifically NOT by starting a fresh run from the same
+        // input: a new run would derive its own tool calls and execute them
+        // under an approval that was never given for them.
+        await expect(
+          service.resumeRun('run-1', [{ ref: 'call-1', approved: true }]),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(runtime.start).not.toHaveBeenCalled();
+        expect(runtime.resume).not.toHaveBeenCalled();
+      },
+    );
   });
 
   // ── the refusals ───────────────────────────────────────────

@@ -68,10 +68,14 @@
 
 ## F6 — Proposal 審批 endpoint
 
-- [ ] F6-1 `POST /agent/proposals/:id/approve` / `/reject` —— `@Roles(ADMIN, REGIONAL)`(OQ-2)
-- [ ] F6-2 批准 → **平台**行返既有 line item 建立路徑 → 標 proposal `executed` → **然後**先 resume run
-- [ ] F6-3 🔴 **A10**:approve → 真建 line item 兼 run resume 到 `completed`;reject → 零改動 + `rejectedReason` 有值
-- [ ] F6-4 OQ-3:一張 request 同時只准一個非終態 run —— **service 層 guard + test**(唔可以靠 DB unique:「非終態」係一個狀態集合)
+- [x] F6-0 🔴 **新開 `AgentApprovalModule`(H1,Chris 2026-08-15 拍板)** —— 審批要同時掂 domain(建 line item)同 agent(`resume`),而 D0 禁止 `agent` import domain service ⇒ **住唔到落 agent module**。否決:放 `agent`(=軟化 D0,而 D0 係 ADR-0017 第五次應用)· 放 `fulfilment`(方向合法,但令「licence 履行」要識得 agent run 幾時 resume,而佢已經係最大嗰個 module)。⇒ **一個薄 module import 兩邊,`agent` 條 arrow 一個字唔郁,而佢自己零 gate** —— 所有檢查仍然喺 `RequestService.addLineItem` 入面
+- [x] F6-1 `POST /agent/proposals/:id/approve` / `/reject` —— `@Roles(ADMIN, REGIONAL)`(OQ-2,跟 ADR-0011 D4 先例)
+- [x] F6-2 🔴 **次序係契約唔係排版**:pre-resolve 全部 SKU → 逐條行 `addLineItem` → 標 `executed` → **然後**先 resume。標記**一定要喺 resume 之前**,因為 `propose_line_items.execute` 搵唔到 `executed` proposal 就 throw(D2 第二層)⇒ 掉轉次序會令個 tool 拒絕啱啱做完嗰件事
+- [x] F6-3 🔴 **A10 兩半收咗** —— approve → `addLineItem` 收到解析好嘅 `skuCatalogId` + **批准人做 actor** + run resume 到 `completed`;reject → **零 domain call** + `rejectedReason` 落 row **兼且送返個 model**(佢讀唔到就會原封再提一次)
+- [x] F6-4 OQ-3 —— **F5 已做**(`assertNoOpenRun`,service 層 guard;三個非終態值逐字 assert,而個 test 刻意 hardcode 唔 import 常數)
+- [x] F6-5 🔴 **兩個人,兩種權**:**批准人**做 domain write 嘅 actor(佢負責);**開 run 嗰個人**供 agent 嘅**讀** scope(`resumeRun` 由 `startedBy` 攞)。撈埋一齊就會令一個批准**靜靜擴闊咗 agent 中途睇到嘅嘢**
+- [x] F6-6 🔴 **`requestId` 一律由 run row 攞,payload 對唔上就拒絕** —— payload 係 model 寫嘅;唔對就代表「人讀嗰張 proposal」同「將會被寫入嗰張單」唔係同一張
+- [x] F6-7 ⚠️ **明文唔聲稱 atomic**:`addLineItem` 唔收 transaction client ⇒ N 條就係 N 個工作單位。pre-resolve 解決咗**現實會撞**嗰個(隔夜之間 SKU 變 inactive);DB 級中途失敗仍然會留低半截,嗰陣 proposal 標 `failed` 唔標 `executed`,而且**唔 resume**
 
 ## F7 — Audit
 

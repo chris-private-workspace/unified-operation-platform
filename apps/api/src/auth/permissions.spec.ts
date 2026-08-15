@@ -69,6 +69,17 @@ describe('permission matrix (derived from @Roles)', () => {
         // account history (unlike /admin/audit) and is opco-scoped in the
         // service, so an OPCO_IT operator sees only its own OpCo's events.
         'ActivityController',
+        // W46 F6 / ADR-0036 D3 — /agent/proposals/:id/approve|reject,
+        // @Roles(ADMIN,REGIONAL). Same width as the outbound failure queue and
+        // for the same reason (plan OQ-2): deciding an agent's proposal is an
+        // operations call on a request REGIONAL already owns.
+        //
+        // 🔴 That this line had to be added AT ALL is the point of the matrix.
+        // ADR-0036 rejected putting the agent in-process against the domain
+        // precisely because such a path would not show up here — and the first
+        // write surface W46 added was caught by this test on the run that
+        // introduced it, not by review.
+        'AgentApprovalController',
         'AuditController', // W29 F3 — GET /admin/audit, @Roles(ADMIN)
         'AuthController',
         'FulfilmentController',

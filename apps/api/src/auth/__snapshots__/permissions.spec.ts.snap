@@ -18,6 +18,8 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
   "POST /admin/users → roles [ADMIN]",
   "PATCH /admin/users/:id → roles [ADMIN]",
   "POST /admin/users/:id/reset-password → roles [ADMIN]",
+  "POST /agent/proposals/:id/approve → roles [ADMIN,REGIONAL]",
+  "POST /agent/proposals/:id/reject → roles [ADMIN,REGIONAL]",
   "POST /auth/entra/callback → public []",
   "GET /auth/entra/start → public []",
   "POST /auth/forgot-password → public []",
