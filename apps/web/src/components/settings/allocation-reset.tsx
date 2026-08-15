@@ -153,8 +153,8 @@ export function AllocationResetCard() {
       <h3 className="text-[13px] font-semibold text-fg">Reset ledger</h3>
       <p className="mt-[6px] text-[11.5px] leading-[1.5] text-fg-subtle">
         Sets the ledger back to 0 so a bad upload can be redone from scratch.
-        Importing a corrected file only overwrites the cells that file mentions —
-        anything that was in the wrong file but not the new one keeps its old
+        Importing a corrected file only overwrites the cells that file mentions
+        — anything that was in the wrong file but not the new one keeps its old
         number, and this is the only way to clear it.
       </p>
 
@@ -243,7 +243,8 @@ export function AllocationResetCard() {
       {done && (
         <div className="mt-[16px] rounded-[10px] border border-border bg-hover p-[12px]">
           <div className="text-[12px] font-medium text-fg-muted">
-            Reset <span className="font-mono text-fg">{done.data.affected}</span>{' '}
+            Reset{' '}
+            <span className="font-mono text-fg">{done.data.affected}</span>{' '}
             {plural(done.data.affected, 'cell')} in scope{' '}
             <span className="font-mono text-fg">{done.data.scope}</span>
           </div>
@@ -283,7 +284,11 @@ export function AllocationResetCard() {
             >
               Cancel
             </Button>
-            <Button variant="danger" onClick={runCommit} disabled={commitBlocked}>
+            <Button
+              variant="danger"
+              onClick={runCommit}
+              disabled={commitBlocked}
+            >
               {isPending
                 ? 'Resetting…'
                 : `Reset ${preview?.data.affected ?? 0} ${plural(preview?.data.affected ?? 0, 'cell')}`}

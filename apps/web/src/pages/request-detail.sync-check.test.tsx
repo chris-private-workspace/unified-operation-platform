@@ -1,7 +1,12 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RequestDetail } from './request-detail';
-import { useRequest, useCatalog, useLedger, useTenantSkus } from '@/hooks/queries';
+import {
+  useRequest,
+  useCatalog,
+  useLedger,
+  useTenantSkus,
+} from '@/hooks/queries';
 import {
   useAdvanceStage,
   useAssignLineItem,
