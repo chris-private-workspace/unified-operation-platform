@@ -237,6 +237,10 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'n8nOutboundWebhookUrl',
       // W42 / ADR-0020 — a skuId GUID, non-secret and system-owned.
       'defaultOnboardingSkuId',
+      // W46 / ADR-0036 — non-secret, and worth attributing: which runtime and
+      // which model an agent runs on is a cost and data-processing decision.
+      'agentRuntime',
+      'agentModel',
     ],
     /**
      * W36 / ADR-0016 — event-only, following the OutboundFailure precedent.

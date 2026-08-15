@@ -25,6 +25,10 @@ export const CONNECTORS = {
   // CH-011 / ADR-0019 — the first connector that is not an integration with
   // another *system of record*; it is an outbound notification transport.
   email: { key: 'email', label: 'Email (Azure Communication Services)' },
+  // W46 / ADR-0036 D10 — the first connector whose counterpart is a MODEL rather
+  // than a system. It is still a seam in exactly the sense ADR-0017 means: one
+  // capability, two interchangeable executors, one switch read at boot.
+  agent: { key: 'agent', label: 'AI agent runtime' },
 } as const;
 
 export type ConnectorKey = keyof typeof CONNECTORS;
@@ -84,6 +88,16 @@ export const PROBEABLE: Record<ConnectorKey, string | null> = {
    */
   email:
     'Sending a test email delivers a real message to a real person, so it is never called as a test',
+  /**
+   * NOT probeable (W46 / ADR-0036). There is no read-only call: the only thing
+   * this connector does is send text to a third-party model, which costs money
+   * and — the part that decides it — would have to send SOMETHING. Any probe
+   * payload is either meaningless or real request text, and real request text is
+   * precisely what plan OQ-7 has not answered yet. Same shape as `email` above.
+   * Do not add a probe here.
+   */
+  agent:
+    'Calling a model costs money and would have to send real text, so it is never called as a test',
 };
 
 // ── W34 / ADR-0013 — connector CONFIG spec (Model C) ───────────
@@ -267,6 +281,44 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
       },
     ],
     secrets: [{ envKey: 'ACS_CONNECTION_STRING', label: 'Connection string' }],
+  },
+  // W46 / ADR-0036 D10 — seam ⑤. Default stays 'openai-agents' (Chris's first
+  // choice); the Claude runtime is 期二 G4 and the factory refuses it until then
+  // rather than falling back, because a configured runtime that silently becomes
+  // a different one is the failure this switch exists to prevent.
+  agent: {
+    editable: [
+      {
+        column: 'agentRuntime',
+        label: 'Runtime',
+        envKey: 'AGENT_RUNTIME',
+        kind: 'enum',
+        enumValues: ['openai-agents', 'claude-tool-runner'],
+      },
+      {
+        /**
+         * 🔴 Deliberately `text`, and deliberately with NO code-side default.
+         *
+         * Which model an agent runs on is a cost, capability AND data-processing
+         * decision (plan OQ-1 / OQ-7). A hard-coded fallback would make that
+         * decision on somebody's behalf and then hide it in a constant, so an
+         * unset value fails loudly at run time instead.
+         *
+         * Not an enum: the list of available models changes on the vendor's
+         * schedule, and an enum here would mean a migration every time it does.
+         */
+        column: 'agentModel',
+        label: 'Model',
+        envKey: 'AGENT_MODEL',
+        kind: 'text',
+      },
+    ],
+    // Both keys stay in env forever (D10, H4). Which ones are *needed* depends on
+    // the runtime, but both are listed so the panel reports honestly either way.
+    secrets: [
+      { envKey: 'OPENAI_API_KEY', label: 'OpenAI API key' },
+      { envKey: 'ANTHROPIC_API_KEY', label: 'Anthropic API key' },
+    ],
   },
 };
 

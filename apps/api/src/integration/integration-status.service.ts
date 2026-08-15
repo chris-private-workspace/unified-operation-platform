@@ -81,6 +81,23 @@ export class IntegrationStatusService {
     return running !== undefined && running !== selected;
   }
 
+  /**
+   * W46 / ADR-0036 — the same comparison for seam ⑤, whose choice is a name
+   * rather than a yes/no.
+   *
+   * ⚠️ Worth being precise about what this claims. `pendingRestart` has never
+   * promised "restarting will fix it" — it says SAVED ≠ LIVE, which is exactly
+   * true here: while `claude-tool-runner` has no implementation (期二 G4),
+   * configuring it leaves the process running `openai-agents`, and an operator
+   * must not read the saved value as the running one. What restarting does
+   * about it is a separate question the panel does not answer for any seam.
+   */
+  private agentPendingRestart(configured: string | undefined): boolean {
+    const running = this.seamRuntime.choiceOf('agent');
+    if (running === undefined || !configured) return false;
+    return running !== configured;
+  }
+
   async list(): Promise<ConnectorStatus[]> {
     const [
       graph,
@@ -90,6 +107,8 @@ export class IntegrationStatusService {
       licenseSelected,
       ticketSelected,
       senderConfigured,
+      agentModel,
+      agentRuntime,
     ] = await Promise.all([
       this.graphLastSuccess(),
       this.serviceNowLastSuccess(),
@@ -98,6 +117,8 @@ export class IntegrationStatusService {
       this.n8nLicenseSelected(),
       this.n8nTicketSelected(),
       this.emailConfigured(),
+      this.connectorConfig.resolve('agent', 'agentModel'),
+      this.connectorConfig.resolve('agent', 'agentRuntime'),
     ]);
 
     return [
@@ -210,6 +231,31 @@ export class IntegrationStatusService {
           'Not recorded — the platform does not store sent messages',
         // One transport, no seam (ADR-0019 D1: a plain alias, not a factory).
         pendingRestart: false,
+      },
+      {
+        ...CONNECTORS.agent,
+        /**
+         * W46 / ADR-0036 — OPTIONAL, so `required` is unreachable here: the
+         * platform boots and runs with no agent config at all.
+         *
+         * 🔴 Judged on the MODEL, not on the runtime or on an API key. The
+         * runtime always resolves to something (the factory falls back), and the
+         * keys are secrets this service is not allowed to see (ADR-0013 D2/D5).
+         * The model is the one field whose absence actually stops a run — the
+         * provider raises 503 rather than picking one (plan OQ-1) — so it is the
+         * only honest basis for `active`.
+         */
+        state: agentModel ? 'active' : 'inactive',
+        lastSuccessAt: null,
+        /**
+         * Blank for the same reason as the n8n-license row: nothing recorded so
+         * far distinguishes "a run worked" from "the connector is alive". Runs
+         * land on AgentRun from F5 onward, and deriving a timestamp before that
+         * exists would mean inventing one.
+         */
+        lastSuccessNote:
+          'Not recorded — no agent run has been wired to a workflow yet (W46 F5)',
+        pendingRestart: this.agentPendingRestart(agentRuntime),
       },
     ];
   }

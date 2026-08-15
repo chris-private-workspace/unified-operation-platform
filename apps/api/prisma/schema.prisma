@@ -558,6 +558,17 @@ model ConnectorConfig {
   // rejection is the only feedback an operator ever gets.
   defaultOnboardingSkuId String? // DEFAULT_ONBOARDING_SKU_ID override
 
+  // W46 / ADR-0036 D10 — the agent runtime seam. Non-secret only: both API keys
+  // (OPENAI_API_KEY / ANTHROPIC_API_KEY) stay in env forever, same rule as every
+  // credential above.
+  //
+  // 🔴 agentModel has NO default in code. Which model an agent runs on is a cost,
+  // capability and data-processing decision (plan OQ-1 / OQ-7), and a hard-coded
+  // fallback would make that decision silently on somebody's behalf — so an
+  // unset value fails loudly instead.
+  agentRuntime String? // AGENT_RUNTIME override ('openai-agents' | 'claude-tool-runner')
+  agentModel   String? // AGENT_MODEL override
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 }
