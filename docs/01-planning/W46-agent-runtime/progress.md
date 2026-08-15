@@ -85,3 +85,78 @@ D4 講 proposal 由平台寫。如果 tool 自己寫,就係 **agent 自己記錄
 ### Commits
 
 - `329f223` — `feat(agent): W46 F1+F2 —— 五個 Agent* model + tool registry(allow-list 企喺平台側)`
+- `6fd171d` — `docs(agent): W46 checklist + progress + OQ-7(inference 側 PII,ADR-0036 冇答過)`
+
+---
+
+## Day 2 — 2026-08-15(F3 + F4)
+
+### 做咗
+
+**F3** —— seam ⑤:`AgentRuntimeProvider` 抽象 + `OpenAiAgentsProvider` + exported factory,形狀逐條跟 `licenseOpsProviderFactory` 先例。
+**F4** —— tracing 三重關(env + code + test)。
+
+api **1099 / 77 suites** 全綠(F2 後 1077 / 75,**零跌**)· tsc 0 · lint 0 · **falsification ×4 真紅零誤傷**。
+
+**H2** —— `@openai/agents@0.16.0` 裝咗(+11 個 transitive,含 `openai@7`、peer `zod@4`)。ADR-0036 已批 ⇒ 唔係新決定。
+
+### 🔴🔴 F4 最重要嗰個發現:對住錯嗰個開關寫 assert,係一條永遠綠嘅 test
+
+SDK 有**兩個唔同嘅 tracing 開關**,而佢哋唔會互相反映:
+
+| | 係乜 | 陷阱 |
+|---|---|---|
+| `config.tracing.disabled` | 一個**只讀 env 嘅 getter**,`TraceProvider` constructor 讀一次做初值 | 🔴 **`NODE_ENV === 'test'` 時佢永遠返 `true`** |
+| `setTracingDisabled()` | 寫 `TraceProvider` 嘅 live flag,`createTrace()` 真係讀佢(關咗返 `NoopTrace`) | 要 assert 就要 assert 佢 |
+
+⇒ **如果條 test 寫 `expect(tracing.disabled).toBe(true)`,佢喺 Jest 之下永遠綠 —— 連 provider 入面 `enforceTracingDisabled()` 整行刪咗都綠。**
+
+所以條 test 寫成三段:**先 `setTracingDisabled(false)` → assert `createTrace().traceId !== 'no-op'`(證明真係開到,唔係空轉)→ 起 provider → assert `=== 'no-op'`**。中間嗰句唔係 setup,佢係 test 一半。
+
+📌 **形狀**:呢個係 §9 記低過嗰句「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢係兩件事」嘅**最貴一次** —— 因為呢條 test 就係 **R14(SDK 升級令 tracing 靜靜開返)唯一會紅嘅嘢**。佢空轉 = D11 三重關實際上得兩關,而冇人會發現。
+
+### 🔴 第二個 SDK 事實:`needsApproval: true` 會被包成 `async () => true`
+
+`tool()` 內部把 boolean 包成 function(`STATIC_FUNCTION_TOOL_APPROVAL_POLICIES` 記住邊啲係靜態)。
+
+⇒ **`expect(sdkTool.needsApproval).toBe(true)` 一定 fail**,而「修正」成 `toBeDefined()` 就變成**乜都捉唔到**(`false` 一樣 pass)。要驗就要**call 個 policy**:`await expect(policy()).resolves.toBe(true)`。
+
+呢兩件事(tracing 開關、approval 包裝)有同一個形狀:**SDK 內部把一個值轉換咗,而最自然嗰句 assert 啱啱好落喺轉換之前或者之後嘅錯邊。**
+
+### 三個 F3 設計判斷(ADR / plan 冇指定)
+
+**① `claude-tool-runner` 配咗但未實作 ⇒ fall back,唔 throw。**
+throw 嘅代價係一個 config typo 令**成個平台起唔到身**;而 fall back 之所以可以接受,**係因為 `recordChoice` 記低 EFFECTIVE runtime** ⇒ panel 講得出「配置咗 X、跑緊 Y」。呢個正正係 BUG-011 個 registry 存在嘅理由 —— 冇佢,fall back 就係一個靜靜嘅替換。
+
+**② `resume()` 要求每個 interruption 都有決定,一個都唔可以留低。**
+留低一個未決定嘅,佢執唔執行就變成由 runtime 行為決定,而唔係由人決定 —— 正正係 D2 要防嗰件事。
+
+**③ `RunState` 讀唔返 → 503,唔會重開一個新 run(R16)。**
+最誘人嗰個「補救」係由同一個 input 重跑一次。但人批准嘅係**嗰一個** tool call;新 run 會自己推導一批新嘅,然後喺一個從來冇畀過嘅批准下面執行。
+
+### OQ-1:冇代 Chris 答,但令佢唔再 block code
+
+`agentModel` **冇 code default**,由 `ConnectorConfig`(DB-then-env)解析,未配就 **503**。
+
+⇒ 寫 code 唔再需要嗰個答案 —— 但**真跑一個 run 需要**,所以 **OQ-1 仍然 block F5**。理由寫喺 code 度:揀邊個 model 同時決定咗幾錢、做唔做得到、**同埋邊個第三方收到一個真人嘅 request 原文**(= OQ-7),一個 fallback 常數就係幫人做咗呢三個決定再收埋佢。
+
+### 順帶改到既有檔(加一個 connector 嘅必然後果)
+
+- `connectors.ts` —— `CONNECTORS` / `PROBEABLE` / `CONNECTOR_CONFIG` 各加 `agent`。**唔 probeable**(跟 `email` 先例:打一次 model 要錢,而且**一定要送啲嘢**,而「送咩」正正係 OQ-7 未答嗰件事)
+- `ConnectorConfig` +`agentRuntime` +`agentModel` + migration + audit whitelist
+- `seam-runtime.registry.ts` —— 新增 `recordChoice`/`choiceOf`(既有 boolean API **一個字唔改**)。⚠️ 用第二個 map 而唔係改第一個:三個 n8n seam 真係二元(「有冇經第三方」),agent seam 揀兩個 runtime 而**兩個都唔係「一直以嚟嗰個」**,boolean 冇誠實讀法
+- `integration-status.service.ts` —— agent row。🔴 `state` 判斷用 **model** 唔用 runtime 或者 API key:runtime 永遠解析得到(factory 會 fall back),key 係 secret 呢個 service 睇唔到,**只有 model 缺席會真係令一個 run 跑唔到**
+
+### ⚠️ 順帶睇到一個**既有** gap(冇改,只記低)
+
+`audit-fields.ts` 個 `ConnectorConfig` whitelist **冇** `licenseOpsProvider` / `n8nLicenseBaseUrl` / `ticketUpdateProvider` / `n8nTicketWebhookUrl` / `acsSenderAddress` —— 即係 W39 / W40 / CH-011 三批欄改咗都**唔會出現喺 audit `before`/`after`**。唔喺本單範圍(§1.3),但值得開一張單。
+
+### Blockers / 未收
+
+- 🔴 **兩個 migration 都未對真 DB 跑**(`w46_agent_runtime` 五張表 · `w46_agent_connector` 兩個欄)
+- 🔴 **OQ-7(inference 側 PII)= F5 硬 gate**
+- 🔴 **OQ-1 仍然未答** —— 唔再 block code,但 block F5
+
+### Commits
+
+- `b668f98` — `feat(agent): W46 F3+F4 —— seam ⑤ provider + OpenAI adapter + tracing 三重關`

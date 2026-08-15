@@ -1,6 +1,6 @@
 # W46 — AI Agent Runtime · Checklist
 
-> **Status**: `active`(2026-08-15)—— ADR-0036 Accepted,plan approved,**F1 + F2 已落地**。
+> **Status**: `active`(2026-08-15)—— ADR-0036 Accepted,plan approved,**F1 + F2 + F3 + F4 已落地**。
 >
 > 🚧 **本 phase 嘅文件同 code 都住喺 branch,未 merge 落 `main`**(Chris 2026-08-15)。實作 branch = `feat/w46-agent-runtime`,由 **`docs/w46-agent-runtime`** 開,**唔係由 `main`**。
 
@@ -38,16 +38,20 @@
 
 ## F3 — `AgentRuntimeProvider` + `OpenAiAgentsProvider`(H1 + H2)
 
-- [ ] F3-1 🔴 **開工前要答 OQ-1(model 選型)** —— plan §7 標咗 🟡 approved as **deferred**,唔係已答
-- [ ] F3-2 `AgentRuntimeProvider` 抽象(跟 `license-ops` factory 先例)
-- [ ] F3-3 `OpenAiAgentsProvider` —— `tool({ parameters, needsApproval })` 食 registry
-- [ ] F3-4 🔴 **H2:`npm i @openai/agents`** —— ADR-0036 已批,但真裝嗰刻要記得佢係 locked stack 嘅改動
+- [x] F3-1 🔴 **OQ-1 由 code gate 變成 config gate —— 但佢仍然未答,而且仍然 block F5** —— F3 **冇** hardcode 任何 model:`agentModel` 由 `ConnectorConfig`(DB-then-env)解析,未配就 **503**。⇒ 寫 code 唔再需要嗰個答案,但**真跑一個 run 需要**。🔴 **我冇代 Chris 揀**
+- [x] F3-2 `AgentRuntimeProvider` 抽象 —— abstract class 做 DI token(跟 `LicenseOperationsProvider` 先例)+ normalised vocabulary(`AgentTurn` / `PendingApproval` / `ApprovalDecision`)
+- [x] F3-3 `OpenAiAgentsProvider` —— `toSdkTools()` 把 registry 一份 JSON Schema 直接餵 `tool({parameters, strict, needsApproval})`;`start()` / `resume()` 用 `run()` + `RunState`
+- [x] F3-4 🔴 **H2:`npm i @openai/agents`** —— 裝咗 **0.16.0**(+11 個 transitive,含 `openai@7` 同 peer `zod@4`)。ADR-0036 已批 ⇒ 唔係新決定,但 commit 有標
+- [x] F3-5 `agentRuntimeProviderFactory`(exported,可測)+ `ConnectorConfig.agentRuntime` + `connectors.ts` 加 `agent`
+- [x] F3-6 🔴 **`claude-tool-runner`(G4 未做)fall back 而唔 throw** —— 一個 config typo 唔應該令成個平台起唔到身;而 fall back 之所以可接受,**係因為 `recordChoice` 記低 EFFECTIVE runtime** ⇒ Integrations panel 講得出「配置咗 X、跑緊 Y」(BUG-011)
+- [x] F3-7 🔴 **`resume()` 要求每個 interruption 都有決定** —— 有一個未決定就拒絕續跑(D2:唔可以由 runtime 行為決定佢執唔執行)
+- [x] F3-8 🔴 **`RunState` 讀唔返 → 503,唔會重開一個新 run**(R16)—— 人批准嘅係**嗰一個** tool call,新 run 會自己推導一批新嘅然後喺一個從來冇畀過嘅批准下面執行
 
 ## F4 — 🔴 Tracing 三重關(H4 / ADR-0036 D11)
 
-- [ ] F4-1 `OPENAI_AGENTS_DISABLE_TRACING=1` 落 `.env.example` + 註明點解
-- [ ] F4-2 Code 側明文 disable(唔靠 env 一個人)
-- [ ] F4-3 🔴 **A4:test 鎖死** —— **唔准用 `toHaveProperty(key)` 嗰種**;拆走 disable 嗰行要**真紅**
+- [x] F4-1 `OPENAI_AGENTS_DISABLE_TRACING=1` 落 `.env.example` + 註明點解(兼有一條 test 讀返份 `.env.example` 確認佢喺度)
+- [x] F4-2 Code 側明文 disable —— `enforceTracingDisabled()`,provider constructor call
+- [x] F4-3 🔴 **A4:test 鎖死,而且係三段式** —— 🔴🔴 **查證揭到 SDK 有兩個唔同開關,而揀錯一個就係一條空轉嘅 test**:`config.tracing.disabled` 係一個**只讀 env 嘅 getter**,而且 **`NODE_ENV === 'test'` 時永遠 `true`** ⇒ 對住佢寫 assert 喺 Jest 之下**永遠綠,連 disable 嗰行刪咗都綠**。真開關喺 `TraceProvider`(`setTracingDisabled` 寫佢,`createTrace()` 讀佢,關咗就返 `NoopTrace`)。⇒ 條 test **先開返 tracing → 證明真係開到 → 起 provider → 驗佢關咗**,三段缺一不可。**falsification 實測真紅**(1 failed / 54 passed)
 
 ## F5 — `AI-Assist` run
 
@@ -108,7 +112,8 @@
 
 | # | 項 | 理由 | Target |
 |---|---|---|---|
-| F1-5 | migration 未對真 DB 跑 | 本機 5433 衝突要 Chris 批 · DEV 要部署 | F5 之前 |
+| F1-5 | **兩個** migration 未對真 DB 跑(`w46_agent_runtime` 五張表 · `w46_agent_connector` 兩個欄) | 本機 5433 衝突要 Chris 批 · DEV 要部署 | F5 之前 |
+| OQ-1 | model 選型仍然未答 | F3 令佢唔再 block code(未配就 503),但**仍然 block F5** | F5 之前 |
 | F1-6 | `AgentRun` 冇 `startedById` | plan §4 冇寫;F2 暫由 caller 傳 | F5 之前 |
 | F1-7 | `AgentRun.requestId` 冇 FK | 跟 plan §4 逐字,同 `OutboundFailure` 唔一致 | Chris 一句話 |
 | OQ-7 | inference 側 PII 冇決定過 | F2 寫 `get_request` 嗰陣先揭到 | **F5 之前(硬 gate)** |
