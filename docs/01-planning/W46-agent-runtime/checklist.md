@@ -1,0 +1,115 @@
+# W46 — AI Agent Runtime · Checklist
+
+> **Status**: `active`(2026-08-15)—— ADR-0036 Accepted,plan approved,**F1 + F2 已落地**。
+>
+> 🚧 **本 phase 嘅文件同 code 都住喺 branch,未 merge 落 `main`**(Chris 2026-08-15)。實作 branch = `feat/w46-agent-runtime`,由 **`docs/w46-agent-runtime`** 開,**唔係由 `main`**。
+
+## F0 — 開工 gate
+
+- [x] F0-1 🔴 **ADR-0036 由 Proposed → Accepted**(H1 + H2;Chris 2026-08-15 拍板)
+- [x] F0-2 `plan.md` status `draft` → `approved`,§7 六條 OQ 一併批
+- [x] F0-3 `docs/adr/README.md` index 加 ADR-0036 一行
+- [x] F0-4 `BACKLOG.md` 由 C 區(blocked)搬去 A 區(可立即開工)
+- [x] F0-5 建 branch `feat/w46-agent-runtime`(base = `docs/w46-agent-runtime`)
+- [x] F0-6 W45 / CH-029 / CH-030 已收官 —— rolling JIT 唔可以兩個 phase 同時 active
+
+## F1 — 五個 Prisma model + migration(H1)
+
+- [x] F1-1 `AgentPrincipal` / `AgentRun` / `AgentStep` / `AgentMessage` / `AgentProposal` 落 `schema.prisma`
+- [x] F1-2 `AuditLog.actorType` 註明第四個值 `'agent'`(String 欄,**零 DDL**)
+- [x] F1-3 Migration `20260815030000_w46_agent_runtime` —— 🔴 **SQL 由 `prisma migrate diff --from-empty` 離線生成再逐字抄**,唔係手寫。本機 `uop-postgres` 冇跑(5433 畀 `ai-doc-extraction-db` 佔住,停佢要 Chris 批)
+- [x] F1-4 `prisma generate` 過(client 認得五個 model)
+- [ ] F1-5 🔴 **A1:migration 對真 DB 跑得過** —— 🚧 **本機 + DEV 兩次都未做**。本機卡「要唔要停另一個項目個 container」,DEV 卡「要唔要部署」。**Target:F5 之前**(冇真表就跑唔到一個真 run)
+- [ ] F1-6 🚧 **`AgentRun` 冇 `startedById`** —— plan §4 冇寫,F1 跟咗 plan。但 tool 嘅 OpCo scope 來自「開 run 嗰個人」,而**一個隔夜先批准嘅 run 重開之後,個人只可能由 row 攞返**。**Target:F5 之前決定**(加欄 = 一個 migration)
+- [ ] F1-7 🚧 **`AgentRun.requestId` 有 index 冇 FK** —— 同 `OutboundFailure.requestId`(有 FK)唔一致。跟咗 plan §4 逐字。**Target:Chris 一句話決定**,要加就一個 migration
+
+## F2 — `AgentToolRegistry`(H1;allow-list 喺呢度)
+
+- [x] F2-1 `agent-tool.ts` —— tool 契約(`AgentToolSchema` / `AgentToolContext` / `AgentTool`)。🔴 `parameters` 係 raw JSON Schema,**唔用 Zod / DTO**:呢個值原封交畀兩個 SDK,中間加一層就係第二份 schema 嘅來源
+- [x] F2-2 四個 read tool(`list_pending_requests` / `get_request` / `search_catalog` / `get_ledger`),全部 `needsApproval: false`
+- [x] F2-3 `propose_line_items`,`needsApproval: **true**`(寫死,唔用 function — D3)
+- [x] F2-4 🔴 **OpCo scope 行返 `assertOpcoScope` / `scopeWhere`** —— scope 來自**開 run 嗰個人**,所以 agent 讀唔到嗰個人讀唔到嘅嘢。「一個 agent 應該睇到幾多」呢條冇人答得到嘅問題,結構上唔使問
+- [x] F2-5 🔴 **A9:`propose_line_items` 只收 GUID** —— 兩層(格式 regex + 對 active catalogue 驗存在),缺一不可:格式擋唔到幻覺 GUID,存在性擋唔到「`SPE_E5` 究竟指邊個」
+- [x] F2-6 🔴 **零副作用** —— registry **一個 DB 寫入都冇**,連 `AgentProposal` 都唔寫(D3/D4:proposal 由平台寫,唔係由 tool 寫,否則就係 agent 自己記錄自己嘅證據)
+- [x] F2-7 `agent.module.ts` + 入 `app.module.ts` —— **零 domain module import**(D0 嘅可執行版本)
+- [x] F2-8 `tool-registry.spec.ts` —— **33 條**,含 A3 allow-list 逐字鎖死、A9 兩層、scope 正反、A5 靜態半
+- [x] F2-9 🔴 **falsification ×4 全部真紅零誤傷** —— ①`needsApproval` 翻 false ②拆走 GUID 格式檢查 ③拆走 `scrubPii` ④「冇人批准」由 throw 改成靜靜返成功。每次**只有對應嗰一條紅**(1 failed / 32 passed)
+- [x] F2-10 api **1077 / 75 suites** 全綠(基線 1044 / 74,**零跌**)· tsc 0 · lint 0
+
+## F3 — `AgentRuntimeProvider` + `OpenAiAgentsProvider`(H1 + H2)
+
+- [ ] F3-1 🔴 **開工前要答 OQ-1(model 選型)** —— plan §7 標咗 🟡 approved as **deferred**,唔係已答
+- [ ] F3-2 `AgentRuntimeProvider` 抽象(跟 `license-ops` factory 先例)
+- [ ] F3-3 `OpenAiAgentsProvider` —— `tool({ parameters, needsApproval })` 食 registry
+- [ ] F3-4 🔴 **H2:`npm i @openai/agents`** —— ADR-0036 已批,但真裝嗰刻要記得佢係 locked stack 嘅改動
+
+## F4 — 🔴 Tracing 三重關(H4 / ADR-0036 D11)
+
+- [ ] F4-1 `OPENAI_AGENTS_DISABLE_TRACING=1` 落 `.env.example` + 註明點解
+- [ ] F4-2 Code 側明文 disable(唔靠 env 一個人)
+- [ ] F4-3 🔴 **A4:test 鎖死** —— **唔准用 `toHaveProperty(key)` 嗰種**;拆走 disable 嗰行要**真紅**
+
+## F5 — `AI-Assist` run
+
+- [ ] F5-1 🔴 **開工前要答 OQ-7(inference 側 PII)** —— 見 plan §7。**F2 揭出嚟嘅,ADR-0036 從來冇決定過**
+- [ ] F5-2 讀 `rawRequestText` → `propose_line_items` → 停 `awaiting_approval` → 寫 `AgentProposal`
+- [ ] F5-3 🔴 **A8:transcript 落 `AgentMessage` 之前一律 `scrubPii`**
+- [ ] F5-4 🔴 **A7:餵一個「扮講自己做過嘢」嘅 mock LLM,assert 佢寫唔到任何 `AgentStep`**(INC-001 直接對應)
+- [ ] F5-5 🔴 **A6:`needsApproval` 真係停到** —— assert 停喺 `awaiting_approval` 而**唔係**跑埋落去
+- [ ] F5-6 🔴 **A5:一個完整 run 之後,DB 除咗 `Agent*` 五張表之外零改動**
+
+## F6 — Proposal 審批 endpoint
+
+- [ ] F6-1 `POST /agent/proposals/:id/approve` / `/reject` —— `@Roles(ADMIN, REGIONAL)`(OQ-2)
+- [ ] F6-2 批准 → **平台**行返既有 line item 建立路徑 → 標 proposal `executed` → **然後**先 resume run
+- [ ] F6-3 🔴 **A10**:approve → 真建 line item 兼 run resume 到 `completed`;reject → 零改動 + `rejectedReason` 有值
+- [ ] F6-4 OQ-3:一張 request 同時只准一個非終態 run —— **service 層 guard + test**(唔可以靠 DB unique:「非終態」係一個狀態集合)
+
+## F7 — Audit
+
+- [ ] F7-1 `agent.run_started` / `agent.proposal_decided` 兩條 action(event-only)
+- [ ] F7-2 `actorType: 'agent'`
+- [ ] F7-3 🔴 **A11:`before`/`after` 係空**(H4;transcript 結構上入唔到 `AuditLog` — D5)
+
+## F8 — 前端(H6)
+
+- [ ] F8-1 `AI Assist` 卡由 `EmptyState` 換真嘢
+- [ ] F8-2 Run 觀察畫面(step timeline + transcript + 中止掣)
+- [ ] F8-3 Proposal 審核 UI —— 🔴 **要講清楚「批准咗仍然可能被 gate 擋」**(D3 嗰個反直覺後果)
+- [ ] F8-4 一個 view 一個 primary action(H6)
+
+## F9 — Boundary spec(H5)
+
+- [ ] F9-1 🔴 `agent` module 唔 import 任何 domain service —— **正反兩面 assert**(跟 `license-ops.boundary.spec.ts:42-53` 形狀)
+- [ ] F9-2 🔴 `AgentStep` 一定由平台寫
+
+## F10 / F11 — Test + render
+
+- [ ] F10-1 LLM 一律 mock(跟 §3.4 Graph / SN 先例)
+- [ ] F10-2 Falsification:每道閘拆走實作睇佢紅唔紅
+- [ ] F11-1 🔴 **A13:H6 light + dark 真 render**,跑 `ui-design` skill
+- [ ] F11-2 🔴 **A14:live 驗** —— 真開一個 run,睇到 step timeline + transcript + proposal + 批准後 resume
+
+---
+
+## 期二(G1–G7)—— 未開工
+
+- [ ] G1 `propose_assign` + 批准後行返 **8 道閘一道唔少**(A/B1)
+- [ ] G2 `derivePermissions()` 認得 `AgentPrincipal` + W28 drift test
+- [ ] G3 Blast-radius limit + kill switch(要分「配置停咗」同「真係停咗」)
+- [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)
+- [ ] G5 BullMQ 落地 —— 🔴 **開工前要答 OQ-5(`awaiting_approval` 過期)**
+- [ ] G6 SSE transport —— 還 `ADR-0029 A2` 嗰筆基建債
+- [ ] G7 R13 監測:proposal 批准率 / 平均審核秒數
+
+---
+
+## 🚧 已知延後(唔可以靜靜消失)
+
+| # | 項 | 理由 | Target |
+|---|---|---|---|
+| F1-5 | migration 未對真 DB 跑 | 本機 5433 衝突要 Chris 批 · DEV 要部署 | F5 之前 |
+| F1-6 | `AgentRun` 冇 `startedById` | plan §4 冇寫;F2 暫由 caller 傳 | F5 之前 |
+| F1-7 | `AgentRun.requestId` 冇 FK | 跟 plan §4 逐字,同 `OutboundFailure` 唔一致 | Chris 一句話 |
+| OQ-7 | inference 側 PII 冇決定過 | F2 寫 `get_request` 嗰陣先揭到 | **F5 之前(硬 gate)** |
+| R11–R16 | 未入 `RISK_REGISTER.md` | living doc,ADR / plan 已記 | 期一收尾 |

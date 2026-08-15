@@ -231,7 +231,7 @@ model AgentProposal {
 
 ---
 
-## 7. Open Questions —— **六條 2026-08-15 全部 approved(Chris)**
+## 7. Open Questions —— **六條 2026-08-15 全部 approved(Chris)· 🆕 OQ-7 由 F2 揭出,未答**
 
 > ⚠️ **「approved」對每條嘅意思唔一樣,呢個分別要記住。** OQ-2/3/4/6 嘅 default 係一個**答案**,批咗即係定咗;**OQ-1 同 OQ-5 嘅 default 係「暫時唔答」**,批咗即係確認「維持 deferred 到指定時點」—— **唔可以當成已經答咗**。呢個正正就係 §9 記低過嗰個形狀:一格寫住「approved」而下手當咗成格都答晒。
 
@@ -243,6 +243,30 @@ model AgentProposal {
 | **OQ-4** | Agent 讀唔讀得到 `AuditLog`? | **讀唔到** —— 唔喺 §3 allow-list;audit 係 ADMIN-only 兼載 PII(ADR-0009 P-B) | 🟢 **定咗** |
 | **OQ-5** | `awaiting_approval` 掛幾耐算過期? | **維持 deferred** 到期二連 BullMQ 一齊決定;🔴 **但過期一定要 fail loud,唔可以靜靜當成功**(R16) | 🟡 **approved as deferred** —— 🔴 **開 G5 之前一定要答** |
 | **OQ-6** | 用唔用 SDK 嘅 guardrail 做第二層? | **用得,但唔可以入 acceptance gate**(ADR-0036 D2)—— 期二再評估要唔要真行 | 🟢 **定咗** |
+| **OQ-7** 🆕 | 🔴 **`rawRequestText` / `targetUpn` 送去第三方 model provider 做 inference,可唔可以?** | **未答** | 🔴 **開 F5 之前一定要答(硬 gate)** |
+
+### 🔴 OQ-7 —— F2 寫 `get_request` 嗰陣揭出嚟,ADR-0036 從來冇決定過
+
+ADR-0036 對 PII 有三道防線,而**三道全部係關於「落庫」同「送去 trace backend」**:
+
+| 防線 | 擋住乜 |
+|---|---|
+| **D6** `scrubPii` | transcript **落 `AgentMessage`** 之前 |
+| **D11** tracing 三重關 | tool call **送去 OpenAI trace backend** |
+| **D5** 唔入 `AuditLog` | transcript **入審計表** |
+
+**冇一道係關於 inference 本身。** 而 `AI-Assist` 嘅工作**就係**把 `rawRequestText`(一段真人寫嘅 email 原文)送去一個第三方 model provider ——
+scrub 咗佢就係交白卷,所以 `get_request` **必須**原文回傳(F2 已經咁做,兼喺 code 註釋標明)。
+
+📌 **值得記住嘅形狀**:D11 防到嘅係「順手開住嗰個 tracing」,防唔到「**呢個功能正常運作嗰陣本身做嘅嘢**」。
+一個 opt-in 嘅洩漏面比一個 default-on 嘅**更難見到**,因為佢冇一個 default 可以罵 —— 佢就係設計本身。
+
+**要答嘅係邊幾樣**(唔係「可唔可以」一句):
+1. Provider 側嘅資料處理承諾(retention / 訓練用途 / 地區)夠唔夠?
+2. 要唔要 **ZDR**(zero data retention)?⚠️ ADR-0036 事實④ 已經記低:**ZDR 組織用唔到 tracing** —— 兩件事互相牽扯
+3. 送之前要唔要先 scrub 一次,接受「agent 見到嘅係 `[redacted-email]`」?(可行,但要驗佢仲 parse 唔 parse 得到)
+4. 要唔要限定只送**摘要**而唔送原文?(=多一個 LLM call,而嗰個 call 本身一樣要送原文)
+5. 呢個決定要唔要一份新 ADR,定係補做 ADR-0036 嘅 **superseding** ADR?(§6:`Accepted` 唔改內容)
 
 📌 **OQ-2/3/4 有一個共同後果**:三者都要變成**可驗證嘅嘢**,唔係口頭約定 ——
 - **OQ-2** → `@Roles(Role.ADMIN, Role.REGIONAL)` 落審批 endpoint,兼且要出現喺 `derivePermissions` 矩陣(期二 **G2**)
@@ -274,3 +298,4 @@ model AgentProposal {
 | 2026-08-15 | 建 plan(`draft`);ADR-0036 同日 Proposed。**Chris 五項拍板**:Tier 1 · `AI-Assist` 做第一個落點 · OpenAI SDK 首選兼要支援 Claude · 開新 `AgentPrincipal` 表 · transcript 永久保留 + ADMIN 可讀 |
 | 2026-08-15 | 🔴 **改寫** —— 初稿把 target 當成 **Codex SDK**(coding agent,冇 custom tool)⇒ 被逼揀 MCP 做唯一接縫。Chris 更正 target 係 **OpenAI Agents SDK**。三處實質改動:**① 接縫由 MCP 改成 `AgentToolRegistry`**(兩邊都食 JSON Schema)· **② HITL 改用原生 `needsApproval` pause/resume**(唔再係「跑完再另外執行」)· **③ 新增 F4 tracing 三重關**(SDK 預設把 tool call 送去 OpenAI backend = H4)。工作量由 26 日跌到 21–25 日 |
 | 2026-08-15 | 🟢🟢 **ADR-0036 `Accepted`(Chris)· plan `approved` · §7 六條 OQ 一併批** ⇒ **R1 gate 過,開得工**。⚠️ 同一刻 Chris 要求**呢條 doc branch 唔准 merge 落 `main`**(「一切未滿意我都認為不能夠 merge 到 main,因為這些都是會影響現有架構的內容」)⇒ 兩份文件頂加 banner;**實作 branch 由 `docs/w46-agent-runtime` 開,唔好由 `main` 開**。🔴 **一個知道咗但刻意冇修嘅缺口**:`main` 上面嘅 `CLAUDE.md §0/§9` + `SESSION_SUMMARY.md` 仍然寫住「ADR 到 **0035**」,而嗰兩份係每個 session **無條件讀入**嘅 ⇒ **由 `main` 開工嘅 session 唔知道本 phase 存在**。冇改係因為改咗都唔會到 `main`(branch 唔 merge),⇒ **呢個缺口要靠人記住,直到 branch merge 嗰日**。📌 OQ-1(model 選型)同 OQ-5(`awaiting_approval` 過期)嘅「approved」= **維持 deferred**,唔係已答 —— 見 §7 個 ⚠️ |
+| 2026-08-15 | 🟢 **F1 + F2 落地**(`329f223`,branch `feat/w46-agent-runtime`)—— 五個 model + migration + `AgentToolRegistry`(5 個 tool)+ 33 條 test;api 1077/75 全綠,falsification ×4 真紅零誤傷。**R3 deviation ×3,全部喺 checklist 標咗**:①`search_catalog` 多回 `displayName`/`skuPartNumber`/`seatModel`(唔畀 agent 有嘢 match 就等於逼佢幻覺;真防線係 `propose_line_items` 只收 GUID)②tool 契約拆咗做 `agent-tool.ts` + `tool-registry.ts` 兩個檔(plan 只寫一個檔名)③`propose_line_items` 嘅 `execute` 做成**唯讀**(D3 個順序係「平台建完先 resume」⇒ execute 再建就係建第二次)。🔴 **同時新增 `OQ-7`(inference 側 PII)—— 呢個唔係 deviation,係 ADR-0036 一個從來冇決定過嘅缺口**,列為 **F5 硬 gate** |
