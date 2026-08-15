@@ -6,6 +6,7 @@ import { AgentToolRegistry } from './tool-registry';
 import { AgentRuntimeProvider } from './agent-runtime.provider';
 import { OpenAiAgentsProvider } from './openai-agents.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
+import { AiAssistService } from './ai-assist.service';
 
 /**
  * W46 / ADR-0036 — the agent module.
@@ -44,7 +45,8 @@ import { agentRuntimeProviderFactory } from './agent-runtime.factory';
         SeamRuntimeRegistry,
       ],
     },
+    AiAssistService,
   ],
-  exports: [AgentToolRegistry, AgentRuntimeProvider],
+  exports: [AgentToolRegistry, AgentRuntimeProvider, AiAssistService],
 })
 export class AgentModule {}

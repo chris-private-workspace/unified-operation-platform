@@ -1,0 +1,395 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, type AppUser } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { assertOpcoScope } from '../auth/opco-scope';
+import { scrubPii } from '../integration/scrub-pii';
+import {
+  AgentRuntimeProvider,
+  type AgentSetup,
+  type AgentTurn,
+  type ToolExecution,
+} from './agent-runtime.provider';
+import { toTranscript } from './transcript';
+
+/**
+ * W46 F5 / ADR-0036 — the AI-Assist run.
+ *
+ * The agent reads a request, picks SKUs, and proposes line items. It creates
+ * nothing: `propose_line_items` carries `needsApproval: true`, so the runtime
+ * stops in front of it and this service turns each pause into an
+ * `AgentProposal` for a person to decide (D3).
+ *
+ * 🔴 What this file must be judged on is what it does NOT write. A whole run
+ * touches the five `Agent*` tables and nothing else — no `RequestLineItem`, no
+ * `OpcoSkuLedger`, no stage change. That is acceptance A5, and it is what makes
+ * "the agent proposed something" a genuinely different event from "something
+ * happened".
+ */
+
+/** `AgentPrincipal.name` for this capability (D7 — a principal, not a Role). */
+export const AI_ASSIST_PRINCIPAL = 'ai-assist';
+
+/**
+ * Statuses a run can still leave under its own power.
+ *
+ * plan OQ-3: one request may have at most one run in this set. 🔴 Enforced in
+ * the service, not by a DB constraint — "not finished" is a SET of values, and
+ * a partial unique index over a set is not something Prisma can express. A
+ * constraint that cannot be written is worse than a guard that can, because the
+ * schema would look like it were carrying the rule.
+ */
+export const NON_TERMINAL_RUN_STATUSES = [
+  'running',
+  'awaiting_approval',
+  'approved',
+] as const;
+
+/**
+ * The system prompt.
+ *
+ * ⚠️ Prompt text is NOT a security boundary (D2). Nothing here is load-bearing:
+ * the tools the agent has are the ones in the registry, the rows it can see are
+ * the ones its OpCo scope allows, and the writes it can cause are none. This
+ * exists to make the agent USEFUL, and it is allowed to fail at that without
+ * anything unsafe happening.
+ *
+ * The one line that matters operationally is the GUID rule, and even that is
+ * belt-and-braces: `propose_line_items` re-checks the format AND the existence
+ * of every id (R15 / ADR-0020), so a model that ignores this paragraph gets a
+ * 400, not a wrong licence.
+ */
+const INSTRUCTIONS = `You are AI-Assist inside an IT licence fulfilment platform.
+
+A colleague has received a request for Microsoft 365 licences, written in free text by a real person. Your job is to work out which catalogue SKUs that text is asking for, and to propose them for a human to approve.
+
+How to work:
+1. Call get_request to read the request, including its original wording.
+2. Call search_catalog to find candidate SKUs. Search on the words the request actually uses.
+3. Call get_ledger if it helps you judge whether the OpCo already has budget for a SKU.
+4. Call propose_line_items once, with your final list.
+
+Rules:
+- Name every SKU by its skuId GUID from search_catalog. Never by product name or part number: the catalogue holds more than one variant of some products, so a name does not identify one.
+- Propose only what the request asks for. If the wording is ambiguous, say so in your reasoning and propose the reading you think is most likely — a person reviews this before anything is created.
+- If the request does not name any licence you can match, call propose_line_items with an empty reasoning explaining that, rather than guessing.
+- You create nothing. propose_line_items sends your list to a person.`;
+
+/** What a caller gets back — deliberately not the raw runtime state. */
+export interface AiAssistRunResult {
+  runId: string;
+  status: string;
+  proposals: { id: string; kind: string; toolName: string }[];
+  finalOutput?: string;
+}
+
+@Injectable()
+export class AiAssistService {
+  private readonly logger = new Logger(AiAssistService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly runtime: AgentRuntimeProvider,
+  ) {}
+
+  /**
+   * Start a run against one request.
+   *
+   * @param user the person starting it. Their OpCo scope becomes the run's, and
+   *   it is stored on the row so a resume after an overnight approval applies
+   *   the same one (F1-6).
+   */
+  async startRun(user: AppUser, requestId: string): Promise<AiAssistRunResult> {
+    await this.assertRequestIsUsable(user, requestId);
+    await this.assertNoOpenRun(requestId);
+
+    const principal = await this.prisma.agentPrincipal.upsert({
+      where: { name: AI_ASSIST_PRINCIPAL },
+      // The EFFECTIVE runtime, read off the provider that actually booted —
+      // never the configured string (BUG-011). A principal claiming a runtime
+      // that is not running would misattribute every row hanging off it.
+      update: { runtime: this.runtime.runtime },
+      create: {
+        name: AI_ASSIST_PRINCIPAL,
+        runtime: this.runtime.runtime,
+        active: true,
+      },
+    });
+
+    if (!principal.active) {
+      throw new ConflictException(
+        'The ai-assist agent principal is deactivated',
+      );
+    }
+
+    const run = await this.prisma.agentRun.create({
+      data: {
+        principalId: principal.id,
+        startedById: user.id,
+        requestId,
+        status: 'running',
+      },
+      select: { id: true },
+    });
+
+    await this.writeStep(run.id, {
+      key: 'start',
+      status: 'ok',
+      detail: `Run started for request ${requestId}`,
+    });
+
+    const setup: AgentSetup = {
+      instructions: INSTRUCTIONS,
+      ctx: { runId: run.id, user },
+      onToolExecuted: (record) => this.recordToolExecution(run.id, record),
+    };
+
+    /**
+     * Persisting is inside the try for a reason that is easy to miss: if
+     * writing the proposals throws — an unrecognised write tool, a database
+     * hiccup — the run would otherwise sit at `running` forever, which reads
+     * as "still working" to every screen and every later guard. A run that
+     * ended has to say so, whichever half of the work ended it.
+     */
+    try {
+      const turn: AgentTurn = await this.runtime.start(
+        setup,
+        `Work out the licence line items for request ${requestId}.`,
+      );
+      return await this.persistTurn(run.id, turn);
+    } catch (err) {
+      await this.failRun(run.id, err);
+      throw err;
+    }
+  }
+
+  // ── the parts that write ───────────────────────────────────
+
+  /**
+   * 🔴 A7 / INC-001 — every `AgentStep` in the system is written here or by
+   * `recordToolExecution`, and both are reached only from facts the platform
+   * observed itself. Nothing derives a step from what the model said.
+   *
+   * That is why a mock model narrating "I have created the line items" leaves
+   * an action ledger that says only `start`: the narration lands in
+   * `AgentMessage`, where its authority level is written into the table it
+   * lives in.
+   */
+  private async writeStep(
+    runId: string,
+    step: {
+      key: string;
+      status: 'ok' | 'failed' | 'skipped';
+      detail?: string;
+      retryable?: boolean;
+      whoFixes?: string;
+    },
+  ): Promise<void> {
+    await this.prisma.agentStep.create({
+      data: {
+        runId,
+        key: step.key,
+        status: step.status,
+        // Scrubbed on the way in, without exception. A step detail can carry a
+        // vendor error, and vendor errors quote request paths containing a UPN
+        // (BUG-004). D6 makes this permanent storage, which turns "good habit"
+        // into the only defence there is.
+        detail: step.detail ? scrubPii(step.detail) : null,
+        retryable: step.retryable ?? null,
+        whoFixes: step.whoFixes ?? null,
+      },
+    });
+  }
+
+  /**
+   * The adapter saw a registry tool run. `whoFixes` uses the vocabulary of
+   * `assign-step.ts:106-113` ('operator' | 'admin' | 'identity' | 'servicenow'
+   * | 'procurement' | 'platform') — copied as literals rather than imported,
+   * because the agent module does not reach into a domain module and an
+   * exception for "it is only a type" is how that rule stops being mechanical.
+   */
+  private async recordToolExecution(
+    runId: string,
+    record: ToolExecution,
+  ): Promise<void> {
+    await this.writeStep(runId, {
+      key: record.toolName,
+      status: record.status,
+      detail: record.detail,
+      ...(record.status === 'failed'
+        ? { retryable: true, whoFixes: 'platform' }
+        : {}),
+    });
+  }
+
+  private async failRun(runId: string, err: unknown): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    this.logger.error(`AI-Assist run ${runId} failed: ${scrubPii(message)}`);
+    await this.writeStep(runId, {
+      key: 'run',
+      status: 'failed',
+      detail: message,
+      retryable: true,
+      whoFixes: 'platform',
+    });
+    await this.prisma.agentRun.update({
+      where: { id: runId },
+      data: { status: 'failed', endedAt: new Date() },
+    });
+  }
+
+  /**
+   * Turn one stretch of execution into rows.
+   *
+   * Order matters and is not arbitrary: the transcript is written FIRST, so a
+   * run that dies while creating proposals still leaves behind what the agent
+   * actually said. The reverse order loses exactly the evidence someone would
+   * want in that situation.
+   */
+  private async persistTurn(
+    runId: string,
+    turn: AgentTurn,
+  ): Promise<AiAssistRunResult> {
+    await this.persistTranscript(runId, turn.providerItems);
+
+    if (turn.status !== 'awaiting_approval') {
+      await this.prisma.agentRun.update({
+        where: { id: runId },
+        data: {
+          status: 'completed',
+          endedAt: new Date(),
+          // Cleared, not left behind: a finished run holding a resumable state
+          // is an invitation to resume something that is over. `DbNull` is a
+          // real SQL NULL — `JsonNull` would store the literal `null` value,
+          // and the two read back differently.
+          runState: Prisma.DbNull,
+        },
+      });
+      return {
+        runId,
+        status: 'completed',
+        proposals: [],
+        finalOutput: turn.finalOutput,
+      };
+    }
+
+    const proposals: AiAssistRunResult['proposals'] = [];
+    for (const pending of turn.pendingApprovals) {
+      const proposal = await this.prisma.agentProposal.create({
+        data: {
+          runId,
+          kind: kindOf(pending.toolName),
+          interruptionRef: pending.ref,
+          // The model's arguments, unvalidated by design — the tool re-checks
+          // on execution (agent-runtime.provider.ts). It is stored so a person
+          // can read what they are being asked to approve, and it must not be
+          // treated downstream as a fact about the catalogue.
+          payload: (pending.args ?? {}) as object,
+          status: 'pending',
+        },
+        select: { id: true, kind: true },
+      });
+      proposals.push({
+        id: proposal.id,
+        kind: proposal.kind,
+        toolName: pending.toolName,
+      });
+
+      await this.writeStep(runId, {
+        key: 'proposal',
+        status: 'ok',
+        detail: `${pending.toolName} is waiting for a decision`,
+      });
+    }
+
+    await this.prisma.agentRun.update({
+      where: { id: runId },
+      data: {
+        status: 'awaiting_approval',
+        // 🔴 Stored so the SAME run can resume (D3). Not audit truth — R16
+        // says an SDK upgrade can make this unreadable, and when that happens
+        // resuming must fail loudly rather than start something new.
+        runState: turn.state,
+      },
+    });
+
+    return {
+      runId,
+      status: 'awaiting_approval',
+      proposals,
+      finalOutput: turn.finalOutput,
+    };
+  }
+
+  private async persistTranscript(
+    runId: string,
+    providerItems: unknown[],
+  ): Promise<void> {
+    const entries = toTranscript(providerItems);
+    if (entries.length === 0) return;
+    await this.prisma.agentMessage.createMany({
+      data: entries.map((entry) => ({
+        runId,
+        role: entry.role,
+        content: entry.content,
+      })),
+    });
+  }
+
+  // ── the parts that refuse ──────────────────────────────────
+
+  private async assertRequestIsUsable(
+    user: AppUser,
+    requestId: string,
+  ): Promise<void> {
+    const request = await this.prisma.request.findUnique({
+      where: { id: requestId },
+      select: { id: true, opcoId: true, rawRequestText: true },
+    });
+    if (!request) throw new NotFoundException('Request not found');
+    assertOpcoScope(user, request.opcoId);
+
+    // Refused here rather than left to the model: AI-Assist's whole input is
+    // this text, so an empty one buys a paid round-trip whose only possible
+    // output is a guess. ⚠️ The value is read to test that it is non-empty and
+    // for nothing else — it is never logged and never stored by this service.
+    if (!request.rawRequestText?.trim()) {
+      throw new BadRequestException(
+        'This request has no free-text wording for AI-Assist to read',
+      );
+    }
+  }
+
+  /** plan OQ-3 — one open run per request. */
+  private async assertNoOpenRun(requestId: string): Promise<void> {
+    const open = await this.prisma.agentRun.findFirst({
+      where: { requestId, status: { in: [...NON_TERMINAL_RUN_STATUSES] } },
+      select: { id: true, status: true },
+    });
+    if (open) {
+      throw new ConflictException(
+        `This request already has an agent run in progress (${open.id}, ${open.status})`,
+      );
+    }
+  }
+}
+
+/**
+ * Tool name → `AgentProposal.kind`.
+ *
+ * 🔴 Throws on anything unrecognised rather than defaulting. A pause the
+ * platform cannot classify must not become a proposal with a plausible-looking
+ * kind — that is a row a person would approve without knowing what they were
+ * approving. `propose_assign` joins this list in 期二 G1.
+ */
+function kindOf(toolName: string): string {
+  if (toolName === 'propose_line_items') return 'line_items';
+  throw new BadRequestException(
+    `A run paused on an unrecognised write tool: ${toolName}`,
+  );
+}

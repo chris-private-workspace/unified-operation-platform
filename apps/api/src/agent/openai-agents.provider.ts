@@ -22,6 +22,7 @@ import {
   type AgentTurn,
   type ApprovalDecision,
   type PendingApproval,
+  type ToolExecution,
 } from './agent-runtime.provider';
 
 /**
@@ -142,7 +143,25 @@ function refOf(interruption: unknown): string | undefined {
 export function toSdkTools(
   registered: readonly AgentTool[],
   ctx: AgentToolContext,
+  onToolExecuted?: (record: ToolExecution) => Promise<void>,
 ) {
+  /**
+   * 🔴 The observer is TOLD, it does not decide (D4). A failure to record must
+   * never change whether a tool ran or what it returned — so its own throw is
+   * swallowed here, and only here. The opposite wiring would let the action
+   * ledger's availability decide the agent's behaviour, which is a decision
+   * living in the wrong place.
+   */
+  const record = async (entry: ToolExecution) => {
+    if (!onToolExecuted) return;
+    try {
+      await onToolExecuted(entry);
+    } catch {
+      // Deliberately silent: the caller writes its own log line, and throwing
+      // here would turn a bookkeeping problem into a tool failure.
+    }
+  };
+
   return registered.map((entry) =>
     tool({
       name: entry.name,
@@ -151,8 +170,23 @@ export function toSdkTools(
       strict: true,
       needsApproval: entry.needsApproval,
       execute: async (args: unknown) => {
-        const result = await entry.execute(args, ctx);
-        return JSON.stringify(result);
+        try {
+          const result = await entry.execute(args, ctx);
+          // AFTER the call resolves, never before: "we are about to run this"
+          // and "this ran" are different facts, and only the second one is
+          // what an action ledger is for.
+          await record({ toolName: entry.name, status: 'ok' });
+          return JSON.stringify(result);
+        } catch (err) {
+          await record({
+            toolName: entry.name,
+            status: 'failed',
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          // Re-thrown unchanged — the SDK turns it into something the model
+          // can react to, and observing must not alter that.
+          throw err;
+        }
       },
     }),
   );
@@ -309,7 +343,7 @@ export class OpenAiAgentsProvider extends AgentRuntimeProvider {
       name: AGENT_NAME,
       instructions: setup.instructions,
       model: await this.resolveModel(),
-      tools: toSdkTools(this.registry.list(), setup.ctx),
+      tools: toSdkTools(this.registry.list(), setup.ctx, setup.onToolExecuted),
     });
   }
 

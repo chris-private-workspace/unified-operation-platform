@@ -242,3 +242,65 @@ nullable 睇落安全啲,但佢令「**攞唔返 scope**」變成一個到得到
 - 🚧 **OQ-1** —— 押後到 F11,但佢而家係一個 infra 問題
 - 🚧 **R11–R19 未入 `RISK_REGISTER.md`**(R17–R19 由 ADR-0037 新增)
 - 🚧 一個**既有** gap 未開單:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏欄
+
+---
+
+## Day 4 — 2026-08-15(F5 — `AI-Assist` run)
+
+### 做咗
+
+`AiAssistService.startRun()` + `toTranscript()` 純函數 + seam 新增一個 tool 觀察點。
+
+api **1135 / 79 suites**(Day 3 後 1099 / 77,**零跌**,+36 條 +2 個 suite)· tsc **0** · lint **0**。
+
+### 🔴 最重要嗰個結構決定:`AgentStep` 得兩個來源,兩個都唔係 agent 講嘅嘢
+
+A7 要求「餵一個扮講自己做過嘢嘅 mock,assert 佢寫唔到任何 `AgentStep`」。要做到呢件事,首先要答一條 plan 冇答嘅問題:**tool 級嘅 step 究竟由邊度嚟?**
+
+唯一誠實嘅來源係**平台自己嗰個 `execute` 真係跑咗**,而嗰個位喺 adapter 入面。所以 seam 加咗一個 `AgentSetup.onToolExecuted`:
+
+- adapter 喺 `entry.execute()` **前後**報告(`ok` / `failed`),🔴 **`ok` 喺 resolve 之後先報** —— 「就快跑」同「跑咗」係兩件事,而 action ledger 只記後者
+- 佢**被通知,唔做決定**:observer 自己 throw 會被 adapter 食咗。倒轉接就會變成「action ledger 有冇得寫」決定咗 agent 嘅行為 —— 一個住錯位置嘅決定
+- ⇒ `AgentStep` 得兩個來源:平台生命週期事件(`start` / `proposal` / `run` failed)+ 呢個 observer。**冇任何一條由 transcript 推導。**
+
+實測:mock 講「I have created the line items and assigned the licences」⇒ `AgentStep` 只有 `['start']`,句嘢落咗 `AgentMessage`,role `assistant`。
+
+### 🔴 Falsification ×5 —— 而第二次揭到一條缺口,即刻補咗
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | awaiting 分支改寫 `completed` | **1 紅 / 19 綠** —— 紅嘅係 assert **DB 寫入**嗰條(返回值冇變)⇒ 證明條 test 唔係只驗返回值 |
+| b | `toTranscript` 個 `scrubPii` | **8 紅** —— 全部喺 `transcript.spec.ts` |
+| c | `onToolExecuted` 唔接線 | **2 紅** —— 兩條 tool 觀察 test |
+| d | 非終態清單抌走 `approved` | **1 紅** |
+| e | 加一句 `prisma.requestLineItem.create` | **2 紅** —— A5 runtime 半 + static 半,兩邊都捉到 |
+
+🔴 **(b) 嗰次唔止係「紅咗」,佢揭咗一件事:`ai-assist.service.spec.ts` 一條都冇紅。**
+
+即係「PII 入唔到 `AgentMessage`」呢個 claim,一路只喺**純函數嗰層**被 assert,喺 **service 嗰層係假設**。而 service 先係真正寫落 DB 嗰個。⇒ 呢個正正係本項目 §9 記低過嗰族:
+
+> **每一層 test 都喺自己嗰層邊緣停低,而 bug 就住喺兩層之間**(`apiPatch` 個 `detail`、BUG-011 個 `IntegrationController.list()`)。
+
+補咗一條 service 層 test(餵含 UPN 嘅 provider item → assert `agentMessage.createMany` 收到嘅 `content` 冇 email pattern),再拆多次同一行 ⇒ **1 紅 / 20 綠**,條縫真係守到。
+
+📌 **值得記住嘅係方法唔係結論**:falsification 唔止告訴你「條 test 有冇用」,佢**同時**畫得出「邊層冇 test」—— 因為紅邊度就係覆蓋喺邊度。呢個用法之前四日冇用過。
+
+### 兩個「plan 冇講、要自己揀」嘅位
+
+**① `TranscriptRole` 多咗一個 `unknown`(plan §4 得五個)。**
+SDK protocol 自己就有一個 `unknown` item type ⇒ 認唔到嘅 item 係一件**預期會發生**嘅事。兩個唔誠實嘅處理法:drop 咗(蝕 transcript)· 當成 `assistant`(等於話個 model 講咗一句冇人讀過嘅嘢)。記低「我認唔到」同 `skipped` 唔係 `ok` 嘅一種,係同一個分別。
+
+**② `kindOf()` 認唔到嘅 write tool ⇒ throw,兼且把 run 標 `failed`。**
+default 一個 `kind` 就係造一行**人會批但唔知自己批緊乜**嘅 proposal。而 `failed` 嗰半係後來先補:淨係 throw 會令 run 永遠停喺 `running`,而 `running` 對每個畫面同每個後續 guard 嚟講都讀成「仲做緊」。
+
+### ⚠️ 一個 plan 字面上嘅偏離(F5-2)
+
+plan 寫「**讀** `rawRequestText`」。實作**唔係**由 service 讀完餵畀 agent,而係 agent 自己經 `get_request` 讀 —— service 只 select 佢嚟驗「係咪空」。
+
+咁做嘅兩個好處:scope 檢查**只有一條路**(tool 側 `assertOpcoScope`,唔會有第二個實作漂走)· service 唔使揸住段 PII。空原文喺開 run **之前**就拒絕,因為 AI-Assist 全部輸入就係嗰段字,空嘅話個 model call 唯一可能輸出係一個估。
+
+### Blockers / 未收
+
+- 🚧 **F6(proposal 審批 endpoint + resume)** —— F5 寫低咗 `AgentProposal` 同 `runState`,但**冇人撳得到**
+- 🚧 F7 audit · F8 前端 · F9 boundary spec · F11 render + live
+- 🚧 ADR-0037 待批 · OQ-1(deployment 名)· A1 DEV 側 · R11–R19 未入 RISK_REGISTER

@@ -48,10 +48,43 @@ export interface ApprovalDecision {
   reason?: string;
 }
 
+/**
+ * What the PLATFORM saw happen around one tool execution — ADR-0036 D4.
+ *
+ * 🔴 This is the ONLY source `AgentStep` may be written from, and the reason is
+ * INC-001: an agent saying "I looked that up" is a narrative, not evidence. The
+ * adapter reports this from either side of the registry's own `execute`, so
+ * what gets recorded is that the platform's function ran and how it ended —
+ * never what the model said about it.
+ *
+ * `detail` is an error message when something threw. It is scrubbed by the
+ * writer, not here, for the same reason `toTranscript` scrubs at one exit
+ * point: two places that both "usually" scrub is one place that sometimes does
+ * not.
+ */
+export interface ToolExecution {
+  toolName: string;
+  status: 'ok' | 'failed';
+  detail?: string;
+}
+
 /** What stays constant across a run and its later resumption. */
 export interface AgentSetup {
   instructions: string;
   ctx: AgentToolContext;
+  /**
+   * Called by the adapter around real tool execution.
+   *
+   * Optional so a test can drive a provider without a database, and so the
+   * seam does not oblige a future adapter to invent an observation it cannot
+   * make. ⚠️ An adapter that does not call it produces a run with a transcript
+   * and no action ledger — visibly empty rather than quietly wrong, which is
+   * the failure direction to prefer.
+   *
+   * It must NOT be able to change what happens: it is told, it does not decide.
+   * A throw inside it is swallowed by the adapter for that reason.
+   */
+  onToolExecuted?: (record: ToolExecution) => Promise<void>;
 }
 
 /**

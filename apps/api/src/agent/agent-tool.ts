@@ -37,11 +37,11 @@ export interface AgentToolSchema {
  * the person who started it could not read, and "what may an agent see" — a
  * question nobody has an answer to — never has to be asked.
  *
- * ⚠️ `AgentRun` has no `startedById` column: plan §4 did not specify one, and
- * F1 followed the plan rather than inventing a field. Today the user therefore
- * arrives from the caller. 🔴 F5 has to close that gap, because a RESUMED run
- * must apply the same scope as the original — and after an approval that sat
- * overnight, the row is the only place that can come from.
+ * 🟢 `AgentRun.startedById` closes the resume half (F1-6, Chris 2026-08-15):
+ * required and a foreign key, so a run that comes back after an overnight
+ * approval reads its scope out of the row rather than hoping the caller still
+ * has it. Nullable would have made "no scope" reachable, and no scope reads as
+ * every scope.
  */
 export interface AgentToolContext {
   runId: string;
