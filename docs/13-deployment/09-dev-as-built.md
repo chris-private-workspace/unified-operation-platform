@@ -512,6 +512,49 @@ this.issuer = [
 ## 部署記錄
 
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
+> ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
+
+### 2026-08-15 · 部署 #8(`dev-4bbbe0f`)— **追返 CH-030 / ADR-0035**
+
+**點解要有呢次部署**:CH-030 喺 2026-08-14 merge(PR #104 → #105 → #106),DEV 仍然跑 `dev-2a68f8d` ⇒ 落後一個 CH。
+
+🔴 **落手之前要講清楚呢次部署換唔到咩** —— ADR-0035 個 `serviceNowLicenceReqNumber` **只對部署之後開嘅 request 有值**(`OD-1` backfill = Chris 2026-08-14 拍板**唔做**)⇒ **部署完即刻去 DEV 睇,一條 REQ 都唔會見到**。實測兌現:部署後 `GET /api/fulfilment/requests` **10 條全部 `null`**(10/10),即全部仍然行 `A7` 回退路顯示 RITM。**呢次部署嘅價值係「下一張真 intake 入嚟就有」,唔係「而家睇得到」** —— Chris 2026-08-15 明知呢點之下仍然揀「而家就做」,理由係唔想再累積 drift。
+
+**流程**(同部署 #6 / #7 逐步一致,行 `04-deploy-runbook.md` §0-pre 個 DEV 分支):
+
+| 步 | 做咗乜 | 結果 |
+|---|---|---|
+| 0 | `az account show` **先驗身份**(呢台機撞過 4 個 SP) | `d2f094a3-…` = **部署 SP**,sub `30dac177…` ⇒ 同腳本 hardcode 嗰個逐字對上。🟢 **session 仲喺度,唔使 Chris 重新 `az login`** |
+| 1 | `docker login acrrci3ailanding1.azurecr.io`(params 檔嗰組 `4a6e1474`,**唔用 `az acr login`**;密碼經 `--password-stdin`) | **`Login Succeeded`** |
+| 2 | 🔴 **真試 `docker pull node:20-slim` + `nginx:1.27-alpine`** | 兩個都 `exit 0`(`Image is up to date`) |
+| 3 | `docker build` × 2(context = repo root) | 兩個都 **`exit 0`** ⇒ BUG-008 嗰道 `RUN test -f dist/main.js` gate 過咗 |
+| 4 | `docker push` × 2 | api `sha256:42190e1c…` · web `sha256:57ccdadb…` —— **同本地 manifest list digest 逐字對上** |
+| 5 | 改 `aca.params.dev.json` 個 image tag(`dev-2a68f8d` → `dev-4bbbe0f`) | **字串替換唔用 JSON round-trip** ⇒ 2 處、`lengthDelta = 0`、re-parse 仍然 28 個 parameter |
+| 6 | `patch-deploy-dev.ps1`(dry-run) | api secrets **9** / env **25** · web 1 / 1 · **四個 sanity 全 `False`**:`environmentId` · `workloadProfileName` · web `external` · web `customDomains` |
+| 7 | `patch-deploy-dev.ps1 -Send` | 兩個 **`PATCH exit = 0`**,腳本 exit 0 |
+
+#### 驗證 —— 唔睇 revision status,睇新版本特徵
+
+🔴 沿用部署 #6 立嘅判準:entrypoint 令 migrate/seed 失敗 **NON-FATAL**,所以 `Healthy` 證明唔到 DB 通。
+
+**Step 0**(四個 endpoint 真打):`/` **200** 561 B · `/api/auth/sso/status` **200** · `/api/me` **401**(唔係 502/504)· `/api/docs/api-json` **200** 66,893 B(08-13 嗰次係 62,834 B)。
+
+🟢🟢 **api 側 —— 一個 request 同時證兩樣**:break-glass login **200** → `GET /api/fulfilment/requests` **200**,row 個 key 清單有 **`serviceNowLicenceReqNumber`**。
+
+- **新 code**:嗰個 key 係 CH-030 先加,舊 build 出唔到
+- **migration 真跑咗**:Prisma 預設 select 會把嗰條 column 寫入 `SELECT`,**column 唔存在就係 500 唔係 200** ⇒ 拎到 200 就等於 column 喺真 DB 存在(同部署 #6 用 `seatModel` 嗰條推理一模一樣)
+
+**web 側**(冇版本 endpoint;唔用瀏覽器登入 —— 會令密碼出現喺對話):直接 fetch `/assets/index-BS3gkJAb.js`(240,346 chars)搜字串:
+
+| 字串 | 屬 | 期望 | 結果 |
+|---|---|---|---|
+| `raised by this platform for this joiner` | CH-030 F1 **新增** | True | ✅ |
+| `one per SKU` | CH-030 F1 **新增** | True | ✅ |
+| **`raised by this platform, closed on assign`** | **CH-030 之前嘅舊 sub,已被刪走** | **False** | ✅ **唔喺度** |
+
+> 🔴 **第三行先係最強嗰個** —— 一個「應該唔喺度」嘅字串真係唔喺度,同時排除「舊 bundle」同「CDN 舊 cache」兩個解釋。呢個手法由部署 #6 個 `No seats enabled` 立低。
+
+**R6 對數**:`/` 經 **custom domain + SNI** 返 200 ⇒ infra 配嘅 `customDomains` 綁定完好(PATCH 結構上掂唔到佢,dry-run 四個 `False` 已預先證咗)。
 
 ### 2026-08-13 · 部署 #6(`dev-53965f3`)— **DEV-SYNC:追返落後嘅五個 CH**
 
