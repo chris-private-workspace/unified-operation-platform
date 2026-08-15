@@ -57,8 +57,8 @@
 
 ## F5 — `AI-Assist` run
 
-- [x] F5-1 🟢 **OQ-7 答咗(Chris 2026-08-15):Azure OpenAI(公司 tenant)** ⇒ 寫成 **ADR-0037**(`Proposed`,待拍板)。🔴 **佢對 F5 code shape 嘅影響 = 零** —— 四個選項入面只有「送之前先 scrub」會改 F5,而嗰個被否決 ⇒ **F5 照原設計寫得**。⚠️ 但佢改咗**兩樣**:①`agentModel` 語意變成 **deployment 名**(ADR-0037 E3)②**OQ-1 個問題本身變咗** —— 由「揀邊個 model」變成「infra 開邊個 deployment」
-- [ ] F5-1b 🚧 **ADR-0037 仲係 `Proposed`** —— Chris 答咗 provider,但**未見過**三個查證後先浮出嚟嘅後果(E3 語意 / E4 auth 兩條路 / **E5 轉去 Azure 唔會令 tracing 變安全**)。⚠️ **唔 block F5**(見上),block 嘅係真接 Azure 嗰步
+- [x] F5-1 🟢 **OQ-7 答咗(Chris 2026-08-15):Azure OpenAI(公司 tenant)** ⇒ 寫成 **ADR-0037**(同日 `Accepted`,`E4` 除外 —— 見 F5-1b)。🔴 **佢對 F5 code shape 嘅影響 = 零** —— 四個選項入面只有「送之前先 scrub」會改 F5,而嗰個被否決 ⇒ **F5 照原設計寫得**。⚠️ 但佢改咗**兩樣**:①`agentModel` 語意變成 **deployment 名**(ADR-0037 E3)②**OQ-1 個問題本身變咗** —— 由「揀邊個 model」變成「infra 開邊個 deployment」
+- [x] F5-1b 🟢 **ADR-0037 `Accepted`(Chris 2026-08-15)** —— 五個後果(E3 語意 / E4 auth / **E5 轉去 Azure 唔會令 tracing 變安全** / E6 原文照出 / E7 只答咗 OpenAI 嗰半)逐條過目之後先批。🟡 **`E4` = approved as DEFERRED**,target = infra 確認 Azure OpenAI resource 之後同 **OQ-1** 一齊答(兩者取決於同一件事,分開問會問兩次)。⇒ 🔴 **`Accepted` 唔等於每一條都答咗**
 - [x] F5-2 `AiAssistService.startRun()` —— 開 run → agent 經 `get_request` 讀原文 → `propose_line_items` 停 → 寫 `AgentProposal` + `runState`。⚠️ **R3 deviation**:plan 寫「讀 `rawRequestText`」,實作**唔係由 service 讀畀 agent**,而係 agent 自己經 tool 讀 —— service 只 select 佢嚟驗「空唔空」。咁做 scope 檢查只有一條路(tool 側 `assertOpcoScope`),而 service 唔使揸住段 PII
 - [x] F5-3 🔴 **A8 收咗,而且係兩層** —— `toTranscript()` 純函數(7 個 item 形狀逐個驗)**+** 一條 service 層 test 驗「PII 入唔到 `AgentMessage`」。🔴 **第二條係 falsification 迫出嚟嘅**,見 progress Day 4
 - [x] F5-4 🔴 **A7 收咗** —— 餵一個講「I have created the line items and assigned the licences」嘅 mock,`AgentStep` 只有 `['start']`,而句嘢落咗 `AgentMessage`。**`AgentStep` 得兩個來源**:平台自己嘅生命週期事件 · seam 新增嘅 `onToolExecuted`(adapter 喺**真** `execute` 前後報告)
@@ -125,9 +125,11 @@
 |---|---|---|---|
 | ~~F1-5~~ | ~~三個 migration 未對真 DB 跑~~ | 🟢 **2026-08-15 本機收咗**(Chris 批准停 `ai-doc-extraction-db`) | ✅ |
 | ~~F1-6 / F1-7~~ | ~~`startedById` / `requestId` FK~~ | 🟢 **Chris 2026-08-15 拍板兩個一齊做**,已落 migration | ✅ |
-| ~~OQ-7~~ | ~~inference 側 PII 冇決定過~~ | 🟢 **Chris 2026-08-15 揀 Azure OpenAI** ⇒ ADR-0037 | ✅（ADR 待批） |
+| ~~OQ-7~~ | ~~inference 側 PII 冇決定過~~ | 🟢 **Chris 2026-08-15 揀 Azure OpenAI** ⇒ **ADR-0037 同日 `Accepted`** | ✅（🟡 `E4` 除外,見下） |
 | F1-5b | **DEV 側 migration 未跑** | 卡「要唔要部署」 | 期一收尾 |
-| ADR-0037 | `Proposed`,三個後果 Chris 未見過 | 佢答嘅係 provider,唔係嗰三樣 | **接 Azure 之前** |
-| OQ-1 | model / **deployment** 選型未答 | Chris 2026-08-15 **批准押後到 F11 live 驗**;ADR-0037 E3 令問題變成「infra 開邊個 deployment」 | **F11 之前** |
+| ~~ADR-0037~~ | ~~`Proposed`~~ | 🟢 **2026-08-15 `Accepted`**(五個後果逐條過目之後) | ✅ |
+| **ADR-0037 `E4`** | 🟡 auth 揀 Entra token 定 API key —— **approved as DEFERRED** | 取決於 infra 點開個 resource,而 **OQ-1 取決於同一件事** ⇒ 一齊答,唔好分開問兩次 | **infra 回覆之後 / A14 之前** |
+| OQ-1 | model / **deployment** 選型未答 | Chris 2026-08-15 **批准押後到 F11**;ADR-0037 E3 令問題由「揀邊個 model」變成「**infra 開邊個 deployment、叫咩名**」⇒ 佢而家係一個 **infra request**,唔係一個揀 | **F11 之前** |
+| 🆕 infra | 未出 request:開 Azure OpenAI resource + deployment(要回報名)+ 答 E4 兩條路邊條做得到 | W46 **第一個外部依賴**,而本項目 infra 依賴 B1/B4/B7/B8/B9 五次每次都要等 | **A14 嘅時間表由佢決定** |
 | R11–R19 | 未入 `RISK_REGISTER.md`(🆕 R17–R19 由 ADR-0037 新增) | living doc,ADR / plan 已記 | 期一收尾 |
 | — | 🆕 **既有 gap(唔喺 W46 範圍)**:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏咗 `licenseOpsProvider` / `ticketUpdateProvider` / `acsSenderAddress` 等 ⇒ 改 seam provider 唔會出現喺 audit `before`/`after` | W39 / W40 / CH-011 三批欄都中 | 開一張 CH |

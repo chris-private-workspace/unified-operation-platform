@@ -1,12 +1,17 @@
 # ADR-0037: AI-Assist 嘅 inference 一律行公司 tenant 嘅 Azure OpenAI
 
 **Date**: 2026-08-15
-**Status**: **Proposed**(待 Chris 拍板）
-**Decision content owner**: Chris Lai(2026-08-15 揀咗 provider）
+**Status**: **Accepted**
+**Approver**: Chris Lai(2026-08-15）
 
 > 🚧 同 ADR-0036 一樣,本文件住喺 branch `feat/w46-agent-runtime`,**未 merge 落 `main`**。
+> **`Accepted` 講嘅係「決定內容批咗」,唔係「呢條 branch 可以推向 `main`」。**
 >
-> 🔴 **點解係 `Proposed` 而唔係一寫出嚟就 `Accepted`**:Chris 2026-08-15 答咗嘅係「**用邊個 provider**」。而查證之後浮出嚟嘅三個後果 —— `AGENT_MODEL` 語意變咗、auth 有兩條路要揀、tracing **唔會**因為轉去 Azure 而變安全 —— 佢**未見過**。批一個佢冇見過後果嘅決定,就係本項目一路想避開嗰件事。
+> 🔴 **`Accepted` 唔等於「每一條都答咗」 —— `E4` 明文未揀。**
+>
+> 本 ADR 起草時係 `Proposed`,理由係:Chris 答嘅係「用邊個 provider」,而查證之後浮出嚟嘅後果(**E3** `AGENT_MODEL` 語意變咗 · **E4** auth 兩條路 · **E5** tracing **唔會**因為轉去 Azure 而變安全 · **E6** 原文照出 · **E7** 只答咗 OpenAI 嗰半)佢未見過。五條**已經逐條過目**,佢同日 Accept,並且指明 **E4 維持 deferred**。
+>
+> ⚠️ **呢個形狀 `plan.md §7` 自己標過一次**(OQ-1 / OQ-5 嘅「approved as deferred」)—— 一格寫住 approved 而下手當咗成格都答晒,係本項目撞過嘅事。**E4 未答,target 見下。**
 
 ---
 
@@ -78,7 +83,12 @@ boot 嗰陣 `setDefaultOpenAIClient(new AzureOpenAI({ endpoint, apiVersion, depl
 - `.env.example` 同 `ConnectorConfig` 個描述要明文寫「Azure 之下呢度填 **deployment name**」
 - **OQ-1 嘅問題本身變咗**:由「揀邊個 model」變成「**喺公司個 Azure OpenAI resource 開邊個 deployment、叫咩名**」 —— 而後者係一個**要 infra 做嘢**嘅問題,唔係一個揀嘅問題
 
-### E4 —— Auth 兩條路,**未揀**;但無論揀邊條,secret 只落 env
+### E4 —— 🟡 **Auth:approved as DEFERRED**(Chris 2026-08-15)—— 兩條路,未揀
+
+🔴 **本 ADR 入面唯一一條冇答案嘅決定,而佢係知情之下留低嘅。**
+
+**Target**:**infra 確認咗個 Azure OpenAI resource 點開之後**,同 `OQ-1`(開邊個 deployment)一齊答 —— 兩者都取決於同一件事,分開問會問兩次。
+**Blocks**:真接 Azure 嗰步(即 `A14` live 驗)。**唔 block** F7 / F8 / F11 之外嘅任何嘢。
 
 | | 好處 | 代價 |
 |---|---|---|

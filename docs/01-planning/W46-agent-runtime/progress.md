@@ -238,7 +238,7 @@ nullable 睇落安全啲,但佢令「**攞唔返 scope**」變成一個到得到
 ### Blockers / 未收
 
 - 🚧 **A1 DEV 側未做** —— 卡「要唔要部署」。⚠️ DEV entrypoint 令 migrate 失敗 NON-FATAL ⇒ 部署後**唔可以睇 revision status**,要照今日咁 query catalog
-- 🚧 **ADR-0037 待批**(唔 block F5,block 嘅係真接 Azure)
+- 🚧 **ADR-0037 待批**(唔 block F5,block 嘅係真接 Azure)—— ✅ **同日 Day 6 收工前 `Accepted`,`E4` 除外**
 - 🚧 **OQ-1** —— 押後到 F11,但佢而家係一個 infra 問題
 - 🚧 **R11–R19 未入 `RISK_REGISTER.md`**(R17–R19 由 ADR-0037 新增)
 - 🚧 一個**既有** gap 未開單:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏欄
@@ -303,7 +303,7 @@ plan 寫「**讀** `rawRequestText`」。實作**唔係**由 service 讀完餵�
 
 - 🚧 **F6(proposal 審批 endpoint + resume)** —— F5 寫低咗 `AgentProposal` 同 `runState`,但**冇人撳得到**
 - 🚧 F7 audit · F8 前端 · F9 boundary spec · F11 render + live
-- 🚧 ADR-0037 待批 · OQ-1(deployment 名)· A1 DEV 側 · R11–R19 未入 RISK_REGISTER
+- 🚧 ADR-0037 待批 · OQ-1(deployment 名)· A1 DEV 側 · R11–R19 未入 RISK_REGISTER —— ⚠️ **ADR-0037 同日 Day 6 收工前 `Accepted`(`E4` 除外),呢行係 Day 4 當刻嘅狀態**
 
 ---
 
@@ -403,4 +403,18 @@ F9-2 證嘅係:**codebase 入面冇第二個地方寫得到**。
 ①`tool-registry.ts` 加一個 `../fulfilment/` import ⇒ 1 紅 ②`agent-approval.service.ts` 加一句 `agentStep.create` ⇒ 1 紅。
 
 api **1171 / 81**(F6 後 1157 / 80)· tsc 0 · lint 0。
-- 🚧 ADR-0037 待批 · OQ-1(deployment 名,而佢而家係 infra 問題)· A1 DEV 側 · R11–R19 未入 `RISK_REGISTER`
+
+### 收尾:ADR-0037 `Accepted`,但 `E4` 明文未答
+
+Chris 問「**所以 OQ-7 要批什麼?**」—— 呢條問題本身就係 `Proposed` 起咗作用:佢已經答咗 OQ-7,所以**要批嘅唔係 OQ-7,係「呢份 ADR 連埋佢列出嘅後果就係決定」**。
+
+拆返清楚之後,入面只有**一件真係未答**(`E4` auth 揀 Entra token 定 API key),其餘四條(E3 / E5 / E6 / E7)係**要佢睇過先算數**嘅後果。逐條過目之後,Chris **同日 Accept,並指明 `E4` 維持 deferred**。
+
+🔴 **`E4` 同 `OQ-1` 合併做一個問題** —— 兩者都取決於「infra 點開個 Azure OpenAI resource」,分開問就會問兩次,而中間隔住嘅係本項目最貴嗰種等待(B1/B4/B7/B8/B9 五次先例)。⇒ **落一個 infra request,一次過要齊:resource · deployment 名 · E4 兩條路邊條做得到。**
+
+📌 **形狀**:`Accepted` **唔等於「每一條都答咗」**。`plan.md §7` 為 OQ-1/OQ-5 標過同一件事(「approved as deferred」),而嗰格自己就寫住「一格寫住 approved 而下手當咗成格都答晒」係本項目撞過嘅事 —— 所以呢次喺 **ADR 頂部、index、plan、checklist 四個地方**都寫明 E4 未答,唔靠一個地方。
+### 未收(**本日收工嘅真狀態,上面 Day 3–5 嗰幾行同日已經過時**)
+
+- 🚧 **F7** audit · **F8** 前端(🔴 後端通晒但**冇畫面撳得到**)· **F11** render + live
+- 🚧 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名)—— **同一個 infra request,未出**
+- 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)
