@@ -1,7 +1,7 @@
 ---
 phase: W44-azure-dev-deploy
 plan_ref: ./plan.md
-status: in-progress    # in-progress | complete
+status: complete       # in-progress | complete — 2026-08-13 closed(Cross-Cutting 全勾;2026-08-15 補回 frontmatter)
 last_updated: 2026-08-04
 ---
 

@@ -4,7 +4,7 @@ name: "Azure DEV 環境部署(n8n UAT 可達)"
 sprint_week: W44
 start_date: 2026-08-04
 end_date: 2026-08-08          # planned, may slip with changelog log
-status: active                # draft | active | closed
+status: closed                # draft | active | closed — 2026-08-13 closed(progress.md 早就 flip 咗,本檔漏跟;2026-08-15 補)
 spec_refs:
   - docs/13-deployment/04-deploy-runbook.md
   - docs/13-deployment/01-topology.md
