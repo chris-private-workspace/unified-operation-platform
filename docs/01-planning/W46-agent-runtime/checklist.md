@@ -88,10 +88,18 @@
 
 ## F8 — 前端(H6)
 
-- [ ] F8-1 `AI Assist` 卡由 `EmptyState` 換真嘢
-- [ ] F8-2 Run 觀察畫面(step timeline + transcript + 中止掣)
-- [ ] F8-3 Proposal 審核 UI —— 🔴 **要講清楚「批准咗仍然可能被 gate 擋」**(D3 嗰個反直覺後果)
-- [ ] F8-4 一個 view 一個 primary action(H6)
+- [x] F8-0 🔴 **先補後端一層 —— `AgentRunController`**(F5/F6 只做咗 service,`AgentModule` 一個 controller 都冇 ⇒ 前端根本冇嘢可以打)。`POST /agent/runs` · `GET /agent/runs?requestId=` · `GET /agent/runs/:id` · `POST /agent/runs/:id/abort`。**`@Roles(ADMIN, REGIONAL)`,同審批一樣** —— plan / ADR 都冇指定邊個可以**開** run,呢個係保守讀法兼寫低咗理由:一個 run 要錢兼製造工作畀批准人;而 tool 本身喺任何闊度都安全(佢哋行**開 run 嗰個人**嘅 OpCo scope)⇒ **日後放寬係一行,收窄係 regression**
+- [x] F8-0b 🔴🔴 **一個順手改嘅寫法差啲開咗個窿**:`getRun` 原本用 `include`,而咁樣會連 **`runState`** 一齊回傳 —— 佢係 SDK 嘅原始 state,**入面有未 scrub 過嘅對話歷史**(D6 只 scrub `AgentMessage` 嗰條路)⇒ **等於由 API 把平台小心遮住嗰份 transcript 嘅原本交返出去**,而且冇 error 冇 log 冇嘢會紅。改用明文 `select`,理由寫喺 code 同 DTO 兩邊
+- [x] F8-1 `AI Assist` 卡由 `EmptyState`「Coming soon」換成 `AiAssistCard`(新 component,唔喺 `request-detail.tsx` 入面長)
+- [x] F8-2 Run 觀察畫面:**steps(What ran)· transcript(摺埋)· Stop 掣**(只喺非終態出)
+- [x] F8-3 🔴 **「批准咗仍然可能被 gate 擋」寫咗喺 approve 掣隔籬** —— `Approving runs the platform's normal checks — they can still refuse.`,兼有 test 釘住
+- [x] F8-4 ✅ **冇加任何 `variant="primary"`** —— 卡用 secondary/ghost;reject 對話框用 `danger`(destructive,唔係 primary)
+- [x] F8-5 🔴 **D4 喺畫面上企得住**:steps **排喺前**(佢係證據)、transcript **預設摺埋**兼開咗之後有一句「唔係任何嘢發生過嘅證據」。test 直接用 INC-001 嗰句 —— 餵一個講「I have created the line items already」嘅 message,assert **佢預設唔喺畫面上**
+- [x] F8-6 Role gating:`canUseAgent`(ADMIN+REGIONAL)。🔴 **test 明文寫住「hidden card 唔係一個權限」** —— server guard 先係真嗰個,呢度只係唔遞一個一定 403 嘅掣
+- [x] F8-7 ⚠️ **5 個既有 `request-detail.*.test.tsx` 加咗一個 stub mock** —— 用**渲染 marker** 唔用 `() => null`,咁 CH-030 F4 嗰條 DOM 次序 test 同新嘅 role gating test 都仲驗得到。⚠️ CH-030 F4 條 test 原本靠 `getByText('AI Assist')`,而嗰個 anchor 隨住 placeholder 消失 ⇒ **改 anchor 唔改 claim**
+- [x] F8-8 🔴 **Falsification ×2 真紅零誤傷**:①transcript 預設改成打開 ②拆走 F8-3 嗰句
+- [x] F8-9 web **377 → 392 passed**(+15)· 6 條紅 = **完全就係已知 pre-existing 嗰 6 條,零新增** · web tsc 0 · web lint 0
+- [ ] F8-10 🚧 **DS-4(light + dark 真 render)未做** —— 全部行 token 所以結構上應該 swap,但**未 render 過就唔可以講佢掂**。= **A13 / F11-1**
 
 ## F9 — Boundary spec(H5)
 

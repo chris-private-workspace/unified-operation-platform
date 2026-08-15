@@ -3,6 +3,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import type {
   AddLineItemBody,
   AdminUser,
+  AgentRun,
   AllocationResetBody,
   AllocationResetResult,
   AssignResult,
@@ -156,6 +157,63 @@ export function useRemoveLineItem(requestId: string) {
  * ten-minute sweep. A miss writes nothing, so invalidating on every outcome is
  * harmless and keeps the timeline correct on a hit.
  */
+/* ── W46 F8 / ADR-0036 — AI-Assist runs ──────────────────────
+ *
+ * All four invalidate the SAME key, and one of them invalidates the request
+ * too: approving a proposal creates real line items through the existing path,
+ * so a request detail left on screen would otherwise still show the old lines
+ * next to a run that says it created them.
+ */
+
+const agentRunKey = (requestId: string) => ['agent', 'runs', requestId];
+
+export function useStartAgentRun(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiPost<AgentRun>('/agent/runs', { requestId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentRunKey(requestId) });
+    },
+  });
+}
+
+/**
+ * Stop a run and reject whatever was still waiting on it.
+ *
+ * ⚠️ It does not reach into the model — a run is only inside the runtime for
+ * the duration of one request. What this ends is the platform's own state: a
+ * run parked on a decision that is never coming.
+ */
+export function useAbortAgentRun(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) =>
+      apiPost<AgentRun>(`/agent/runs/${runId}/abort`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentRunKey(requestId) });
+    },
+  });
+}
+
+export function useDecideProposal(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { proposalId: string; reason?: string }) =>
+      input.reason === undefined
+        ? apiPost<unknown>(`/agent/proposals/${input.proposalId}/approve`)
+        : apiPost<unknown>(`/agent/proposals/${input.proposalId}/reject`, {
+            reason: input.reason,
+          }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentRunKey(requestId) });
+      // The approval path creates line items through RequestService, so the
+      // request itself has moved on too.
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests', requestId] });
+      qc.invalidateQueries({ queryKey: ['fulfilment', 'requests'] });
+    },
+  });
+}
+
 export function useSyncCheck(requestId: string) {
   const qc = useQueryClient();
   return useMutation({

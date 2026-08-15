@@ -1,7 +1,12 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RequestDetail } from './request-detail';
-import { useRequest, useCatalog, useLedger, useTenantSkus } from '@/hooks/queries';
+import {
+  useRequest,
+  useCatalog,
+  useLedger,
+  useTenantSkus,
+} from '@/hooks/queries';
 import {
   useAdvanceStage,
   useAssignLineItem,
@@ -39,6 +44,13 @@ vi.mock('@/hooks/mutations', () => ({
   useRemoveLineItem: vi.fn(),
 }));
 vi.mock('@/lib/auth/use-current-user', () => ({ useCurrentUser: vi.fn() }));
+// W46 F8 — stubbed with a marker, not with null: these files are about
+// the request, not the agent, so they should not have to satisfy the
+// card's own data needs — but the ROLE GATING around it is a
+// request-detail concern, and a marker keeps that assertable.
+vi.mock('@/components/requests/ai-assist-card', () => ({
+  AiAssistCard: () => <div data-testid="ai-assist-card" />,
+}));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({ id: 'r1' }),

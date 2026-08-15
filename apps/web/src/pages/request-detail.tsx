@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Check,
-  ChevronLeft,
-  Pencil,
-  Plus,
-  Sparkles,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { Check, ChevronLeft, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -60,7 +52,8 @@ import {
   tenantCapacity,
 } from '@/lib/capacity';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
-import { canOverrideBudget, canSeePlatform } from '@/lib/roles';
+import { canOverrideBudget, canSeePlatform, canUseAgent } from '@/lib/roles';
+import { AiAssistCard } from '@/components/requests/ai-assist-card';
 import { formatDateTime } from '@/lib/format';
 import { ApiError } from '@/lib/api';
 import type {
@@ -226,6 +219,7 @@ export function RequestDetail() {
   const { role } = useCurrentUser();
   const showTenant = canSeePlatform(role);
   const mayOverride = canOverrideBudget(role);
+  const mayUseAgent = canUseAgent(role);
   const ledger = useLedger();
   const tenantSkus = useTenantSkus(showTenant);
   const ledgerIndex = useMemo(
@@ -1001,21 +995,11 @@ export function RequestDetail() {
             )}
           </Card>
 
-          <Card
-            title={
-              <span className="flex items-center gap-[8px]">
-                <Sparkles size={16} strokeWidth={2} className="text-purple" />
-                AI Assist
-              </span>
-            }
-            action={<Badge tone="purple">Preview</Badge>}
-          >
-            <EmptyState
-              icon={<Sparkles size={18} strokeWidth={2} />}
-              title="Coming soon"
-              description="Parsing the free-text remark into SKU suggestions is a planned AI feature — not yet available."
-            />
-          </Card>
+          {/* W46 F8 — hidden for OPCO_IT rather than shown-and-broken: every
+              /agent route is @Roles(ADMIN, REGIONAL), so the card would only be
+              able to render a 403. The server guard is the real one; this stops
+              offering a button that cannot work. */}
+          {mayUseAgent && id && <AiAssistCard requestId={id} />}
         </div>
       </div>
 

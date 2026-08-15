@@ -80,6 +80,13 @@ describe('permission matrix (derived from @Roles)', () => {
         // write surface W46 added was caught by this test on the run that
         // introduced it, not by review.
         'AgentApprovalController',
+        // W46 F8 — /agent/runs (start, read, abort), @Roles(ADMIN,REGIONAL).
+        // Neither ADR-0036 nor the plan settles who may START a run, so this
+        // matches the approval surface: a run costs a model call and creates
+        // work for whoever decides the proposal. The tools are safe at any
+        // width — they apply the STARTER's OpCo scope — so widening later is a
+        // one-line change, and narrowing after people rely on it is not.
+        'AgentRunController',
         'AuditController', // W29 F3 — GET /admin/audit, @Roles(ADMIN)
         'AuthController',
         'FulfilmentController',

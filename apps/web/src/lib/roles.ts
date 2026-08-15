@@ -49,6 +49,20 @@ export function canRepairOutbound(role: Role | undefined): boolean {
 }
 
 /**
+ * W46 F8 / ADR-0036 — start an AI-Assist run and decide its proposals.
+ *
+ * Same width as the outbound queue and the approval endpoint (plan OQ-2), and
+ * this function exists so the screen and the server agree by construction: the
+ * card is hidden for anyone this returns false for, and `/agent/runs` +
+ * `/agent/proposals` carry the matching `@Roles`. Hiding alone would be
+ * decoration — the guard is the server's; this only stops offering a button
+ * that would 403.
+ */
+export function canUseAgent(role: Role | undefined): boolean {
+  return role === 'ADMIN' || role === 'REGIONAL';
+}
+
+/**
  * Breaking an OpCo's licence budget on purpose is ADMIN-only (W36 / ADR-0016
  * D3) — REGIONAL is deliberately excluded even though it can see every OpCo.
  *

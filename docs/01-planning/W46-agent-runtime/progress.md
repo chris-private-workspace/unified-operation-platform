@@ -463,7 +463,68 @@ D7 要求 `AuditLog.actorType` 加一個 `'agent'`。做嘅時候先發現:
 
 ---
 
-### 未收(**Day 6 收工嘅狀態;F7 已於 Day 7 收**)
+---
+
+## Day 8 — 2026-08-16(F8 — 前端)
+
+### 開工先發現後端仲差一層
+
+F5 / F6 做咗 service 同審批 endpoint,但 **`AgentModule` 一個 controller 都冇** —— 即係前端**根本冇嘢可以打**。補 `AgentRunController`:開 run / 攞最近一個 run / 攞一個 run / 中止。
+
+**`@Roles(ADMIN, REGIONAL)`,同審批一樣。** plan / ADR 都冇指定邊個可以**開** run。理由寫低咗:一個 run 要錢兼且製造工作畀批准人;而 tool 本身喺任何闊度都安全(佢哋行**開 run 嗰個人**嘅 OpCo scope,一個 OPCO_IT 開嘅 run 結構上只睇到自己個 OpCo)⇒ **日後放寬係一行,收窄係 regression。**
+
+### 🔴🔴 一個「短啲嗰個寫法」差啲開咗個窿
+
+`getRun` 第一版用 `include` 攞 relation。`include` 會連**每個 scalar** 一齊回傳 —— 包括 **`runState`**。
+
+而 `runState` 係 SDK 嘅序列化 state,**入面有 model 嘅對話歷史,逐字,未 scrub 過**。D6 scrub 嘅係「落 `AgentMessage` 嗰條路」,`runState` 係另一條路、為另一個目的(resume,R16)寫嘅。
+
+⇒ **一個 `include` 就等於由 API 把平台小心遮住嗰份 transcript 嘅原本交返出去** —— 冇 error、冇 log、冇嘢會紅。
+
+改用明文 `select`,理由寫喺 service 同 DTO 兩邊(DTO 個 header 寫住「任何令 `runState` 出現喺回應嘅改動,就係靜靜拆咗 D6」)。
+
+📌 **形狀**:呢個同 §9 一路撞緊嗰族一樣 —— **預設值 / 最順手嗰個寫法本身就係唔安全,而且冇嘢會話你聽**。分別係今次係我自己嘅 `include`,唔係 vendor 嘅 default。
+
+### 畫面點解係咁排
+
+D4 要求 transcript 同 action ledger 唔可以撈埋。落到畫面就係三件事:
+
+1. **steps 排喺前**,標題 `What ran` —— 佢係證據
+2. **transcript 預設摺埋**,開咗之後第一句係「**唔係任何嘢發生過嘅證據**」
+3. proposal 塊嘢**貼住 approve 掣**寫住 **`Approving runs the platform's normal checks — they can still refuse.`**(F8-3 / D3 嗰個反直覺後果)
+
+🔴 **A7 嗰個 mock 直接搬咗上畫面做 test fixture**:transcript 入面擺一句 `I have created the line items already`,然後 assert **佢預設唔喺畫面上**。同一句嘢,F5 用嚟證「佢寫唔到 `AgentStep`」,F8 用嚟證「佢唔會喺人望落去第一眼就同證據並排」。
+
+### Falsification ×2 真紅零誤傷
+
+①transcript 預設改成打開 ⇒ 1 紅 ②拆走 F8-3 嗰句 ⇒ 1 紅。
+
+### ⚠️ 5 個既有 test 檔要加 stub,而 stub 點寫有分別
+
+新卡自己叫 `useAgentRun`,而 5 個 `request-detail.*.test.tsx` 都用明文 object mock `@/hooks/queries` ⇒ 全部即刻紅(45 條)。
+
+加咗一個 stub mock,**渲染一個 marker 唔係 `() => null`** —— 因為:
+
+- CH-030 F4 嗰條「Operational history 排喺 AI Assist 之前」嘅 DOM 次序 test **仲要驗得到**(佢原本靠 `getByText('AI Assist')`,而嗰個 anchor 隨住 placeholder 消失)⇒ **改 anchor,唔改 claim**
+- **role gating 係 request-detail 嘅責任唔係卡嘅責任**,所以嗰三條 test(ADMIN/REGIONAL 見到、OPCO_IT 見唔到)要留喺嗰邊
+
+🔴 而嗰條 OPCO_IT test 特登喺註釋寫死一句:**hidden card 唔係一個權限** —— server guard 先係真嗰個,呢度只係唔遞一個一定 403 嘅掣。唔咁寫,下一個改動好容易 ship 一個冇 `@Roles` 嘅 endpoint。
+
+### DS 自檢(H6)
+
+DS-1 ✅ · DS-2 ✅ · DS-3 ✅(**零新 primary**)· DS-5 ✅ · DS-6 ✅ · DS-7 ✅ · DS-8 ✅ · DS-9 ✅ · DS-10 ✅ · DS-11 N/A(prototype 冇 agent 卡,純組合既有 primitive)· DS-12 N/A。
+
+🚧 **DS-4(light + dark 真 render)未做** —— 全部行 token 所以**結構上**應該 swap,但 §9 一路嘅規矩就係「未 render 過就唔可以講佢掂」⇒ 留喺 **A13 / F11-1**。
+
+### 數字
+
+web **377 → 392 passed**(+15)· **6 條紅 = 完全就係已知 pre-existing 嗰 6 條,零新增** · web tsc 0 · web lint 0
+api **1184 / 81** 全綠零跌 · api tsc 0 · api lint 0
+🔴 W28 權限矩陣 drift test **第二次**捉到新 controller(4 條 route,全部 `[ADMIN,REGIONAL]`),snapshot 實測只加 4 行。
+
+---
+
+### 未收(**Day 6 收工嘅狀態;F7 已於 Day 7 收、F8 於 Day 8 收**)
 
 - 🚧 **F7** audit · **F8** 前端(🔴 後端通晒但**冇畫面撳得到**)· **F11** render + live
 - 🚧 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名)—— **同一個 infra request,未出**

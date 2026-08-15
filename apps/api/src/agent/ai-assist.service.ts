@@ -259,6 +259,126 @@ export class AiAssistService {
     }
   }
 
+  // ── the parts that read ────────────────────────────────────
+
+  /**
+   * One run in full — steps, transcript and proposals.
+   *
+   * 🔴 Scope is checked against the RUN'S REQUEST, not against `startedById`.
+   * Reading is not "seeing your own runs": a REGIONAL operator has to be able
+   * to read a run an OPCO_IT colleague started on a request they both own,
+   * otherwise the approval screen would show a decision nobody can inspect.
+   */
+  async getRun(user: AppUser, runId: string) {
+    const run = await this.prisma.agentRun.findUnique({
+      where: { id: runId },
+      /**
+       * 🔴 An explicit `select`, and `runState` is the reason.
+       *
+       * `include` would have returned every scalar on the row — including the
+       * SDK's serialised run state, which carries the model's own message
+       * history VERBATIM. That history never went through `scrubPii`: D6 scrubs
+       * on the way into `AgentMessage`, and `runState` is a different column
+       * written for a different purpose (resumption, R16).
+       *
+       * So an `include` here would have handed the client the unscrubbed copy
+       * of the very transcript the platform is careful to redact — a hole with
+       * no error, no log and nothing red, opened by the shorter spelling.
+       */
+      select: {
+        id: true,
+        requestId: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        startedById: true,
+        steps: { orderBy: { createdAt: 'asc' } },
+        messages: { orderBy: { createdAt: 'asc' } },
+        proposals: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            kind: true,
+            status: true,
+            payload: true,
+            approvedById: true,
+            rejectedReason: true,
+            decidedAt: true,
+            createdAt: true,
+          },
+        },
+        request: { select: { opcoId: true } },
+      },
+    });
+    if (!run) throw new NotFoundException('Agent run not found');
+    if (run.request) assertOpcoScope(user, run.request.opcoId);
+    return run;
+  }
+
+  /**
+   * The most recent run on a request, or null.
+   *
+   * The card needs this to decide what to show, and "most recent" rather than
+   * "the open one" on purpose: a finished run's proposals and transcript are
+   * still the thing a person wants to look at.
+   */
+  async findLatestForRequest(user: AppUser, requestId: string) {
+    const request = await this.prisma.request.findUnique({
+      where: { id: requestId },
+      select: { opcoId: true },
+    });
+    if (!request) throw new NotFoundException('Request not found');
+    assertOpcoScope(user, request.opcoId);
+
+    const latest = await this.prisma.agentRun.findFirst({
+      where: { requestId },
+      orderBy: { startedAt: 'desc' },
+      select: { id: true },
+    });
+    return latest ? this.getRun(user, latest.id) : null;
+  }
+
+  /**
+   * Stop a run a person no longer wants.
+   *
+   * ⚠️ What this does NOT do is reach into the runtime. A run is only ever
+   * inside `runtime.start()` / `resume()` for the duration of one HTTP request;
+   * the state this ends is the platform's own — a run parked at
+   * `awaiting_approval`, waiting for a decision that is never coming. Calling
+   * it "abort" rather than "cancel" would promise more than that.
+   */
+  async abortRun(user: AppUser, runId: string) {
+    const run = await this.getRun(user, runId);
+    if (!NON_TERMINAL_RUN_STATUSES.includes(run.status as 'running')) {
+      throw new ConflictException(
+        `This run is already ${run.status}; there is nothing to stop`,
+      );
+    }
+
+    await this.writeStep(runId, {
+      key: 'abort',
+      status: 'ok',
+      detail: `Stopped by ${user.id}`,
+    });
+    await this.prisma.agentRun.update({
+      where: { id: runId },
+      data: { status: 'aborted', endedAt: new Date() },
+    });
+
+    /**
+     * 🔴 Pending proposals go with it. Leaving them `pending` would leave rows
+     * an approval screen still offers to approve — and approving one would try
+     * to resume a run that is over, which `resumeRun` refuses. A button that
+     * can only produce an error is worse than no button.
+     */
+    await this.prisma.agentProposal.updateMany({
+      where: { runId, status: 'pending' },
+      data: { status: 'rejected', rejectedReason: 'The run was stopped' },
+    });
+
+    return this.getRun(user, runId);
+  }
+
   // ── the parts that write ───────────────────────────────────
 
   /**

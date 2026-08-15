@@ -7,6 +7,7 @@ import { AgentRuntimeProvider } from './agent-runtime.provider';
 import { OpenAiAgentsProvider } from './openai-agents.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
 import { AiAssistService } from './ai-assist.service';
+import { AgentRunController } from './agent-run.controller';
 
 /**
  * W46 / ADR-0036 — the agent module.
@@ -47,6 +48,7 @@ import { AiAssistService } from './ai-assist.service';
     },
     AiAssistService,
   ],
+  controllers: [AgentRunController],
   exports: [AgentToolRegistry, AgentRuntimeProvider, AiAssistService],
 })
 export class AgentModule {}

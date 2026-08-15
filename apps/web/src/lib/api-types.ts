@@ -751,6 +751,70 @@ export interface AssignResult {
   lineItem?: RequestLineItem;
 }
 
+/* ── W46 / ADR-0036 — AI-Assist runs ─────────────────────────
+ *
+ * 🔴 There is no `runState` here and there must never be. It is the SDK's own
+ * serialised state and it carries the model's message history UNSCRUBBED; the
+ * redacted copy is `messages` below (D6). The server excludes it with an
+ * explicit `select` for the same reason.
+ */
+
+export type AgentRunStatus =
+  | 'running'
+  | 'awaiting_approval'
+  | 'approved'
+  | 'rejected'
+  | 'completed'
+  | 'failed'
+  | 'aborted';
+
+/** 🟢 Written by the PLATFORM around real execution. The audit truth (D4). */
+export interface AgentStep {
+  id: string;
+  /** A tool name, or `start` / `proposal` / `run` / `abort`. */
+  key: string;
+  /** `skipped` is NOT a flavour of `ok` — the AssignStep rule, reused. */
+  status: 'ok' | 'failed' | 'skipped';
+  detail?: string | null;
+  retryable?: boolean | null;
+  whoFixes?: AssignStepOwner | null;
+  createdAt: string;
+}
+
+/** ⚠️ What the AGENT said. A narrative, not evidence (D4 / INC-001). */
+export interface AgentMessage {
+  id: string;
+  role:
+    'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result' | 'unknown';
+  content: string;
+  createdAt: string;
+}
+
+export interface AgentProposal {
+  id: string;
+  kind: string;
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  /** ⚠️ The model's own arguments. Re-validated when carried out. */
+  payload: unknown;
+  approvedById?: string | null;
+  rejectedReason?: string | null;
+  decidedAt?: string | null;
+  createdAt: string;
+}
+
+export interface AgentRun {
+  id: string;
+  requestId?: string | null;
+  status: AgentRunStatus;
+  /** Whose OpCo scope the run's tools apply — not necessarily the approver. */
+  startedById: string;
+  startedAt: string;
+  endedAt?: string | null;
+  steps: AgentStep[];
+  messages: AgentMessage[];
+  proposals: AgentProposal[];
+}
+
 /** An operational-history event (detail view). */
 export interface RequestEvent {
   id: string;

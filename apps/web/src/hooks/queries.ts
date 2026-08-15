@@ -4,6 +4,7 @@ import type {
   ActivityEvent,
   AdminOpco,
   AdminUser,
+  AgentRun,
   AuditFilters,
   AuditPage,
   ConnectorStatus,
@@ -289,5 +290,25 @@ export function useRequest(id: string | undefined) {
     queryKey: ['fulfilment', 'requests', id],
     queryFn: () => apiGet<RequestDetail>(`/fulfilment/requests/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/**
+ * W46 F8 — the most recent AI-Assist run on a request, or null.
+ *
+ * "Most recent" rather than "the open one": a finished run's proposals and
+ * transcript are still what a person opens the card to read.
+ *
+ * 🔴 No polling. ADR-0029 A2 deferred SSE and W46 期二 G6 owes that debt, so a
+ * long run does not update itself — the alternative, an interval that quietly
+ * bills a model call's worth of latency every few seconds, would be inventing a
+ * live view the server never promised.
+ */
+export function useAgentRun(requestId: string | undefined) {
+  return useQuery({
+    queryKey: ['agent', 'runs', requestId],
+    queryFn: () =>
+      apiGet<AgentRun | null>(`/agent/runs?requestId=${requestId}`),
+    enabled: Boolean(requestId),
   });
 }
