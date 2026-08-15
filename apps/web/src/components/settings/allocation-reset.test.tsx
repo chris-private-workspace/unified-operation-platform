@@ -33,7 +33,9 @@ const OPCOS: AdminOpco[] = [
 const WARNING =
   'Until you re-import, every affected OpCo × SKU sits at allocated = 0 and the OpCo budget gate will block assigns for those combinations (an admin can still override per line). assignedQuantity is not touched, and no ledger rows are deleted.';
 
-const RESULT = (over: Partial<AllocationResetResult> = {}): AllocationResetResult => ({
+const RESULT = (
+  over: Partial<AllocationResetResult> = {},
+): AllocationResetResult => ({
   dryRun: true,
   affected: 2,
   scope: 'all',
@@ -154,8 +156,9 @@ describe('allocation reset card (CH-016)', () => {
 
     // The first question anyone asks on seeing a Reset next to a ledger — it
     // must be answered before the click, not inside the modal.
-    expect(screen.getByText(/is never touched and no ledger rows are deleted/))
-      .toBeTruthy();
+    expect(
+      screen.getByText(/is never touched and no ledger rows are deleted/),
+    ).toBeTruthy();
   });
 
   describe('the sequence: dry-run always comes first', () => {
@@ -359,7 +362,9 @@ describe('full reset mode (CH-017)', () => {
     chooseFullMode();
     fireEvent.click(screen.getByText(/^Full reset…$/));
 
-    expect(screen.getByText('Reset allocation AND assigned to zero?')).toBeTruthy();
+    expect(
+      screen.getByText('Reset allocation AND assigned to zero?'),
+    ).toBeTruthy();
     expect(screen.getByText('661')).toBeTruthy(); // allocated
     expect(screen.getByText('500')).toBeTruthy(); // assigned
     expect(screen.getByText(/which re-importing cannot restore/)).toBeTruthy();
@@ -376,7 +381,8 @@ describe('full reset mode (CH-017)', () => {
     it('blocks the commit until the scope is retyped', () => {
       openFullPreview();
 
-      const commit = screen.getByText('Reset 2 cells')
+      const commit = screen
+        .getByText('Reset 2 cells')
         .closest('button') as HTMLButtonElement;
       expect(commit.disabled).toBe(true);
 
@@ -395,8 +401,11 @@ describe('full reset mode (CH-017)', () => {
       });
 
       expect(
-        (screen.getByText('Reset 2 cells').closest('button') as HTMLButtonElement)
-          .disabled,
+        (
+          screen
+            .getByText('Reset 2 cells')
+            .closest('button') as HTMLButtonElement
+        ).disabled,
       ).toBe(true);
     });
 
@@ -433,8 +442,11 @@ describe('full reset mode (CH-017)', () => {
         target: { value: 'ALL' },
       });
       expect(
-        (screen.getByText('Reset 2 cells').closest('button') as HTMLButtonElement)
-          .disabled,
+        (
+          screen
+            .getByText('Reset 2 cells')
+            .closest('button') as HTMLButtonElement
+        ).disabled,
       ).toBe(true);
     });
 
@@ -445,8 +457,11 @@ describe('full reset mode (CH-017)', () => {
 
       expect(screen.queryByLabelText('Confirm reset scope')).toBeNull();
       expect(
-        (screen.getByText('Reset 2 cells').closest('button') as HTMLButtonElement)
-          .disabled,
+        (
+          screen
+            .getByText('Reset 2 cells')
+            .closest('button') as HTMLButtonElement
+        ).disabled,
       ).toBe(false);
     });
   });
