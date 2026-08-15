@@ -363,5 +363,44 @@ plan 寫「**讀** `rawRequestText`」。實作**唔係**由 service 讀完餵�
 
 ### 未收
 
-- 🚧 **F7 audit**(`agent.run_started` / `agent.proposal_decided`)· **F8 前端**(而家後端通晒但**冇畫面撳**)· **F9 boundary spec** · **F11 render + live**
+- 🚧 **F7 audit**(`agent.run_started` / `agent.proposal_decided`)· **F8 前端**(而家後端通晒但**冇畫面撳**)· **F11 render + live**
+
+---
+
+## Day 6 — 2026-08-15(F9 — boundary spec)
+
+### 點解喺 F6 之後即刻做,而唔係排到最後
+
+F6 加咗一個**合法**跨界 module。而一有咗合法跨界,**非法嗰個就變得易 argue**(「approval 都得,點解 agent 唔得?」)。⇒ 條線喺邊,要喺同一日寫成一個會紅嘅嘢,唔係留到期一收尾。
+
+`agent.boundary.spec.ts`,14 條:
+
+- **五個禁 import**(`fulfilment` / `license` / `opco` / `graph` / seam ②),每個帶**點解禁**,唔淨係「禁」
+- **正半**:registry 仍然有 `PrismaService` + `assertOpcoScope` + `scrubPii`;module 仍然 import `IntegrationModule` ⇒ 條 test **唔會因為 agent module 被掏空而變綠**(W38 加「still talks to GraphService directly」就係為咗同一件事)
+- **唯一合法跨界寫喺同一個檔**:`agent-approval` import 兩邊,而且**只准經 `requests.addLineItem`**,唔准自己打 `prisma.requestLineItem`
+
+### 🔴 F9-2 —— A7 嘅結構版本
+
+A7 證嘅係:**呢一個**講大話嘅 model 冇寫到 `AgentStep`。
+F9-2 證嘅係:**codebase 入面冇第二個地方寫得到**。
+
+分別喺於後者下個月有人加新 tool 嗰陣**仍然成立**。實作係掃全個 `src/`,assert:
+
+| 表 | writer |
+|---|---|
+| `AgentStep` | `agent/ai-assist.service.ts` **一個** |
+| `AgentMessage` | 同上 —— scrub 得一道門 |
+| `AgentProposal` | 剛好兩個(service 建 pending · orchestrator 記人嘅決定),**兩個都唔係 tool** |
+
+### ⚠️ 第一次跑,五個禁令全部各中一個 offender —— 而 offender 係佢自己
+
+五個 needle 以**字串字面值**住喺條 spec 入面。⇒ **一條 source-scanning test 住喺自己嘅搜尋範圍入面。** 已排除 `.spec.ts` 並喺檔內寫低點解(claim 講嘅係**會 ship 嗰啲**)。
+
+📌 呢個同 §9 記低過嗰句「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢係兩件事」係同族嘅**反面**:今次條 assert 唔係太鬆,係**太準,準到捉埋自己**。兩種都要真跑先知。
+
+### Falsification ×2 真紅零誤傷
+
+①`tool-registry.ts` 加一個 `../fulfilment/` import ⇒ 1 紅 ②`agent-approval.service.ts` 加一句 `agentStep.create` ⇒ 1 紅。
+
+api **1171 / 81**(F6 後 1157 / 80)· tsc 0 · lint 0。
 - 🚧 ADR-0037 待批 · OQ-1(deployment 名,而佢而家係 infra 問題)· A1 DEV 側 · R11–R19 未入 `RISK_REGISTER`

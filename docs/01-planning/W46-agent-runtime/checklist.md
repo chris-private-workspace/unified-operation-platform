@@ -92,8 +92,11 @@
 
 ## F9 — Boundary spec(H5)
 
-- [ ] F9-1 🔴 `agent` module 唔 import 任何 domain service —— **正反兩面 assert**(跟 `license-ops.boundary.spec.ts:42-53` 形狀)
-- [ ] F9-2 🔴 `AgentStep` 一定由平台寫
+- [x] F9-1 🔴 `agent.boundary.spec.ts` —— 五個禁 import(`fulfilment` / `license` / `opco` / `graph` / seam ②),每個帶**點解禁**唔淨係「禁」。**正半**:registry 仍然有 `PrismaService` + `assertOpcoScope` + `scrubPii`,module 仍然 import `IntegrationModule` ⇒ 條 test 唔會因為 agent module 被掏空而變綠
+- [x] F9-2 🔴 **`AgentStep` 得一個 writer,而且係全 `src/` 掃出嚟嘅** —— A7 證嘅係「呢個講大話嘅 model 冇寫到 step」,呢條證嘅係「codebase 入面**冇第二個地方寫得到**」,而後者下個月有人加新 tool 嗰陣仍然成立。`AgentMessage` 同理;`AgentProposal` 剛好兩個 writer(service 建 pending · orchestrator 記人嘅決定),**兩個都唔係 tool**
+- [x] F9-3 🔴 **明文寫低「唯一合法跨界」** —— `agent-approval` 同時 import 兩邊,而且**只准經 `requests.addLineItem`,唔准自己打 `prisma.requestLineItem`**(否則一句就繞過 origin 檢查 + COMPLETED 檢查 + status recompute)。⚠️ 有咗一個合法跨界之後,**非法嗰個會變得易 argue**,所以呢條要寫喺同一個檔
+- [x] F9-4 ⚠️ **條 spec 第一次跑,五個禁令全部各中一個 offender —— 而 offender 就係佢自己**(五個 needle 以字串字面值住喺佢入面)。**source-scanning test 住喺自己嘅搜尋範圍入面**,已排除 `.spec.ts` 並喺檔內寫低
+- [x] F9-5 🔴 **Falsification ×2 真紅零誤傷**:①喺 `tool-registry.ts` 加一個 `../fulfilment/` import ②喺 `agent-approval.service.ts` 加一句 `agentStep.create`
 
 ## F10 / F11 — Test + render
 
