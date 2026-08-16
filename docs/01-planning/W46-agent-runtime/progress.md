@@ -1131,3 +1131,108 @@ web **403 → 414**(6 紅 = pre-existing,數目一個字冇變)· tsc 0 / lint 0
 ### 未收
 - 🚧 期二剩 `G4`(要重新答 **OQ-7**)· `G5`(要答 **OQ-5**)· `G6`(SSE)
 - 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)
+
+---
+
+## Day 16 — 2026-08-16(`ADR-0038` 起草 + `OQ-5` 查清楚 —— **零 code**)
+
+由 Chris 兩條問題帶起:「**OQ-7 要答什麼?**」同「**OQ-5 卡什麼?**」。答完第一條之後佢定咗
+**`G4` = 架構證明**,而嗰句話直接決定咗本日其餘全部嘢。
+
+### 🛑 H2 —— 一個查證揭穿咗「G4 只差一個 OQ」呢個前提
+
+開工前查 `@anthropic-ai/sdk`:
+
+| 查 | 結果 |
+|---|---|
+| root + `apps/api` 兩份 `package.json` grep `anthropic` | **零 match** |
+| `node_modules/@anthropic-ai` · `apps/api/node_modules/@anthropic-ai` | **兩個位都唔存在** |
+
+⇒ **連 transitive 都冇。**
+
+🔴 **同 ADR-0037 嗰陣唔同,而呢個分別本身值得記**:當時 `openai@7` 早就係 `@openai/agents`
+(`apps/api/package.json:41`)嘅 transitive ⇒ 換去 Azure client **零新 dependency**,**H2 根本冇觸發**。
+所以「上次接一個新 provider 冇觸發 H2」推論唔到「今次都唔會」——
+`plan §2.2` 自己一直標住:`G5` 寫 **`H2(已 locked)`**,而 **`G4` 淨係寫 `H2`**。
+
+⇒ **STOP,冇自己 `npm i`。** Chris 同日批,寫 **`ADR-0038`**。
+
+### 🔴 「G4 = 架構證明」解封咗一樣,同時揭穿咗一樣
+
+**解封** —— `OQ-7` Claude 半邊唔再 block `G4`(ADR-0038 **D5**)。
+
+ADR-0037 `E7` 寫嘅係「**G4 開工之前**要再答一次」,而佢個時點判斷有一個**隱含前提:「G4 = 真打 Claude」**。
+Chris 講明唔係 ⇒ **前提唔成立,唔係決定被推翻**。`E7` 嘅**實質禁令**(唔可以引用 ADR-0037 當已答)
+**一個字冇郁** —— 真打嗰刻仍然要重新答,因為 Anthropic 唔喺公司個 M365 / Azure 信任面。
+
+📌 **收窄唔係推翻,呢個形狀 ADR-0035 行過**(`schema.prisma` 反對嘅係「第二個 candidate idempotency
+key」唔係「第二個 SN number」)。⇒ **ADR-0037 一個字唔改**(§6:`Accepted` 唔改內容),
+只喺 `plan §7` + ADR-0038 D5 記低 target 移咗。
+
+**揭穿** —— 「G4 唔真打」如果只寫喺 ADR 度,**就係一個約定唔係一道閘**。
+
+呢個正正係 ADR-0036 **D2** 要求嘅性質:`OQ-4`(agent 讀唔到 `AuditLog`)之所以安全,係由
+「**registry 冇註冊**」保證,唔係由「我哋記住唔好加」保證。同一條尺 ⇒ **D3**:provider 未配就 503
+(跟 `openai-agents.provider.ts:324-332` `resolveModel()` 先例)+ 一條 test 守住唔會建真 HTTP client。
+
+### 🔴 D4 —— 「點解要真裝」嘅第二個獨立理由,而佢比方便重要
+
+唔裝,`toSdkTools()` 嘅 Claude 版就係對住「**我以為 `betaTool()` 收成點**」寫,
+而 test 兩邊都係自己寫嘅 fixture ⇒ **永遠綠,證咗個零**。
+
+⚠️ 唔係假設 —— **本 phase 已經中過三次同族**:對稱 fixture 令 mean 同 median 分唔開(G7)·
+`for` over 空 list 滿足任何 claim(G2)· 由同一個 step 推導期望值嘅 tautology assert(CH-023)。
+
+📌 而 **ADR-0036 初稿要整份改寫,起因就係「假設咗一個 SDK 做唔到乜」** ⇒ D4 係把嗰個教訓變成一條規矩,
+唔係一句提醒。
+
+### 🔴 起草寫 `Proposed` 唔寫 `Accepted`
+
+Chris 批嗰陣見到嘅係「G4 要 `npm i @anthropic-ai/sdk`」。而寫嘅時候浮出嚟嘅
+**D3**(唔打網絡要有 test)· **D4**(對真型別 assert)· **D5**(OQ-7 target 收窄)· **D6**(三件未查證)
+**佢未見過**。
+
+⇒ 沿用 ADR-0037 同一條路(嗰次亦係起草 `Proposed`,五條後果逐條過目之後同日 `Accepted`)。
+**「批咗個標題」同「批咗成份後果」係兩件事** —— 本項目 §9 記低過嗰種漂移,就係由前者被當成後者開始。
+
+⚠️ **代價要講白,唔用「將來會用到」開脫**:呢個 dependency 喺可見將來**冇產品用途**,
+佢今日就係為咗證 D1 而存在。
+
+### 🔴 兩個新 risk
+
+| ID | Risk |
+|---|---|
+| **R20** | 兩個 SDK 各自 ship `zod` / HTTP client ⇒ 版本撞。**tool schema 就係靠 `zod`** |
+| **R21** | 🔴 **「裝咗個 SDK」被讀成「可以打 Anthropic」** ⇒ 有人填個 key 就真打,而 OQ-7 Claude 半邊**從來未答過**。D3 嗰條 test 係唯一防線 —— **同 `R18`(「轉咗 Azure」被讀成「PII 解決咗」)完全同族:一件令人安心嘅事實,擺喺一個佢答唔到嘅問題隔籬** |
+
+### 🔎 `OQ-5` —— 佢表面係一個數字,實際卡四樣
+
+Chris 問「OQ-5 卡什麼?」。查完寫入 `plan §7`,因為**每次重問呢條問題都要重新查同一批 code**。
+
+1. **一個掛住嘅 run 永久封鎖嗰張 request** —— `agent-run-status.ts:28` 個
+   `NON_TERMINAL_RUN_STATUSES` 包住 `awaiting_approval`,而 OQ-3 定咗一張 request 同時只准一個非終態 run
+   ⇒ **一張真單被一個冇人撳嘅 dialog 鎖死,而平台冇任何自愈路**。
+2. **有兩種過期,而一個時間門檻只解決到一種** —— 時間過期由時鐘決定;
+   🔴 **結構過期(R16)由部署決定**(`schema.prisma:640` `runState Json?` +
+   `openai-agents.provider.ts:290` `RunState.fromString()`),升 SDK 嗰一刻全部 parked run 可能即刻死。
+   而今日 `ai-assist.service.ts:254` **只喺有人撳 approve 嗰刻先發現讀唔到** ⇒ **冇人撳就冇人知**。
+3. **佢決定 G3 個 kill switch 會唔會永遠 `settled: false`** —— 「閂咗但系統未停定」由**例外狀態**
+   變成**常態**,個 badge 就冇咗意義。**呢個唔係假設,係已經跑緊嘅行為。**
+4. **過期落咩 status 會撞到 G7** —— G7 個人口係 `decidedAt != null` ⇒ **過期嘅 proposal 今日完全唔入分母**,
+   但「冇人審到過期」正正係 **R13 rubber-stamp 嘅另一面**(唔係亂批,係唔理)。
+
+📌 **G5 有一半唔卡佢**:推去 BullMQ worker 唔使知 expiry,卡嘅只係 **expiry 由邊個執行**
+(delayed job 綁 run 建立嗰刻 vs `@nestjs/schedule` 批次 sweep)—— **同 G4 一樣拆得開**。
+
+### 數字
+
+**零 code 改動。** Doc:`ADR-0038`(新)· `adr/README.md`(index)· `plan.md`(§2.2 G4 / §7 OQ-7 / §7 新增
+OQ-5 一段 / §9 changelog)· `checklist.md`(`G4-pre-1..3` + `G5-pre-1`)· `BACKLOG.md`。
+
+### 未收
+- 🚧 `G4` —— **H2 已批**,但 `ADR-0038` 四條後果待 Chris 過目先轉 `Accepted`;`G4-pre-2` 裝完
+  **第一件事係查 D6 三樣,唔係寫 adapter**
+- 🚧 `G5` —— **OQ-5 仍然未答**(而家至少知道要答緊乜)
+- 🚧 `G6`(SSE)—— **零 gate,即刻開得**
+- 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)
+- 🚧 **R11–R21** 未入 `RISK_REGISTER.md`

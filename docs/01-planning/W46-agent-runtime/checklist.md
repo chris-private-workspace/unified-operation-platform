@@ -164,8 +164,12 @@
 - [x] G3-l ✅ **Falsification ×7 真紅零誤傷**:①拆走個 cap ⇒ **2 紅** ②cap 埋 `propose_*` ⇒ **1 紅** ③counter 唔篩 `status: 'ok'` ⇒ **1 紅** ④`approve` 拆走 gate ⇒ **2 紅** ⑤`reject` 加返 gate ⇒ **1 紅** ⑥`settled = !enabled` ⇒ **1 紅** ⑦冇 row 當 disabled ⇒ **1 紅**。實作檔全部還原乾淨
 - [x] G3-m ✅ **刻意冇加一條 boundary static test** —— behavioural test 已經 assert 咗「拆走 gate 會點」,而 static test 只 assert「嗰行字喺唔喺度」⇒ **今次真係重複**(G1 嗰次唔重複,係因為位置參數偷渡 grep 睇唔到)。**兩者分別喺有冇一個 grep 睇唔到嘅壞版本**
 - [x] G3-n ✅ **UI 做咗(2026-08-16)** —— 見下面 `G-UI`
-- [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)
+- [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)。🟢 **H2 批咗(Chris 2026-08-16)⇒ `ADR-0038` 起草**;🔴 **G4 = 架構證明唔係產品功能 ⇒ 唔打網絡**
+- [ ] G4-pre-1 🔴 **`ADR-0038` 而家係 `Proposed`,四條後果要 Chris 過目先轉 `Accepted`** —— **D3** 唔打網絡要有 test 守住(唔可以靠註釋)· **D4** 要對真 SDK 型別 assert,唔可以自己砌 shape · **D5** OQ-7 Claude 半邊 target 收窄 · **D6** 三件未查證。⚠️ **沿用 ADR-0037 做法**:Chris 批嗰陣見到嘅係「G4 要 `npm i`」,呢四條佢未見過
+- [ ] G4-pre-2 **`npm i @anthropic-ai/sdk -w @uop/api`**(D1:落 `apps/api` 唔落 root,跟 `@openai/agents` 位置),然後 🔴 **第一件事係查 D6 三樣,唔係寫 adapter** —— ①`betaTool()` 收嘅參數形狀 vs `AgentToolRegistry` 今日出嘅嘢(**D1 成唔成立就睇呢個**;要改 registry 先接到 = D1 錯咗,要返轉頭講,唔係硬塞 —— ADR-0037 E2 立咗呢條尺)②transitive 撞唔撞 `@openai/agents`(尤其 **`zod`** / HTTP client,tool schema 就係靠 `zod`)③license
+- [ ] G4-pre-3 🔴 **`OQ-7` Claude 半邊唔再 block G4**(ADR-0038 D5)—— 但**真打 Anthropic 之前仍然要重新答**,唔可以引用 ADR-0037(E7 個禁令一個字冇郁)。**新 R21**:「裝咗個 SDK」被讀成「可以打 Anthropic」,而 D3 嗰條 test 係唯一防線
 - [ ] G5 BullMQ 落地 —— 🔴 **開工前要答 OQ-5(`awaiting_approval` 過期)**
+- [ ] G5-pre-1 🔎 **OQ-5 表面係一個數字,實際卡四樣(2026-08-16 查清楚,寫咗入 plan §7)** —— ①一個掛住嘅 run **永久封鎖**嗰張 request(OQ-3 + `NON_TERMINAL_RUN_STATUSES`)②**有兩種過期**,時間 sweep 解決唔到 R16 嗰種結構過期(由**部署**決定,而且今日**冇人撳就冇人知**)③佢決定 G3 個 kill switch 會唔會**永遠 `settled: false`** ④過期落咩 status 會撞到 G7 個 `decidedAt != null` 人口(**「冇人審到過期」係 R13 嘅另一面,而家個 metric 睇唔到**)。📌 **G5 有一半唔卡佢** —— 推去 worker 唔使知 expiry,卡嘅只係「expiry 由邊個執行」
 - [ ] G6 SSE transport —— 還 `ADR-0029 A2` 嗰筆基建債
 - [x] G7 ✅ **R13 監測(2026-08-16)** —— api **1243 → 1260 / 85 → 87**,tsc 0 / lint 0,**falsification ×7 真紅零誤傷**。`GET /agent/review-stats?days=30`(**ADMIN only**)
 - [x] G7-a 🔴 **R13 唔係「agent 提議錯嘢」,係「批准嗰個人唔再讀」** —— ADR-0036 D3 擺一個人喺每個寫入前面,而**嗰個就係 Tier 1 成個安全論據**;一個冇人真係做嘅審批步驟,會把個論據變成形式,而**每個畫面照樣印住一個人名喺個決定側邊**。系統一啲都唔會睇落唔同 ⇒ **只能靠數字,靠唔到留意**

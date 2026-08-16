@@ -52,7 +52,7 @@ Chris 2026-08-15 要求把 AI agent 引入平台。四個定咗嘅前提(ADR-003
 | **G1** | `propose_assign` tool + 批准後行返 `AssignService` 嗰 **8 道閘一道唔少** | H1 |
 | **G2** | `derivePermissions()` 認得 `AgentPrincipal` + W28 drift test 覆蓋 | H1 |
 | **G3** | Blast-radius limit(單 run 上限)+ kill switch(**要分「配置停咗」同「真係停咗」**,跟 `SeamRuntimeRegistry` 形狀) | H1 |
-| **G4** | **`ClaudeToolRunnerProvider`**(`betaTool()` + `tool_runner`)—— 證明 D1 一份定義兩邊行得通 | H2 |
+| **G4** | **`ClaudeToolRunnerProvider`**(`betaTool()` + `tool_runner`)—— 證明 D1 一份定義兩邊行得通。🔴 **= 架構證明,唔係產品功能**(Chris 2026-08-16)⇒ **唔打網絡**,而呢件事要有 test 守住(ADR-0038 D3) | H2 → **ADR-0038**(`Proposed`) |
 | **G5** | BullMQ 落地(agent run 係長時工作,而 `awaiting_approval` 可以掛好耐) | H2(已 locked) |
 | **G6** | SSE transport —— 還 `ADR-0029 A2` 嗰筆基建債(nginx `proxy_buffering off` + ACA ingress) | H1 |
 | **G7** | R13 監測:proposal 批准率 / 平均審核秒數(**冇數字就睇唔到 rubber-stamp**) | — |
@@ -250,9 +250,9 @@ model AgentProposal {
 | **OQ-2** | Proposal 審批權:ADMIN only 定 ADMIN + REGIONAL? | **ADMIN + REGIONAL** —— 跟 `OutboundFailure` 先例(ADR-0011 D4):同一批人本來就睇緊呢啲 request | 🟢 **定咗** |
 | **OQ-3** | 一張 request 可唔可以有多過一個 open run? | **唔可以** —— 同時只准一個非終態 run(避免兩個 proposal 對住同一張單打架) | 🟢 **定咗** |
 | **OQ-4** | Agent 讀唔讀得到 `AuditLog`? | **讀唔到** —— 唔喺 §3 allow-list;audit 係 ADMIN-only 兼載 PII(ADR-0009 P-B) | 🟢 **定咗** |
-| **OQ-5** | `awaiting_approval` 掛幾耐算過期? | **維持 deferred** 到期二連 BullMQ 一齊決定;🔴 **但過期一定要 fail loud,唔可以靜靜當成功**(R16) | 🟡 **approved as deferred** —— 🔴 **開 G5 之前一定要答** |
+| **OQ-5** | `awaiting_approval` 掛幾耐算過期? | **維持 deferred** 到期二連 BullMQ 一齊決定;🔴 **但過期一定要 fail loud,唔可以靜靜當成功**(R16)。🔎 **2026-08-16 查清楚咗佢實際卡乜,見下** | 🟡 **approved as deferred** —— 🔴 **開 G5 之前一定要答** |
 | **OQ-6** | 用唔用 SDK 嘅 guardrail 做第二層? | **用得,但唔可以入 acceptance gate**(ADR-0036 D2)—— 期二再評估要唔要真行 | 🟢 **定咗** |
-| **OQ-7** 🆕 | 🔴 **`rawRequestText` / `targetUpn` 送去第三方 model provider 做 inference,可唔可以?** | 🟢 **答咗(Chris 2026-08-15):行公司 tenant 嘅 **Azure OpenAI**,唔准打 `api.openai.com`** ⇒ 寫成 **ADR-0037**(同日 `Accepted`)。論據係「**收件人變咗**」唔係「內容變少咗」—— 原文仍然原文,但只喺公司同 Microsoft 之間,同平台今日打緊嘅 Graph / M365 / Entra 同一個信任面。否決:ZDR(代價其實係零,但多一個第三方兼要等審批)· 公共 API 標準條款 · **送之前先 scrub**(唯一會改 F5 code shape 嗰個 —— 等於用「功能唔 work」換「冇 PII」)· 只送摘要(個摘要 call 一樣要收原文) | 🟢 **定咗** —— **ADR-0037 同日 `Accepted`**(五條後果逐條過目之後)。⚠️ 兩件唔可以當答咗:①**`E4`(auth 揀 Entra token 定 API key)= approved as DEFERRED**,target = infra 確認 Azure OpenAI resource 之後同 **OQ-1** 一齊答 ②**期二 G4(Claude Tool Runner)要重新答一次同一條問題**,唔可以引用本答案(E7) |
+| **OQ-7** 🆕 | 🔴 **`rawRequestText` / `targetUpn` 送去第三方 model provider 做 inference,可唔可以?** | 🟢 **答咗(Chris 2026-08-15):行公司 tenant 嘅 **Azure OpenAI**,唔准打 `api.openai.com`** ⇒ 寫成 **ADR-0037**(同日 `Accepted`)。論據係「**收件人變咗**」唔係「內容變少咗」—— 原文仍然原文,但只喺公司同 Microsoft 之間,同平台今日打緊嘅 Graph / M365 / Entra 同一個信任面。否決:ZDR(代價其實係零,但多一個第三方兼要等審批)· 公共 API 標準條款 · **送之前先 scrub**(唯一會改 F5 code shape 嗰個 —— 等於用「功能唔 work」換「冇 PII」)· 只送摘要(個摘要 call 一樣要收原文) | 🟢 **定咗** —— **ADR-0037 同日 `Accepted`**(五條後果逐條過目之後)。⚠️ 兩件唔可以當答咗:①**`E4`(auth 揀 Entra token 定 API key)= approved as DEFERRED**,target = infra 確認 Azure OpenAI resource 之後同 **OQ-1** 一齊答 ②**Claude 側要重新答一次同一條問題**,唔可以引用本答案(E7)。🔄 **2026-08-16 target 收窄(ADR-0038 D5)**:由「**G4 開工之前**」改成「**真打 Anthropic 之前**」—— 因為 Chris 定咗 **G4 = 架構證明唔打網絡** ⇒ E7 個時點判斷嘅隱含前提(「G4 = 真打 Claude」)唔成立。**E7 個禁令本身一個字冇郁**(仍然唔可以引用 ADR-0037 當已答),**收窄唔係推翻**(ADR-0035 形狀)⇒ Claude 側 OQ-7 而家同 **OQ-1** / **E4** / **A14** 併埋同一批,全部等 infra |
 
 ### 🔴 OQ-7 —— F2 寫 `get_request` 嗰陣揭出嚟,ADR-0036 從來冇決定過
 
@@ -283,6 +283,49 @@ scrub 咗佢就係交白卷,所以 `get_request` **必須**原文回傳(F2 已�
 - **OQ-4** → **A3 嗰條 allow-list test 本來就會擋住**,唔使另外寫嘢
 
 ⇒ **`AuditLog` 讀唔到呢件事,係由「registry 冇註冊」保證,唔係由「我哋記住唔好加」保證** —— 呢個就係 ADR-0036 D2 想要嘅性質。
+
+### 🔴 OQ-5 —— 佢表面係一個數字,實際卡四樣(2026-08-16 查清楚,Chris 問起)
+
+> 📌 寫低係因為**每次重問呢條問題都要重新查同一批 code**。以下每項都有 code 出處,唔係推論。
+
+#### ① 一個掛住嘅 run 會**永久封鎖**嗰張 request
+
+`agent-run-status.ts:28` 個 `NON_TERMINAL_RUN_STATUSES` 包住 `awaiting_approval`,而 **OQ-3** 定咗一張 request
+同時只准一個非終態 run(**喺 service 層 guard,唔係 DB constraint** —— 「未完」係一個值嘅**集合**,partial unique
+index 喺 Prisma 側表達唔到)。
+
+⇒ **冇 expiry 唔係「唔靚」,係一張真單被一個冇人撳嘅 dialog 鎖死,而平台冇任何自愈路。**
+
+#### ② 有**兩種**過期,而一個時間門檻只解決到一種
+
+| | 由咩決定 |
+|---|---|
+| **時間過期**(掛咗 N 日) | 時鐘 |
+| 🔴 **結構過期**(R16) | **部署** —— 升 `@openai/agents` 嗰一刻,全部 parked run 可能即刻 resume 唔返 |
+
+`schema.prisma:640` `runState Json?` + `openai-agents.provider.ts:290` `RunState.fromString()`。
+🔴 **今日結構過期係靜態嘅** —— `ai-assist.service.ts:254` 只喺**有人撳 approve** 嗰刻先發現讀唔到,
+**冇人撳就冇人知**。⇒ 一個純時間 sweep 解決唔到佢。
+
+#### ③ 佢決定 G3 個 kill switch 會唔會**永遠 unsettled**
+
+期二 G3 已落地:`settled` = 冇非終態 run。⇒ **一個永久掛住嘅 run = kill switch 永遠 `settled: false`**,
+「閂咗但系統未停定」由一個**例外狀態**變成**常態**,而嗰個 badge 就冇咗意義。**呢個唔係假設,係已經跑緊嘅行為。**
+
+#### ④ 過期落咩 status,會撞到 G7
+
+`schema.prisma:628` 現有七個值。落 `aborted` / `failed` / 定加第八個 `expired`?
+
+🔴 **而 G7 個人口係 `decidedAt != null`** ⇒ **過期嘅 proposal 今日完全唔入分母**。但「冇人審到過期」正正係
+**R13 rubber-stamp 嘅另一面**(唔係亂批,係唔理)—— 而家個 metric 睇唔到佢。
+
+#### ⑤ 順帶:G5 有一半唔卡 OQ-5
+
+「把 agent run 推去 BullMQ worker」唔需要知 expiry;卡嘅只係 **expiry 由邊個執行**(delayed job 綁住 run
+建立嗰刻 vs `@nestjs/schedule` 批次 sweep)。**同 G4 一樣拆得開。**
+
+而「fail loud」要 loud 畀邊個亦未定 —— 平台已有 `OutboundFailure` + Delivery failures 畫面 +
+`OPS_NOTIFICATION_MAILBOX`(CH-021),用返定另開,係 G5 要揀嘅。
 
 ---
 
@@ -315,3 +358,4 @@ scrub 咗佢就係交白卷,所以 `get_request` **必須**原文回傳(F2 已�
 | 2026-08-16 | 🟢 **期二 `G3` 落地(blast-radius limit + kill switch)** —— api **1218 → 1243 / 85**,tsc 0 / lint 0,**falsification ×7 真紅零誤傷**。<br>🔴 **R3 deviation ①(要 Chris 過目)—— `AuditLog` 加咗第三條 action `agent.kill_switch_set`,而 ADR-0036 D5 明文寫住「只收兩條新 action」。** 論據:D5 個**主題**係 transcript(自由文本 + 不可預測結構 + 大量 ⇒ 入咗就等於拆咗 ADR-0009 D5 個 whitelist),而呢一行係**一個 boolean 加一個 actor** —— 正正就係 whitelist 本身為咗覆蓋而存在嗰種形狀。唔加嘅代價係:一個**改變平台會唔會行動**嘅 admin 控制,冇任何記錄講邊個改過 ⇒ 直接違背 ADR-0009 存在嘅理由。同時新增 target type `AgentPrincipal`,whitelist **只得 `['active']` 一個 key**(`name`/`runtime` 唔審計,因為呢條路唔改佢哋 —— 一個闊過佢覆蓋嘅寫入嘅 whitelist,就係下次擴闊嘅論據)。<br>🔴 **R3 deviation ②** —— plan §5 B4 寫「單 run 超額**即停**」,實作係「**超額即拒**」:個 cap 令 run **做唔到嘢**,但唔會由平台側終止個 run。**刻意冇扮成停**:Tier 1 agent 寫唔到嘢(D3)⇒ 一個冇 budget 嘅 run 淨係喺度講嘢,而講幾耐由 SDK 個 `MAX_TURNS` 封頂(**第二層,明文標住,唔係 gate** —— D2)。加一個「殺 run」動作會**連埋一個仲有人可能想批嘅 pending proposal 一齊掟走**,而嗰個 proposal 係人嘅嘢唔係 agent 嘅嘢。<br>🔴 **本單三個決定**:①**cap 只計 autonomous tool(`needsApproval: false`)** —— `propose_*` 已經俾一個**人**封住,比一個 counter 強;連佢都 cap 就會出現「平台做完真嘢之後,個 counter 反而拒絕咗報告結果嗰個 tool」呢種由 limit 自己製造嘅失敗 ②**kill switch = `AgentPrincipal.active`,唔開第二個 `ConnectorConfig` 欄** —— 兩個地方閂得到 agent 就係兩個「佢開唔開住」嘅答案(BUG-005 / BUG-011 同族),而且 D7 令 principal 本身就係 actor,停 actor 語意最準;順帶零 migration ③**kill switch 攔 approve、唔攔 reject** —— 停 agent 係要佢**唔好再引起嘢**,唔係要人執唔到手尾;攔埋 reject 就會令每個 pending proposal 被困到有人開返個掣,反而令人唔敢撳呢個掣。<br>🚧 **UI 未做**(狀態顯示 + 開關掣),同 `G2-j` 一齊排喺期二 render 嗰一批;API 側 ADMIN 打 `PATCH /api/agent/kill-switch` 已經用得(沿用 CH-026 `G-7` 由 API 做嘅先例)|
 | 2026-08-16 | 🟢 **期二 `G7` 落地(R13 監測)** —— `GET /agent/review-stats?days=30`(ADMIN only);api **1243 → 1260 / 87**,tsc 0 / lint 0,**falsification ×7 真紅零誤傷**。<br>🔴 **R13 唔係「agent 提議錯嘢」,係「批准嗰個人唔再讀」** —— D3 擺一個人喺每個寫入前面就係 Tier 1 成個安全論據,而一個冇人真係做嘅審批步驟會把佢變成形式,**同時每個畫面照樣印住一個人名喺個決定側邊** ⇒ **系統一啲都唔會睇落唔同**,只能靠數字。<br>🔴 **R3 deviation ①:讀 `AgentProposal` 唔讀 `AuditLog`。** `audit-fields.ts` 明文寫住 `AGENT_PROPOSAL_DECIDED` 存在就係為咗令 R13 變成一條 query —— 但由一條 **free-text `reason` 嘅前綴**推批准率,係一個**改一次文案就靜靜變錯**嘅 metric;`status`/`decidedAt`/`approvedById` 係結構化嘅。**audit 嗰條 action 一個字冇改**,兩者並存(一個係事件記錄,一個係統計)。<br>🔴 **R3 deviation ②:plan B7 只寫兩個 aggregate 數,本單加咗 per-reviewer。** 一隊人整體 70% **可以入面有一個 100% 兼平均四秒**,而 aggregate 就係嗰個藏住佢嘅數字 ⇒ **一個講唔出佢講緊邊個嘅 metric,冇人 act 得到**。**H4**:只攞 `displayName` 冇 email(cuid 冇人 act 得到 ⇒ 要個名;email 對呢條問題一個字冇加 ⇒ 唔要),ADMIN only 同 `/admin/audit` 一樣理由(ADR-0009 D7)。<br>🔴 **人口 = `decidedAt != null`,而佢排除嘅嘢係重點**:`abortRun` 批量 reject 唔寫決定欄(**平台執手尾唔係有人話唔得**),計咗佢會把批准率**推低** ⇒ 一個乜都批嘅人會因為愈多 run 被停而睇落愈嚴謹。⚠️ **一個 risk metric 喺「令人安心」嗰個方向出錯,衰過冇 metric。**<br>🔴 **`failed` 計做批准**(G1:人批咗、閘拒絕)—— 當成 rejection 會令 reviewer **愈係要平台救佢就睇落愈有懷疑精神**,而且喺出事嗰刻顯示成改善趨勢。<br>🔴 **兩個指標唔對稱,DTO 明文寫低點讀**:`fastDecisions` **係證據**(幾秒 = 冇讀過,唔使任何假設)· `medianSecondsToDecide` **唔係**(個鐘由 proposal 建立行起,唔係由人望到行起 ⇒ 長 median 可以係「審得仔細」亦可以係「冇人喺度」,由呢度分唔到)。<br>🚧 **UI 未做,而呢個同 `G2-j`/`G3-n` 唔同 —— 佢唔淨係方便**:G7 個前提就係「只能靠數字,靠唔到留意」,而**一個要打 API 先睇到嘅數字冇人會定期望** ⇒ **R13 嘅緩解措施實際上要等 UI 先真正生效**;擺喺邊未決 |
 | 2026-08-16 | 🟢🟢 **三個 UI 項一次過收(`G2-j` render · `G3-n` kill switch UI · `G7-o` R13 監測 UI)** —— Chris 批准停 `ai-doc-extraction-db`;web **403 → 414**(6 紅 = pre-existing)· tsc 0 / lint 0 · **四張 render 零橫向溢出**,token 兩個 theme 真 swap。**新 Settings tab「AI agent」** —— 唔擺落 Integrations,因為嗰個 tab 講 **vendor wiring**(邊個 runtime、邊個 model)而呢兩個講 **operation**(個能力行唔行、前面道人閘仲有冇人用)。<br>🔴🔴 **render 捉到一個四層 test 全綠嘅真缺陷**:`Select` 個 wrapper 係 `w-full` 而佢個 chevron 係 `absolute` 貼住嗰個 wrapper ⇒ 我淨係 size 咗入面個 `<select>`,**個箭嘴飛咗去成張 card header 最右邊,同個掣完全分家**。**tsc 0 · lint 0 · 11 條 UI test 全綠,冇一樣嘢會紅。** ⇒ **CH-030 個教訓原封重演:「字喺唔喺度」同「佢喺邊」係兩件事**,而只有真 render 答得到第二條 —— 亦即 `A13` 加 playwright devDep 嗰個決定第一次真正收到成本回報。<br>🔴🔴 **順帶喺真 Postgres 上驗到成套 G7 邏輯(唔係 mock)**:`decided 4 / approved 3` ⇒ **`failed` 真係當咗批准**(G1 嗰行)· `medianSecondsToDecide: 5`(真值 [3,4,6,1320] 嘅 median,而 **mean 會係 333**)· kill switch `enabled:false + liveRuns:1 + pendingProposals:1 ⇒ settled:false`。**Mock 證得到公式,證唔到 Prisma 個 `where` 真係咁行。**<br>🔴 **H4**:fixture 用一個 `.invalid` 假帳戶,**唔用 DB 入面兩個真人** —— 呢個 panel 成個作用就係**點名**,用真名 render 就係把真名寫入一份 artifact;全部 `zzrf-` 前綴,收工逐張表對返數(**0/0/0 + 2 users**,同開工前逐字一樣),screenshot 已刪。<br>⚠️ **兩個 §9 未記過嘅環境陷阱**:①**呢個 worktree 個 compose project name 唔同咗** ⇒ `docker compose up -d` **試圖新建** container 兼開咗個空 volume,**若果成功咗就係一個空 DB 而畫面睇落正常**;正確做法 = `docker start uop-postgres uop-redis` ②`prisma generate` 撞 **EPERM**(殘留 api 進程鎖住 engine DLL)⇒ **`kill-zombies` 要行喺 `sync-code` 之前**。📌 呢個 DB 叫 **`platform`** 唔叫 `uop` |
+| 2026-08-16 | 🟢 **`ADR-0038` 起草(`Proposed`)—— H2:Chris 批咗加 `@anthropic-ai/sdk`**,同時定咗 **`G4` = 架構證明唔係產品功能**。<br>🔴 **查證先於決定**:`@anthropic-ai/sdk` root + `apps/api` 兩份 `package.json` **零 match**、`node_modules/@anthropic-ai` 兩個位都唔存在 ⇒ **連 transitive 都冇**。呢點同 ADR-0037 嗰陣**唔同** —— 當時 `openai@7` 早就係 `@openai/agents` 嘅 transitive,換去 Azure client **零新 dependency**,H2 根本冇觸發。<br>🔴 **「G4 = 架構證明」呢個答案解封咗一樣嘢,亦揭穿咗一樣嘢**:解封 = **OQ-7 Claude 半邊唔再 block G4**(ADR-0038 D5:E7 個時點判斷嘅隱含前提係「G4 = 真打 Claude」,前提冇咗 ⇒ **收窄唔係推翻**,ADR-0035 形狀);揭穿 = **「唔真打」如果只寫喺 ADR 度就係一個約定唔係一道閘** ⇒ D3 要 provider 未配就 503 + 一條 test。<br>🔴 **D4 係「點解要真裝」嘅第二個獨立理由,而佢比方便重要**:唔裝就要對住「我以為 `betaTool()` 收成點」寫 adapter,兩邊 fixture 同源 ⇒ **永遠綠,證咗個零** —— **W46 本 phase 已經中過三次同族**(對稱 fixture 令 mean/median 分唔開 · `for` over 空 list 滿足任何 claim · 由同一個 step 推導期望值)。<br>🔴 **起草寫 `Proposed` 唔寫 `Accepted`**,沿用 ADR-0037:Chris 批嗰陣見到嘅係「G4 要 `npm i`」,而 **D3/D4/D5/D6 四條後果佢未見過**。<br>📌 **順帶查清楚 `OQ-5` 實際卡乜**(Chris 問)—— 佢表面係一個數字,實際卡四樣,已寫入 §7 |
