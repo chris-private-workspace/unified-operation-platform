@@ -165,7 +165,7 @@
 - [x] G3-m ✅ **刻意冇加一條 boundary static test** —— behavioural test 已經 assert 咗「拆走 gate 會點」,而 static test 只 assert「嗰行字喺唔喺度」⇒ **今次真係重複**(G1 嗰次唔重複,係因為位置參數偷渡 grep 睇唔到)。**兩者分別喺有冇一個 grep 睇唔到嘅壞版本**
 - [x] G3-n ✅ **UI 做咗(2026-08-16)** —— 見下面 `G-UI`
 - [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)。🟢 **H2 批咗(Chris 2026-08-16)⇒ `ADR-0038` 起草**;🔴 **G4 = 架構證明唔係產品功能 ⇒ 唔打網絡**
-- [ ] G4-pre-1 🔴 **`ADR-0038` 而家係 `Proposed`,四條後果要 Chris 過目先轉 `Accepted`** —— **D3** 唔打網絡要有 test 守住(唔可以靠註釋)· **D4** 要對真 SDK 型別 assert,唔可以自己砌 shape · **D5** OQ-7 Claude 半邊 target 收窄 · **D6** 三件未查證。⚠️ **沿用 ADR-0037 做法**:Chris 批嗰陣見到嘅係「G4 要 `npm i`」,呢四條佢未見過
+- [x] G4-pre-1 ✅ **`ADR-0038` `Accepted`(Chris 2026-08-16,四條後果過目之後)** —— **D3** 唔打網絡要有 test 守住(唔可以靠註釋)· **D4** 要對真 SDK 型別 assert,唔可以自己砌 shape · **D5** OQ-7 Claude 半邊 target 收窄 · **D6** 三件未查證。🟢 **同 ADR-0037 唔同,本 ADR 冇任何一條 deferred** —— 嗰邊個 `E4` 係知情留低,而 `D6` 本身就係一個決定(「G4 第一步係查,唔係寫」)⇒ **R1 gate 過,G4 開得工**
 - [ ] G4-pre-2 **`npm i @anthropic-ai/sdk -w @uop/api`**(D1:落 `apps/api` 唔落 root,跟 `@openai/agents` 位置),然後 🔴 **第一件事係查 D6 三樣,唔係寫 adapter** —— ①`betaTool()` 收嘅參數形狀 vs `AgentToolRegistry` 今日出嘅嘢(**D1 成唔成立就睇呢個**;要改 registry 先接到 = D1 錯咗,要返轉頭講,唔係硬塞 —— ADR-0037 E2 立咗呢條尺)②transitive 撞唔撞 `@openai/agents`(尤其 **`zod`** / HTTP client,tool schema 就係靠 `zod`)③license
 - [ ] G4-pre-3 🔴 **`OQ-7` Claude 半邊唔再 block G4**(ADR-0038 D5)—— 但**真打 Anthropic 之前仍然要重新答**,唔可以引用 ADR-0037(E7 個禁令一個字冇郁)。**新 R21**:「裝咗個 SDK」被讀成「可以打 Anthropic」,而 D3 嗰條 test 係唯一防線
 - [ ] G5 BullMQ 落地 —— 🔴 **開工前要答 OQ-5(`awaiting_approval` 過期)**

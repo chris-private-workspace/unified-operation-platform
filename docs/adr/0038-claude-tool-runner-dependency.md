@@ -1,18 +1,24 @@
 # ADR-0038: 加 `@anthropic-ai/sdk` —— 第二個 agent runtime 做 D1 嘅架構證明
 
 **Date**: 2026-08-16
-**Status**: **Proposed**
-**Approver**: Chris Lai(實質決定已批 2026-08-16;後果待過目)
+**Status**: **Accepted**
+**Approver**: Chris Lai(2026-08-16)
 
 > 🚧 同 ADR-0036 / 0037 一樣,本文件住喺 branch `feat/w46-agent-runtime`,**未 merge 落 `main`**。
+> **`Accepted` 講嘅係「決定內容批咗」,唔係「呢條 branch 可以推向 `main`」。**
 >
-> 🔴 **點解係 `Proposed` 而唔係 `Accepted`** —— Chris 2026-08-16 批嘅係一句:「H2:批,寫 ADR-0038」。
-> 佢批嗰陣見到嘅係「G4 要 `npm i @anthropic-ai/sdk`」。而寫呢份嘅時候浮出嚟嘅後果(**D3** 唔打網絡要有
-> test 守住 · **D4** 唔可以自己砌 shape · **D5** OQ-7 target 移後 · **D6** 三件事未查證)佢未見過。
+> 🔴 **起草時係 `Proposed`,而個理由要保留落嚟** —— Chris 2026-08-16 第一次批嘅係一句:「H2:批,
+> 寫 ADR-0038」,佢嗰陣見到嘅係「G4 要 `npm i @anthropic-ai/sdk`」。而寫呢份嘅時候浮出嚟嘅四條後果
+> (**D3** 唔打網絡要有 test 守住 · **D4** 唔可以自己砌 shape · **D5** OQ-7 target 移後 ·
+> **D6** 三件事未查證)佢未見過。**四條過目之後,同日 `Accepted`。**
 >
-> ⚠️ **呢個係 ADR-0037 行過嘅同一條路**(嗰次起草 `Proposed`,五條後果逐條過目之後同日 `Accepted`)。
+> ⚠️ **呢個係 ADR-0037 行過嘅同一條路**(嗰次亦係起草 `Proposed`,五條後果逐條過目之後同日 `Accepted`)。
 > 沿用,唔係為咗慢,係因為「批咗個標題」同「批咗成份後果」係兩件事 —— 而本項目 §9 記低過嗰種漂移,
 > 就係由前者被當成後者開始。
+>
+> 🟢 **同 ADR-0037 有一個分別要講清楚:本 ADR 冇任何一條係 deferred。** ADR-0037 個 `E4`(auth)
+> 係知情之下留低嘅,所以嗰度個 `Accepted` **唔等於每一條都答咗**;本 ADR **D1–D6 六條全部批咗**,
+> 而 `D6` 唔係一條未答嘅決定 —— **佢本身就係決定**(「G4 第一步係查嗰三樣,唔係寫 adapter」)。
 
 ---
 

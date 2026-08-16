@@ -1229,8 +1229,21 @@ Chris 問「OQ-5 卡什麼?」。查完寫入 `plan §7`,因為**每次重問呢
 **零 code 改動。** Doc:`ADR-0038`(新)· `adr/README.md`(index)· `plan.md`(§2.2 G4 / §7 OQ-7 / §7 新增
 OQ-5 一段 / §9 changelog)· `checklist.md`(`G4-pre-1..3` + `G5-pre-1`)· `BACKLOG.md`。
 
+### 🟢🟢 同日收尾:`ADR-0038` `Accepted`
+
+四條後果過目之後 Chris 批 ⇒ **`G4` 嘅 R1 gate 過,開得工**。
+
+🟢 **同 ADR-0037 一個分別值得記住,因為佢反方向**:嗰邊個 `Accepted` **唔等於每一條都答咗**
+(`E4` auth 係知情之下 deferred,ADR 頂部特登加咗個 🔴 blockquote 提醒);
+本 ADR **D1–D6 零 deferred** —— **`D6` 唔係一條未答嘅決定,佢本身就係決定**
+(「G4 第一步係查嗰三樣,唔係寫 adapter」)。
+
+⇒ **`OQ-1` / `OQ-5` / `E4` 嗰個「approved as deferred」形狀唔適用喺呢度。**
+本項目撞過嘅係「一格寫住 approved 而下手當咗成格都答晒」,而**反方向一樣係誤讀**:
+一份真係逐條批晒嘅 ADR 被當成「又係一格半開嘅嘢」,就會有人喺開工前再問多一次冇人需要答嘅問題。
+
 ### 未收
-- 🚧 `G4` —— **H2 已批**,但 `ADR-0038` 四條後果待 Chris 過目先轉 `Accepted`;`G4-pre-2` 裝完
+- 🚧 `G4` —— **ADR-0038 `Accepted`,開得工**;`G4-pre-2` 裝完
   **第一件事係查 D6 三樣,唔係寫 adapter**
 - 🚧 `G5` —— **OQ-5 仍然未答**(而家至少知道要答緊乜)
 - 🚧 `G6`(SSE)—— **零 gate,即刻開得**
