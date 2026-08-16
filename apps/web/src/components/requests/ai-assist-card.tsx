@@ -21,6 +21,7 @@ import {
   useDecideProposal,
   useStartAgentRun,
 } from '@/hooks/mutations';
+import { STEP_LABEL } from './ai-assist-labels';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type {
@@ -78,19 +79,13 @@ const STEP_COLOR: Record<AgentStep['status'], string> = {
   skipped: 'text-neutral',
 };
 
-/** Operator-facing names. A raw key never reaches the screen. */
-const STEP_LABEL: Record<string, string> = {
-  start: 'Run started',
-  proposal: 'Proposal raised for review',
-  abort: 'Run stopped',
-  run: 'Run',
-  get_request: 'Read the request',
-  list_pending_requests: 'Listed open requests',
-  search_catalog: 'Searched the catalogue',
-  get_ledger: 'Checked the OpCo ledger',
-  propose_line_items: 'Proposed line items',
-};
-
+/**
+ * 🔴 `STEP_LABEL` lives in `ai-assist-labels.ts`, not here, and it has a test
+ * that reads the API's tool registry. `MESSAGE_LABEL` below needs neither:
+ * `AgentMessage['role']` is a union, so leaving a role out does not compile.
+ * The two maps used to sit side by side looking identical — only one of them
+ * was ever protected.
+ */
 const MESSAGE_LABEL: Record<AgentMessage['role'], string> = {
   user: 'Asked',
   assistant: 'Said',

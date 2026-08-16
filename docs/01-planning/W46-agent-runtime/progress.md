@@ -746,9 +746,23 @@ api **1199 / 83** 全綠 · tsc 0 · lint 0(⚠️ 一個 prettier error 修咗�
 
 ---
 
-### 未收
+### 同日再收 F11-1b —— 喺 `G1` 之前,而順序係重點
 
-- 🚧 **F11-1b**(`STEP_LABEL` 冇嘢釘住)—— target 期二 `G1` 之前,要 Chris 揀修法
+`G1` 加 `propose_assign`,**即係第一個會踩中呢個缺口嘅改動** ⇒ 先補咗佢先開 `G1`,唔係反過來。
+
+**揀咗 parity test,唔係改 render 行為。** §13:「兩種實作都 reasonable → 揀更接近既有 pattern 嗰個」,而 source-scanning test 正正就係 `agent.boundary.spec.ts` 個 idiom。另一條路(unknown key render 成一望而知)會令一個**今日結構上唔存在**嘅狀態,永久霸住畫面一個位置。
+
+`ai-assist-step-labels.test.ts`(4 條)讀 API 個 `tool-registry.ts` 對返 `STEP_LABEL`。**兩個方向都驗**:缺 label(會出 raw key)· 多咗一個冇嘢 emit 得到嘅 label(**佢係一個「有呢一步」嘅聲稱,亦即係呢個 map 漂成小說嘅路徑**)。另加一條**驗個 registry 搵唔搵得到** —— 檔案改咗路徑或者 regex 失效,`registryToolNames()` 會返 `[]` 而**下面每條都會空轉通過**。
+
+**Falsification**:抽走 `get_ledger` ⇒ **1 紅 3 綠**,而錯誤訊息直接點名嗰個 tool —— 將來踩中嘅人唔會係讀緊呢個檔嗰個,所以訊息比 assert 更重要。
+
+⚠️ **順帶要處理一個 lint 訊號,而佢講得啱**:由 component 檔 export 一個 constant 會破 fast refresh(`react-refresh/only-export-components`)⇒ `STEP_LABEL` 搬咗去 `ai-assist-labels.ts`。**呢個係我自己個改動整出嚟嘅,所以係我要清**(§1.3)。
+
+web **392 → 396 passed**(6 紅 = 已知 pre-existing,數目一個字冇變)· tsc 0 · **lint 0**。
+
+---
+
+### 未收
 - 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
 - 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)
