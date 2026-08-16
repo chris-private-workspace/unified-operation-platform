@@ -1421,3 +1421,135 @@ Falsification ⑧(把 `platformStepKeys` 改返 hardcode)我**預期綠**(證明
 - 🚧 `F11-2` / `A14` live —— 卡 infra request(未發出)
 - 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
 - 🔴 **`running` run 死咗冇人知** —— 本單刻意冇處理(要 heartbeat),已寫入 code 註釋
+
+---
+
+## Day 19 — 2026-08-16(期二 `G5-B` + `G6` — run 推去背景 + SSE,**兩個 H1**)
+
+api **1308 → 1348 / 89 → 91** · web **415 → 433**(6 紅 = pre-existing,數目一個字冇變)·
+兩邊 tsc 0 / lint 0 · **falsification ×11 真紅零誤傷**(內含一個反方向)。
+
+`ADR-0039` **Accepted**(Chris 過目五條後果之後)⇒ **R1 gate 過先寫 code**。
+
+### 🔴🔴 我喺自己啱啱寫落 ADR 嘅論據上中招
+
+起草 `F9` 嗰陣寫住「**零新 dependency** —— `ioredis` 今日只係 `bullmq` 嘅 transitive」。
+`npm i bullmq` 之後真查:
+
+| | |
+|---|---|
+| `bullmq@6.1.2` `dependencies` | `cron-parser` / `msgpackr` / `node-abort-controller` / `semver` / `tslib` —— **冇 `ioredis`** |
+| `peerDependencies` | `ioredis >=5` · `redis >=5` · `pg >=8` · `bullmq-otel` |
+| `require('ioredis')` | **`MODULE_NOT_FOUND`** |
+
+⇒ **BullMQ 6 唔再自帶 Redis client**(佢連 `PostgresQueueBackend` 都有),要自己揀一個裝。
+
+📌 **呢個正正係 `ADR-0038 D4` 講嗰件事** —— 唔真裝就係對住「我以為佢係點」寫。分別係 D4 講嘅係
+test fixture,今次係**一份 ADR 嘅論據**,而佢已經寫咗落去。**F9 個決定唔變**(仍然用
+`QueueEvents`),消失嘅只係理由①;另外兩個原封成立,兼且真裝之後多咗一個更強嘅:
+**`QueueEventsProducer` 唔使 job 喺手就 publish 得到** ⇒ `writeStep`(boundary spec 已經 assert
+佢係 `AgentStep` 唯一 writer)可以同時做**唯一 publish 點**,唔使把一個 BullMQ `Job` handle 穿過
+成個 service。
+
+🔴 **H2 我 STOP 咗一句先做**:冇任何一個讀法可以令 BullMQ 唔使 Redis client ⇒ 「批咗 BullMQ」
+邏輯上已經包住佢(**ADR-0035 個「必然後果唔係新決定」形狀**)。
+
+### 🟢🟢 契約唔使 break,而呢個係查證返嚟唔係設計出嚟
+
+Day 18 寫住「推去 worker = 契約由『返結果』變『返一個 pending run』⇒ F8 張卡要改」。
+真睇 code 之後:**`AgentRunDto` 照返得**,只係 `status: 'running'` / `steps` 得一個 /
+`proposals` 空 —— 而 **`RUN_TONE.running` 同 `RUN_LABEL.running` 喺 `F8` 寫嗰陣就已經喺度**。
+
+⇒ **唔係 breaking change,係「返嘅嘢無咁完整」**。H1 仍然觸發(語義變咗:個回應唔再代表
+「做完咗」),但**代價細一個數量級**,而且**回退去 polling 都唔使再改契約**。
+
+### 🔴 `G5-A` 嗰個永久封鎖,今日經另一道門走返出嚟兩次
+
+`startRun` 建咗 row(`running`)先 enqueue。**enqueue 失敗如果只係 throw**,row 就留喺
+`running` —— 而 OQ-3 只准一張 request 一個非終態 run,**expiry sweep 又刻意唔掃 `running`**
+⇒ **嗰張 request 永遠開唔到新 run**。同 G5-A 喺 `resumeRun` 揾到嗰個**一模一樣**,分別只係
+成因由「SDK upgrade」變成「infra outage」。
+
+第二次:`executeRun` 個 kill switch。排喺 `try` **之上**(最順眼嗰個位)= 閂咗就 throw,
+row 又留喺 `running` 永遠。⇒ **一次係 bug,兩次係 pattern**,所以佢排喺 `try` 入面。
+
+🔴 **反過嚟 `status !== 'running'` 就刻意唔 `failRun`** —— 嗰個 run 已經有結論
+(`aborted` / `expired` / 一個遲到嘅重複 job),覆蓋佢就係**用一個錯答案冚一個真答案**。
+
+### 🔴 SSE 送咩:一個「refetch 啦」嘅信號,唔送內容
+
+`{ runId, type }`,冇 step、冇 status、冇 detail。三個理由,中間嗰個先係會痛嗰個:
+
+1. **唔養第二個真相** —— stream 出去嘅 step 同 refetch 返嚟嘅一有差,畫面就攞住兩個版本。
+   **`CH-028` 刻意唔喺 Platform view 計 delta,講嘅就係同一件事。**
+2. 🔴 **H4** —— `AgentStep.detail` 可以有 vendor error,而 vendor error 引嘅 path 帶 UPN
+   (**BUG-004**)。今日佢**入表之前**經 `scrubPii`;放上一條**新** transport 就係開多一條
+   要記住去 scrub 嘅路。**一條唔載內容嘅路,冇嘢要記住。**
+3. 回退去 polling 唔使改契約 —— 一個 notify-then-refetch 同一個 poll 讀同一個 endpoint。
+
+⚠️ 一個 race 明寫咗:run 可以喺瀏覽器連上之前就完 ⇒ **連上嗰刻即刻發一個 tick**。
+falsification ⑤ 拆走佢 = **3 紅**。
+
+### 🔴 一個 publish 點 + 三個補位,而個分野唔係美感
+
+`writeStep` 已經係 `AgentStep` 唯一 writer(`agent.boundary.spec.ts` assert 住,原本為咗
+A7 / INC-001)⇒ publish 擺喺嗰度就覆蓋晒每一個 step,冇 call-site 清單要跟。
+
+🔴 **但「改 status 而唔寫 step」嗰啲佢結構上睇唔到** —— `completed`(G1 個
+`Nothing proposed.` 就係呢條路)、`awaiting_approval`、`failRun`、`abortRun`、`expireRun`。
+唔補就係**一個已經完咗嘅 run 上面卡住個 spinner**。falsification ④ 拆走 `completed` 嗰個
+= 1 紅,而條 test **數 publish 次數**(`stepKeys().length + 1`)先至見到 —— 淨係 assert
+「有 call 過」嘅話,單靠啲 step 已經滿足到。
+
+### 🟢 三層之中兩層喺我哋手上
+
+nginx **住喺 web container**(`apps/web/nginx.conf.template`)⇒ 自己改得到。
+加咗一個 **regex location 專用**,**唔關掉成個 `/api/`** —— 為一條 endpoint 付全域代價冇道理,
+而 location 匹配本來就容得落更精確嘅路徑。
+
+🔴 **自己 catch 咗一個**:regex location **唔可以**靠 trailing slash strip `/api`(嗰個只對
+**prefix** location 成立)⇒ 要 `rewrite ^/api/(.*)$ /$1 break;` + 一個冇 URI 部分嘅
+`proxy_pass`。送 `/api/agent/...` 上去就係 404,因為 API 路由冇呢個前綴。
+
+🟡 **ACA ingress 係唯一改唔到嗰層,而佢對 SSE 嘅行為未驗證**(F7 / R22)。本 ADR
+**唔假設佢得亦唔假設佢唔得**;唔得就回退 polling,而 F2 令嗰時契約唔使再改。
+
+### 🔴 `EventSource` 兩個性質,兩個都要處理
+
+1. **佢自己會無限重連,而且睇唔到 status code** ⇒ 一個 404(run 冇咗)或者 403(唔同 OpCo)
+   同一個 blip 完全一樣,會重試到閂 tab 為止。⇒ **連續三次失敗就收線**,`onopen` 重置
+   (唔重置就變成「一世累積三次」,一條開足一日嘅連線遲早夠數然後永久停)。
+2. **終態 run 唔開連線** —— 終態係呢張卡大部分時間顯示緊嘅嘢。逐個開 = **一張卡一條 socket**,
+   開足成個 session,更新一件唔會變嘅嘢。📌 寫成 **LIVE set 唔係 terminal set**:兩者可以互推,
+   但**新加嘅 status 大機會係終態**,咁寫令未知情況 fail closed。
+
+### 🔴 兩個 test helper 各自令一條 test 睇唔到嘢,兩個都係真跑先揭到
+
+| | |
+|---|---|
+| api | `state.eventsOn.mock.calls[0]` 假設「第一個 listener 就係我要嗰個」,而 `onModuleInit` 早就註冊咗 `'error'` ⇒ 改成**按 name 搵** |
+| web | `mount('running', undefined)` 撞正 **default parameter 食咗 explicit `undefined`** ⇒ 條 test 從來冇行過佢聲稱嗰個 case |
+
+**兩個都紅咗,所以先至係腳註。** 同 `G7-k`(對稱 fixture 令 mean/median 分唔開)同族:
+**一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事。**
+
+### ✅ Falsification ×11 真紅零誤傷
+
+①enqueue 失敗唔 `failRun` **1 紅** ②kill switch 移出 `try` **1 紅** ③拆走 status 守衛 **1 紅**
+④拆走 `completed` 個 publish **1 紅** ⑤拆走開場 tick **3 紅** ⑥拆走 `runId` filter **1 紅**
+⑦拆走 teardown `off` **1 紅** ⑧enqueue 錯誤訊息改成 kill-switch 講法 **1 紅**(R23)
+⑨`LIVE_STATUSES` 加 `completed` **2 紅** ⑩拆走 `onopen` reset **1 紅**
+⑪**反方向**:SSE 先開 channel 後驗權 **2 紅**(兩條都捉到 —— 訂閱前就開咗 + 權限失敗仍然 leak)。
+
+還原之後**真跑一次**確認:api **1348 / 91 全綠** · web **433 passed / 6 pre-existing 紅**
+(Day 18 記低過:呢一步唔可以靠 `git diff` 睇完就算)。
+
+### 🚧 留低咗嘅
+
+- **`B6`(SSE 喺 DEV 真通)** —— 要 **Redis 喺 DEV 存在**先做得到(F5),而 **ACA ingress 嗰層
+  未驗證**(F7)。⇒ **卡 infra,同 `A14` 完全同一個形狀**
+- 🔴🔴 **`REDIS_URL` = 本 phase 第二個 infra 依賴,應該即刻併入嗰封仲未發出嘅信**
+  (`11-azure-openai-infra-request.md`)—— 發完先追加,喺本項目歷史上就係多等一輪
+- **`running` run 死咗仍然冇人執** —— G5-A 刻意留低嘅缺口,而本日**令佢更容易發生**
+  (run 而家真係喺背景跑)。要 heartbeat 唔係門檻
+- **R11–R24 仍然未入 `RISK_REGISTER.md`**
