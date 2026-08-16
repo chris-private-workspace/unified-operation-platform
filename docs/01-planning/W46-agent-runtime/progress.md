@@ -599,8 +599,56 @@ api **1184 / 81** 全綠零跌 · web **392 passed**,**6 條紅逐條核對過�
 
 ---
 
+### 同日:草擬 infra request(`docs/13-deployment/11-azure-openai-infra-request.md`)
+
+**格式唔係自己諗,係抄返 W44 附錄 C 個兩層分法**(`W44 plan.md:333`):上面內部記錄,下面一個 `📤` code block 放**真正發出去嗰段英文全文**。原文理由:
+
+> infra team 唔需要嗰啲 —— 佢哋需要嘅係「**壞咗乜 + 要你做乜**」。刪走內部細節唔係簡化,係**移走會分散注意嘅嘢**。
+
+五條問題:**`Q0`** 治理 · **`Q1`** auth(= `E4`)· **`Q2`** deployment(= `OQ-1`)· **`Q3`** abuse monitoring · **`Q4`** ACA outbound。
+
+### 🔴🔴 草擬過程查到一個唔喺任何 W46 文件入面嘅障礙,而佢改變咗成件事嘅形狀
+
+`05-rci-par-process.md:4` 寫住「**開資源前必經 PAR**」,而**同一份 PAR Section 1 `:54` 明文申報咗**:
+
+> `AKS / Blob / **Azure OpenAI** / Event Grid | ✅ **暫無**(…AI 屬未來 tier)`
+
+⇒ **開一個 Azure OpenAI resource,同我哋自己寫落治理文件嗰句直接相反**,而 PAR 簽核鏈(`:20`)包括 **Security Manager / GM CISO IT / CDO** —— 佢哋 endorse 嘅就係一個資料流向態勢,而本次改動加嘅正正就係一條新資料流。
+
+加埋兩件事:**①嗰份 PAR 由頭到尾未提交**(Section 1 仍有 `🔲 待 Chris`)**②`09-dev-as-built.md:125` 一早寫低「DEV 環境要唔要走 PAR,要問」,由 08-04 到今日從來冇問過。**
+
+📌 **而 `05:30` 自己嗰句填表原則,反方向一樣成立** —— 佢寫「填 private access 而實際 public,等於向治理機構描述咗一個唔存在嘅態勢」;**申報「Azure OpenAI 暫無」然後靜靜開一個,係同一個錯誤嘅鏡像。**
+
+⇒ 所以本份**唔係一張 ticket,係一個要 Chris 先揀路嘅嘢**(A 先淨問治理 / **B 兩樣同一封,建議**)。**冇列第三條「當一般資源請求發」** —— `W44 plan.md:309`:**留住一個死路選項唔係保留彈性,係引人揀錯。**
+
+### 🔴 第二個查證改咗請求點寫
+
+`ADR-0028:35` 記低咗 **「Application ID URI」三輪往返都攞唔到** —— infra 分別答咗「web portal 網址」「OAuth authorization endpoint」「Application ID」,而 `W44 progress.md:605` 個結論係:**三次嘅解讀都合理,值得懷疑嘅唔係對方,係嗰條問題本身。**
+
+**而 `deployment` 完全同一族** —— 對 infra 嚟講呢個字預設係 **ARM deployment**,唔係「model deployment」。⇒ 發出去嗰段字**自己先解釋個詞**(「唔係 ARM deployment、唔一定等於 model 名、開嗰個人自己揀」)兼要求**逐字 copy 唔好重打**,唔靠對方估。
+
+同族嘅仲有 **Q2 問法**:問「**有咩開得到**」唔係「請開 X」—— 沿用 `W44 checklist.md:247`(「問係咩,唔係叫佢設定」),因為我哋證唔到邊個 model 喺公司 tenant 開得到。
+
+### ⚠️ 一件我自己答唔到,所以寫成問題唔寫成結論
+
+**`Q3`(abuse monitoring / prompt 保留)我係由記憶寫嘅,repo 入面冇任何嘢證實得到。**
+
+但佢唔係可有可無 —— **`ADR-0037 E1` 成個論據就係「收件人變咗,同 Graph / M365 同一個信任面」,而呢句只喺冇第三方人手覆核嘅前提下成立。** 如果 Azure OpenAI 預設會保留 prompt 兼有人手覆核,咁個論據就要收窄(而 Graph / M365 唔會有人睇我哋啲資料)。
+
+⇒ 寫成「請確認,唔好當我哋講得啱」。**唔可以因為 ADR 已經 `Accepted` 就當呢條唔使問** —— `09-dev-as-built.md:224`:**一個未實測嘅答覆,同一個未問嘅問題,喺風險上係同一樣嘢。**
+
+### 順帶查實嘅四件環境事實(寫落請求,慳一個往返)
+
+| 事實 | 點查 | 影響 |
+|---|---|---|
+| `aca-rapo-uop-api-dev` **今日冇 managed identity** | `aca-dev.json` grep `identity` = **0** | `Q1` Option A 要**先開**佢 |
+| 我哋個 SP 喺 `RG-RAPO-UOP-DEV` **只有 Contributor** | `09-dev-as-built.md` · B4 史 | role assignment **無論如何都要 infra 做**(Contributor 冇 `roleAssignments/write`) |
+| `openai-agents.provider.ts` **零 Azure 接線** | grep:只有 `resolveModel()` | `E2` 未寫,**係我哋嘅工作唔係 infra 嘅** |
+| `aca-dev.json` **零個 `AGENT_*` / `OPENAI_*` env** | grep = **0** | 部署 template 要加,同上 |
+
 ### 未收
 
+- 🚧 **infra request 草擬咗但未發** —— **要 Chris 揀 A 定 B**
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
 - 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)
 - 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)
