@@ -1,6 +1,6 @@
 # 11 — Azure OpenAI:治理前置 + infra 請求(草稿,未發出)
 
-> **狀態(2026-08-16)**:🚧 **草稿。未發出,亦未決定行邊條路(見 Part A)。**
+> **狀態(2026-08-16)**:🟡 **路已揀 = B(Chris 2026-08-16)—— 治理同技術同一封發,`Q0` 擺第一條。份文件已經寫成咁,可以直接發。仍然未發出。**
 > **目的**:解封 `ADR-0037 E4`(auth 兩條路未揀)+ W46 `OQ-1`(deployment 名)+ `F11-2 / A14`(live 驗)。
 > **Phase**:W46 `agent-runtime`。**決策 SSOT** = `ADR-0037`。
 > **點解兩件事一次過問**:兩個都取決於同一件事 —— infra 點開個 resource。分開問會問兩次,而本項目 infra 往返每次都以星期計(B1 / B4 / B7 / B8 / B9 五次)。
@@ -37,14 +37,26 @@
 | 2 | 嗰份 PAR 寫嘅係 W32/W33 個「Azure UAT」,而嗰個環境**已確認係誤名**(自建孤島,同企業網零連繫)—— **唔係**而家用緊嘅 `RG-RAPO-UOP-DEV` | `07-uat-as-built.md` 頂 blockquote · CLAUDE.md §9 |
 | 3 | **「DEV 呢個環境要唔要走 PAR」一早寫低咗「要問」,而佢從來冇問過** | `09-dev-as-built.md:125`「**治理**:RCI 側對自建資源有冇要求(PAR),要問」 |
 
-### ⇒ 要 Chris 揀
+### 🟢 已揀:B(Chris 2026-08-16)
 
 | | 路 | 代價 |
 |---|---|---|
-| **A** | **先淨問治理一條**(下面 `Q0`),答完先發技術請求 | 多一個往返,但唔會行錯流程 |
-| **B**(建議) | **兩樣同一封發**,`Q0` 擺第一條 | 一次過。若答案係「要行 PAR」,下面啲技術答案**本身就係 PAR Section 1 要填嘅嘢**(resource 類型 / 資料流 / 認證方式)⇒ **一個字都唔會白寫** |
+| ~~A~~ | ~~先淨問治理一條,答完先發技術請求~~ | ~~多一個往返~~ |
+| 🟢 **B** | **兩樣同一封發**,`Q0` 擺第一條 | 一次過。若答案係「要行 PAR」,下面啲技術答案**本身就係 PAR Section 1 要填嘅嘢** ⇒ **一個字都唔會白寫**(逐條對照見下) |
 
 > 📌 冇列第三條「當一般資源請求發」—— 事實 1–3 之下佢係明知有治理問題而繞開,而 `W44 plan.md:309` 個教訓係:**留住一個死路選項唔係保留彈性,係引人揀錯。**
+
+### B 個賣點要兌現得到 —— 五條答案逐條對返 PAR Section 1 邊個欄
+
+**唔係口講「唔會白寫」,係真係逐格對得上。** 呢張表亦即係話:一旦 `Q0` 答「要行 PAR」,我哋唔使重新收集資料,只需要把回覆填入去。
+
+| 問題 | 填入 PAR Section 1 邊度 | 備註 |
+|---|---|---|
+| **Q0** 治理 | 流程本身(交唔交 / 交新定修訂) | 亦順帶答返 `09-dev-as-built.md:125` 掛咗成個月嗰條 |
+| **Q1** auth | **User Access / Authentication** 段 | Option A 會令段落多一句「service-to-service 行 managed identity」;Option B 就會多一個 secret 要喺 `02-environment-reference.md` 登記 |
+| **Q2** model / deployment | **System Component Specification › Other Resources** | 🔴 就係要把 `:54` 嗰行 `Azure OpenAI ✅ 暫無` **改成實際值**,而呢個修改本身就係整件事嘅治理核心 |
+| **Q3** abuse monitoring | **Security requirements**(RIT 填,`:88`)+ 資料處理描述 | 🔴 **Security Manager endorse 嘅就係呢格。** 若答案係「有人手覆核」,PAR 上面就唔可以寫成「內部封閉」 |
+| **Q4** outbound | **Communication protocol between components** 表 | 要加一行 `uop-api → Azure OpenAI · HTTPS · 443`。⚠️ **呢行同 `05:64` 嗰條被劃走嘅 Key Vault 行剛好相反** —— 嗰條係「唔存在所以唔准填」,呢條係「會真係存在所以一定要填」,兩者同一條原則 |
 
 ---
 
@@ -81,7 +93,7 @@
 
 | Q | 問乜 | 點解 |
 |---|---|---|
-| **Q0** | 治理 / PAR | Part A。**擺第一條**,因為佢個答案會決定下面四條幾時有人睇 |
+| **Q0** | 治理 / PAR | Part A。**擺第一條**(Chris 揀 B),因為佢個答案會決定下面四條幾時有人睇 |
 | **Q1** | auth 行 Entra 定 API key | = `ADR-0037 E4`。🔴 **A 有一步我哋做唔到**:role assignment 要 `Microsoft.Authorization/roleAssignments/write`,而我哋個 SP(`d2f094a3-…`)喺 `RG-RAPO-UOP-DEV` **只有 Contributor** ⇒ 無論 resource 開喺邊,呢步都要佢哋做。<br>⚠️ 亦要講明 `aca-rapo-uop-api-dev` **今日冇 managed identity**(`aca-dev.json` grep `identity` = **0**) |
 | **Q2** | 開邊個 model | = `OQ-1`。**問「有咩開得到」唔係叫佢開一個特定型號** —— 沿用 `W44 checklist.md:247` 嗰個問法(「問係咩,唔係叫佢設定」),因為 Azure OpenAI 嘅供應同 region 有關,而我哋證唔到邊個喺公司 tenant 開得到 |
 | **Q3** | abuse monitoring / prompt 保留 | 🔴 **呢條係 `E1` 個論據本身**。E1 話「收件人變咗,同 Graph / M365 同一個信任面」——**呢句只喺冇第三方人手覆核嘅前提下成立** |

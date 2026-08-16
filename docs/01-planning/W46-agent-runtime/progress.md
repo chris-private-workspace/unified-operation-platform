@@ -619,7 +619,20 @@ api **1184 / 81** 全綠零跌 · web **392 passed**,**6 條紅逐條核對過�
 
 📌 **而 `05:30` 自己嗰句填表原則,反方向一樣成立** —— 佢寫「填 private access 而實際 public,等於向治理機構描述咗一個唔存在嘅態勢」;**申報「Azure OpenAI 暫無」然後靜靜開一個,係同一個錯誤嘅鏡像。**
 
-⇒ 所以本份**唔係一張 ticket,係一個要 Chris 先揀路嘅嘢**(A 先淨問治理 / **B 兩樣同一封,建議**)。**冇列第三條「當一般資源請求發」** —— `W44 plan.md:309`:**留住一個死路選項唔係保留彈性,係引人揀錯。**
+⇒ 所以本份**唔係一張 ticket,係一個要先揀路嘅嘢**。**冇列第三條「當一般資源請求發」** —— `W44 plan.md:309`:**留住一個死路選項唔係保留彈性,係引人揀錯。**
+
+🟢 **Chris 同日揀咗 B(治理同技術同一封,`Q0` 第一條)。**
+
+而 B 個賣點(「若要行 PAR,啲技術答案唔會白寫」)**唔可以齋講**,所以補咗一張逐格對照表落文件:
+
+| 問題 | 填入 PAR Section 1 邊度 |
+|---|---|
+| `Q1` auth | User Access / Authentication |
+| `Q2` model / deployment | **就係把 `05:54` 嗰行 `Azure OpenAI ✅ 暫無` 改成實際值** —— 即整件事嘅治理核心 |
+| `Q3` abuse monitoring | Security requirements(`05:88`)—— 🔴 **Security Manager endorse 嘅就係呢格** |
+| `Q4` outbound | Communication protocol 表加一行 `uop-api → Azure OpenAI · HTTPS · 443` |
+
+⚠️ **最後嗰行值得記住,因為佢同 `05:64` 剛好相反** —— 嗰條 `uop-api → Key Vault` 被**劃走並註明唔好填**(連線根本唔存在,填咗會令防火牆開一條唔需要嘅通道);而呢條係**會真係存在所以一定要填**。**同一條原則兩個方向:PAR 上面嘅資料流表要同實況逐條對得上,多一條少一條都係向治理機構描述一個唔存在嘅態勢。**
 
 ### 🔴 第二個查證改咗請求點寫
 
@@ -648,7 +661,7 @@ api **1184 / 81** 全綠零跌 · web **392 passed**,**6 條紅逐條核對過�
 
 ### 未收
 
-- 🚧 **infra request 草擬咗但未發** —— **要 Chris 揀 A 定 B**
+- 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
 - 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)
 - 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)
