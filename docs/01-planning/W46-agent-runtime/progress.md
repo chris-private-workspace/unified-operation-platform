@@ -718,9 +718,37 @@ api **1184 → 1188 / 81**(零跌)· tsc 0 · lint 0。實作檔**全部還原�
 
 ---
 
+### 同日補埋 F10-2e —— 兩個 controller spec
+
+`agent-run.controller.spec.ts`(8 條)+ `agent-approval.controller.spec.ts`(4 條)。api **1188 → 1199 / 81 → 83**。
+
+釘住三類**只有 controller 層見得到**嘅嘢:①`@Roles` 喺 class 上 = `[ADMIN, REGIONAL]`(W28 snapshot 話你知矩陣**變咗**,呢條話你知佢**應該係咩**)②參數點拆(`dto.requestId` 唔係成個 dto · **`approve(id, user)` 個 user 唔係 optional context —— 佢就係 `approvedById` 同 audit actor**)③argument 次序(`getRun(user, id)` 掉轉一樣 type-check,兩個都係 string)。
+
+### 🔴🔴 而我第一版嗰條 query-key test 自己就係假嘅,俾 falsification 當場捉到
+
+v1 寫 `controller.latest('req-1', user)` 然後 assert service 收到 `'req-1'`,**註釋仲寫住佢守住個 query key**。把 `@Query('requestId')` 改做 `@Query('request_id')` ⇒ **152 條全綠**。
+
+**原因**:直接 call 個 method **完全繞過 Nest 嘅參數綁定** —— `@Query()` 個 key 係 runtime metadata,由頭到尾冇參與過 ⇒ **條 test 結構上睇唔到佢聲稱守住嗰件事**。
+
+改成讀 `__routeArguments__` route metadata。同一個 falsification ⇒ **1 紅 152 綠**。
+
+📌 **同一日第二次同一族**(F10-2b SKU 嗰個係第一次),而**兩次都係同一個形狀:註釋寫住佢守住乜,同佢實際釘住乜,係兩件事。** 上午嗰次係別人寫嘅 test,下午呢次係我自己啱啱寫嘅 —— **知道咗個模式,唔代表寫嗰刻唔會再中。**
+
+### 🔴 順帶查證到一個容易讀反嘅事實
+
+`AgentRunDto` header 寫住「`runState` 喺呢度每個 shape 都缺席,而**呢個係規矩唔係遺漏**」。講法啱,但 **DTO 喺呢個 app 係文件唔係過濾器**:全 `src/` **零個 `ClassSerializerInterceptor`**(實測 grep),`@ApiOkResponse` 只影響 OpenAPI 頁。
+
+⇒ **controller 原封交返 service 嗰個 object**,⇒ **唯一嗰道閘就係 service 個 `select`**(F10-2a 釘住嗰個)。條 test 用 identity(`toBe`)釘住呢個 pass-through,**就係為咗唔畀人把 DTO 個註釋讀成第二道防線 —— 得一道。**
+
+### 數字(收工)
+
+api **1199 / 83** 全綠 · tsc 0 · lint 0(⚠️ 一個 prettier error 修咗先過)· **實作檔全部還原乾淨,零 production code 改動**。**W46 falsification 累計 ×21,全部真紅零誤傷。**
+
+---
+
 ### 未收
 
-- 🚧 **F10-2e**(兩個 controller 冇 spec)· **F11-1b**(`STEP_LABEL` 冇嘢釘住)—— 兩個都 target 期二 `G1` 之前
+- 🚧 **F11-1b**(`STEP_LABEL` 冇嘢釘住)—— target 期二 `G1` 之前,要 Chris 揀修法
 - 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
 - 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)
