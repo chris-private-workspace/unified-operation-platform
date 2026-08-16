@@ -84,7 +84,7 @@ describe('AiAssistService', () => {
     };
     agentStep: { create: jest.Mock };
     agentMessage: { createMany: jest.Mock };
-    agentProposal: { create: jest.Mock };
+    agentProposal: { create: jest.Mock; updateMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let audit: { log: jest.Mock };
@@ -125,7 +125,7 @@ describe('AiAssistService', () => {
       },
       agentStep: { create: jest.fn() },
       agentMessage: { createMany: jest.fn() },
-      agentProposal: { create: jest.fn() },
+      agentProposal: { create: jest.fn(), updateMany: jest.fn() },
       /**
        * The interactive form, with a flag around the callback.
        *
@@ -230,6 +230,40 @@ describe('AiAssistService', () => {
       // The run row is not even loaded — nothing about this run matters while
       // the capability is off.
       expect(prisma.agentRun.findUnique).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 期二 G7 — the fact every R13 number is built on.
+     *
+     * 🔴 `AgentReviewStatsService` defines "a person decided this" as
+     * `decidedAt != null`. `abortRun` rejects a run's pending proposals in
+     * bulk, and it is the PLATFORM tidying up, not anybody saying no — so it
+     * must leave both decision columns alone.
+     *
+     * Stamping them here would push every approval rate DOWN, i.e. make a
+     * reviewer who says yes to everything look more sceptical the more runs got
+     * stopped. A risk metric that fails in the reassuring direction is worse
+     * than no metric, so the claim is asserted at the one place that could
+     * break it.
+     */
+    it('stopping a run rejects its proposals WITHOUT recording a human decision', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'awaiting_approval',
+        steps: [],
+        messages: [],
+        proposals: [],
+        request: { opcoId: 'opco-a' },
+      });
+
+      await service.abortRun(admin, 'run-1');
+
+      const { data } = prisma.agentProposal.updateMany.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.status).toBe('rejected');
+      expect(data).not.toHaveProperty('decidedAt');
+      expect(data).not.toHaveProperty('approvedById');
     });
 
     /**

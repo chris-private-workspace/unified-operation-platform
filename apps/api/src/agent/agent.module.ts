@@ -8,8 +8,10 @@ import { OpenAiAgentsProvider } from './openai-agents.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
 import { AiAssistService } from './ai-assist.service';
 import { AgentKillSwitchService } from './kill-switch.service';
+import { AgentReviewStatsService } from './review-stats.service';
 import { AgentRunController } from './agent-run.controller';
 import { AgentKillSwitchController } from './kill-switch.controller';
+import { AgentReviewStatsController } from './review-stats.controller';
 
 /**
  * W46 / ADR-0036 — the agent module.
@@ -53,8 +55,16 @@ import { AgentKillSwitchController } from './kill-switch.controller';
     // it before an approval can assign anything (G1): the branch that can cause
     // a real side-effect is the one a switch marked "off" must actually stop.
     AgentKillSwitchService,
+    // 期二 G7 — R13 monitoring. A pure read-model: it writes nothing and
+    // decides nothing, which is why it is not exported (nothing else should be
+    // acting on these numbers — a person should).
+    AgentReviewStatsService,
   ],
-  controllers: [AgentRunController, AgentKillSwitchController],
+  controllers: [
+    AgentRunController,
+    AgentKillSwitchController,
+    AgentReviewStatsController,
+  ],
   exports: [
     AgentToolRegistry,
     AgentRuntimeProvider,

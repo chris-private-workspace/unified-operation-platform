@@ -108,6 +108,11 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         // is the argument ADR-0036 made for keeping the agent out-of-process
         // in the first place.
         'AgentKillSwitchController',
+        // 期二 G7 — GET /agent/review-stats, @Roles(ADMIN). Same width as the
+        // kill switch and the audit trail, and for the audit trail's reason
+        // (ADR-0009 Decision 7): it reports named individuals' reviewing
+        // behaviour, which is management information about colleagues.
+        'AgentReviewStatsController',
         // W46 F8 — /agent/runs (start, read, abort), @Roles(ADMIN,REGIONAL).
         // Neither ADR-0036 nor the plan settles who may START a run, so this
         // matches the approval surface: a run costs a model call and creates

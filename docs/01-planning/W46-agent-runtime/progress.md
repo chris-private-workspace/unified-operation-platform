@@ -975,3 +975,95 @@ api **1218 → 1243 / 83 → 85** 全綠 · tsc 0 / lint 0(⚠️ 兩個 prettie
 - 🚧 **`G3-n` kill switch UI**(狀態 + 開關掣)—— **enforcement 全部做齊,缺嘅係方便**;ADMIN 而家打 `PATCH /api/agent/kill-switch` 開關得到(CH-026 `G-7` 先例)。⚠️ 排喺 render 嗰批,係因為**唔想出一個「寫好但冇 render 驗過」嘅安全控制**
 - 🚧 **`G2-j`** H6 真 render —— 仍然卡 5433
 - 🚧 期二剩 `G4`–`G7`(`G4` 要重新答 **OQ-7** · `G5` 要答 **OQ-5**)
+
+---
+
+## Day 14 — 2026-08-16(期二 `G7` — R13 監測)
+
+**做咗**:`GET /agent/review-stats?days=30`(ADMIN only)—— 批准率、審核速度、**同埋逐個 reviewer**。
+
+### R13 唔係「agent 提議錯嘢」
+
+**係「批准嗰個人唔再讀」。**
+
+ADR-0036 D3 擺一個人喺每個寫入前面,而**嗰個就係 Tier 1 成個安全論據**。一個冇人真係做嘅審批步驟,會把個論據變成形式 —— 而**每個畫面照樣印住一個人名喺個決定側邊**。
+
+⇒ **系統一啲都唔會睇落唔同。** 所以呢件事只能靠數字,靠唔到留意。
+
+### 讀 `AgentProposal` 唔讀 `AuditLog`
+
+`audit-fields.ts` 一早把 audit 側整成一條 query(`AGENT_PROPOSAL_DECIDED` 一條 action 覆蓋 approve + reject,靠 `metadata.reason` 分開)。但由一條 **free-text reason 嘅前綴**推個批准率,係一個**改一次文案就靜靜變錯**嘅 metric。
+
+`status` / `decidedAt` / `approvedById` 三個欄係結構化嘅 ⇒ 讀佢哋。
+
+### 🔴🔴 人口定義,同佢排除嘅嘢
+
+**`decidedAt != null` = 一個人決定過。** 呢個唔係約定,係查得到嘅事實:`decidedAt` 全 `src/` 只有四個寫入點,**四個都喺 approval orchestrator**。
+
+而佢**排除**嘅嘢先係重點:`abortRun` 把一個 run 嘅 pending proposal **批量 reject**,兩個決定欄都唔寫 —— **平台執手尾,唔係有人話唔得**。
+
+計咗佢哋做 rejection 會把批准率**推低** ⇒ **一個乜都批嘅人,會因為愈多 run 被停而睇落愈嚴謹。**
+
+⚠️ **一個 risk metric 喺「令人安心」嗰個方向出錯,衰過冇 metric。**
+
+### 🔴 `failed` 計做批准
+
+G1 之下,批准人講咗 yes 而八道閘之一拒絕咗,個 proposal 標 `failed`。**R13 問嘅係個人仲讀唔讀,而佢講咗 yes。**
+
+當成 rejection 會令一個 reviewer **愈係要平台救佢就睇落愈有懷疑精神** —— 啱啱相反,而且會喺**出事嗰刻**顯示成一條改善緊嘅趨勢。
+
+### 🔴 兩個指標唔對稱,而個 DTO 明文寫低咗點讀
+
+- **`fastDecisions` 係證據。** 幾秒就決定咗 = 冇讀過。呢個結論唔使任何假設。
+- **`medianSecondsToDecide` 唔係。** 個鐘由 proposal **建立**嗰刻行,唔係由人**望到**嗰刻 ⇒ 一個長 median 可以係「審得仔細」,亦可以係「冇人喺度」,**由呢度分唔到**。
+
+**一個把慢 median 當勤力嚟展示嘅 dashboard,就係自己作嗰個令人安心嘅解讀。** 所以個 DTO 個 docblock 明文分開講兩者。
+
+(median 唔係 mean:一單隔夜批准 = 14 個鐘,足以把十單 5 秒嘅平均值拉過任何有用嘅門檻。)
+
+### 🔴 per-reviewer —— aggregate 答唔到嗰半
+
+一隊人整體 70%,**可以入面有一個 100% 兼平均四秒**,而 aggregate 就係嗰個藏住佢嘅數字。**一個講唔出佢講緊邊個嘅 metric,冇人 act 得到。**
+
+⚠️ **R3**:plan B7 只寫「批准率 / 平均審核秒數」兩個 aggregate 數,per-reviewer 係本單加嘅。
+
+🔴 **H4 —— 只攞 `displayName`,冇 email。** 攞名係因為 cuid 冇人 act 得到,而**一個冇人 act 得到嘅 metric 等於冇做**;只攞名係因為 email 對呢條問題**一個字都冇加**。endpoint ADMIN only,同 `/admin/audit` 一樣理由(ADR-0009 D7)。條 test 用 `Object.keys().sort()` 釘死成個 row 得八個欄。
+
+### 🔴🔴 Falsification 揭到我一條 test 靠對稱嘅 fixture 綠
+
+`averages the two middle values on an even count` 原本用 **10 / 20 / 30 / 40** —— 而嗰組數嘅 **mean 同 median 都係 25**。
+
+⇒ **把實作由 median 換成 mean,佢照綠。** 佢 assert 緊個**數字**,唔係嗰個**統計量**。
+
+改成 10 / 20 / 30 / **200**(median 25 / mean 65)⇒ 同一個 falsification 由 **1 紅變 2 紅**。
+
+📌 同 Day 12 嗰個「空 list 滿足任何 claim」係同一族:**條 test 睇落 assert 緊一件事,實際上 assert 緊一個啱啱好兩邊都成立嘅巧合。**
+
+### 🔴 寫咗一條 boundary static test,寫完拆咗
+
+想 assert「全 `src/` 只有 approval orchestrator 寫 `decidedAt`」—— 但個 grep **分唔開 write 同 Prisma `select` / `where`**(`decidedAt: true` 係 select、`decidedAt: { not: null }` 係我自己個 where)⇒ **兩個 false positive,而兩個都係啱嘅 code**。
+
+改成一條 **behavioural** test 釘住真正嘅風險位(`abortRun` 個 `updateMany` 冇 `decidedAt` / `approvedById`),而「冇第二個地方寫」嗰半 —— **既有嘅 `writersOf('agentProposal')` 已經覆蓋咗**(只有兩個 writer,而其中一個就係 orchestrator)。
+
+📌 **同 Day 13 嗰條規矩一致,但今次係反方向用**:Day 13 唔加 static test 係因為 behavioural 已經夠;今次唔加係因為 **static 根本講唔準嗰個 claim**。
+
+### Falsification ×7,真紅零誤傷
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| ① | 人口放闊(唔要 `not: null`) | **1 紅** |
+| ② | `failed` 當 rejection | **1 紅** |
+| ③ | rate 返 `0` 唔返 `null` | **1 紅** |
+| ④ | mean 代 median | **2 紅**(修完 fixture 之後) |
+| ⑤ | fast 門檻改 inclusive | **1 紅** |
+| ⑥ | `abortRun` 補 `decidedAt` | **1 紅** |
+| ⑦ | 拆走 per-reviewer | **5 紅** |
+
+### 數字
+
+api **1243 → 1260 / 85 → 87** 全綠 · tsc 0 / lint 0 · **web 一個字冇改**。W28 drift test **第三次**捉到新 agent surface,snapshot 睇過先更新(**只加一行 `GET /agent/review-stats → roles [ADMIN]`**)。
+
+### 未收
+- 🚧 **`G7-o` R13 監測 UI** —— ⚠️ **同 `G2-j` / `G3-n` 唔同,呢個 UI 唔淨係方便**:G7 個重點就係「**只能靠數字,靠唔到留意**」,而**一個要打 API 先睇到嘅數字,冇人會定期望** ⇒ **R13 嘅緩解措施實際上要等 UI 先真正生效**。⚠️ 擺喺邊未決
+- 🚧 **`G2-j` / `G3-n`** —— 三個 UI 項一齊卡住本機 stack(5433)
+- 🚧 期二剩 `G4`(要重新答 **OQ-7**)· `G5`(要答 **OQ-5**)· `G6`(SSE)

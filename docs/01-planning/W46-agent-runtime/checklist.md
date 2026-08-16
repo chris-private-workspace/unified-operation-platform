@@ -167,7 +167,22 @@
 - [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)
 - [ ] G5 BullMQ 落地 —— 🔴 **開工前要答 OQ-5(`awaiting_approval` 過期)**
 - [ ] G6 SSE transport —— 還 `ADR-0029 A2` 嗰筆基建債
-- [ ] G7 R13 監測:proposal 批准率 / 平均審核秒數
+- [x] G7 ✅ **R13 監測(2026-08-16)** —— api **1243 → 1260 / 85 → 87**,tsc 0 / lint 0,**falsification ×7 真紅零誤傷**。`GET /agent/review-stats?days=30`(**ADMIN only**)
+- [x] G7-a 🔴 **R13 唔係「agent 提議錯嘢」,係「批准嗰個人唔再讀」** —— ADR-0036 D3 擺一個人喺每個寫入前面,而**嗰個就係 Tier 1 成個安全論據**;一個冇人真係做嘅審批步驟,會把個論據變成形式,而**每個畫面照樣印住一個人名喺個決定側邊**。系統一啲都唔會睇落唔同 ⇒ **只能靠數字,靠唔到留意**
+- [x] G7-b 🔴 **讀 `AgentProposal` 唔讀 `AuditLog`** —— audit 側**已經**係一條 query(`AGENT_PROPOSAL_DECIDED` 一條 action 覆蓋 approve + reject,靠 `metadata.reason` 分),但由一條 **free-text reason 嘅前綴**推個批准率,係一個**改一次文案就靜靜變錯**嘅 metric。`status` / `decidedAt` / `approvedById` 三個欄係結構化嘅
+- [x] G7-c 🔴🔴 **人口定義 = `decidedAt != null`,而佢排除嘅嘢先係重點** —— `abortRun` 把一個 run 嘅 pending proposal **批量 reject**,而佢**兩個決定欄都唔寫**(平台執手尾,唔係有人話唔得)。計咗佢哋做 rejection 會把批准率**推低** ⇒ **一個乜都批嘅人,會因為愈多 run 被停而睇落愈嚴謹**。⚠️ **一個 risk metric 喺「令人安心」嗰個方向出錯,衰過冇 metric**
+- [x] G7-d 🔴 **`failed` 計做批准** —— G1 之下,批准人講咗 yes 而八道閘之一拒絕咗,就標 `failed`。**R13 問嘅係個人仲讀唔讀,而佢講咗 yes**。當成 rejection 會令一個 reviewer **愈係要平台救佢就睇落愈有懷疑精神** —— 啱啱相反,而且會喺**出事嗰刻**顯示成一條改善緊嘅趨勢
+- [x] G7-e 🔴 **兩個指標唔對稱,而個 DTO 明文寫低咗點讀** —— **`fastDecisions` 係證據**(幾秒就決定咗 = 冇讀過,唔使任何假設);**`medianSecondsToDecide` 唔係**:個鐘由 proposal **建立**嗰刻開始行,唔係由人**望到**嗰刻,所以一個長 median 可以係「審得仔細」亦可以係「冇人喺度」—— **由呢度分唔到**。一個把慢 median 當勤力嚟展示嘅 dashboard,就係自己作嗰個令人安心嘅解讀
+- [x] G7-f ✅ **median 唔係 mean** —— 一單隔夜批准 = 14 個鐘,足以把十單 5 秒嘅平均值拉過任何有用嘅門檻
+- [x] G7-g 🔴 **per-reviewer,因為 aggregate 答唔到** —— 一隊人整體 70%,**可以入面有一個 100% 兼平均四秒**,而 aggregate 就係嗰個藏住佢嘅數字。**一個講唔出佢講緊邊個嘅 metric,冇人 act 得到。**(⚠️ R3:plan B7 只寫「批准率 / 平均審核秒數」兩個 aggregate 數,per-reviewer 係本單加嘅)
+- [x] G7-h 🔴 **H4:只攞 `displayName`,冇 email** —— 攞名係因為 cuid 冇人 act 得到,而**一個冇人 act 得到嘅 metric 等於冇做**;只攞名係因為 email 對呢條問題**一個字都冇加**。endpoint **ADMIN only**,同 `/admin/audit` 一樣理由(ADR-0009 D7)。條 test 用 `Object.keys().sort()` 釘死成個 row 得八個欄
+- [x] G7-i ✅ **`null` 唔係 `0`** —— `approvalRate: 0` 讀落係「呢隊人乜都唔批」,而事實係「乜都未有」。同 `lastSuccessAt: null`(ADR-0010 D4)同一條規矩
+- [x] G7-j ✅ **冇 row cap,刻意** —— 一個被截斷嘅統計係一個**望落啱嘅錯統計**;bound 佢嘅係個 window,而 proposal 以人類速度到達
+- [x] G7-k 🔴🔴 **falsification 揭到我一條 test 靠對稱嘅 fixture 綠** —— `averages the two middle values` 原本用 **10/20/30/40**,而嗰組數嘅 **mean 同 median 都係 25** ⇒ **把實作換成 mean,佢照綠**。改成 10/20/30/**200**(median 25 / mean 65)⇒ 同一個 falsification 由 1 紅變 2 紅。**佢 assert 緊個數字,唔係嗰個統計量**
+- [x] G7-l 🔴 **試過寫一條 boundary static test,寫完拆咗** —— 想 assert「全 `src/` 只有 approval orchestrator 寫 `decidedAt`」,但個 grep **分唔開 write 同 Prisma `select`/`where`**(`decidedAt: true` 係 select、`decidedAt: { not: null }` 係 where)⇒ 兩個 false positive。**改成一條 behavioural test 釘住真正嘅風險位**(`abortRun` 個 `updateMany` 冇 `decidedAt` / `approvedById`),而「冇第二個地方寫」嗰半**既有嘅 `writersOf('agentProposal')` 已經覆蓋咗**
+- [x] G7-m ✅ **Falsification ×7 真紅零誤傷**:①人口放闊(唔要 `not: null`)⇒ **1 紅** ②`failed` 當 rejection ⇒ **1 紅** ③rate 返 `0` 唔返 `null` ⇒ **1 紅** ④mean 代 median ⇒ **2 紅**(修完 fixture 之後)⑤fast 門檻改 inclusive ⇒ **1 紅** ⑥`abortRun` 補 `decidedAt` ⇒ **1 紅** ⑦拆走 per-reviewer ⇒ **5 紅**
+- [x] G7-n ✅ **W28 drift test 第三次捉到新 agent surface** —— snapshot 睇過先更新:**只加一行 `GET /agent/review-stats → roles [ADMIN]`**
+- [ ] G7-o 🚧 **UI 未做** —— 見下面「已知延後」
 
 ---
 
@@ -185,6 +200,7 @@
 | 🆕 infra | 🟡 **草擬咗,未發出** → `docs/13-deployment/11-azure-openai-infra-request.md`(**Q0 治理 + Q1 auth/E4 + Q2 deployment/OQ-1 + Q3 abuse monitoring + Q4 outbound**,連一段可直接發嘅英文全文) | W46 **第一個外部依賴**,而本項目 infra 依賴 B1/B4/B7/B8/B9 五次每次都要等。🔴 **草擬過程查到一個唔喺任何 W46 文件入面嘅障礙**:`05-rci-par-process.md:4`「**開資源前必經 PAR**」,而同一份 PAR Section 1 `:54` **明文申報咗「Azure OpenAI 暫無」** ⇒ 開佢同我哋自己寫落治理文件嗰句相反;而嗰份 PAR **仲未提交**,`09-dev-as-built.md:125`「DEV 要唔要走 PAR,要問」**亦從來冇問過** | 🟢 **路已揀 = B**(Chris 2026-08-16:治理同技術同一封,`Q0` 第一條)⇒ **份嘢可以直接發,等 Chris 發**。**A14 嘅時間表由佢決定** |
 | ~~F10-2e~~ | ~~**`agent-run.controller.ts` / `agent-approval.controller.ts` 兩個都冇 spec 檔**;而 **BUG-011 個教訓逐字就係呢條縫**(三層 test 可以全綠而 bug 住喺中間)~~ | 🟢 **2026-08-16 同日補咗** —— 8 + 4 條,api **1199 / 83**;兩個 controller falsification 各一真紅零誤傷。🔴 **順帶查證到:呢個 app 全 `src/` 零個 `ClassSerializerInterceptor`** ⇒ **DTO 係文件唔係過濾器**,`runState` 唯一嗰道閘就係 service 個 `select` | ✅ |
 | ~~F11-1b~~ | ~~**`STEP_LABEL` 同 `tool-registry.ts` 冇嘢釘住兩者對應**~~ | 🟢 **2026-08-16 收咗,喺 `G1` 之前**(佢就係第一個會踩中呢個缺口嘅改動)。**揀咗 parity test 唔係改 render 行為** —— §13「兩種都 reasonable → 揀更接近既有 pattern 嗰個」,而 source-scanning test 正正就係 `agent.boundary.spec.ts` 個 idiom;改 render 反而會令一個**今日唔存在**嘅狀態霸咗畫面一個位置。`ai-assist-step-labels.test.ts`(4 條)讀 API 個 registry 對返 `STEP_LABEL`,**兩個方向都驗**(缺 label / 多咗一個冇嘢 emit 得到嘅 label)。⚠️ **順帶要處理埋一個 lint 訊號**:由 component 檔 export 一個 constant 會破 fast refresh ⇒ `STEP_LABEL` 搬咗去 `ai-assist-labels.ts`(lint 建議嘅做法,亦令 test 個 import 乾淨咗)。falsification:抽走 `get_ledger` ⇒ **1 紅 3 綠**,而**錯誤訊息直接點名嗰個 tool** | ✅ |
+| 🆕 **G7-o** | **R13 監測冇 UI** —— 數字齊晒但要打 API 先睇到 | ⚠️ **同前兩個唔同,呢個 UI 唔淨係方便** —— G7-a 個重點就係「**只能靠數字,靠唔到留意**」,而一個要打 API 先睇到嘅數字,**冇人會定期望** ⇒ **R13 嘅緩解措施實際上要等 UI 先真正生效**。⚠️ 亦要諗定擺喺邊(Settings 一個新 tab? Audit 頁旁邊?)—— **未決** | **同 `G2-j` / `G3-n` 一批**(期二 render 一次過) |
 | 🆕 **G3-n** | **Kill switch 冇 UI** —— 狀態(`enabled` / `settled` / 幾多個 run park 住)同開關掣 | **enforcement 全部做齊咗**,缺嘅係方便;ADMIN 而家打 `PATCH /api/agent/kill-switch` 開關得到(沿用 **CH-026 `G-7`** 由 API 做嘅先例)。⚠️ 一齊排係因為佢一定要 H6 render 驗,而 render 本身卡住 —— 唔想出一個「寫好但冇 render 驗過」嘅安全控制 | **同 `G2-j` 一批**(期二 render 一次過) |
 | 🆕 **G2-j** | **`PermissionsPanel` 嘅 H6 light + dark 真 render 未做** | **卡本機 stack**:`ai-doc-extraction-db` 揸住 **5433**(§9 硬衝突,停佢要 Chris 批),而 `render-check.mjs` 要 driver 真 app + ADMIN session(`AUTH_DEV_BYPASS=true` 可以頂到 auth 嗰半)。⚠️ **唔係「低風險所以唔使做」** —— 用到嘅 primitive(`purple` badge / `text-fg-muted` 段落)兩個 theme 都已經有證據,但 **CH-030 個教訓就係四層 test 全綠都捉唔到「佢喺邊」**,而呢版新增咗一個**明顯長過舊值**嘅 guard cell(`AgentApprovalController` 23 字 vs `IntakeKeyGuard` 14 字) | **期二 render 一次過做**(G3/G6/G7 掂到 UI 就一齊),command:`node apps/web/scripts/render-check.mjs --out <dir> --url /settings` |
 | R11–R19 | 未入 `RISK_REGISTER.md`(🆕 R17–R19 由 ADR-0037 新增) | living doc,ADR / plan 已記 | 期一收尾 |
