@@ -98,6 +98,16 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         // write surface W46 added was caught by this test on the run that
         // introduced it, not by review.
         'AgentApprovalController',
+        // 期二 G3 — /agent/kill-switch, @Roles(ADMIN). NARROWER than the two
+        // agent surfaces above, and deliberately: they decide what happens to
+        // one request, this decides whether the capability exists at all.
+        //
+        // 🔴 This line is here because the drift test demanded it on the run
+        // that added the controller — the second time in W46 that a new agent
+        // write surface was caught by the matrix rather than by review, which
+        // is the argument ADR-0036 made for keeping the agent out-of-process
+        // in the first place.
+        'AgentKillSwitchController',
         // W46 F8 — /agent/runs (start, read, abort), @Roles(ADMIN,REGIONAL).
         // Neither ADR-0036 nor the plan settles who may START a run, so this
         // matches the approval surface: a run costs a model call and creates

@@ -7,7 +7,11 @@ import { RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertOpcoScope, scopeWhere } from '../auth/opco-scope';
 import { scrubPii } from '../integration/scrub-pii';
-import type { AgentTool, AgentToolContext } from './agent-tool';
+import {
+  AgentBlastRadiusExceededError,
+  type AgentTool,
+  type AgentToolContext,
+} from './agent-tool';
 
 /**
  * W46 F2 / ADR-0036 D2 — the allow-list, and the only place tools exist.
@@ -38,6 +42,42 @@ import type { AgentTool, AgentToolContext } from './agent-tool';
  * has measured. 50 is a starting number, not a finding.
  */
 const MAX_ROWS = 50;
+
+/**
+ * 期二 G3 / plan B4 — the blast-radius limit: how many tool calls one run may
+ * make **on its own**.
+ *
+ * 🔴 Read the qualifier. This counts tools with `needsApproval: false` — the
+ * ones the agent can reach without anybody saying yes. A `propose_*` call is
+ * deliberately NOT counted and NOT capped, because it is already bounded by
+ * something far stronger than a number: a person has to decide it (D3). Capping
+ * it as well would mean an approved proposal could be refused by a counter
+ * AFTER the platform had already done the work.
+ *
+ * 🔴 And be precise about what this bounds. A Tier 1 agent cannot write
+ * (D3), so the blast radius of an unbounded run is COST and LOAD, not damage —
+ * a model call per turn and a database read per tool. Calling this a safety
+ * limit would overstate it; the safety property is that there is nothing to
+ * limit, and that one belongs to the approval gate.
+ *
+ * What it is NOT: a stop. Refusing a call bounds what the run DOES; how long
+ * the run keeps talking is bounded by the runtime's own turn ceiling
+ * (`MAX_TURNS` in the provider), which is an SDK-side second layer and is
+ * labelled as one (D2 — never the gate).
+ *
+ * 25 is a starting number, not a finding. A real AI-Assist run reads one
+ * request, searches the catalogue a few times, maybe checks a ledger: three to
+ * ten. The ceiling is deliberately several times that, because a limit tight
+ * enough to bite in normal use gets raised until it does not.
+ */
+export const MAX_AUTONOMOUS_TOOL_CALLS = 25;
+
+/** What one run has spent, and whether it may spend more. */
+export interface BlastRadius {
+  used: number;
+  limit: number;
+  exceeded: boolean;
+}
 
 /**
  * 🔴 plan §3.4 / R15 — a SKU is named by its `skuId` GUID and nothing else.
@@ -82,15 +122,39 @@ function optionalString(args: Record<string, unknown>, key: string): string {
 export class AgentToolRegistry {
   private readonly tools: readonly AgentTool[];
 
+  /**
+   * The names the blast-radius counter watches — every tool the agent can reach
+   * without a human, derived from `needsApproval` rather than listed.
+   *
+   * 🔴 Derived, because a hand-written list here would be a second place to
+   * remember, and the failure it produces is silent in the worst direction: a
+   * new autonomous tool missing from the list is a tool with no ceiling at all.
+   */
+  private readonly autonomousNames: readonly string[];
+
   constructor(private readonly prisma: PrismaService) {
-    this.tools = Object.freeze([
+    const defined = [
       this.listPendingRequests(),
       this.getRequest(),
       this.searchCatalog(),
       this.getLedger(),
       this.proposeLineItems(),
       this.proposeAssign(),
-    ]);
+    ];
+
+    this.autonomousNames = Object.freeze(
+      defined.filter((tool) => !tool.needsApproval).map((tool) => tool.name),
+    );
+
+    /**
+     * 🔴 Every tool is wrapped, at the one place tools come into existence.
+     *
+     * The alternative — a check at the top of each `execute` — is six copies
+     * today and a seventh that somebody forgets. Wrapping here means a tool
+     * added next month is capped because of where it was declared, not because
+     * its author remembered.
+     */
+    this.tools = Object.freeze(defined.map((tool) => this.capped(tool)));
   }
 
   /** Every tool an agent has. There is no second source. */
@@ -100,6 +164,64 @@ export class AgentToolRegistry {
 
   get(name: string): AgentTool | undefined {
     return this.tools.find((tool) => tool.name === name);
+  }
+
+  /**
+   * 期二 G3 — what this run has spent of its autonomous budget.
+   *
+   * 🔴 Counted from `AgentStep`, which is the platform's own record of what it
+   * observed happening (D4) — not from an in-memory tally. Three reasons, and
+   * the first two are the ones that decide it: a run resumes after an approval
+   * that may land the next morning, in a different process; and a registry
+   * holding per-run counters would be a map nobody empties.
+   *
+   * ⚠️ The honest cost of reading the ledger: if step writes were failing, the
+   * count would stop advancing and the cap would stop biting — a fail-OPEN
+   * direction. It is accepted rather than hidden, because a platform whose
+   * action ledger is not being written has a louder problem than an
+   * over-talkative agent, and `onToolExecuted` is deliberately unable to fail a
+   * tool call (provider) so the alternative wiring is not available anyway.
+   *
+   * ⚠️ `status: 'ok'` — a refused or broken call did not spend the budget.
+   * Counting failures too would let one flaky read exhaust a run's allowance.
+   */
+  async blastRadius(runId: string): Promise<BlastRadius> {
+    const used = await this.prisma.agentStep.count({
+      where: {
+        runId,
+        status: 'ok',
+        key: { in: [...this.autonomousNames] },
+      },
+    });
+    return {
+      used,
+      limit: MAX_AUTONOMOUS_TOOL_CALLS,
+      exceeded: used >= MAX_AUTONOMOUS_TOOL_CALLS,
+    };
+  }
+
+  /**
+   * The ceiling, applied around one tool.
+   *
+   * A tool that needs approval passes through untouched — see
+   * `MAX_AUTONOMOUS_TOOL_CALLS` for why that is the design and not an oversight.
+   */
+  private capped(tool: AgentTool): AgentTool {
+    if (tool.needsApproval) return tool;
+    return {
+      ...tool,
+      execute: async (args: unknown, ctx: AgentToolContext) => {
+        const budget = await this.blastRadius(ctx.runId);
+        if (budget.exceeded) {
+          throw new AgentBlastRadiusExceededError(
+            budget.used,
+            budget.limit,
+            tool.name,
+          );
+        }
+        return tool.execute(args, ctx);
+      },
+    };
   }
 
   // ── read tools (needsApproval: false) ──────────────────────

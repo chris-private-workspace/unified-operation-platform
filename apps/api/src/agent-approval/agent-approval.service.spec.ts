@@ -8,6 +8,7 @@ import { AssignService } from '../fulfilment/assign.service';
 import { AiAssistService } from '../agent/ai-assist.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
+import { AgentKillSwitchService } from '../agent/kill-switch.service';
 
 /**
  * W46 A10 — approve creates the line items and the run carries on; reject
@@ -53,6 +54,7 @@ describe('AgentApprovalService', () => {
   let assign: { assignLineItem: jest.Mock };
   let aiAssist: { resumeRun: jest.Mock };
   let audit: { log: jest.Mock };
+  let killSwitch: { assertEnabled: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -84,6 +86,9 @@ describe('AgentApprovalService', () => {
       proposals: [],
     });
 
+    // 期二 G3 — permits by default; the gate has its own describe below.
+    killSwitch = { assertEnabled: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AgentApprovalService,
@@ -92,6 +97,7 @@ describe('AgentApprovalService', () => {
         { provide: AssignService, useValue: assign },
         { provide: AiAssistService, useValue: aiAssist },
         { provide: AuditService, useValue: audit },
+        { provide: AgentKillSwitchService, useValue: killSwitch },
       ],
     }).compile();
     service = moduleRef.get(AgentApprovalService);
@@ -382,6 +388,72 @@ describe('AgentApprovalService', () => {
       expect(aiAssist.resumeRun).toHaveBeenCalledWith('run-1', [
         { ref: 'call-1', approved: false, reason },
       ]);
+    });
+  });
+
+  // ── 期二 G3 — the kill switch ───────────────────────────────
+
+  /**
+   * 🔴 THE branch a kill switch has to cover, and the one easiest to miss.
+   *
+   * Approving is where a real licence gets assigned (G1). An agent reported as
+   * "switched off" while an approval could still push an assignment through
+   * would be off in the reassuring sense and on in the only sense that matters
+   * — and the screen would say OFF the whole time.
+   */
+  describe('🔴 G3 — approving is gated, rejecting is not', () => {
+    const switchedOff = () =>
+      killSwitch.assertEnabled.mockRejectedValue(
+        new ConflictException('The AI-Assist agent is switched off.'),
+      );
+
+    it('refuses to approve, and touches no domain path at all', async () => {
+      switchedOff();
+
+      await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      expect(requests.addLineItem).not.toHaveBeenCalled();
+      expect(assign.assignLineItem).not.toHaveBeenCalled();
+      expect(aiAssist.resumeRun).not.toHaveBeenCalled();
+      // Before the proposal is even loaded — a decision on a capability that
+      // is off does not depend on which proposal it was.
+      expect(prisma.agentProposal.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('refuses to approve an assign proposal too', async () => {
+      switchedOff();
+      prisma.agentProposal.findUnique.mockResolvedValue(
+        pendingProposal({ kind: 'assign', payload: { lineItemId: 'line-1' } }),
+      );
+
+      await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(assign.assignLineItem).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 The asymmetry, asserted because it looks like an omission.
+     *
+     * Killing the agent stops it CAUSING things; it must not stop people
+     * clearing up after it. Gating rejection too would strand every pending
+     * proposal until somebody switched the agent back on — which is the
+     * opposite of what an operator flipped it for, and would make the switch
+     * something you hesitate to use.
+     */
+    it('still lets a person reject, so the queue can be cleared', async () => {
+      switchedOff();
+
+      await expect(
+        service.reject('p1', 'Not while the agent is off', approver),
+      ).resolves.toBeDefined();
+
+      const { data } = prisma.agentProposal.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.status).toBe('rejected');
     });
   });
 

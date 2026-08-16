@@ -19,6 +19,7 @@ import {
 import { REDACTED } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
+import { AgentKillSwitchService } from './kill-switch.service';
 
 /**
  * W46 F5 — A5, A6 and A7.
@@ -87,6 +88,7 @@ describe('AiAssistService', () => {
     $transaction: jest.Mock;
   };
   let audit: { log: jest.Mock };
+  let killSwitch: { assertEnabled: jest.Mock };
   /** Set while `$transaction`'s callback is running (see the mock below). */
   let insideTransaction = false;
   let auditSawOpenTransaction: boolean | null = null;
@@ -176,15 +178,76 @@ describe('AiAssistService', () => {
       resume: jest.fn(),
     };
 
+    // 期二 G3 — the kill switch. A stub that permits by default, so the tests
+    // below keep asking their own questions; the gate has its own describe.
+    killSwitch = { assertEnabled: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AiAssistService,
         { provide: PrismaService, useValue: prisma },
         { provide: AgentRuntimeProvider, useValue: runtime },
         { provide: AuditService, useValue: audit },
+        { provide: AgentKillSwitchService, useValue: killSwitch },
       ],
     }).compile();
     service = moduleRef.get(AiAssistService);
+  });
+
+  /**
+   * 期二 G3 / plan B5 — the switch is asked BEFORE anything is spent.
+   *
+   * 🔴 Asserting the ORDER, not just the call. A kill switch consulted after
+   * the model call has already been paid for has stopped nothing that costs
+   * anything, and "it was checked" would be true of that version too.
+   */
+  describe('🔴 G3 — the kill switch gates a run', () => {
+    it('refuses to start when the agent is switched off, before touching anything', async () => {
+      killSwitch.assertEnabled.mockRejectedValue(
+        new ConflictException('The AI-Assist agent is switched off.'),
+      );
+
+      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      expect(runtime.start).not.toHaveBeenCalled();
+      expect(prisma.agentRun.create).not.toHaveBeenCalled();
+      // Not even the request read: the switch is the first thing in the method.
+      expect(prisma.request.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('refuses to resume when the agent is switched off', async () => {
+      killSwitch.assertEnabled.mockRejectedValue(
+        new ConflictException('The AI-Assist agent is switched off.'),
+      );
+
+      await expect(
+        service.resumeRun('run-1', [{ ref: 'call-1', approved: true }]),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(runtime.resume).not.toHaveBeenCalled();
+      // The run row is not even loaded — nothing about this run matters while
+      // the capability is off.
+      expect(prisma.agentRun.findUnique).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The race the second check exists for: an admin flips the switch between
+     * the gate and the upsert. `startRun` reads `active` again at the point it
+     * has the row in hand, and that read is the one that catches it.
+     */
+    it('still refuses when the principal was deactivated mid-start', async () => {
+      prisma.agentPrincipal.upsert.mockResolvedValue({
+        id: 'principal-1',
+        active: false,
+      });
+
+      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(runtime.start).not.toHaveBeenCalled();
+    });
   });
 
   // ── A6 — needsApproval really stops the run ────────────────

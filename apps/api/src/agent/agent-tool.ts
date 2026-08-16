@@ -48,6 +48,32 @@ export interface AgentToolContext {
   user: AppUser;
 }
 
+/**
+ * 期二 G3 — thrown when a run has spent its autonomous tool-call budget.
+ *
+ * A named class rather than a bare `Error` so a reader of a stack trace, a log
+ * line or a step detail can tell this apart from a tool that genuinely broke.
+ * They are different facts: one is the platform enforcing a limit, the other is
+ * something going wrong.
+ *
+ * Deliberately NOT a Nest HttpException. It is thrown INSIDE a tool call, where
+ * there is no HTTP response to shape — the adapter turns it into an
+ * `AgentStep`, and inventing a status code here would suggest a request that
+ * does not exist.
+ */
+export class AgentBlastRadiusExceededError extends Error {
+  constructor(
+    readonly used: number,
+    readonly limit: number,
+    toolName: string,
+  ) {
+    super(
+      `This run has used its ${limit} autonomous tool calls and cannot call ${toolName} again`,
+    );
+    this.name = 'AgentBlastRadiusExceededError';
+  }
+}
+
 export interface AgentTool {
   name: string;
   /**

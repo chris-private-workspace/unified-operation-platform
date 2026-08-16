@@ -7,7 +7,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { AppUser } from '@prisma/client';
-import { AgentToolRegistry } from './tool-registry';
+import { AgentToolRegistry, MAX_AUTONOMOUS_TOOL_CALLS } from './tool-registry';
+import { AgentBlastRadiusExceededError } from './agent-tool';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -35,6 +36,11 @@ describe('AgentToolRegistry', () => {
     opcoSkuLedger: { findUnique: jest.Mock };
     agentProposal: { findFirst: jest.Mock };
     requestLineItem: { findUnique: jest.Mock };
+    // 期二 G3 — the blast-radius counter reads the step ledger before every
+    // autonomous tool call. Defaults to 0 below: these tests are about what the
+    // tools do, and a budget that bites would make every one of them fail for
+    // the wrong reason. The budget has its own describe.
+    agentStep: { count: jest.Mock };
   };
 
   const tool = (name: string) => {
@@ -50,6 +56,7 @@ describe('AgentToolRegistry', () => {
       opcoSkuLedger: { findUnique: jest.fn() },
       agentProposal: { findFirst: jest.fn() },
       requestLineItem: { findUnique: jest.fn() },
+      agentStep: { count: jest.fn().mockResolvedValue(0) },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -123,6 +130,110 @@ describe('AgentToolRegistry', () => {
         'lineItemId',
         'reasoning',
       ]);
+    });
+
+    /**
+     * 期二 G3 / plan B4 — the blast-radius limit.
+     *
+     * 🔴 The claim is NOT "there is a constant somewhere". It is that a run
+     * which has spent its budget cannot make another autonomous call, that the
+     * budget is read from the platform's own step ledger, and that a tool a
+     * PERSON has approved is exempt — three facts, and the third is the one a
+     * reader will assume is a bug unless it is asserted on purpose.
+     */
+    describe('🔴 G3 — the blast-radius limit', () => {
+      const budgetSpent = () =>
+        prisma.agentStep.count.mockResolvedValue(MAX_AUTONOMOUS_TOOL_CALLS);
+
+      it('refuses an autonomous tool once the run has spent its budget', async () => {
+        budgetSpent();
+
+        await expect(
+          tool('search_catalog').execute({ query: 'e5' }, ctx(admin)),
+        ).rejects.toBeInstanceOf(AgentBlastRadiusExceededError);
+
+        // 🔴 And it refused BEFORE doing the work. A limit that runs the query
+        // and then throws has capped nothing that costs anything.
+        expect(prisma.skuCatalog.findMany).not.toHaveBeenCalled();
+      });
+
+      it('counts only successful autonomous calls, per run', async () => {
+        budgetSpent();
+        await tool('search_catalog')
+          .execute({ query: 'e5' }, ctx(admin))
+          .catch(() => undefined);
+
+        // Each half of this `where` is load-bearing and each was a decision:
+        // scoped to THIS run; `ok` only, so one flaky read cannot exhaust a
+        // run's allowance; and the names come from `needsApproval`, so a new
+        // autonomous tool is counted because of what it is.
+        expect(prisma.agentStep.count).toHaveBeenCalledWith({
+          where: {
+            runId: 'run-1',
+            status: 'ok',
+            key: {
+              in: [
+                'list_pending_requests',
+                'get_request',
+                'search_catalog',
+                'get_ledger',
+              ],
+            },
+          },
+        });
+      });
+
+      /**
+       * 🔴 The exemption, asserted rather than left to be discovered.
+       *
+       * A `propose_*` call is bounded by a person having said yes, which is a
+       * stronger limit than a counter. Capping it too would mean the platform
+       * could do the real work on an approval and then have a counter refuse
+       * the tool that reports the outcome back — a failure invented by the
+       * limit itself.
+       */
+      it('never caps a tool a person had to approve', async () => {
+        budgetSpent();
+        prisma.agentProposal.findFirst.mockResolvedValue({
+          id: 'p1',
+          status: 'executed',
+          approvedById: 'u-admin',
+          payload: {},
+        });
+        prisma.requestLineItem.findUnique.mockResolvedValue({
+          id: 'line-1',
+          stage: 'READY',
+          request: { opcoId: 'opco-a' },
+        });
+
+        await expect(
+          tool('propose_assign').execute(
+            { lineItemId: 'line-1', reasoning: 'ready' },
+            ctx(admin),
+          ),
+        ).resolves.toMatchObject({ proposalId: 'p1' });
+
+        // Not merely "it did not throw": the budget was never even consulted.
+        expect(prisma.agentStep.count).not.toHaveBeenCalled();
+      });
+
+      it('lets an autonomous call through while budget remains', async () => {
+        prisma.agentStep.count.mockResolvedValue(MAX_AUTONOMOUS_TOOL_CALLS - 1);
+        prisma.skuCatalog.findMany.mockResolvedValue([]);
+
+        await expect(
+          tool('search_catalog').execute({ query: 'e5' }, ctx(admin)),
+        ).resolves.toEqual([]);
+      });
+
+      it('reports what a run has spent', async () => {
+        prisma.agentStep.count.mockResolvedValue(3);
+        await expect(registry.blastRadius('run-1')).resolves.toEqual({
+          used: 3,
+          limit: MAX_AUTONOMOUS_TOOL_CALLS,
+          exceeded: false,
+        });
+      });
     });
 
     it('gives every tool a strict-mode-shaped schema', () => {

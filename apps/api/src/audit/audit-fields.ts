@@ -166,6 +166,19 @@ export const AUDIT_ACTIONS = {
    * subtraction, which is how nobody runs it.
    */
   AGENT_PROPOSAL_DECIDED: 'agent.proposal_decided',
+  /**
+   * 期二 G3 — an admin switched the AI-Assist agent off, or back on.
+   *
+   * ⚠️ **A deliberate deviation from ADR-0036 D5's wording**, flagged rather
+   * than slipped in: D5 says `AuditLog` takes "two new actions" for W46. Its
+   * SUBJECT, though, is the transcript — free text of unpredictable shape and
+   * large volume, which would turn the whitelist into a formality. This row is
+   * a boolean and an actor. It is the shape the whitelist was built for, and
+   * the alternative is an admin control that changes what the platform will do
+   * and leaves no record of who changed it — which is the thing ADR-0009
+   * exists to prevent. Recorded in the W46 changelog (R3) for a decision.
+   */
+  AGENT_KILL_SWITCH_SET: 'agent.kill_switch_set',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -185,7 +198,8 @@ export type AuditTargetType =
   | 'Request'
   | 'SyncSweep'
   | 'AgentRun'
-  | 'AgentProposal';
+  | 'AgentProposal'
+  | 'AgentPrincipal';
 
 /**
  * Per-target allow-list. Only these keys can reach `before` / `after`.
@@ -327,6 +341,17 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
      * `metadata.reason`.
      */
     AgentProposal: [],
+    /**
+     * 期二 G3 — the ONE agent target that is not event-only, and the reason is
+     * the reason `AppUser` carries email and displayName: `active` IS the
+     * audited change. An entry saying "somebody set the kill switch" without
+     * saying which way cannot answer the only question anyone will ask of it.
+     *
+     * 🔴 One key, and it stays one. `name` and `runtime` are not audited here
+     * because nothing on this path changes them, and a whitelist entry that is
+     * wider than the write it covers is how the next widening gets argued for.
+     */
+    AgentPrincipal: ['active'],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */

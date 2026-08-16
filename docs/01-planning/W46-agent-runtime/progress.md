@@ -894,3 +894,84 @@ api **1212 → 1218 / 83** 全綠 · web **398 → 403**(6 紅 = pre-existing `l
 ### 未收
 - 🚧 **`G2-j` H6 真 render** —— 卡本機 stack(`ai-doc-extraction-db` 揸住 5433,停佢要 Chris 批)。**唔係「低風險所以唔使做」**:用到嘅 primitive 兩個 theme 都有證據,但 **CH-030 嘅教訓就係四層 test 全綠都捉唔到「佢喺邊」**,而呢版新增咗個明顯長過舊值嘅 guard cell。**期二 render 一次過做。**
 - 🚧 期二剩 `G3`–`G7`(`G4` / `G5` 有硬 gate,見上)
+
+---
+
+## Day 13 — 2026-08-16(期二 `G3` — blast-radius limit + kill switch)
+
+**做咗**:兩件事,而佢哋唔係同一件 —— 一個限制 agent **做幾多**,一個令人**即刻閂得到佢**。
+
+### Blast radius:限制嘅係成本同負載,唔係破壞
+
+**先講清楚佢唔係乜。** Tier 1 agent 寫唔到嘢(D3),所以一個冇上限嘅 run 嘅 blast radius 係**每個 turn 一個 model call、每個 tool 一個 DB read** —— 錢同負載,唔係損害。叫佢做安全限制就係講大咗;安全嗰半係「根本冇嘢可以限制」,而嗰半屬於審批那道閘。
+
+`MAX_AUTONOMOUS_TOOL_CALLS = 25`,閘企喺 **registry** 唔喺 adapter。D1 明文寫住「adapter 要決定嘢嘅時候,個決定應該搬返入 registry」—— 而 **G4 個第二個 adapter 就係靠呢點先唔使重寫一次**。每個 tool 喺**出生嗰刻**被 wrap,唔係六個 `execute` 各自 check:下個月加嘅 tool 係**因為佢喺邊度宣告**而被 cap,唔係因為作者記得。
+
+🔴 **Counter 讀 `AgentStep`,唔記喺 memory。** Run 隔夜批准之後喺**另一個 process** resume,而 registry 揸住 per-run counter 就係一個冇人清嘅 map。⚠️ **代價照講**:step 寫唔入就會令 counter 唔郁 ⇒ **fail-OPEN**。接受嘅理由唔係「唔緊要」,係「action ledger 寫唔到」本身係大過「agent 講多咗嘢」嘅警號,而 `onToolExecuted` **結構上唔准 fail 一個 tool call**(provider 明文 swallow 佢個 throw)⇒ **另一種接法根本冇得揀**。
+
+🔴 **`propose_*` 豁免,而佢係最似 bug 嘅設計。** 佢已經俾**一個人**封住,比一個 counter 強一個量級。連佢都 cap 就會出現:平台做完真嘢、把 proposal marked `executed`,然後個 counter 拒絕咗負責報告結果嗰個 tool —— **一個由 limit 自己製造出嚟嘅失敗**。所以有一條 test 專門講佢。
+
+🔴 **R3 deviation:plan B4 寫「超額即停」,實作係「超額即拒」。** 個 cap 令 run **做唔到嘢**,但唔會由平台終止佢。**刻意冇扮成停** —— 冇 budget 嘅 run 淨係喺度講,而講幾耐由 SDK `MAX_TURNS` 封頂(**第二層,明文標住,唔係 gate**,D2)。加一個「殺 run」動作會連埋一個**人可能仲想批**嘅 pending proposal 一齊掟走,而嗰個係人嘅嘢唔係 agent 嘅嘢。
+
+### Kill switch:原本得一道 check,而缺嗰兩道入面有一道係最重要嗰道
+
+`AgentPrincipal.active` **一直存在**(plan §4 一開始就有),`startRun` **一直有 check**。缺嘅係 `resumeRun` 同 —— 🔴 —— **`approve`**。
+
+第三道就係會**派真 licence** 嗰條(G1)。一個寫住「off」而 approve 仍然推得到 assignment 落去嘅 switch,**係喺令人安心嗰個意義上 off、喺唯一有所謂嗰個意義上 on**。而佢最易漏,正正因為批准感覺似「人嘅動作」唔似「agent 嘅動作」—— 但被批准嗰樣嘢係 agent 嘅提議,而個掣講嘅就係平台而家肯唔肯為呢啲嘢行動。
+
+🔴 **攔 approve,唔攔 reject。** 停 agent 係要佢唔好再**引起**嘢,唔係要人執唔到手尾。攔埋 reject 會令每個 pending proposal 困到有人開返個掣 —— **反而令人唔敢撳呢個掣**,而一個唔敢撳嘅 kill switch 等於冇。
+
+**否決咗開第二個 `ConnectorConfig.agentEnabled`**(佢會白送 audit + UI + env fallback):**兩個地方閂得到 agent 就係兩個「佢開唔開住」嘅答案**,而呢個項目喺 BUG-005 / BUG-011 已經用兩個 session 學過呢個形狀。加上 D7 令 principal 本身就係 actor ⇒ **停 actor 語意最準**,順帶零 migration。
+
+### 🔴 `settled` 係第二個事實,唔係 `!enabled`
+
+呢個就係 B5 要求嘅「配置停咗 vs 真係停咗」,而佢**唔係一個顯示問題**:
+
+閂咗掣**唔會**清走已經 park 咗嘅 run。佢哋變成 inert —— 然後**開返掣嗰刻全部翻生**,包括可能揸住一個會派真 licence 嘅 proposal。所以 status 同時報 `enabled` / `liveRuns` / `pendingProposals` / `settled`,而 `settled` 要三個條件齊。
+
+**同 `SeamRuntimeRegistry` 係同一個形狀換咗另一對**:嗰邊係「存落去嘅設定 ≠ 個 process 真係 boot 咗乜」,呢邊係「個掣 ≠ 仲有幾多嘢喺半空」。
+
+🔴 **冇 principal row = `enabled: true`。**「未用過」唔係「閂咗」;倒轉 default 會令一個全新部署報告話 agent 停咗,而事實係下一個撳掣嘅人就會開一個 run。⚠️ 但 `set()` **建得到 row**,所以未用過都閂得到 —— 一個要用過先閂得到嘅 kill switch,喺最應該用嘅時刻最冇用。
+
+### 🔴 R3 deviation:`AuditLog` 加咗第三條 action(要 Chris 過目)
+
+ADR-0036 **D5 明文寫住「只收兩條新 action」**,而我加咗 `agent.kill_switch_set`。
+
+**論據**:D5 個**主題**係 transcript —— 自由文本 + 不可預測結構 + 大量,入咗就等於拆咗 ADR-0009 D5 個 whitelist。而呢一行係**一個 boolean 加一個 actor**,正正就係 whitelist 為咗覆蓋而存在嗰種形狀。**唔加嘅代價**:一個**改變平台會唔會行動**嘅 admin 控制,冇任何記錄講邊個改過 —— 直接違背 ADR-0009 存在嘅理由。
+
+新 target type `AgentPrincipal`,whitelist **只得 `['active']` 一個 key**。`name` / `runtime` 唔審計,因為呢條路唔改佢哋 —— **一個闊過佢覆蓋嘅寫入嘅 whitelist,就係下次擴闊嘅論據**。
+
+### W28 drift test 第二次捉到新 agent write surface
+
+`AgentKillSwitchController` 一加,`discovers every controller in src` 即刻紅 —— **唔係靠 review**。同 F6 嗰次一樣,而嗰次就係「ADR-0036 否決 Option A 嘅理由由論據變成實測」。snapshot **睇過先更新**:只加兩行,兩行都 `[ADMIN]`。
+
+ADMIN-only 比 run / approval 兩個 surface 窄,係本單決定:**嗰兩個決定一張單點算,呢個決定個能力存唔存在。**
+
+### Falsification ×7,真紅零誤傷
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| ① | 個 cap | **2 紅** |
+| ② | `propose_*` 嘅豁免 | **1 紅** |
+| ③ | counter 唔篩 `status: 'ok'` | **1 紅** |
+| ④ | `approve` 個 gate | **2 紅** |
+| ⑤ | 反方向:`reject` 加返 gate | **1 紅** |
+| ⑥ | `settled = !enabled` | **1 紅** |
+| ⑦ | 冇 row 當 disabled | **1 紅** |
+
+⑤ 值得單獨講:佢係**反方向嘅 falsification** —— 唔係「拆走一道閘」,係「加多一道」。個唔對稱睇落似漏咗,所以要有嘢釘住佢係設計。
+
+### 一條刻意冇寫嘅 test
+
+**冇加 boundary static test。** Behavioural test 已經 assert 咗「拆走 gate 會點」,而 static test 只 assert「嗰行字喺唔喺度」⇒ **今次真係重複**。
+
+G1 嗰次唔重複,係因為**存在一個 grep 睇唔到嘅壞版本**(位置參數偷渡)。⇒ **兩者嘅分別唔係「一條睇名一條睇行為」,係「有冇一個 grep 睇唔到嘅壞版本」。**
+
+### 數字
+
+api **1218 → 1243 / 83 → 85** 全綠 · tsc 0 / lint 0(⚠️ 兩個 prettier error `--fix` 咗先過)· **web 一個字冇改**。
+
+### 未收
+- 🚧 **`G3-n` kill switch UI**(狀態 + 開關掣)—— **enforcement 全部做齊,缺嘅係方便**;ADMIN 而家打 `PATCH /api/agent/kill-switch` 開關得到(CH-026 `G-7` 先例)。⚠️ 排喺 render 嗰批,係因為**唔想出一個「寫好但冇 render 驗過」嘅安全控制**
+- 🚧 **`G2-j`** H6 真 render —— 仍然卡 5433
+- 🚧 期二剩 `G4`–`G7`(`G4` 要重新答 **OQ-7** · `G5` 要答 **OQ-5**)

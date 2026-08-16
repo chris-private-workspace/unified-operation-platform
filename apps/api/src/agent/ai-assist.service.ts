@@ -20,6 +20,11 @@ import {
   type ToolExecution,
 } from './agent-runtime.provider';
 import { toTranscript } from './transcript';
+import { AgentKillSwitchService } from './kill-switch.service';
+import {
+  AI_ASSIST_PRINCIPAL,
+  NON_TERMINAL_RUN_STATUSES,
+} from './agent-run-status';
 
 /**
  * W46 F5 / ADR-0036 — the AI-Assist run.
@@ -35,24 +40,6 @@ import { toTranscript } from './transcript';
  * "the agent proposed something" a genuinely different event from "something
  * happened".
  */
-
-/** `AgentPrincipal.name` for this capability (D7 — a principal, not a Role). */
-export const AI_ASSIST_PRINCIPAL = 'ai-assist';
-
-/**
- * Statuses a run can still leave under its own power.
- *
- * plan OQ-3: one request may have at most one run in this set. 🔴 Enforced in
- * the service, not by a DB constraint — "not finished" is a SET of values, and
- * a partial unique index over a set is not something Prisma can express. A
- * constraint that cannot be written is worse than a guard that can, because the
- * schema would look like it were carrying the rule.
- */
-export const NON_TERMINAL_RUN_STATUSES = [
-  'running',
-  'awaiting_approval',
-  'approved',
-] as const;
 
 /**
  * The system prompt.
@@ -100,6 +87,7 @@ export class AiAssistService {
     private readonly prisma: PrismaService,
     private readonly runtime: AgentRuntimeProvider,
     private readonly audit: AuditService,
+    private readonly killSwitch: AgentKillSwitchService,
   ) {}
 
   /**
@@ -110,6 +98,11 @@ export class AiAssistService {
    *   the same one (F1-6).
    */
   async startRun(user: AppUser, requestId: string): Promise<AiAssistRunResult> {
+    // 期二 G3 — first, because everything below it costs something: a model
+    // call, a row, a person's attention. `startRun` already refused a
+    // deactivated principal further down; that check now lives in one place
+    // with the two it was missing (resume, and approval).
+    await this.killSwitch.assertEnabled();
     await this.assertRequestIsUsable(user, requestId);
     await this.assertNoOpenRun(requestId);
 
@@ -126,6 +119,14 @@ export class AiAssistService {
       },
     });
 
+    /**
+     * 期二 G3 — kept as a SECOND read, not left over from before it had a gate.
+     *
+     * `assertEnabled()` above and this line read the row at two different
+     * moments, and an admin hitting the kill switch in between is the exact
+     * situation a kill switch is flipped in. This is the read that has the row
+     * already in hand, so the second check is free.
+     */
     if (!principal.active) {
       throw new ConflictException(
         'The ai-assist agent principal is deactivated',
@@ -220,6 +221,18 @@ export class AiAssistService {
     runId: string,
     decisions: ApprovalDecision[],
   ): Promise<AiAssistRunResult> {
+    /**
+     * 期二 G3 — a resume is the agent running, so the switch applies.
+     *
+     * ⚠️ Worth knowing where this lands in the approval flow: the orchestrator
+     * checks the switch BEFORE it does any domain work, so in practice a
+     * disabled agent never reaches here through that path. This is the guard
+     * for every other way in — a retry, a future queue worker (G5), a direct
+     * call — and it exists because "the caller already checked" is the sentence
+     * that precedes most missing checks.
+     */
+    await this.killSwitch.assertEnabled();
+
     const run = await this.prisma.agentRun.findUnique({
       where: { id: runId },
       select: { id: true, status: true, runState: true, startedBy: true },

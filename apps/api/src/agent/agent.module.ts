@@ -7,7 +7,9 @@ import { AgentRuntimeProvider } from './agent-runtime.provider';
 import { OpenAiAgentsProvider } from './openai-agents.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
 import { AiAssistService } from './ai-assist.service';
+import { AgentKillSwitchService } from './kill-switch.service';
 import { AgentRunController } from './agent-run.controller';
+import { AgentKillSwitchController } from './kill-switch.controller';
 
 /**
  * W46 / ADR-0036 — the agent module.
@@ -47,8 +49,17 @@ import { AgentRunController } from './agent-run.controller';
       ],
     },
     AiAssistService,
+    // 期二 G3 — the kill switch. Exported because `agent-approval` has to ask
+    // it before an approval can assign anything (G1): the branch that can cause
+    // a real side-effect is the one a switch marked "off" must actually stop.
+    AgentKillSwitchService,
   ],
-  controllers: [AgentRunController],
-  exports: [AgentToolRegistry, AgentRuntimeProvider, AiAssistService],
+  controllers: [AgentRunController, AgentKillSwitchController],
+  exports: [
+    AgentToolRegistry,
+    AgentRuntimeProvider,
+    AiAssistService,
+    AgentKillSwitchService,
+  ],
 })
 export class AgentModule {}

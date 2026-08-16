@@ -16,6 +16,7 @@ import {
   AiAssistService,
   type AiAssistRunResult,
 } from '../agent/ai-assist.service';
+import { AgentKillSwitchService } from '../agent/kill-switch.service';
 
 /**
  * W46 F6 / ADR-0036 D3 — a person decides, and only then does anything happen.
@@ -67,6 +68,7 @@ export class AgentApprovalService {
     private readonly assign: AssignService,
     private readonly aiAssist: AiAssistService,
     private readonly audit: AuditService,
+    private readonly killSwitch: AgentKillSwitchService,
   ) {}
 
   /**
@@ -106,6 +108,21 @@ export class AgentApprovalService {
     proposalId: string,
     approver: AppUser,
   ): Promise<AiAssistRunResult> {
+    /**
+     * 🔴 期二 G3 — the kill switch, checked HERE and before anything is loaded.
+     *
+     * This is the branch that can assign a real licence (G1), so an agent that
+     * is "switched off" while an approval still pushes an assignment through
+     * would be off in the reassuring sense and on in the only sense that
+     * matters. It is also the check most easily left out, because approving
+     * feels like a person's action rather than the agent's — but what is being
+     * approved is the agent's proposal, and the switch is what says whether the
+     * platform is currently willing to act on those at all.
+     *
+     * ⚠️ `reject` deliberately has no such check — see `assertEnabled`.
+     */
+    await this.killSwitch.assertEnabled();
+
     const proposal = await this.loadDecidable(proposalId);
 
     if (proposal.kind === 'assign')
