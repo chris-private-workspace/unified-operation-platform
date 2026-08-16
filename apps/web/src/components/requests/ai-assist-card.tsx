@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Loading } from '@/components/ui/feedback-states';
 import { useAgentRun } from '@/hooks/queries';
+import { useAgentRunEvents } from '@/hooks/agent-run-events';
 import {
   useAbortAgentRun,
   useDecideProposal,
@@ -201,6 +202,8 @@ export interface AiAssistCardProps {
 
 export function AiAssistCard({ requestId }: AiAssistCardProps) {
   const { data: run, isLoading } = useAgentRun(requestId);
+  // 期二 G6 — no-op unless the run is still going. See the hook's header.
+  useAgentRunEvents(requestId, run);
   const start = useStartAgentRun(requestId);
   const abort = useAbortAgentRun(requestId);
   const decide = useDecideProposal(requestId);

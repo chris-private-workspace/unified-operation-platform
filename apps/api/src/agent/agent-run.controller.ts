@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  Sse,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -14,9 +15,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { Observable, defer, switchMap } from 'rxjs';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { AiAssistService } from './ai-assist.service';
+import { AgentRunQueue, type AgentRunChangeMessage } from './agent-run.queue';
 import { AgentRunDto, StartAgentRunDto } from './dto/agent-run.dto';
 
 /**
@@ -39,13 +42,16 @@ import { AgentRunDto, StartAgentRunDto } from './dto/agent-run.dto';
 @Roles(Role.ADMIN, Role.REGIONAL)
 @Controller('agent/runs')
 export class AgentRunController {
-  constructor(private readonly aiAssist: AiAssistService) {}
+  constructor(
+    private readonly aiAssist: AiAssistService,
+    private readonly queue: AgentRunQueue,
+  ) {}
 
   @Post()
   @HttpCode(201)
   @ApiOperation({
     summary:
-      'Start an AI-Assist run on a request. It stops for approval before proposing anything.',
+      'Queue an AI-Assist run on a request. Returns immediately with status `running`; watch `/events` or refetch for the result.',
   })
   start(@Body() dto: StartAgentRunDto, @CurrentUser() user: AuthUser) {
     return this.aiAssist.startRun(user, dto.requestId);
@@ -65,6 +71,40 @@ export class AgentRunController {
   @ApiOperation({ summary: 'One run: steps, transcript and proposals.' })
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.aiAssist.getRun(user, id);
+  }
+
+  /**
+   * 期二 G6 / ADR-0039 — server-sent events for one run.
+   *
+   * 🔴 The payload is `{ runId, type }` and carries no run CONTENT (F10). A
+   * client treats it as "refetch now", and `GET /agent/runs/:id` above stays
+   * the single source of truth — including its `select`, which is the thing
+   * keeping `runState`'s unscrubbed model history off the wire.
+   *
+   * 🔴 `defer` rather than an `async` handler, and it is load-bearing: it makes
+   * the permission check run on every SUBSCRIBE, inside the stream, so a 404 or
+   * a scope violation propagates as a stream error instead of being decided
+   * once when Nest set the route up. `getRun` applies OpCo scope against the
+   * run's request — a run someone may not read is a run they may not watch.
+   *
+   * 🔴 Authentication rides the existing httpOnly cookie (F8). `EventSource`
+   * sends no `Authorization` header, so the Bearer path (ADR-0002, still
+   * supported) cannot use this endpoint. No caller needs it today, and adding a
+   * second auth route for a read-only notification channel would be a poor
+   * trade.
+   */
+  @Sse(':id/events')
+  @ApiOperation({
+    summary:
+      'Live notifications that this run changed. Payload carries no content — refetch the run.',
+  })
+  events(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ): Observable<AgentRunChangeMessage> {
+    return defer(() => this.aiAssist.getRun(user, id)).pipe(
+      switchMap(() => this.queue.changes(id)),
+    );
   }
 
   @Post(':id/abort')

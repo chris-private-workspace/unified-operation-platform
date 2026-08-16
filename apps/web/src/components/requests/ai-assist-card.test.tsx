@@ -23,6 +23,10 @@ import type { AgentRun } from '@/lib/api-types';
  */
 
 vi.mock('@/hooks/queries', () => ({ useAgentRun: vi.fn() }));
+// 期二 G6 — the SSE hook reaches for a QueryClient, which this file does not
+// provide. Its own behaviour is `agent-run-events.test.ts`; here it only has to
+// not exist.
+vi.mock('@/hooks/agent-run-events', () => ({ useAgentRunEvents: vi.fn() }));
 vi.mock('@/hooks/mutations', () => ({
   useStartAgentRun: vi.fn(),
   useAbortAgentRun: vi.fn(),

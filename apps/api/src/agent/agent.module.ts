@@ -8,6 +8,8 @@ import { OpenAiAgentsProvider } from './openai-agents.provider';
 import { ClaudeToolRunnerProvider } from './claude-tool-runner.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
 import { AiAssistService } from './ai-assist.service';
+import { AgentRunQueue } from './agent-run.queue';
+import { AgentRunWorker } from './agent-run.worker';
 import { AgentRunExpiryService } from './run-expiry.service';
 import { AgentKillSwitchService } from './kill-switch.service';
 import { AgentReviewStatsService } from './review-stats.service';
@@ -58,6 +60,23 @@ import { AgentReviewStatsController } from './review-stats.controller';
         SeamRuntimeRegistry,
       ],
     },
+    /**
+     * 期二 G5-B + G6 / ADR-0039 — the queue, and the worker that drains it.
+     *
+     * 🔴 Two providers rather than one, because they depend in opposite
+     * directions: `AiAssistService` needs the QUEUE (to enqueue), and the
+     * WORKER needs `AiAssistService` (to execute). Folding them together would
+     * be a circular dependency needing `forwardRef`, and the split is the
+     * honest shape anyway — a transport that knows nothing about runs, and a
+     * worker that knows exactly one verb.
+     *
+     * ⚠️ Neither is exported. Nothing outside this module should be queueing
+     * agent work or publishing agent events; the one legal crossing
+     * (`agent-approval`) reaches `AiAssistService`, which is where the rules
+     * live.
+     */
+    AgentRunQueue,
+    AgentRunWorker,
     AiAssistService,
     // 期二 G5 / OQ-5 — the clock half of run expiry. Not exported: nothing
     // should be triggering expiry on demand. The `resumeRun` path reaches the

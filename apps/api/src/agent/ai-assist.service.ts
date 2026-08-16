@@ -21,6 +21,7 @@ import {
 } from './agent-runtime.provider';
 import { toTranscript } from './transcript';
 import { AgentKillSwitchService } from './kill-switch.service';
+import { AgentRunQueue } from './agent-run.queue';
 import {
   AI_ASSIST_PRINCIPAL,
   NON_TERMINAL_RUN_STATUSES,
@@ -88,14 +89,25 @@ export class AiAssistService {
     private readonly runtime: AgentRuntimeProvider,
     private readonly audit: AuditService,
     private readonly killSwitch: AgentKillSwitchService,
+    private readonly queue: AgentRunQueue,
   ) {}
 
   /**
-   * Start a run against one request.
+   * Start a run against one request — and, since 期二 G5-B, ONLY start it.
+   *
+   * 🔴 **ADR-0039 F1.** This used to wait for the whole model conversation
+   * inside the POST. It now creates the row, hands the id to the queue and
+   * returns; `executeRun` does the work on a worker. The response shape is
+   * unchanged (F2) — same `AiAssistRunResult`, with `status: 'running'` and no
+   * proposals yet — because `AgentRunDto` always allowed for that state and the
+   * card has rendered it since F8. What changed is the MEANING: the response no
+   * longer says "this finished", which is why this needed an ADR at all.
    *
    * @param user the person starting it. Their OpCo scope becomes the run's, and
    *   it is stored on the row so a resume after an overnight approval applies
-   *   the same one (F1-6).
+   *   the same one (F1-6). 期二 G5-B leans on that column a second time: the
+   *   worker has no `user` and reads scope back off the row, exactly as
+   *   `resumeRun` already did.
    */
   async startRun(user: AppUser, requestId: string): Promise<AiAssistRunResult> {
     // 期二 G3 — first, because everything below it costs something: a model
@@ -178,23 +190,86 @@ export class AiAssistService {
       detail: `Run started for request ${requestId}`,
     });
 
+    /**
+     * 🔴 A failed enqueue must END the run, not just report itself.
+     *
+     * The row already exists and says `running`. If this throws and leaves it
+     * there, OQ-3 (one non-terminal run per request) locks that request out of
+     * ever getting another run — and `AgentRunExpiryService` deliberately does
+     * NOT sweep `running`, so nothing would ever clear it. That is the same
+     * permanent-block shape 期二 G5-A found in `resumeRun`, arriving through a
+     * different door: an infrastructure outage rather than an SDK upgrade.
+     */
+    try {
+      await this.queue.enqueue(run.id);
+    } catch (err) {
+      await this.failRun(run.id, err);
+      throw err;
+    }
+
+    return { runId: run.id, status: 'running', proposals: [] };
+  }
+
+  /**
+   * Run the agent. Called by `AgentRunWorker`, off the request thread.
+   *
+   * 🔴 No `user` parameter, and that is the point rather than an omission. The
+   * worker has no session; scope comes from `startedBy` on the row — the same
+   * answer `resumeRun` reaches for, for the same reason (F1-6). A background
+   * job that took scope from anywhere else would be able to widen what a run
+   * can see after the fact.
+   */
+  async executeRun(runId: string): Promise<AiAssistRunResult> {
+    const run = await this.prisma.agentRun.findUnique({
+      where: { id: runId },
+      // 🔴 No `runState` — it carries the model's unscrubbed history and
+      // nothing here needs it (the `getRun` lesson, and `run-expiry` repeats
+      // it). A fresh start has no state to resume from by definition.
+      select: { id: true, status: true, requestId: true, startedBy: true },
+    });
+    if (!run) throw new NotFoundException('Agent run not found');
+
+    /**
+     * ⚠️ Refused WITHOUT calling `failRun`, unlike everything below.
+     *
+     * A run that is no longer `running` has already reached an outcome — it was
+     * aborted, it expired, or a duplicate job is arriving late. Marking it
+     * `failed` here would overwrite a real result with a wrong one, which is
+     * worse than the duplicate job it is guarding against.
+     */
+    if (run.status !== 'running') {
+      throw new ConflictException(
+        `This run is ${run.status}, so there is nothing to execute`,
+      );
+    }
+
     const setup: AgentSetup = {
       instructions: INSTRUCTIONS,
-      ctx: { runId: run.id, user },
+      ctx: { runId: run.id, user: run.startedBy },
       onToolExecuted: (record) => this.recordToolExecution(run.id, record),
     };
 
     /**
-     * Persisting is inside the try for a reason that is easy to miss: if
-     * writing the proposals throws — an unrecognised write tool, a database
-     * hiccup — the run would otherwise sit at `running` forever, which reads
-     * as "still working" to every screen and every later guard. A run that
-     * ended has to say so, whichever half of the work ended it.
+     * 🔴 The kill switch is INSIDE the try, and 期二 G5-A is why.
+     *
+     * `startRun` checked it, but that was before this job was queued and a
+     * switch exists to be flipped in exactly that gap. Were the check to sit
+     * above the `try` — the obvious place — a disabled agent would throw and
+     * leave the row at `running` forever, which is the precise defect G5-A
+     * found in `resumeRun`'s R16 early return. Once was a bug; twice would be
+     * a pattern.
+     *
+     * Persisting is inside for the older reason: if writing the proposals
+     * throws — an unrecognised write tool, a database hiccup — the run would
+     * otherwise sit at `running` forever, which reads as "still working" to
+     * every screen and every later guard. A run that ended has to say so,
+     * whichever half of the work ended it.
      */
     try {
+      await this.killSwitch.assertEnabled();
       const turn: AgentTurn = await this.runtime.start(
         setup,
-        `Work out the licence line items for request ${requestId}.`,
+        `Work out the licence line items for request ${run.requestId}.`,
       );
       return await this.persistTurn(run.id, turn);
     } catch (err) {
@@ -404,6 +479,9 @@ export class AiAssistService {
       data: { status: 'rejected', rejectedReason: 'The run was stopped' },
     });
 
+    // Status + proposals both moved after the step — see `persistTurn`.
+    await this.queue.publishChanged(runId);
+
     return this.getRun(user, runId);
   }
 
@@ -470,6 +548,9 @@ export class AiAssistService {
         rejectedReason: `The run expired before anyone decided: ${reason}`,
       },
     });
+
+    // Status + proposals both moved after the step — see `persistTurn`.
+    await this.queue.publishChanged(runId);
   }
 
   // ── the parts that write ───────────────────────────────────
@@ -508,6 +589,21 @@ export class AiAssistService {
         whoFixes: step.whoFixes ?? null,
       },
     });
+
+    /**
+     * 🔴 期二 G6 / ADR-0039 F10 — the single publish point, and it is single
+     * because this method already was.
+     *
+     * `agent.boundary.spec.ts` asserts `AgentStep` has exactly one writer. That
+     * rule was written for A7 / INC-001 — so nothing can fabricate an action
+     * ledger entry — and it pays a second dividend here: putting the notify on
+     * the one door means every step a run produces reaches the browser, with no
+     * list of call sites to keep in step.
+     *
+     * Awaited, but it cannot throw (`publishChanged` swallows): the step is
+     * already written, and a missed screen update must not undo a real record.
+     */
+    await this.queue.publishChanged(runId);
   }
 
   /**
@@ -545,6 +641,9 @@ export class AiAssistService {
       where: { id: runId },
       data: { status: 'failed', endedAt: new Date() },
     });
+    // The status moved after the step did — see `persistTurn`. Every status
+    // change re-publishes, because `writeStep` cannot see them.
+    await this.queue.publishChanged(runId);
   }
 
   /**
@@ -574,6 +673,18 @@ export class AiAssistService {
           runState: Prisma.DbNull,
         },
       });
+      /**
+       * 🔴 The one status change that writes no step, so the one the single
+       * publish point in `writeStep` cannot cover.
+       *
+       * Without this line a run that completes without proposing anything —
+       * G1's `Nothing proposed.` case — changes status with nothing to
+       * announce, and a browser watching it would sit on `running` until it
+       * gave up. Named here rather than solved by making `writeStep` fire on
+       * status changes too, because that would put a second meaning on the
+       * action ledger.
+       */
+      await this.queue.publishChanged(runId);
       return {
         runId,
         status: 'completed',
@@ -621,6 +732,15 @@ export class AiAssistService {
         runState: turn.state,
       },
     });
+
+    /**
+     * 🔴 And again here, for a race that is easy to miss: the proposal steps
+     * above each published, but the STATUS change is written after them. A
+     * browser that refetched on the last step's notification would read
+     * `running` and then never hear again — the card would show the proposal
+     * with a spinner over it, forever.
+     */
+    await this.queue.publishChanged(runId);
 
     return {
       runId,

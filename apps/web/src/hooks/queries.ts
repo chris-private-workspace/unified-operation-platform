@@ -327,10 +327,15 @@ export function useRequest(id: string | undefined) {
  * "Most recent" rather than "the open one": a finished run's proposals and
  * transcript are still what a person opens the card to read.
  *
- * 🔴 No polling. ADR-0029 A2 deferred SSE and W46 期二 G6 owes that debt, so a
- * long run does not update itself — the alternative, an interval that quietly
- * bills a model call's worth of latency every few seconds, would be inventing a
- * live view the server never promised.
+ * 🔴 Still no polling — and since 期二 G6 that is no longer a gap being lived
+ * with. `useAgentRunEvents` opens an SSE connection while a run is live and
+ * invalidates THIS query on every change (ADR-0039 F10), so the card updates
+ * without an interval that would bill a request every few seconds whether or
+ * not anything moved.
+ *
+ * 🟢 Which is why this hook did not change: a notify-then-refetch channel and a
+ * poll read the same endpoint, so if ACA's ingress turns out to buffer SSE
+ * (F7 / R22), the fallback is an option on this query — not a contract change.
  */
 export function useAgentRun(requestId: string | undefined) {
   return useQuery({

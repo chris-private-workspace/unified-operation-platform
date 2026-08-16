@@ -1,8 +1,11 @@
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
+import { NotFoundException } from '@nestjs/common';
+import { EMPTY, firstValueFrom, of } from 'rxjs';
 import type { AuthUser } from '../auth/current-user.decorator';
 import { ROLES_KEY } from '../auth/roles.decorator';
 import { AgentRunController } from './agent-run.controller';
+import { AgentRunQueue } from './agent-run.queue';
 import { AiAssistService } from './ai-assist.service';
 
 /**
@@ -29,10 +32,14 @@ describe('AgentRunController (F10-2e)', () => {
       getRun: jest.fn(),
       abortRun: jest.fn().mockResolvedValue({ id: 'run-1' }),
     };
+    const queue = {
+      changes: jest.fn().mockReturnValue(EMPTY),
+    };
     const controller = new AgentRunController(
       aiAssist as unknown as AiAssistService,
+      queue as unknown as AgentRunQueue,
     );
-    return { controller, aiAssist };
+    return { controller, aiAssist, queue };
   };
 
   describe('the roles this controller runs under', () => {
@@ -112,6 +119,66 @@ describe('AgentRunController (F10-2e)', () => {
       await controller.abort('run-1', user);
 
       expect(aiAssist.abortRun).toHaveBeenCalledWith(user, 'run-1');
+    });
+  });
+
+  /**
+   * 期二 G6 / ADR-0039 — the SSE route.
+   *
+   * 🔴 What these pin is the ORDER of two things, which is the only way this
+   * endpoint can be dangerous: it hands out a live channel keyed by a run id,
+   * so the scope check has to happen before the channel exists, and it has to
+   * happen on every subscribe rather than once when Nest built the route. That
+   * is what `defer` buys, and a test that only checked "it returns an
+   * observable" would not see it.
+   */
+  describe('the event stream (G6)', () => {
+    it('checks scope on SUBSCRIBE, not when the handler is called', () => {
+      const { controller, aiAssist, queue } = build();
+      aiAssist.getRun.mockResolvedValue({ id: 'run-1' });
+
+      const stream = controller.events('run-1', user);
+
+      // Nothing has run yet — no permission check, no channel. If `getRun` had
+      // been called here, the check would happen once per REQUEST and a
+      // reconnecting EventSource would be trusted on the strength of an older
+      // one.
+      expect(aiAssist.getRun).not.toHaveBeenCalled();
+      expect(queue.changes).not.toHaveBeenCalled();
+
+      stream.subscribe();
+
+      expect(aiAssist.getRun).toHaveBeenCalledWith(user, 'run-1');
+    });
+
+    it('opens no channel when the caller may not read the run', async () => {
+      const { controller, aiAssist, queue } = build();
+      aiAssist.getRun.mockRejectedValue(new NotFoundException('nope'));
+
+      await expect(
+        firstValueFrom(controller.events('run-1', user)),
+      ).rejects.toThrow(NotFoundException);
+
+      // 🔴 The assertion that matters. A stream that errored AFTER subscribing
+      // to the queue would already have attached a listener to the run's
+      // events — the failure would be visible, and the leak would not.
+      expect(queue.changes).not.toHaveBeenCalled();
+    });
+
+    it('streams the queue’s messages for that run once scope passes', async () => {
+      const { controller, aiAssist, queue } = build();
+      aiAssist.getRun.mockResolvedValue({ id: 'run-1' });
+      queue.changes.mockReturnValue(
+        of({ data: { runId: 'run-1', type: 'changed' } }),
+      );
+
+      const first = await firstValueFrom(controller.events('run-1', user));
+
+      expect(queue.changes).toHaveBeenCalledWith('run-1');
+      // 🔴 The payload carries no run CONTENT (F10) — a client is told to
+      // refetch, and `getRun`'s explicit select stays the only thing that
+      // decides what reaches the wire.
+      expect(Object.keys(first.data).sort()).toEqual(['runId', 'type']);
     });
   });
 

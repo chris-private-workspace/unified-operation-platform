@@ -20,6 +20,7 @@ import { REDACTED } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { AgentKillSwitchService } from './kill-switch.service';
+import { AgentRunQueue } from './agent-run.queue';
 
 /**
  * W46 F5 — A5, A6 and A7.
@@ -89,6 +90,7 @@ describe('AiAssistService', () => {
   };
   let audit: { log: jest.Mock };
   let killSwitch: { assertEnabled: jest.Mock };
+  let queue: { enqueue: jest.Mock; publishChanged: jest.Mock };
   /** Set while `$transaction`'s callback is running (see the mock below). */
   let insideTransaction = false;
   let auditSawOpenTransaction: boolean | null = null;
@@ -182,6 +184,13 @@ describe('AiAssistService', () => {
     // below keep asking their own questions; the gate has its own describe.
     killSwitch = { assertEnabled: jest.fn().mockResolvedValue(undefined) };
 
+    // 期二 G5-B — the queue. Permits by default; `agent-run.queue.spec.ts`
+    // owns its own behaviour, and the gate has its own describe below.
+    queue = {
+      enqueue: jest.fn().mockResolvedValue(undefined),
+      publishChanged: jest.fn().mockResolvedValue(undefined),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AiAssistService,
@@ -189,10 +198,32 @@ describe('AiAssistService', () => {
         { provide: AgentRuntimeProvider, useValue: runtime },
         { provide: AuditService, useValue: audit },
         { provide: AgentKillSwitchService, useValue: killSwitch },
+        { provide: AgentRunQueue, useValue: queue },
       ],
     }).compile();
     service = moduleRef.get(AiAssistService);
   });
+
+  /**
+   * 期二 G5-B — start, then run, the way the queue does it end to end.
+   *
+   * 🔴 Most of this file predates ADR-0039, when `startRun` did both. Rather
+   * than rewrite every test around the split, this helper performs it: a
+   * refusal inside `startRun` still propagates identically (the second half
+   * never runs), so the tests that assert refusals keep asserting exactly what
+   * they asserted before. The tests that care about the SPLIT itself call the
+   * two methods directly, below.
+   */
+  const runFully = async (user: AppUser, requestId = 'req-1') => {
+    const started = await service.startRun(user, requestId);
+    prisma.agentRun.findUnique.mockResolvedValueOnce({
+      id: started.runId,
+      status: 'running',
+      requestId,
+      startedBy: user,
+    });
+    return service.executeRun(started.runId);
+  };
 
   /**
    * 期二 G3 / plan B5 — the switch is asked BEFORE anything is spent.
@@ -207,7 +238,7 @@ describe('AiAssistService', () => {
         new ConflictException('The AI-Assist agent is switched off.'),
       );
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         ConflictException,
       );
 
@@ -277,7 +308,7 @@ describe('AiAssistService', () => {
         active: false,
       });
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(runtime.start).not.toHaveBeenCalled();
@@ -290,7 +321,7 @@ describe('AiAssistService', () => {
     it('parks the run at awaiting_approval instead of finishing it', async () => {
       runtime.start.mockResolvedValue(awaitingTurn());
 
-      const result = await service.startRun(admin, 'req-1');
+      const result = await runFully(admin, 'req-1');
 
       expect(result.status).toBe('awaiting_approval');
       // Stated as its own assertion, because "completed" is the exact wrong
@@ -308,7 +339,7 @@ describe('AiAssistService', () => {
     it('writes one AgentProposal carrying the runtime ref and the model args', async () => {
       runtime.start.mockResolvedValue(awaitingTurn());
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       expect(prisma.agentProposal.create).toHaveBeenCalledTimes(1);
       const { data } = prisma.agentProposal.create.mock.calls[0][0] as {
@@ -328,7 +359,7 @@ describe('AiAssistService', () => {
     it('stores runState so the SAME run can resume, not a new one', async () => {
       runtime.start.mockResolvedValue(awaitingTurn());
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       const update = prisma.agentRun.update.mock.calls[0][0] as {
         data: Record<string, unknown>;
@@ -347,7 +378,7 @@ describe('AiAssistService', () => {
       // being one. The stand-in below is deliberately not on any roadmap.
       runtime.start.mockResolvedValue(awaitingTurn('propose_something_new'));
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         BadRequestException,
       );
 
@@ -371,7 +402,7 @@ describe('AiAssistService', () => {
         ]),
       );
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       // The narration produced NO tool execution, so the ledger holds only the
       // lifecycle fact the platform observed itself.
@@ -385,7 +416,7 @@ describe('AiAssistService', () => {
         completedTurn([assistantSays('I have created the line items.')]),
       );
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       const { data } = prisma.agentMessage.createMany.mock.calls[0][0] as {
         data: { role: string; content: string }[];
@@ -413,7 +444,7 @@ describe('AiAssistService', () => {
         completedTurn([assistantSays(`Assign the E5 to ${UPN} today.`)]),
       );
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       const { data } = prisma.agentMessage.createMany.mock.calls[0][0] as {
         data: { content: string }[];
@@ -429,7 +460,7 @@ describe('AiAssistService', () => {
         return completedTurn();
       });
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
       await captured?.onToolExecuted?.({
         toolName: 'search_catalog',
         status: 'ok',
@@ -447,7 +478,7 @@ describe('AiAssistService', () => {
         return completedTurn();
       });
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
       await captured?.onToolExecuted?.({
         toolName: 'get_request',
         status: 'failed',
@@ -468,7 +499,7 @@ describe('AiAssistService', () => {
     it('touches no domain table across a full run that ends in a proposal', async () => {
       runtime.start.mockResolvedValue(awaitingTurn());
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       expect(prisma.request.update).not.toHaveBeenCalled();
       expect(prisma.requestLineItem.create).not.toHaveBeenCalled();
@@ -490,7 +521,7 @@ describe('AiAssistService', () => {
     it('writes exactly one row outside Agent* — the audit event, and nothing else', async () => {
       runtime.start.mockResolvedValue(awaitingTurn());
 
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       expect(audit.log).toHaveBeenCalledTimes(1);
       expect((audit.log.mock.calls[0][1] as { action: string }).action).toBe(
@@ -537,7 +568,7 @@ describe('AiAssistService', () => {
 
   describe('the run row', () => {
     it('stores who started it, so a resumed run recovers the same OpCo scope', async () => {
-      await service.startRun(opcoIt, 'req-1');
+      await runFully(opcoIt, 'req-1');
 
       const { data } = prisma.agentRun.create.mock.calls[0][0] as {
         data: Record<string, unknown>;
@@ -557,13 +588,13 @@ describe('AiAssistService', () => {
         return completedTurn();
       });
 
-      await service.startRun(opcoIt, 'req-1');
+      await runFully(opcoIt, 'req-1');
 
       expect(captured?.ctx).toEqual({ runId: 'run-1', user: opcoIt });
     });
 
     it('records the runtime that is actually running on the principal', async () => {
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       const call = prisma.agentPrincipal.upsert.mock.calls[0][0] as {
         update: { runtime: string };
@@ -576,7 +607,7 @@ describe('AiAssistService', () => {
     it('marks a run that blew up as failed rather than leaving it running', async () => {
       runtime.start.mockRejectedValue(new Error(`Graph said ${UPN} is gone`));
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toThrow();
+      await expect(runFully(admin, 'req-1')).rejects.toThrow();
 
       const update = prisma.agentRun.update.mock.calls.at(-1)?.[0] as {
         data: Record<string, unknown>;
@@ -595,7 +626,7 @@ describe('AiAssistService', () => {
 
   describe('F7 — agent.run_started', () => {
     it('records the event against the run, with the HUMAN as actor', async () => {
-      await service.startRun(opcoIt, 'req-1');
+      await runFully(opcoIt, 'req-1');
 
       expect(audit.log).toHaveBeenCalledTimes(1);
       const entry = audit.log.mock.calls[0][1] as Record<string, unknown>;
@@ -613,14 +644,14 @@ describe('AiAssistService', () => {
     });
 
     it('names WHICH agent in metadata — the one fact actorId cannot carry', async () => {
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       const entry = audit.log.mock.calls[0][1] as { metadata: unknown };
       expect(entry.metadata).toEqual({ source: 'ai-assist' });
     });
 
     it('🔴 A11 — passes no before/after at all', async () => {
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       // Belt and braces with the whitelist test in audit-fields.spec.ts: that
       // one proves the filter drops everything, this one proves the call site
@@ -631,7 +662,7 @@ describe('AiAssistService', () => {
     });
 
     it('writes the audit row INSIDE the same transaction as the run row', async () => {
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       // ADR-0009 D8.1 — "done but unrecorded" is worse than "not done", and
@@ -642,7 +673,7 @@ describe('AiAssistService', () => {
     it('writes no audit row when the request is refused before a run exists', async () => {
       prisma.request.findUnique.mockResolvedValue(null);
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         NotFoundException,
       );
       expect(audit.log).not.toHaveBeenCalled();
@@ -650,6 +681,244 @@ describe('AiAssistService', () => {
   });
 
   // ── resume (F6) ────────────────────────────────────────────
+
+  /**
+   * 期二 G5-B / ADR-0039 F1 — the POST queues; it no longer runs the agent.
+   *
+   * 🔴 This is the H1 half of the change. The response shape did not move (F2),
+   * so nothing here is about JSON: what these pin is that the model is not
+   * called on the request thread, and that a run which cannot be queued does
+   * not become a permanently stuck row.
+   */
+  describe('🔴 G5-B — starting a run only queues it', () => {
+    it('returns without calling the model at all', async () => {
+      const result = await service.startRun(admin, 'req-1');
+
+      // The whole point of ADR-0039 F1. If this ever goes green with the
+      // runtime called, the HTTP request is waiting on an LLM again.
+      expect(runtime.start).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        runId: 'run-1',
+        status: 'running',
+        proposals: [],
+      });
+    });
+
+    it('hands the run id to the queue', async () => {
+      await service.startRun(admin, 'req-1');
+
+      expect(queue.enqueue).toHaveBeenCalledWith('run-1');
+    });
+
+    it('records the start step before queueing, so the card is never empty', async () => {
+      await service.startRun(admin, 'req-1');
+
+      // A queued run whose card shows nothing looks broken for as long as the
+      // worker takes to pick it up.
+      expect(stepKeys()).toEqual(['start']);
+    });
+
+    /**
+     * 🔴🔴 The one that would have shipped a permanent block.
+     *
+     * The row exists and says `running` by the time `enqueue` is reached. Left
+     * there, OQ-3 (one non-terminal run per request) locks that request out of
+     * ever getting another run — and `AgentRunExpiryService` deliberately does
+     * NOT sweep `running`, so nothing clears it. That is the exact shape 期二
+     * G5-A found in `resumeRun`'s R16 early return, arriving through a
+     * different door: an outage rather than an SDK upgrade.
+     */
+    it('ends the run when it cannot be queued, rather than leaving it running forever', async () => {
+      queue.enqueue.mockRejectedValue(
+        new ServiceUnavailableException('Redis is unreachable'),
+      );
+
+      await expect(service.startRun(admin, 'req-1')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      expect(prisma.agentRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'run-1' },
+          data: expect.objectContaining({ status: 'failed' }),
+        }),
+      );
+    });
+  });
+
+  describe('executeRun — what the worker does', () => {
+    const runRow = (over: Record<string, unknown> = {}) => ({
+      id: 'run-1',
+      status: 'running',
+      requestId: 'req-1',
+      startedBy: opcoIt,
+      ...over,
+    });
+
+    /**
+     * 🔴 The worker has no session. Scope comes off `startedBy`, which is the
+     * second time ADR-0036 F1-6's required column earns its keep (the first was
+     * `resumeRun` after an overnight approval).
+     */
+    it('applies the STARTER’s scope, taken from the row', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(runRow());
+
+      await service.executeRun('run-1');
+
+      const setup = runtime.start.mock.calls[0][0] as AgentSetup;
+      expect(setup.ctx.user).toBe(opcoIt);
+    });
+
+    it('never selects runState — the worker has no use for the model history', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(runRow());
+
+      await service.executeRun('run-1');
+
+      const select = (
+        prisma.agentRun.findUnique.mock.calls[0][0] as {
+          select: Record<string, unknown>;
+        }
+      ).select;
+      expect(select).not.toHaveProperty('runState');
+    });
+
+    /**
+     * 🔴 Refused WITHOUT `failRun`, unlike everything else in this method.
+     *
+     * A run that is no longer `running` already reached an outcome — aborted,
+     * expired, or a duplicate job arriving late. Marking it `failed` would
+     * overwrite a real result with a wrong one, which is worse than the
+     * duplicate it guards against.
+     */
+    it('refuses a run that already ended, without overwriting its outcome', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(
+        runRow({ status: 'aborted' }),
+      );
+
+      await expect(service.executeRun('run-1')).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(prisma.agentRun.update).not.toHaveBeenCalled();
+      expect(runtime.start).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴🔴 The kill switch is checked INSIDE the try, and this test is why.
+     *
+     * `startRun` checked it, but a switch exists to be flipped in exactly the
+     * gap between queueing and running. Were the check above the `try` — the
+     * obvious place — a disabled agent would throw and leave the row at
+     * `running` forever. Once (G5-A's R16 early return) was a bug; twice would
+     * be a pattern.
+     */
+    it('ends the run when the switch was flipped after it was queued', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(runRow());
+      killSwitch.assertEnabled.mockRejectedValue(
+        new ConflictException('The ai-assist agent is switched off'),
+      );
+
+      await expect(service.executeRun('run-1')).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(prisma.agentRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'failed' }),
+        }),
+      );
+    });
+
+    it('refuses a run that does not exist', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(null);
+
+      await expect(service.executeRun('nope')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  /**
+   * 期二 G6 / ADR-0039 F10 — every change reaches the browser.
+   *
+   * 🔴 The risk this guards is not a crash, it is a card that stops updating
+   * and gives no sign of it. Both halves matter: steps publish because
+   * `writeStep` is the single writer, and status changes publish because they
+   * are the one kind of change `writeStep` cannot see.
+   */
+  describe('🔴 G6 — publishing changes', () => {
+    it('publishes on every step', async () => {
+      await runFully(admin);
+
+      expect(queue.publishChanged.mock.calls.length).toBeGreaterThanOrEqual(
+        stepKeys().length,
+      );
+      for (const call of queue.publishChanged.mock.calls) {
+        expect(call).toEqual(['run-1']);
+      }
+    });
+
+    /**
+     * 🔴 The sharp one: a completed run's status change writes NO step, so a
+     * publish that only rode on `writeStep` would leave a browser sitting on
+     * `running` until it gave up. Counting rather than merely asserting "it was
+     * called" is what makes that visible — the step publishes would satisfy a
+     * looser assertion on their own.
+     */
+    it('publishes the completion, which writes no step of its own', async () => {
+      await runFully(admin);
+
+      expect(queue.publishChanged).toHaveBeenCalledTimes(stepKeys().length + 1);
+    });
+
+    it('publishes after a run parks for approval', async () => {
+      runtime.start.mockResolvedValue(awaitingTurn());
+
+      await runFully(admin);
+
+      // start + proposal steps, then the status change to awaiting_approval.
+      expect(queue.publishChanged).toHaveBeenCalledTimes(stepKeys().length + 1);
+    });
+
+    it('publishes after a run is stopped', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'running',
+        request: { opcoId: 'opco-a' },
+        steps: [],
+        messages: [],
+        proposals: [],
+      });
+
+      await service.abortRun(admin, 'run-1');
+
+      expect(queue.publishChanged).toHaveBeenCalledWith('run-1');
+    });
+
+    it('publishes after a run expires', async () => {
+      await service.expireRun('run-1', 'nobody decided');
+
+      expect(queue.publishChanged).toHaveBeenCalledWith('run-1');
+    });
+
+    /**
+     * 🔴 The "a failed publish must not fail a step" guarantee lives in ONE
+     * place — `publishChanged` swallows, and `agent-run.queue.spec.ts` pins it.
+     * This service deliberately does NOT catch a second time.
+     *
+     * ⚠️ Which makes this test read backwards at first glance: a rejecting mock
+     * DOES propagate here. That is the correct answer, and the first draft of
+     * this test got it wrong — it was named "does not let a publishing failure
+     * break a run" and then asserted that it does. Two layers each promising
+     * the same thing is how one of them drifts unnoticed, and the survivor
+     * would be the one nobody reads.
+     */
+    it('leans on the queue to swallow, instead of catching a second time', async () => {
+      queue.publishChanged.mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await expect(runFully(admin)).rejects.toThrow('ECONNREFUSED');
+    });
+  });
 
   describe('resumeRun', () => {
     const parkedRun = (overrides: Record<string, unknown> = {}) => ({
@@ -842,7 +1111,7 @@ describe('AiAssistService', () => {
         status: 'awaiting_approval',
       });
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(prisma.agentRun.create).not.toHaveBeenCalled();
@@ -855,7 +1124,7 @@ describe('AiAssistService', () => {
       // the one thing it must not do. Dropping `approved` from the list is the
       // regression being pinned — an approved-but-not-yet-resumed run is very
       // much still in progress.
-      await service.startRun(admin, 'req-1');
+      await runFully(admin, 'req-1');
 
       const where = (
         prisma.agentRun.findFirst.mock.calls[0][0] as {
@@ -876,7 +1145,7 @@ describe('AiAssistService', () => {
         rawRequestText: '   ',
       });
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         BadRequestException,
       );
       // No run row, so no paid round-trip whose only possible output is a guess.
@@ -890,7 +1159,7 @@ describe('AiAssistService', () => {
         rawRequestText: 'anything',
       });
 
-      await expect(service.startRun(opcoIt, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(opcoIt, 'req-1')).rejects.toBeInstanceOf(
         ForbiddenException,
       );
       expect(prisma.agentRun.create).not.toHaveBeenCalled();
@@ -899,7 +1168,7 @@ describe('AiAssistService', () => {
     it('refuses an unknown request', async () => {
       prisma.request.findUnique.mockResolvedValue(null);
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -910,7 +1179,7 @@ describe('AiAssistService', () => {
         active: false,
       });
 
-      await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
+      await expect(runFully(admin, 'req-1')).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(runtime.start).not.toHaveBeenCalled();

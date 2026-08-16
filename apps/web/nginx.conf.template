@@ -26,6 +26,47 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # W46 G6 / ADR-0039 F6 — server-sent events for one agent run.
+    #
+    # 🔴 A SEPARATE location, not `proxy_buffering off` on /api/. Turning
+    # buffering off globally would be a whole-deployment cost paid for one
+    # endpoint; nginx's location matching already allows a more specific path,
+    # so there is no reason to. This regex block is evaluated before the /api/
+    # prefix block, and it repeats the prefix-strip and the headers because a
+    # location does not inherit them.
+    #
+    # 🔴 Four settings, each for a different way SSE dies behind a proxy:
+    #   proxy_buffering off   — otherwise nginx holds events until its buffer
+    #                           fills, which for a few hundred bytes per event
+    #                           means the browser sees nothing then everything
+    #   proxy_cache off       — a cached event stream is served to the next
+    #                           viewer as a finished response
+    #   proxy_read_timeout    — the default 60s closes an idle stream; a run
+    #                           waiting on a model is idle by nature
+    #   Connection ''         — keeps HTTP/1.1 keep-alive to the upstream
+    #                           rather than sending the hop-by-hop header on
+    #
+    # 🟡 This is the layer we control. ACA's ingress is the one we do not, and
+    # whether IT buffers is unverified (F7 / R22) — only DEV can answer that.
+    location ~ ^/api/agent/runs/[^/]+/events$ {
+        # 🔴 The /api prefix has to come off here too, and a regex location
+        # cannot do it the way the prefix block does: `proxy_pass upstream/`
+        # only strips for a PREFIX location. Hence rewrite + a proxy_pass with
+        # no URI part — sending /api/agent/... upstream would 404, because API
+        # routes carry no such prefix.
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_set_header Connection '';
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # Same-origin API proxy. The trailing slash on both the location and
     # proxy_pass strips the /api prefix (API routes have no such prefix) —
     # mirrors the vite dev proxy rewrite. credentials:'include' cookies ride

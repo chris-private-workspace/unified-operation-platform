@@ -4,7 +4,13 @@
 
 import { getLocalProfile, clearLocalProfile } from './auth/local-profile';
 
-const BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
+/**
+ * Exported since W46 G6: `EventSource` does not go through the wrapper below,
+ * so the SSE hook needs the same answer. Two places computing it independently
+ * is how a dev proxy and a production reverse proxy end up disagreeing about
+ * where the API is.
+ */
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 /**
  * No Authorization header, ever (ADR-0028). Both providers — break-glass
@@ -54,7 +60,7 @@ async function errorFrom(res: Response, fallback: string): Promise<ApiError> {
 let refreshInFlight: Promise<boolean> | null = null;
 function tryRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = fetch(`${BASE}/auth/refresh`, {
+    refreshInFlight = fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
     })
@@ -77,10 +83,10 @@ function tryRefresh(): Promise<boolean> {
  */
 async function doFetch(path: string, init: RequestInit): Promise<Response> {
   const withCreds: RequestInit = { ...init, credentials: 'include' };
-  let res = await fetch(`${BASE}${path}`, withCreds);
+  let res = await fetch(`${API_BASE}${path}`, withCreds);
   if (res.status === 401 && getLocalProfile()) {
     if (await tryRefresh()) {
-      res = await fetch(`${BASE}${path}`, withCreds);
+      res = await fetch(`${API_BASE}${path}`, withCreds);
     } else {
       clearLocalProfile();
     }
