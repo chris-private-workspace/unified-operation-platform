@@ -90,8 +90,75 @@
 - **Log**：送 Log Analytics，retention 180 天。
 - **ROC 支援時段**:Mon–Fri 08:00–24:00（5×16）。
 
+## 🔲 Chris 填呢七格就夠(2026-08-16 整理)
+
+> **點解有呢一段**:全份 Section 1 得 **6 個 🔲 marker**(`:39` `:40` `:41` `:80` `:81` `:82`),但 `:39` 一行入面實情有 5 個 sub-field ⇒ 實際係 **9 格**,其中 **2 格唔使你填**(見 B)。
+>
+> ⚠️ **本段係內部填表準備,唔屬提交內容。** 上面 Section 1 各表嘅**已申報值一個字冇改** —— `BACKLOG` `PAR-as-built` 嗰句「**05 係要提交畀 RCI 治理嘅申請文件,唔應該由我單方面改**」仍然成立,所以下面凡係我有意見嘅地方一律寫成問題,唔會代你改。
+
+### A —— 要你答嘅七格
+
+| # | 欄位 | 出處 | 我可唔可以代答 |
+|---|---|---|---|
+| 1 | **Requester + Department** | `:39` | ❌ 純業務 |
+| 2 | **Project Sponsor** | `:39` | ❌ 純業務。⚠️ 佢係流程 ④ 嘅簽核人(`:12`),唔係一個 informational 欄 |
+| 3 | **PM** | `:39` | ❌ 純業務 |
+| 4 | **Technical contact** | `:39` | 🟡 應該係你 —— 但要你確認,唔想代你把自己填落一份治理文件 |
+| 5 | 🔴 **Opcos** | `:40` | ⚠️ **三個唔同數字,睇你講緊邊個** —— 見下面 A5 |
+| 6 | **Internal user 數量** | `:80` | ❌ 純業務。⚠️ 平台 seed 得 2 個真用戶(你 + 一個 RHK `OPCO_IT`),所以 DB 答唔到呢條 —— 佢問嘅係**將來會開幾多個**,唔係今日有幾多個 |
+| 7 | **Expected Implementation Date** | `:41` | ⚠️ 依賴 `11-azure-openai-infra-request.md` 個 `Q0` —— **PAR 流程本身寫住一般需 1–2 週**(`:6`),所以呢格填之前最好知道要唔要行 |
+
+#### 🔴 A5 —— 「幾多個 OpCo」呢條有三個都啱嘅答案,而 `:40` 寫嗰個唔喺其中
+
+`:40` 今日寫住「涵蓋 **23** OpCo」。實測 `apps/api/prisma/seed.ts`:
+
+| 數 | 係咩 | 點嚟 |
+|---|---|---|
+| **24** | **平台嘅 `Opco` row 數**(= 權限 scope 單位) | `seed.ts` `OPCOS` array 實測 24 行 |
+| **18** | **唔同公司數** | distinct `company` 值實測 18 個 |
+| ~~23~~ | ❓ **對唔返任何一個** | — |
+
+**分別喺 RAPO 拆咗 7 行**(`RAPO/APTC` · `RAPO/ASPC` · `RAPO/FNA` · `RAPO/IT` · `RAPO/IT (RBS)` · `RAPO/IT (RDC2)` · `RAPO/SCM`)—— 平台用 cost centre 做 scope 單位,而 PAR 問「Opcos」通常係**業務意義嘅公司**。
+
+⇒ **要你決定填邊個,兼順手更正 `:40` 嗰個 `23`。** 我冇代改,因為呢個係申報值。
+
+### B —— 唔使你填嘅兩格
+
+| # | 欄位 | 出處 | 狀況 |
+|---|---|---|---|
+| 8 | **External User(s)** | `:81` | 🟢 **技術側我答得到,但最後一句仍然要你講。** 實測 `entra-sso.service.ts:236-242`:issuer **釘死** `ENTRA_TENANT_ID` 兩個 form,JWKS 亦只讀該 tenant ⇒ **唔喺公司 tenant 嘅人結構上登入唔到**。⚠️ **但如果 IT 把外部 OpCo 用戶邀請做 guest(B2B)**,佢哋簽出嚟嘅 token 就係公司 tenant 嘅 ⇒ **入得到**。所以「算唔算 external」係一個**身份治理定義**,唔係平台答得到嘅嘢 |
+| 9 | **RPO / RTO** | `:82` | 🟢 **RIT 填**(`:82` 本身已經咁寫),RCI 預設見 `:89` |
+
+### 📋 填空(填完交返,我幫你併入 Section 1)
+
+```
+Requester                  : ______________________________________
+Department                 : ______________________________________
+Project Sponsor            : ______________________________________
+PM                         : ______________________________________
+Technical contact          : ______________________________________
+                             (建議 = Chris Lai,要你確認)
+
+Opcos —— 揀一個講法 + 更正 :40 個「23」:
+  [ ] 24  = 平台 Opco row(含 RAPO 7 個 cost centre)
+  [ ] 18  = 唔同公司
+  [ ] 其他: _____________________________________
+
+Internal user 數量(預期)   : ______________________________________
+                             (今日 seed 得 2 個;呢格問將來)
+
+Expected Implementation Date: ______________________________________
+                             (⚠️ 見 11-azure-openai-infra-request Q0;
+                              PAR 一般需 1–2 週)
+
+External Users —— 一句就夠:
+  [ ] 冇 —— 所有用戶都喺公司 tenant 內
+  [ ] 有 —— 外部 OpCo 用戶會做 guest(B2B)入嚟,數量約 __________
+```
+
 ## 待辦
 
-- [ ] Chris 填齊 🔲 欄（業務資料 + 資源命名 + 用戶數）
-- [x] 認證方式已定 = **Azure Entra SSO**（O365 account）+ break-glass 本地 admin（2026-07-22 owner 釐清）→ 需 UAT Entra app registration（AUTH-2b）
+- [ ] Chris 填齊上面七格(+ 更正 `:40` 個 OpCo 數)
+- [x] 認證方式已定 = **Azure Entra SSO**(O365 account)+ break-glass 本地 admin(2026-07-22 owner 釐清)。🟢 **`AUTH-2b` 2026-08-13 closed** —— SSO 由 Chris 本人測試確認登入得到,break-glass 由 AI tool 驗(W44 `F6-6`)
 - [ ] 向 RIT 提交 PAR Section 1
+- [ ] 🆕 **W46 Azure OpenAI** —— `:54` 申報咗「Azure OpenAI 暫無」,而 W46 要開一個 ⇒ **`11-azure-openai-infra-request.md` `Q0` 就係問呢件事點行**。若答案係「要行 PAR」,嗰份請求嘅 `Q1`–`Q4` 回覆逐格對得返 Section 1(對照表喺該文件 Part A)

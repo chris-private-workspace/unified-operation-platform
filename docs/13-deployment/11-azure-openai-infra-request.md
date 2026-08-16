@@ -58,6 +58,8 @@
 | **Q3** abuse monitoring | **Security requirements**(RIT 填,`:88`)+ 資料處理描述 | 🔴 **Security Manager endorse 嘅就係呢格。** 若答案係「有人手覆核」,PAR 上面就唔可以寫成「內部封閉」 |
 | **Q4** outbound | **Communication protocol between components** 表 | 要加一行 `uop-api → Azure OpenAI · HTTPS · 443`。⚠️ **呢行同 `05:64` 嗰條被劃走嘅 Key Vault 行剛好相反** —— 嗰條係「唔存在所以唔准填」,呢條係「會真係存在所以一定要填」,兩者同一條原則 |
 
+> 🔴 **但 Section 1 本身仲有七格未填,而 PAR 由頭到尾未提交。** 2026-08-16 整理咗一張「**Chris 填呢七格就夠**」+ 填空表落 `05-rci-par-process.md`(BACKLOG `PAR-submit`)。⇒ **`Q0` 若答「要行 PAR」,除咗本份嘅回覆之外,仲要嗰七格。** 兩件事一齊睇先算齊。
+
 ---
 
 ## Part B —— 內部版(逐條解釋點解要問)
