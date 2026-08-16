@@ -240,7 +240,11 @@ model AgentProposal {
 
 ---
 
-## 7. Open Questions —— **七條全部有結論;淨低 OQ-1 一條真正未答(2026-08-15)**
+## 7. Open Questions —— **淨低 `OQ-1` 一條真正未答(2026-08-16 更新)**
+
+> 🔄 **2026-08-16**:`OQ-5` 答咗(Chris:**7 日**)⇒ **原本嗰句「淨低 OQ-1 一條」而家先至真** ——
+> 佢由 08-15 寫到 08-16 期間**其實有兩條未答**(`OQ-1` 同 `OQ-5` 都係 `approved as deferred`),
+> 而下面個 ⚠️ 一直喺度提住呢件事。**留呢句喺度**,因為佢示範緊嗰個誤讀本身就發生喺同一段。
 
 > ⚠️ **「approved」對每條嘅意思唔一樣,呢個分別要記住。** OQ-2/3/4/6 嘅 default 係一個**答案**,批咗即係定咗;**OQ-1 同 OQ-5 嘅 default 係「暫時唔答」**,批咗即係確認「維持 deferred 到指定時點」—— **唔可以當成已經答咗**。呢個正正就係 §9 記低過嗰個形狀:一格寫住「approved」而下手當咗成格都答晒。
 
@@ -250,7 +254,7 @@ model AgentProposal {
 | **OQ-2** | Proposal 審批權:ADMIN only 定 ADMIN + REGIONAL? | **ADMIN + REGIONAL** —— 跟 `OutboundFailure` 先例(ADR-0011 D4):同一批人本來就睇緊呢啲 request | 🟢 **定咗** |
 | **OQ-3** | 一張 request 可唔可以有多過一個 open run? | **唔可以** —— 同時只准一個非終態 run(避免兩個 proposal 對住同一張單打架) | 🟢 **定咗** |
 | **OQ-4** | Agent 讀唔讀得到 `AuditLog`? | **讀唔到** —— 唔喺 §3 allow-list;audit 係 ADMIN-only 兼載 PII(ADR-0009 P-B) | 🟢 **定咗** |
-| **OQ-5** | `awaiting_approval` 掛幾耐算過期? | **維持 deferred** 到期二連 BullMQ 一齊決定;🔴 **但過期一定要 fail loud,唔可以靜靜當成功**(R16)。🔎 **2026-08-16 查清楚咗佢實際卡乜,見下** | 🟡 **approved as deferred** —— 🔴 **開 G5 之前一定要答** |
+| **OQ-5** | `awaiting_approval` 掛幾耐算過期? | 🟢 **答咗(Chris 2026-08-16):7 日。** ⚠️ **但一個數字答唔到成條問題** —— 查證揭到佢實際卡四樣(見下),其餘三格係 **AI 建議 · Chris 未逐條講**:②過期落**新 status `expired`**(唔塞 `aborted`)③**R16 版本標記 + 主動對比**(唔淨係靠時間閘)④fail loud 走返 **`OutboundFailure`**。🔴 **呢三格喺 doc 度標開,係因為佢哋唔係佢答嘅** | 🟢 **定咗(數字)** + 🟡 **三格按建議做** —— 🔴 **G5 開得工** |
 | **OQ-6** | 用唔用 SDK 嘅 guardrail 做第二層? | **用得,但唔可以入 acceptance gate**(ADR-0036 D2)—— 期二再評估要唔要真行 | 🟢 **定咗** |
 | **OQ-7** 🆕 | 🔴 **`rawRequestText` / `targetUpn` 送去第三方 model provider 做 inference,可唔可以?** | 🟢 **答咗(Chris 2026-08-15):行公司 tenant 嘅 **Azure OpenAI**,唔准打 `api.openai.com`** ⇒ 寫成 **ADR-0037**(同日 `Accepted`)。論據係「**收件人變咗**」唔係「內容變少咗」—— 原文仍然原文,但只喺公司同 Microsoft 之間,同平台今日打緊嘅 Graph / M365 / Entra 同一個信任面。否決:ZDR(代價其實係零,但多一個第三方兼要等審批)· 公共 API 標準條款 · **送之前先 scrub**(唯一會改 F5 code shape 嗰個 —— 等於用「功能唔 work」換「冇 PII」)· 只送摘要(個摘要 call 一樣要收原文) | 🟢 **定咗** —— **ADR-0037 同日 `Accepted`**(五條後果逐條過目之後)。⚠️ 兩件唔可以當答咗:①**`E4`(auth 揀 Entra token 定 API key)= approved as DEFERRED**,target = infra 確認 Azure OpenAI resource 之後同 **OQ-1** 一齊答 ②**Claude 側要重新答一次同一條問題**,唔可以引用本答案(E7)。🔄 **2026-08-16 target 收窄(ADR-0038 D5)**:由「**G4 開工之前**」改成「**真打 Anthropic 之前**」—— 因為 Chris 定咗 **G4 = 架構證明唔打網絡** ⇒ E7 個時點判斷嘅隱含前提(「G4 = 真打 Claude」)唔成立。**E7 個禁令本身一個字冇郁**(仍然唔可以引用 ADR-0037 當已答),**收窄唔係推翻**(ADR-0035 形狀)⇒ Claude 側 OQ-7 而家同 **OQ-1** / **E4** / **A14** 併埋同一批,全部等 infra |
 
@@ -324,8 +328,35 @@ index 喺 Prisma 側表達唔到)。
 「把 agent run 推去 BullMQ worker」唔需要知 expiry;卡嘅只係 **expiry 由邊個執行**(delayed job 綁住 run
 建立嗰刻 vs `@nestjs/schedule` 批次 sweep)。**同 G4 一樣拆得開。**
 
-而「fail loud」要 loud 畀邊個亦未定 —— 平台已有 `OutboundFailure` + Delivery failures 畫面 +
-`OPS_NOTIFICATION_MAILBOX`(CH-021),用返定另開,係 G5 要揀嘅。
+#### 🟢 答案(2026-08-16)—— 一個係 Chris 答嘅,三個係建議
+
+> 🔴 **四格嘅來源唔一樣,而呢個分別要留喺度。** Chris 答嘅係「7 日」然後叫開工;②③④ 係 AI 建議
+> **佢冇反對**,唔係佢逐條講過。沿用 `CH-015` / `F9-8` 個先例:**兩種證據都算數,但唔可以寫成同一種。**
+
+| # | 決定 | 來源 |
+|---|---|---|
+| ① **門檻** | **7 日** | 🟢 **Chris 2026-08-16** |
+| ② **過期落咩 status** | **新開 `expired`**,唔塞 `aborted` | 🟡 AI 建議 |
+| ③ **R16 結構過期** | **版本標記 + 主動對比**,唔淨係靠時間閘 | 🟡 AI 建議 |
+| ④ **fail loud 畀邊個** | 走返 **`OutboundFailure`** + Delivery failures 畫面 | 🟡 AI 建議 |
+
+**① 7 日** —— 呢個唔係 SLA 係一道**回收閘**:太短會殺死「週末 + 一個假期」之後仍然有效嘅 proposal,
+太長就等於冇。而 `AgentProposal.decidedAt` 令實際 median 量得返 ⇒ **收緊隨時做得,唔使一次揀啱。**
+
+**② 新開 `expired`** —— 🔴 理由**唔係**「講得準啲」,係 **G7**:`aborted` 已經有一個好明確嘅意思
+(**平台執手尾** —— `abortRun` 兩個決定欄都唔寫),而 G7 個人口定義(`decidedAt != null`)就係靠呢個分野。
+**過期塞落 `aborted` = 把「冇人審」同「平台停咗佢」溝埋**,而前者正正係 R13 要量嗰樣。
+🟢 **唔使 migration** —— `status` 係 `String` 唔係 Prisma enum(**ADR-0031 D1 個決定喺呢度回本**);
+要跟嘅係 `schema.prisma:628` 個 comment list、UI badge map、`NON_TERMINAL_RUN_STATUSES`。
+
+**③ 版本標記** —— 四條入面**唯一真正冇現成答案**嗰條。只做「標記 + 對比 + fail loud」,
+**唔做自動 resume 修復** —— 修復係另一個問題,而**知唔知道**先係 R16 問嘅嘢。
+
+**④ `OutboundFailure`** —— 佢就係平台**已有嘅 stateful 修復佇列**(ADR-0011),而「一個 run 過期咗要人知」
+同「一封信寄唔出要人知」係同一種事。另開一個地方就係**第二個「有嘢等緊人」嘅答案**(BUG-005 / BUG-011 同族)。
+
+📌 **仲有一個唔屬於 OQ-5 嘅決定留返畀 G5 實作**:**expiry 由邊個執行** —— BullMQ delayed job(綁 run
+建立嗰刻)vs `@nestjs/schedule` 批次 sweep。
 
 ---
 
@@ -360,3 +391,4 @@ index 喺 Prisma 側表達唔到)。
 | 2026-08-16 | 🟢🟢 **三個 UI 項一次過收(`G2-j` render · `G3-n` kill switch UI · `G7-o` R13 監測 UI)** —— Chris 批准停 `ai-doc-extraction-db`;web **403 → 414**(6 紅 = pre-existing)· tsc 0 / lint 0 · **四張 render 零橫向溢出**,token 兩個 theme 真 swap。**新 Settings tab「AI agent」** —— 唔擺落 Integrations,因為嗰個 tab 講 **vendor wiring**(邊個 runtime、邊個 model)而呢兩個講 **operation**(個能力行唔行、前面道人閘仲有冇人用)。<br>🔴🔴 **render 捉到一個四層 test 全綠嘅真缺陷**:`Select` 個 wrapper 係 `w-full` 而佢個 chevron 係 `absolute` 貼住嗰個 wrapper ⇒ 我淨係 size 咗入面個 `<select>`,**個箭嘴飛咗去成張 card header 最右邊,同個掣完全分家**。**tsc 0 · lint 0 · 11 條 UI test 全綠,冇一樣嘢會紅。** ⇒ **CH-030 個教訓原封重演:「字喺唔喺度」同「佢喺邊」係兩件事**,而只有真 render 答得到第二條 —— 亦即 `A13` 加 playwright devDep 嗰個決定第一次真正收到成本回報。<br>🔴🔴 **順帶喺真 Postgres 上驗到成套 G7 邏輯(唔係 mock)**:`decided 4 / approved 3` ⇒ **`failed` 真係當咗批准**(G1 嗰行)· `medianSecondsToDecide: 5`(真值 [3,4,6,1320] 嘅 median,而 **mean 會係 333**)· kill switch `enabled:false + liveRuns:1 + pendingProposals:1 ⇒ settled:false`。**Mock 證得到公式,證唔到 Prisma 個 `where` 真係咁行。**<br>🔴 **H4**:fixture 用一個 `.invalid` 假帳戶,**唔用 DB 入面兩個真人** —— 呢個 panel 成個作用就係**點名**,用真名 render 就係把真名寫入一份 artifact;全部 `zzrf-` 前綴,收工逐張表對返數(**0/0/0 + 2 users**,同開工前逐字一樣),screenshot 已刪。<br>⚠️ **兩個 §9 未記過嘅環境陷阱**:①**呢個 worktree 個 compose project name 唔同咗** ⇒ `docker compose up -d` **試圖新建** container 兼開咗個空 volume,**若果成功咗就係一個空 DB 而畫面睇落正常**;正確做法 = `docker start uop-postgres uop-redis` ②`prisma generate` 撞 **EPERM**(殘留 api 進程鎖住 engine DLL)⇒ **`kill-zombies` 要行喺 `sync-code` 之前**。📌 呢個 DB 叫 **`platform`** 唔叫 `uop` |
 | 2026-08-16 | 🟢 **`ADR-0038` 起草(`Proposed`)—— H2:Chris 批咗加 `@anthropic-ai/sdk`**,同時定咗 **`G4` = 架構證明唔係產品功能**。<br>🔴 **查證先於決定**:`@anthropic-ai/sdk` root + `apps/api` 兩份 `package.json` **零 match**、`node_modules/@anthropic-ai` 兩個位都唔存在 ⇒ **連 transitive 都冇**。呢點同 ADR-0037 嗰陣**唔同** —— 當時 `openai@7` 早就係 `@openai/agents` 嘅 transitive,換去 Azure client **零新 dependency**,H2 根本冇觸發。<br>🔴 **「G4 = 架構證明」呢個答案解封咗一樣嘢,亦揭穿咗一樣嘢**:解封 = **OQ-7 Claude 半邊唔再 block G4**(ADR-0038 D5:E7 個時點判斷嘅隱含前提係「G4 = 真打 Claude」,前提冇咗 ⇒ **收窄唔係推翻**,ADR-0035 形狀);揭穿 = **「唔真打」如果只寫喺 ADR 度就係一個約定唔係一道閘** ⇒ D3 要 provider 未配就 503 + 一條 test。<br>🔴 **D4 係「點解要真裝」嘅第二個獨立理由,而佢比方便重要**:唔裝就要對住「我以為 `betaTool()` 收成點」寫 adapter,兩邊 fixture 同源 ⇒ **永遠綠,證咗個零** —— **W46 本 phase 已經中過三次同族**(對稱 fixture 令 mean/median 分唔開 · `for` over 空 list 滿足任何 claim · 由同一個 step 推導期望值)。<br>🔴 **起草寫 `Proposed` 唔寫 `Accepted`**,沿用 ADR-0037:Chris 批嗰陣見到嘅係「G4 要 `npm i`」,而 **D3/D4/D5/D6 四條後果佢未見過**。<br>📌 **順帶查清楚 `OQ-5` 實際卡乜**(Chris 問)—— 佢表面係一個數字,實際卡四樣,已寫入 §7 |
 | 2026-08-16 | 🟢🟢 **`ADR-0038` `Accepted`(Chris,四條後果過目之後)⇒ `G4` 嘅 R1 gate 過,開得工**。🟢 **同 ADR-0037 有一個分別要記住**:嗰邊個 `Accepted` **唔等於每一條都答咗**(`E4` auth 係知情之下 deferred),而本 ADR **D1–D6 六條全部批咗,零 deferred** —— `D6` 唔係一條未答嘅決定,**佢本身就係決定**(「G4 第一步係查嗰三樣,唔係寫 adapter」)。⇒ **`OQ-1` / `OQ-5` / `ADR-0037 E4` 嗰個「approved as deferred」形狀唔適用喺呢度**,唔好順手當佢又係一格半開嘅嘢 |
+| 2026-08-16 | 🟢 **`OQ-5` 答咗(Chris:**7 日**)⇒ `G5` gate 過** —— **W46 七條 OQ 而家淨低 `OQ-1` 一條真正未答**(佢卡 infra,同 `E4` 一齊)。🔴 **但一個數字答唔到成條問題,而四格嘅來源唔一樣,呢個分別要留喺 doc 度**:①門檻 7 日 = **Chris 答**;②新 status `expired` ③R16 版本標記 + 主動對比 ④fail loud 走 `OutboundFailure` = **AI 建議,佢冇反對但冇逐條講**(沿用 `CH-015` / `F9-8` 先例:**兩種證據都算數,但唔可以寫成同一種**)。🔴 **②嘅理由唔係「講得準啲」係 G7** —— `aborted` 已經專指「平台執手尾」(`abortRun` 兩個決定欄都唔寫),塞埋過期落去就係把「冇人審」同「平台停咗佢」溝埋,**而前者正正係 R13 要量嗰樣**;🟢 零 migration,因為 `status` 係 `String` 唔係 Prisma enum(**ADR-0031 D1 喺呢度回本**)|

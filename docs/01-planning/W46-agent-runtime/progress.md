@@ -1245,7 +1245,10 @@ OQ-5 一段 / §9 changelog)· `checklist.md`(`G4-pre-1..3` + `G5-pre-1`)· `BAC
 ### 未收
 - 🚧 `G4` —— **ADR-0038 `Accepted`,開得工**;`G4-pre-2` 裝完
   **第一件事係查 D6 三樣,唔係寫 adapter**
-- 🚧 `G5` —— **OQ-5 仍然未答**(而家至少知道要答緊乜)
+- 🟢 `G5` —— **OQ-5 同日答咗(Chris:7 日)⇒ gate 過**。🔴 **四格來源唔一樣**:①門檻 = 佢答;
+  ②新 status `expired` ③R16 版本標記 + 主動對比 ④fail loud 走 `OutboundFailure` = **AI 建議,
+  佢冇反對但冇逐條講**(`CH-015` / `F9-8` 先例:兩種證據都算數,唔可以寫成同一種)。
+  📌 **`OQ-1` 而家係 W46 唯一一條真正未答嘅 OQ**,而佢卡 infra
 - 🚧 `G6`(SSE)—— **零 gate,即刻開得**
 - 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)
 - 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
