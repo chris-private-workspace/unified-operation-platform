@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`permission matrix (derived from @Roles) matches the locked matrix snapshot 1`] = `
+exports[`permission matrix (derived from @Roles + the tool registry) matches the locked matrix snapshot 1`] = `
 [
   "GET /admin/audit → roles [ADMIN]",
   "GET /admin/integrations → roles [ADMIN]",
@@ -65,5 +65,11 @@ exports[`permission matrix (derived from @Roles) matches the locked matrix snaps
   "POST /requests/intake → m2m []",
   "POST /requests/intake/n8n → m2m []",
   "GET /requests/servicenow-lookup → roles [ADMIN]",
+  "TOOL agent:get_ledger → agent-read []",
+  "TOOL agent:get_request → agent-read []",
+  "TOOL agent:list_pending_requests → agent-read []",
+  "TOOL agent:propose_assign → agent-propose []",
+  "TOOL agent:propose_line_items → agent-propose []",
+  "TOOL agent:search_catalog → agent-read []",
 ]
 `;

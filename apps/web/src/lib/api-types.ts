@@ -429,15 +429,33 @@ export interface UpdateOpcoBody {
  * user can reach it. Treat as a finding, not a state.
  */
 export type AccessKind =
-  'roles' | 'public' | 'm2m' | 'authenticated' | 'unguarded';
+  | 'roles'
+  | 'public'
+  | 'm2m'
+  | 'authenticated'
+  | 'unguarded'
+  // W46 G2 — an agent tool, not a route. `agent-read` runs during a turn with
+  // nobody deciding it; `agent-propose` cannot take effect until a person
+  // approves it (ADR-0036 D3).
+  | 'agent-read'
+  | 'agent-propose';
 
 /**
- * GET /admin/permissions → the derived role × endpoint matrix (ADMIN-only; a
+ * Who is doing the reaching (W46 G2 / ADR-0036 D7). An `agent` row is an
+ * AgentPrincipal, which is deliberately NOT an AppUser and holds no Role — so
+ * an empty `roles` on such a row is a fact, never a missing value.
+ */
+export type ActorKind = 'user' | 'agent';
+
+/**
+ * GET /admin/permissions → the derived actor × surface matrix (ADMIN-only; a
  * non-admin caller 403s and the tab shows a restricted state).
  *
  * NOTE: this answers "which role may CALL this endpoint". It does NOT express
  * row-level scope — OPCO_IT is additionally limited to its own OpCo by the
- * backend (AUTH-3a opco-scope.ts), which no endpoint-level matrix can show.
+ * backend (AUTH-3a opco-scope.ts), which no endpoint-level matrix can show. The
+ * agent rows inherit the same caveat: every tool runs under the OpCo scope of
+ * whoever started the run.
  */
 export interface PermissionEntry {
   controller: string;
@@ -445,6 +463,7 @@ export interface PermissionEntry {
   method: string;
   path: string;
   access: AccessKind;
+  actor: ActorKind;
   roles: Role[];
   guards: string[];
 }

@@ -1,7 +1,9 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
+import { AgentToolRegistry } from '../agent/tool-registry';
+import type { PrismaService } from '../prisma/prisma.service';
 import { derivePermissions, REVIEWED_AUTHENTICATED } from './permissions';
 import { ROLES_KEY } from './roles.decorator';
 import { PermissionsController } from './permissions.controller';
@@ -53,13 +55,29 @@ function loadControllers(): unknown[] {
   return controllers;
 }
 
-describe('permission matrix (derived from @Roles)', () => {
-  const matrix = derivePermissions(loadControllers());
+/**
+ * W46 G2 — the agent half of the matrix, from the SAME object the runtime runs.
+ *
+ * Constructing the registry with no Prisma is safe and deliberate: the
+ * constructor only assembles tool descriptors, and `prisma` is captured inside
+ * `execute`, which nothing here calls. Reading a static list instead would have
+ * meant a second source — the exact thing W28 exists to prevent.
+ */
+function loadAgentTools() {
+  return new AgentToolRegistry(undefined as unknown as PrismaService).list();
+}
+
+describe('permission matrix (derived from @Roles + the tool registry)', () => {
+  const matrix = derivePermissions(loadControllers(), loadAgentTools());
   const find = (method: string, path: string) =>
     matrix.find((e) => e.method === method && e.path === path);
 
   it('discovers every controller in src', () => {
-    const names = new Set(matrix.map((e) => e.controller));
+    // `actor: 'user'` only — the agent rows carry AgentToolRegistry in this
+    // field, and it is not a controller. Its own coverage is the G2 block below.
+    const names = new Set(
+      matrix.filter((e) => e.actor === 'user').map((e) => e.controller),
+    );
     // All registered controllers must appear. If a new one is added this
     // count changes — that is intended, update it deliberately.
     expect(names).toEqual(
@@ -192,6 +210,116 @@ describe('permission matrix (derived from @Roles)', () => {
       new Reflector().get<Role[]>(ROLES_KEY, PermissionsController),
     ).toEqual([Role.ADMIN]);
     expect(find('GET', '/admin/permissions')?.roles).toEqual([Role.ADMIN]);
+  });
+
+  /**
+   * W46 G2 / ADR-0036 D7 — the agent is an ACTOR of this matrix.
+   *
+   * 🔴 What D7 actually warns about is not that an agent might be given too much.
+   * It is that the agent's write path would be the one surface the matrix does
+   * not describe — and a matrix that omits an actor reads identically to a
+   * matrix reporting that the actor reaches nothing. The tests below are the
+   * three claims that have to hold for it to stop reading that way.
+   */
+  describe('🔴 G2 — the agent appears as an actor, with no Role', () => {
+    const agentRows = matrix.filter((e) => e.actor === 'agent');
+
+    /**
+     * 🔴 Found by falsification, not by review: with the derivation removed,
+     * three tests below went red and two stayed GREEN — both of them are a
+     * `for` over `agentRows`, and an empty list satisfies every claim you can
+     * make about its members. That is the same failure the boundary spec guards
+     * with `expect(agentFiles.length).toBeGreaterThan(5)`, and it is worth its
+     * own test rather than a comment: the tests that would go quiet are exactly
+     * the ones asserting the agent has no Role.
+     */
+    it('has agent rows at all', () => {
+      expect(agentRows.length).toBeGreaterThan(0);
+    });
+
+    it('reports every registered tool, and nothing else', () => {
+      // Word for word, like `tool-registry.spec.ts` pins the registry itself.
+      // A new tool with no line here is a red build — which is the point:
+      // widening an agent's power is an ADR-level act (R12), so it must not be
+      // possible to do it and leave the audit document unchanged.
+      expect(agentRows.map((e) => `${e.path} → ${e.access}`)).toEqual([
+        'agent:get_ledger → agent-read',
+        'agent:get_request → agent-read',
+        'agent:list_pending_requests → agent-read',
+        'agent:propose_assign → agent-propose',
+        'agent:propose_line_items → agent-propose',
+        'agent:search_catalog → agent-read',
+      ]);
+    });
+
+    it('gives the agent no Role at all — and never reports it as a user', () => {
+      // The heart of D7. `AppUser` + `Role` was rejected because handing an
+      // agent any of the three roles hands it that role's whole reach while
+      // this matrix keeps describing it as an ordinary person.
+      expect(agentRows.length).toBeGreaterThan(0);
+      for (const row of agentRows) {
+        expect(row.roles).toEqual([]);
+        expect(row.actor).toBe('agent');
+      }
+      // …and no HTTP route quietly acquired the agent actor either.
+      const routes = matrix.filter((e) => e.path.startsWith('/'));
+      expect(routes.every((e) => e.actor === 'user')).toBe(true);
+    });
+
+    /**
+     * The load-bearing one. A propose tool is the agent's only write surface,
+     * and the whole reason it is safe is that it cannot take effect until a
+     * person decides it — through a route that is in THIS matrix, with roles
+     * this matrix reports. If the approval controller were deleted, renamed or
+     * widened, the agent rows would keep claiming a gate that had moved.
+     */
+    it('every propose tool names a human gate that really is ADMIN + REGIONAL', () => {
+      const proposes = agentRows.filter((e) => e.access === 'agent-propose');
+      expect(proposes.length).toBeGreaterThan(0);
+
+      for (const row of proposes) {
+        expect(row.guards).toEqual(['AgentApprovalController']);
+      }
+
+      const approve = find('POST', '/agent/proposals/:id/approve');
+      expect(approve?.controller).toBe('AgentApprovalController');
+      expect(approve?.access).toBe('roles');
+      expect(approve?.roles).toEqual([Role.ADMIN, Role.REGIONAL]);
+    });
+
+    it('read tools name no gate — because there is no human in that loop', () => {
+      // Stated rather than left implicit: a read tool runs during the turn, with
+      // nobody deciding it. What bounds it is the starter's OpCo scope, which is
+      // row-level and which no endpoint-level matrix can express (same caveat
+      // the human half carries for OPCO_IT).
+      const reads = agentRows.filter((e) => e.access === 'agent-read');
+      expect(reads.length).toBeGreaterThan(0);
+      for (const row of reads) {
+        expect(row.guards).toEqual([]);
+      }
+    });
+
+    /**
+     * D7's structural half, pinned where the consequence lives.
+     *
+     * `roles: []` above is only honest while `AgentPrincipal` genuinely has no
+     * role to report. The day someone adds one, every assertion in this block
+     * still passes — they read the derived rows, not the model — and the matrix
+     * starts under-reporting instead of failing. So the schema is checked here
+     * too, at the place that would otherwise lie about it.
+     */
+    it('AgentPrincipal carries no Role in the schema', () => {
+      const schema = readFileSync(
+        join(__dirname, '..', '..', 'prisma', 'schema.prisma'),
+        'utf8',
+      );
+      const block = schema.slice(
+        schema.indexOf('model AgentPrincipal {'),
+        schema.indexOf('model AgentRun {'),
+      );
+      expect(block).toContain('model AgentPrincipal {');
+      expect(block).not.toContain('Role');
+    });
   });
 
   /**

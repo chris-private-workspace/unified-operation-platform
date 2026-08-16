@@ -815,5 +815,82 @@ api **1199 → 1212 / 83** 全綠 · tsc 0 · lint 0(⚠️ 兩個 prettier erro
 - 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
 - 🚧 **期二剩 `G2`–`G7`**:`G4` 開工前要**重新答 OQ-7**(ADR-0037 E7:Claude 唔喺公司信任面,唔可以引用本 ADR 當已答)· `G5` 開工前要答 **OQ-5**
-- 🚧 **`propose_assign` 嘅前端未做** —— F8 張卡今日只認得 `line_items` 嗰種 proposal payload(`ProposalSummary` 讀 `items[]`);一個 `assign` proposal 會 render 成 `Nothing proposed.`。**唔喺 G1 範圍**,但要記住
+- ~~🚧 `propose_assign` 嘅前端未做~~ 🟢 **同日收尾就做咗**(見下)—— **本段一度過時,2026-08-16 `G2` 開工前更正**。呢個正正就係 §9 講嗰種「一過時就令下個 session 用錯前提開始」
 - 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)
+
+### 🔴 收尾修咗一個 `G1` 自己製造嘅安全問題
+
+F8 張卡個 `ProposalSummary` 只讀 `payload.items` ⇒ 一個 `assign` proposal 會 render 成 **`Nothing proposed.`**,而隔籬就係一粒**會派真 licence** 嘅 Approve 掣。
+
+**一個人可以批准一件畫面拒絕描述嘅事 —— 呢個比冇呢個功能更差。**
+
+已改:按 `kind` 出標題 · 認得 `lineItemId` · **讀唔到嘅 payload 明文寫「cannot be displayed — do not approve it」**,而唔係一句聽落好無害嘅 `Nothing proposed.`。
+
+---
+
+## Day 12 — 2026-08-16(期二 `G2` — agent 入返權限矩陣)
+
+**做咗**:`derivePermissions()` 認得 `AgentPrincipal`(ADR-0036 **D7**),W28 個 drift test 覆蓋埋。
+
+### 點解呢件事係一個安全問題,唔係一個報表功能
+
+D7 警告嗰件事唔係「agent 攞得太多權」。係**佢條寫入路徑會變成成個平台唯一一條矩陣描述唔到嘅路** —— 而**一份對某個 actor 沉默嘅矩陣,同一份報告「呢個 actor 乜都掂唔到」嘅矩陣,讀落一模一樣**。
+
+`/admin/permissions` 之前答嘅係「邊個 role 撳得邊個 endpoint」。Agent 嘅 reach **根本唔係 endpoint** —— 佢 in-process 撳 tool ⇒ 一個 ADMIN 由頭睇到尾,會好合理咁以為 `POST /agent/proposals/:id/approve` 嗰行就係 agent 故事嘅全部。
+
+### 形狀:一份 list,唔係兩份
+
+Agent 嗰半由 **`AgentToolRegistry` derive**,同人嗰半由 `@Roles` derive 係**同一個道理**(ADR-0009 D8.5):讀返 runtime 真正跑嗰個 object,唔係第二份手 keep 嘅表。兩個 caller 都行同一條路 —— endpoint inject 個 registry,test 就 `new AgentToolRegistry(...)`(constructor 只砌 descriptor,`prisma` 喺 `execute` 入面 capture,呢度一次都冇 call)。
+
+`PermissionEntry` 加 `actor`,`AccessKind` 加 `agent-read` / `agent-propose`。**冇開第二個 array、冇開第二個 endpoint** —— 開咗就係重新造返 W28 一開始要杜絕嗰個分裂:一個唔碌落去嘅讀者,會得出同以前一模一樣嘅錯誤結論。
+
+三個刻意嘅決定:
+- **`agentTools` 冇 default value** —— 畀 `= []` 就等於容許一個「望落齊全、實際靜靜少咗成個 actor」嘅矩陣,即係 D7 想擋嗰個失敗模式,當成便利重新引入一次。required ⇒ **compiler 喺兩個 call site 都會問**。
+- **`roles: []` 係一個事實唔係一個窿。** Agent 一個 Role 都冇(D7 就係為咗唔好畀),寫個入去就正正係嗰種靜靜擴權。真正嘅分別擺喺 `access`。
+- **刻意唔喺 row 度聲稱 OpCo scope。** 每個 tool 都真係行 `assertOpcoScope`,但個 descriptor 冇呢個資料,填就係手寫一個 drift 得嘅 claim。**一份 audit 文件最壞嘅唔係唔齊,係聲稱一個冇人驗過嘅控制。**
+
+### 🔴 改個 `describe` 名,一樣繞得過 snapshot 保護
+
+我改咗頂層 `describe` 個名(佢唔再淨係講 `@Roles`)⇒ jest **當佢係一個新 snapshot 直接寫落去**,舊嗰個標 obsolete。**嗰一刻 drift 保護係被繞過咗嘅**,而個 test 報告寫住 `1 snapshot written` + 一個綠剔。
+
+條 test 自己個註釋寫住「Do NOT run `jest -u` reflexively」—— 而**我根本冇跑 `-u`**。⇒ **繞過方法唔止一個。**
+
+補做:寫咗段 script 把新舊兩個 key 逐行對 ⇒ **64 → 70 行,`ADDED` 6 / `REMOVED` 0,共有行順序完全不變**。呢個係我特登設計個 sort(route 先、agent block 後)想攞到嘅性質,而家係**驗過**唔係假設。
+
+### 🔴🔴 Falsification 揭到我自己兩條 test 係空轉
+
+拆走個 derive loop ⇒ **3 條紅,2 條照綠**。嗰兩條就係 `for (const row of agentRows)` —— **空 list 滿足你對佢成員作出嘅任何 claim**,而佢哋偏偏就係「agent 冇 Role」嗰兩條。
+
+同 `agent.boundary.spec.ts` 用 `expect(agentFiles.length).toBeGreaterThan(5)` 守住嘅係**同一個洞**,而嗰段註釋仲寫住「an empty list would make the file a row of green nothing」—— **睇過、明白、然後隔幾日自己再犯一次**。
+
+補一條獨立 `has agent rows at all` + 兩個 `length > 0` guard ⇒ 同一個 falsification 由 **3 紅變 6 紅**。
+
+### Falsification ×5,真紅零誤傷
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| ① | 個 derive loop | **6 紅** |
+| ② | agent row 靜靜畀個 `Role.REGIONAL` | **2 紅**(D7 條 + snapshot) |
+| ③ | `AgentApprovalController` 加 `OPCO_IT` | **2 紅** |
+| ④ | `schema.prisma` 個 `AgentPrincipal` 加 `role Role` | **1 紅,其餘全部照綠** |
+| ⑤ | 前端拆走 agent 段文案 | **1 紅** |
+
+**④ 先係最值得記嗰個。** 佢證明咗嗰條 schema test 唔係順手加 —— derive 出嚟嗰啲 row 個 `roles: []` 係 **hardcode** 嘅,所以 `AgentPrincipal` 加咗 role 之後,**佢哋一個都唔會察覺**,而矩陣會由「啱」靜靜變成「報少咗」。呢個就係 D7 講嗰個失敗模式本身,只不過發生喺 D7 落地之後。
+
+### 前端
+
+`Access matrix`(舊名 `Role & endpoint matrix` **而家會錯**,因為表入面有行既唔係 role 亦唔係 endpoint)。
+
+- 兩個新 badge 用返既有 **`purple`**(DS-8 AI 色)—— **刻意唔用 `warn`**:「要人批」正正就係令 propose tool **安全**嗰件事,tint 成風險等於對住一行設計正常運作嘅嘢大叫。
+- endpoint 同 tool **分開數** —— 夾埋數出嚟嗰個「N endpoints」對邊半邊都唔真。
+- 冇 tool 嘅部署,成段文案 + 個 clause **消失**,唔會出現「plus 0 agent tools」。
+
+🔴 **web test 第一版自己係假嘅,而佢自己撞紅先揭穿**:`getByText('Agent proposal')` 撞「found multiple elements」,因為我新加嗰段解釋文案入面都有呢隻字 ⇒ **一個 page-wide match 可以淨係靠嗰段「描述緊嗰行」嘅文案綠,而唔係靠嗰行本身**。改成 `rowFor(path)` + `within(row)`。同 Day 10 嗰族一模一樣:**綠嘅理由,同條 test 聲稱嘅理由,唔同。**
+
+### 數字
+
+api **1212 → 1218 / 83** 全綠 · web **398 → 403**(6 紅 = pre-existing `local-profile` ×5 + `reset-password` ×1,**數目一個字冇變**)· 兩邊 tsc 0 / lint 0(⚠️ 四個 prettier error `--fix` 咗先過)。
+
+### 未收
+- 🚧 **`G2-j` H6 真 render** —— 卡本機 stack(`ai-doc-extraction-db` 揸住 5433,停佢要 Chris 批)。**唔係「低風險所以唔使做」**:用到嘅 primitive 兩個 theme 都有證據,但 **CH-030 嘅教訓就係四層 test 全綠都捉唔到「佢喺邊」**,而呢版新增咗個明顯長過舊值嘅 guard cell。**期二 render 一次過做。**
+- 🚧 期二剩 `G3`–`G7`(`G4` / `G5` 有硬 gate,見上)

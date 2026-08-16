@@ -24,12 +24,27 @@ import { IS_PUBLIC_KEY } from './public.decorator';
  * If the two ever disagree, that mismatch is itself the bug signal.
  */
 
+/**
+ * W46 G2 / ADR-0036 D7 — who is doing the reaching.
+ *
+ * 🔴 An `AgentPrincipal` is deliberately NOT an `AppUser` and carries no `Role`,
+ * so before this existed the matrix had no row that could describe it — and a
+ * matrix silent about an actor reads exactly like a matrix reporting that the
+ * actor has no reach. That is the failure D7 names: "唯一一條唔受權限矩陣管嘅
+ * 寫入路徑,而個矩陣唔會話你聽".
+ */
+export type ActorKind =
+  | 'user' // a signed-in AppUser calling an HTTP route
+  | 'agent'; // an AgentPrincipal calling a registered tool (ADR-0036 D7)
+
 export type AccessKind =
   | 'roles' // restricted to specific app roles
   | 'public' // no auth at all (login / refresh / logout)
   | 'm2m' // @Public but protected by an API-key guard
   | 'authenticated' // any signed-in user — reviewed and accepted
-  | 'unguarded'; // any signed-in user — NOT reviewed → treat as a finding
+  | 'unguarded' // any signed-in user — NOT reviewed → treat as a finding
+  | 'agent-read' // agent tool with no side-effect and no human in the loop
+  | 'agent-propose'; // agent tool that only proposes — a person decides
 
 export interface PermissionEntry {
   controller: string;
@@ -37,11 +52,32 @@ export interface PermissionEntry {
   method: string;
   path: string;
   access: AccessKind;
+  actor: ActorKind;
   /** Effective roles (method-level overrides class-level, mirroring RolesGuard). */
   roles: Role[];
   /** Extra guard class names (e.g. IntakeKeyGuard) — what makes `m2m` safe. */
   guards: string[];
 }
+
+/**
+ * What the matrix needs to know about an agent tool.
+ *
+ * Deliberately only the two things the registry itself DECIDES. Adding, say,
+ * "applies OpCo scope" would be a claim this file cannot check — and the one
+ * thing worse than an incomplete audit document is one that asserts a control
+ * nobody verified.
+ */
+export interface AgentToolDescriptor {
+  name: string;
+  needsApproval: boolean;
+}
+
+/**
+ * The class that stands between a proposal and its effect. Recorded in `guards`
+ * for exactly the reason `IntakeKeyGuard` is: it names what makes the row safe,
+ * and it points at another row of this same matrix — where its @Roles are.
+ */
+const AGENT_APPROVAL_CONTROLLER = 'AgentApprovalController';
 
 /**
  * Routes deliberately open to ANY signed-in user, after review. Anything else
@@ -76,12 +112,23 @@ const guardNames = (target: unknown): string[] => {
 };
 
 /**
- * Derive the effective permission matrix from controller classes.
- * Resolution mirrors RolesGuard exactly: @Public wins first, then method-level
- * @Roles over class-level. Deviating here would produce a matrix that does not
- * describe what the guard actually enforces.
+ * Derive the effective permission matrix from controller classes AND from the
+ * agent tool registry.
+ *
+ * Resolution for routes mirrors RolesGuard exactly: @Public wins first, then
+ * method-level @Roles over class-level. Deviating here would produce a matrix
+ * that does not describe what the guard actually enforces.
+ *
+ * 🔴 `agentTools` has NO default value, and that is the design. A default of
+ * `[]` would let a caller that forgot the registry render a matrix which is
+ * complete-looking and silently missing an entire actor — which is the precise
+ * failure mode ADR-0036 D7 exists to prevent, reintroduced as a convenience.
+ * Required means the compiler asks the question at both call sites.
  */
-export function derivePermissions(controllers: unknown[]): PermissionEntry[] {
+export function derivePermissions(
+  controllers: unknown[],
+  agentTools: readonly AgentToolDescriptor[],
+): PermissionEntry[] {
   const reflector = new Reflector();
   const entries: PermissionEntry[] = [];
 
@@ -136,14 +183,51 @@ export function derivePermissions(controllers: unknown[]): PermissionEntry[] {
         method,
         path,
         access,
+        actor: 'user',
         roles,
         guards,
       });
     }
   }
 
+  /**
+   * W46 G2 — the agent's reachable surface IS the registry, and nothing else
+   * (ADR-0036 D2: an unregistered tool is not restricted, it is absent). So the
+   * registry is to an agent what the @Roles decorators are to a person, and it
+   * is derived from here for the same reason: a second, hand-kept list of what
+   * an agent may do would drift, and this one is read from the same object the
+   * runtime actually executes.
+   *
+   * 🔴 `roles: []` is a fact, not a gap. An agent holds no Role at all (D7), and
+   * writing one in would be the silent privilege escalation that decision was
+   * taken to avoid. `access` carries the real distinction instead: a read tool
+   * runs with nobody in the loop, a propose tool cannot take effect until a
+   * person decides it through AgentApprovalController.
+   */
+  for (const tool of agentTools) {
+    entries.push({
+      controller: 'AgentToolRegistry',
+      handler: tool.name,
+      // Not an HTTP route and it must not read like one — an agent reaches
+      // these in-process, so there is no method and no URL to report.
+      method: 'TOOL',
+      path: `agent:${tool.name}`,
+      access: tool.needsApproval ? 'agent-propose' : 'agent-read',
+      actor: 'agent',
+      roles: [],
+      guards: tool.needsApproval ? [AGENT_APPROVAL_CONTROLLER] : [],
+    });
+  }
+
   // Stable order so the drift snapshot only moves when permissions actually do.
+  // Routes keep their existing order and the agent block follows, so adding a
+  // tool shows up as added lines rather than as a reshuffled matrix.
+  const actorRank = (entry: PermissionEntry) =>
+    entry.actor === 'user' ? 0 : 1;
   return entries.sort(
-    (a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method),
+    (a, b) =>
+      actorRank(a) - actorRank(b) ||
+      a.path.localeCompare(b.path) ||
+      a.method.localeCompare(b.method),
   );
 }

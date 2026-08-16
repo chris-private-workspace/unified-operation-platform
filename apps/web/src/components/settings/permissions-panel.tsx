@@ -16,12 +16,19 @@ const TD = 'px-[16px] py-[11px] align-middle';
 // Semantic tint per access kind (DS-8) — all from the token palette, no new
 // accent. `roles` is the normal case so it stays neutral; anything that widens
 // reach is tinted so it reads as something to look at.
+//
+// The two agent kinds take `purple`, which is the console's existing AI tone
+// (DS-8) — not a risk tint. Needing a human decision is what makes a propose
+// tool SAFE, so tinting it `warn` would have the table shout at the one row
+// whose design is working.
 const ACCESS_TONE: Record<AccessKind, BadgeTone> = {
   roles: 'neutral',
   m2m: 'info',
   authenticated: 'warn',
   public: 'warn',
   unguarded: 'danger',
+  'agent-read': 'purple',
+  'agent-propose': 'purple',
 };
 
 const ACCESS_LABEL: Record<AccessKind, string> = {
@@ -30,6 +37,8 @@ const ACCESS_LABEL: Record<AccessKind, string> = {
   authenticated: 'Any signed-in',
   public: 'Public',
   unguarded: 'Unguarded',
+  'agent-read': 'Agent read',
+  'agent-propose': 'Agent proposal',
 };
 
 /** Group by controller, keeping the backend's path ordering within each group. */
@@ -75,9 +84,10 @@ function Row({ entry }: { entry: PermissionEntry }) {
 }
 
 /**
- * Role × endpoint matrix (W28). Read-only by design — the @Roles decorators in
- * the backend are the single source of truth (ADR-0009 Decision 8.5), so there
- * is nothing to edit here and the view carries no primary action.
+ * Actor × surface matrix (W28, widened in W46 G2). Read-only by design — the
+ * @Roles decorators and the agent tool registry are the single sources of truth
+ * (ADR-0009 Decision 8.5 / ADR-0036 D7), so there is nothing to edit here and
+ * the view carries no primary action.
  * ADMIN-only at the backend; a non-admin caller 403s into a restricted state.
  */
 export function PermissionsPanel() {
@@ -112,14 +122,24 @@ export function PermissionsPanel() {
   const entries = permissions.data ?? [];
   const groups = groupByController(entries);
   const unguarded = entries.filter((e) => e.access === 'unguarded');
+  // W46 G2 — routes and agent tools are both reachable surfaces, but counting
+  // them together would report a number of "endpoints" that is not true of
+  // either. Kept apart in the count for the same reason they are kept apart in
+  // the matrix.
+  const routes = entries.filter((e) => e.actor === 'user');
+  const agentTools = entries.filter((e) => e.actor === 'agent');
+  const controllerCount = new Set(routes.map((e) => e.controller)).size;
+  // The clause disappears rather than reading "plus 0 agent tools": this panel
+  // predates the agent, and a deployment with no tools should not be told about
+  // an actor it does not have.
+  const subtitle =
+    `${routes.length} endpoints across ${controllerCount} controllers` +
+    (agentTools.length > 0 ? `, plus ${agentTools.length} agent tools` : '') +
+    ' · derived live from the backend, not maintained by hand.';
 
   return (
     <div className="flex flex-col gap-[16px]">
-      <Card
-        padded={false}
-        title="Role &amp; endpoint matrix"
-        subtitle={`${entries.length} endpoints across ${groups.length} controllers · derived live from the backend, not maintained by hand.`}
-      >
+      <Card padded={false} title="Access matrix" subtitle={subtitle}>
         <div className="flex flex-col gap-[12px] px-[16px] pb-[4px] pt-[14px]">
           {/* R4 — the single most misread thing about this table. Endpoint access
               and row-level scope are different questions; say so on the page so
@@ -130,6 +150,20 @@ export function PermissionsPanel() {
             additionally limited to their own OpCo by the backend, which an
             endpoint-level matrix can’t express.
           </p>
+          {/* G2 — the agent rows are the ones a reader will misjudge, in either
+              direction: they are not endpoints, and the agent holds no role at
+              all. Both halves are said here rather than left to the badge. */}
+          {agentTools.length > 0 && (
+            <p className="text-[11.5px] leading-[1.55] text-fg-muted">
+              The <strong>agent tools</strong> are not endpoints — an AI agent
+              reaches them in-process, and it holds{' '}
+              <strong>no role of its own</strong>. A tool marked{' '}
+              <em>Agent proposal</em> changes nothing by itself: a person
+              approves it first, and the platform’s own checks still run and can
+              still refuse. Each one runs under the OpCo scope of whoever
+              started the run.
+            </p>
+          )}
           {unguarded.length > 0 && (
             <p className="text-[11.5px] leading-[1.55] text-danger">
               {unguarded.length} endpoint(s) carry no role restriction and are
