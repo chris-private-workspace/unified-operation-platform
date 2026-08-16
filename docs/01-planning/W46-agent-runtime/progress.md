@@ -524,8 +524,83 @@ api **1184 / 81** 全綠零跌 · api tsc 0 · api lint 0
 
 ---
 
-### 未收(**Day 6 收工嘅狀態;F7 已於 Day 7 收、F8 於 Day 8 收**)
+## Day 9 — 2026-08-16(A13 / F11-1 — light + dark 真 render)
 
-- 🚧 **F7** audit · **F8** 前端(🔴 後端通晒但**冇畫面撳得到**)· **F11** render + live
-- 🚧 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名)—— **同一個 infra request,未出**
+### 開工第一件事係確認工具,唔係寫 code
+
+`SESSION_SUMMARY.md:119` 有一條硬規矩:**前端驗證睇你今次 session 有冇 browser tool,唔可以當佢一定喺度;真係冇就照寫「未 render 驗」,唔可以用「token 兩邊都有定義」冒充。**
+
+本 session **冇**(兩次獨立確認:deferred tool 清單 + 兩次 `ToolSearch`)。而查返歷史,本項目由 CH-002 到 CH-030,**每一次** light+dark render 都係靠當日 session 啱啱有 Playwright MCP —— CH-016 驗到、**W43 驗唔到就照寫「未 render 驗」**。repo 入面**一個可以照跑嘅 render 腳本都冇**。
+
+⇒ 停低問 Chris。**佢揀咗第三條路:`playwright` 落 `apps/web` devDependency。**
+
+🔴 **點解呢個係方向改變唔係順手做嘅嘢**:W41 checklist 明文記住「repo 冇 playwright dep」—— 即係話**歷來每個 session 都刻意冇加**。H2 §5.2 寫住 dev dependency 屬例外可自行加,但「一個 acceptance criterion 應唔應該靠彩數」係 owner 嘅決定,唔係我嘅。
+
+🟢 **`npx playwright install chromium` 真落載到**(191.8 MiB + 114.5 MiB)—— **公司 proxy 冇封 `cdn.playwright.dev`**。⚠️ **值得記住嘅係呢個結論同 RISK R1 相反**(Prisma engine CDN 被封)⇒ **唔可以由「R1 封咗」推論「其他 CDN 都封」**,呢個係 §9 一路撞緊嗰族(由一個相關但唔對位嘅觀察推去更強嘅結論)嘅預防針。
+
+### 起 stack
+
+Chris 批准停 `ai-doc-extraction-db` 借 5433。`uop-postgres` + `uop-redis` 起返,**真 TCP 驗**(5433 / 6379 都 `True`,唔睇 health flag)。`prisma migrate status` = **25 migrations,up to date**(F1-5 嗰次已經落咗)。
+
+⚠️ **本 worktree 冇 `.env`**(佢住喺主 worktree)⇒ 造咗一個**本機 render 專用**嘅:DB URL 抄自 repo 自己 commit 咗嘅 `docker-compose.yml`,其餘 vendor 值**全部 placeholder**(Graph / SN / ACS / Entra / OpenAI 一律打唔通),`AUTH_DEV_BYPASS=true` 免得掂到 Chris 個 break-glass 密碼。**主 worktree 個 `.env` 由頭到尾冇讀過、冇抄過。**
+
+🔴 **順帶撞到一個唔明顯嘅位**:`main.ts` 個 port default 係 **3000**,而 §9 講嘅 3100 一直係由 `.env` 嘅 `PORT` 嚟。新造個 `.env` 冇 `PORT` ⇒ api 起咗喺 3000,而 **vite proxy 寫死 target 3100** ⇒ 畫面會攞唔到數,但 api 本身 200。補返 `PORT=3100`。
+
+### Fixture(純 INSERT,零現有 row 被改)
+
+一個 `awaiting_approval` run,掛喺 W45 嗰張 local render fixture request 上。**三種 step status 齊**(ok / failed / skipped)· **六個 transcript role 齊 —— 連 `unknown` 嗰個**(佢係平台喺 SDK 畀個唔認得嘅 role 嗰陣自己鑄嘅,冇 fixture 會自然生出佢)· 一個 pending proposal 帶兩個 skuId。
+
+📌 CH-030 嗰個教訓(改測試資料之前 SELECT 一次你將會寫嘅每個欄)今次唔使用 —— **因為一個欄都冇寫過落既有 row**。
+
+### 🟢 順帶攞到 F8-0b 個真證據
+
+打 `GET /agent/runs?requestId=…` → **200**,payload 入面 **`runState` 出現次數 = 0**。即係 Day 8 嗰個 `include` → `select` 修正**喺 wire 上真係守住咗**,唔淨係 code review 睇落啱。端到端(browser → vite proxy → api → DB)亦通。
+
+### Render — 四個狀態 × 兩個 theme = 八張
+
+①預設(proposal + steps + 摺埋嘅 transcript)②transcript 展開 ③reject 對話框 ④未開 run 嘅 empty state。
+
+**結果**:
+
+- **幾何兩個 theme 逐個相等**(728 / 1108 / 239 / 334 px)⇒ **零 layout drift**
+- **兩個 theme 都零橫向溢出**(`scrollWidth === clientWidth === 1440`)
+- **token 真 swap**:`--bg` `#f5f5f6`↔`#08080a` · `--card` `#ffffff`↔`#141417` · `--accent` `#E60027`↔`#ff3355` · **`--purple` `#6d28d9`↔`#a982f0`**(最後嗰個就係 DS-8 個 AI tone,而佢係本卡唯一新用嘅 semantic 色)
+- 八張逐張肉眼睇過:step 三個 icon 各自帶啱色(綠 check / 紅 alert / 灰 minus)· skuId + 時間戳 mono · `WHAT RAN` / `TRANSCRIPT` / 六個 role label 全部 micro uppercase · D4 嗰句 caveat 喺展開之後第一行 · reject 掣係 `bg-danger-soft`+`text-danger`(**唔係** disabled —— disabled 係 `opacity-.55`,實測係 full opacity)
+
+### 三個過程上嘅坑,兩個係我自己整出嚟
+
+1. **git-bash 食咗個 URL path**:`--url /requests/…` 被 MSYS 轉成 `C:/Program Files/Git/requests/…`。改用 PowerShell 跑。
+2. **`fullPage: true` 冇用** —— 頁面 main region 有自己嘅 scroll container,所以 document 本身唔滾,`fullPage` 永遠只得一個 viewport。⇒ 改**影卡本身**(`locator.screenshot()`)。順帶:element 高過 viewport 會影到一半黑,viewport 要開夠高。
+3. **`networkidle` 唔等於 React Query 已 settle** —— empty state 嗰張第一次影到個 `Loading…`。改成 `waitForSelector('text=No run yet')`。**同族**:等一個「網絡靜咗」嘅信號,去斷定一個「UI 已經到位」嘅結論。
+
+### 🔴 render 揭到一個潛在缺口(唔係今日嘅 bug)
+
+我 fixture 起初作咗個 `propose_assign` 做 step key,而畫面**直接印咗個 raw snake_case key 出嚟**。
+
+查證之後:**係我 fixture 錯,唔係 code 錯** —— 平台今日寫得出嘅 key 一共九個(`start`/`abort`/`run`/`proposal` + registry 五個 tool 名),而 `STEP_LABEL` **九個全部有**。fixture 改成真 key 就正常。
+
+**但個缺口係真嘅**:`AgentStep.key` 型別係 `string`,`STEP_LABEL[step.key] ?? step.key` 冇任何嘢釘住兩者對應 ⇒ 邊日有人喺 `tool-registry.ts` 加個 tool 而冇掂 `ai-assist-card.tsx`,操作員畫面就出 raw key。
+
+🔴 **而最值得記住嗰半係隔籬**:`MESSAGE_LABEL` 係 `Record<AgentMessage['role'], string>` ⇒ **TypeScript 幫佢守住,漏一個 role 就唔 compile**。兩個 map 喺 code 入面**上下相鄰、寫法睇落一模一樣**,一個有型別保護一個冇 —— 而分別唔係寫法,係**上游嗰個型別係 union 定係 `string`**。
+
+**未修,已開項**(F11-1b):兩條修法(跨 package parity test / unknown key render 成一望而知係 unknown)都唔係順手做嘅嘢,要 Chris 揀。**Target = 期二 G1 之前** —— G1 就係加 `propose_assign`,即係第一個真會踩中佢嘅改動。
+
+### DS 自檢(H6)—— 今次 12 條全部有答案
+
+DS-1 ✅(8 個色 class 逐個對返 `tailwind.config.ts`,全部 CSS var alias,零 hex)· DS-2 ✅(px 值逐個查過係 house idiom:`text-[11.5px]` 119 處 / 31 檔、`gap-[7px]` 16 處…;唯一獨有嘅 `pl-[22px]` 而 22 本身喺 spacing scale 上)· DS-3 ✅ 零新 primary · **DS-4 ✅ 兩個都真 render** · DS-5 ✅ · DS-6 ✅ · DS-7 ✅ · DS-8 ✅ · DS-9 ✅ · DS-10 ✅ · **DS-11 ✅**(prototype 冇 agent 卡,但整張卡純由既有 primitive 砌:Card / Badge / Button / Dialog / Input / EmptyState)· DS-12 N/A。
+
+### H4
+
+八張截圖**只影卡本身**,而卡入面個 target 係 `[redacted]`(scrub 過)⇒ **零真 UPN**(`Select-String` 實測 0 命中)。中途影過嘅全頁截圖帶住真 UPN,**已刪**。`git status --untracked-files=all` 實測 repo 零剩餘 artifact。
+
+### 數字
+
+api **1184 / 81** 全綠零跌 · web **392 passed**,**6 條紅逐條核對過就係已知嗰兩個檔**(`reset-password` 1 + `local-profile` 5),零新增。
+
+---
+
+### 未收
+
+- 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
+- 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)
 - 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)

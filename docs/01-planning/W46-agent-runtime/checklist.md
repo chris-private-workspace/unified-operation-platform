@@ -99,7 +99,7 @@
 - [x] F8-7 ⚠️ **5 個既有 `request-detail.*.test.tsx` 加咗一個 stub mock** —— 用**渲染 marker** 唔用 `() => null`,咁 CH-030 F4 嗰條 DOM 次序 test 同新嘅 role gating test 都仲驗得到。⚠️ CH-030 F4 條 test 原本靠 `getByText('AI Assist')`,而嗰個 anchor 隨住 placeholder 消失 ⇒ **改 anchor 唔改 claim**
 - [x] F8-8 🔴 **Falsification ×2 真紅零誤傷**:①transcript 預設改成打開 ②拆走 F8-3 嗰句
 - [x] F8-9 web **377 → 392 passed**(+15)· 6 條紅 = **完全就係已知 pre-existing 嗰 6 條,零新增** · web tsc 0 · web lint 0
-- [ ] F8-10 🚧 **DS-4(light + dark 真 render)未做** —— 全部行 token 所以結構上應該 swap,但**未 render 過就唔可以講佢掂**。= **A13 / F11-1**
+- [x] F8-10 ✅ **DS-4(light + dark 真 render)2026-08-16 收咗** —— 見 F11-1
 
 ## F9 — Boundary spec(H5)
 
@@ -113,7 +113,9 @@
 
 - [ ] F10-1 LLM 一律 mock(跟 §3.4 Graph / SN 先例)
 - [ ] F10-2 Falsification:每道閘拆走實作睇佢紅唔紅
-- [ ] F11-1 🔴 **A13:H6 light + dark 真 render**,跑 `ui-design` skill
+- [x] F11-1 ✅ **A13:H6 light + dark 真 render 收咗**(2026-08-16,**Chris 批准停 `ai-doc-extraction-db`**)。**四個狀態 × 兩個 theme = 八張**:①預設(proposal + steps + 摺埋嘅 transcript)②transcript 展開 ③reject 對話框 ④未開 run 嘅 empty state。**幾何完全一樣**(728 / 1108 / 239 / 334 px 兩個 theme 逐個相等)⇒ 零 layout drift;**兩個 theme 零橫向溢出**(`scrollWidth === clientWidth === 1440`);token 真 swap(`--bg` `#f5f5f6`↔`#08080a` · `--card` `#ffffff`↔`#141417` · `--accent` `#E60027`↔`#ff3355` · **`--purple` `#6d28d9`↔`#a982f0`**,最後嗰個就係 DS-8 個 AI tone)
+- [x] F11-1a 🔴🔴 **本 session 一開始冇 browser tool ⇒ Chris 2026-08-16 批准 `playwright` 落 `apps/web` devDependency**(H2 §5.2 明文例外:dev dependency)。**點解值得記住**:呢個項目由 CH-002 起,「render 驗唔驗到」一路取決於**當日 session 啱啱有冇 browser tool** —— CH-016 驗到、W43 驗唔到照寫「未 render 驗」。⇒ 加一個 dev dep + `apps/web/scripts/render-check.mjs` 令佢**可重複**,唔再靠彩數。⚠️ `npx playwright install chromium` 真落載到(191.8 MiB + 114.5 MiB),**公司 proxy 冇封 `cdn.playwright.dev`** —— 同 RISK R1(Prisma engine CDN 被封)**唔同結果**,所以唔可以由 R1 推論其他 CDN 都封
+- [x] F11-1b ⚠️ **render 順帶揭到一個潛在缺口(唔係今日嘅 bug)**:卡入面 `STEP_LABEL[step.key] ?? step.key`,而平台今日寫得出嘅 key **啱啱好九個全部有 label**(`start`/`abort`/`run`/`proposal` + registry 五個 tool 名)⇒ **今日係啱嘅**。但 `AgentStep.key` 係 `string`,**冇任何嘢釘住呢個對應** —— 邊日有人喺 `tool-registry.ts` 加個 tool 而冇掂 `ai-assist-card.tsx`,操作員畫面就會出一個 raw snake_case key。🔴 **而隔籬 `MESSAGE_LABEL` 係 `Record<AgentMessage['role'], string>` ⇒ TypeScript 幫佢守住**:兩個 map 喺 code 入面**睇落一模一樣**,一個有型別保護一個冇。**未修,未開單** —— 見下面「已知延後」
 - [ ] F11-2 🔴 **A14:live 驗** —— 真開一個 run,睇到 step timeline + transcript + proposal + 批准後 resume
 
 ---
@@ -142,5 +144,6 @@
 | **ADR-0037 `E4`** | 🟡 auth 揀 Entra token 定 API key —— **approved as DEFERRED** | 取決於 infra 點開個 resource,而 **OQ-1 取決於同一件事** ⇒ 一齊答,唔好分開問兩次 | **infra 回覆之後 / A14 之前** |
 | OQ-1 | model / **deployment** 選型未答 | Chris 2026-08-15 **批准押後到 F11**;ADR-0037 E3 令問題由「揀邊個 model」變成「**infra 開邊個 deployment、叫咩名**」⇒ 佢而家係一個 **infra request**,唔係一個揀 | **F11 之前** |
 | 🆕 infra | 未出 request:開 Azure OpenAI resource + deployment(要回報名)+ 答 E4 兩條路邊條做得到 | W46 **第一個外部依賴**,而本項目 infra 依賴 B1/B4/B7/B8/B9 五次每次都要等 | **A14 嘅時間表由佢決定** |
+| 🆕 F11-1b | **`STEP_LABEL` 同 `tool-registry.ts` 冇嘢釘住兩者對應** | 今日九個 key 全部有 label ⇒ **唔係 bug,係一個等人踩嘅缺口**。點修有兩條路(①跨 package parity test,跟 W28 權限 snapshot 先例 ②unknown key render 成一望而知係 unknown),**兩條都唔係順手做嘅嘢** ⇒ 要 Chris 揀 | **期二 G1 之前**(G1 加 `propose_assign`,即係第一個真會踩中呢個缺口嘅改動) |
 | R11–R19 | 未入 `RISK_REGISTER.md`(🆕 R17–R19 由 ADR-0037 新增) | living doc,ADR / plan 已記 | 期一收尾 |
 | — | 🆕 **既有 gap(唔喺 W46 範圍)**:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏咗 `licenseOpsProvider` / `ticketUpdateProvider` / `acsSenderAddress` 等 ⇒ 改 seam provider 唔會出現喺 audit `before`/`after` | W39 / W40 / CH-011 三批欄都中 | 開一張 CH |
