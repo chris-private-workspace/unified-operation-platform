@@ -4,6 +4,8 @@ import type {
   ActivityEvent,
   AdminOpco,
   AdminUser,
+  AgentKillSwitchStatus,
+  AgentReviewStats,
   AgentRun,
   AuditFilters,
   AuditPage,
@@ -199,6 +201,32 @@ export function usePermissions() {
   return useQuery({
     queryKey: ['admin', 'permissions'],
     queryFn: () => apiGet<PermissionEntry[]>('/admin/permissions'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /agent/kill-switch — 期二 G3. ADMIN-only, so a 403 is authoritative and
+ * the tab degrades to a restricted state rather than retrying.
+ */
+export function useAgentKillSwitch() {
+  return useQuery({
+    queryKey: ['agent', 'kill-switch'],
+    queryFn: () => apiGet<AgentKillSwitchStatus>('/agent/kill-switch'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /agent/review-stats — 期二 G7 (R13). ADMIN-only.
+ *
+ * The window is part of the query key so each one caches independently, the
+ * same shape the audit filters use.
+ */
+export function useAgentReviewStats(days: number) {
+  return useQuery({
+    queryKey: ['agent', 'review-stats', days],
+    queryFn: () => apiGet<AgentReviewStats>(`/agent/review-stats?days=${days}`),
     retry: retryUnless403,
   });
 }

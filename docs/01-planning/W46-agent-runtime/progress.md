@@ -1067,3 +1067,67 @@ api **1243 → 1260 / 85 → 87** 全綠 · tsc 0 / lint 0 · **web 一個字冇
 - 🚧 **`G7-o` R13 監測 UI** —— ⚠️ **同 `G2-j` / `G3-n` 唔同,呢個 UI 唔淨係方便**:G7 個重點就係「**只能靠數字,靠唔到留意**」,而**一個要打 API 先睇到嘅數字,冇人會定期望** ⇒ **R13 嘅緩解措施實際上要等 UI 先真正生效**。⚠️ 擺喺邊未決
 - 🚧 **`G2-j` / `G3-n`** —— 三個 UI 項一齊卡住本機 stack(5433)
 - 🚧 期二剩 `G4`(要重新答 **OQ-7**)· `G5`(要答 **OQ-5**)· `G6`(SSE)
+
+---
+
+## Day 15 — 2026-08-16(三個 UI 項一次過 + H6 真 render)
+
+**Chris 批准停 `ai-doc-extraction-db`** ⇒ `G2-j` / `G3-n` / `G7-o` 一次過收。**次序刻意係「先寫晒 UI(唔使 DB),最後先起 stack」** —— 咁另一個項目個 DB 停機時間最短。
+
+### 新 Settings tab「AI agent」
+
+kill switch card + review stats card。**唔擺落 Integrations**:嗰個 tab 講 **vendor wiring**(邊個 runtime、邊個 model),呢兩個講 **operation** —— 個能力行唔行,同埋前面道人閘仲有冇人用。
+
+🔴 **badge tone 跟 `settled` 唔跟 `enabled`。**「閂咗」係一個**打算之內**嘅狀態,唔應該嘈;**「閂咗但仲有 run park 住」先係要人知嗰個**。
+
+🔴 **dialog 兩個方向講唔同嘢,而「開返」嗰個先係嚇親人嗰個** —— 閂:講清楚**連 approval 都會拒**(唔止新 run)。開返:**逐個數報出嚟**兼明講「入面可能有一個真派 licence 嘅 assign」。
+
+### 🔴🔴 render 捉到一個四層 test 全綠嘅真缺陷
+
+`Select` 個 wrapper 係 `w-full`,而佢個 chevron 係 `absolute` 貼住嗰個 wrapper。我淨係 size 咗入面個 `<select>` ⇒ **個箭嘴飛咗去成張 card header 最右邊**,同個掣完全分家。
+
+**tsc 0 · lint 0 · 11 條 UI test 全綠。** 冇一樣嘢會紅。
+
+⇒ **CH-030 個教訓原封重演:「字喺唔喺度」同「佢喺邊」係兩件事**,而只有真 render 答得到第二條。改成外面包一個 `w-[150px]` div;順帶 subtitle 都唔再折行。
+
+### 🔴🔴 順帶喺真 Postgres 上驗到成套 G7 邏輯,唔係 mock
+
+Fixture 落咗真 DB 之後打 endpoint:
+
+| 欄 | 值 | 證到乜 |
+|---|---|---|
+| `decided` / `approved` | 4 / 3 | **`failed` 真係當咗批准**(G1 嗰行) |
+| `medianSecondsToDecide` | **5** | 真值 [3,4,6,1320] median = 5,而 **mean 會係 333** |
+| `approvalRate` | 0.75 | — |
+| `byReviewer` | 2 行 | 一個有名(100% / 4s / 3 快)· 一個 `displayName: null` |
+| kill switch | `enabled:false`,`liveRuns:1`,`pendingProposals:1` | ⇒ **`settled:false`** |
+
+**Mock 證得到公式,證唔到 Prisma 個 `where` 真係咁行。** 呢次兩樣都有咗。
+
+### 🔴 H4:fixture 用假帳戶,唔用 DB 入面兩個真人
+
+呢個 DB 得兩個 `AppUser`,**兩個都係真公司地址**。而呢個 panel 成個作用就係**點名** ⇒ 用真名 render 就係把真名寫入一份 artifact。
+
+改用一個 `.invalid`(保留 TLD,唔可能係真地址)嘅假帳戶,另加一個唔存在嘅 id 去 render「Unknown account」嗰個狀態 —— **兩個狀態都驗到,零真 PII**。
+
+Fixture 全部 `zzrf-` 前綴。收工逐張表對返數:**0 principals / 0 runs / 0 proposals / 2 users** —— 同開工前逐字一樣。screenshot 亦已刪。
+
+### ⚠️ 兩個 §9 未記過嘅環境陷阱
+
+🔴 **①呢個 worktree 個 compose project name 唔同咗。** `docker compose up -d` **唔係** start 返舊 container,係**試圖新建**(撞名失敗)—— 兼且**開咗一個空 `ai-agent_pgdata` volume**。⚠️ **若果佢成功咗,拎到嘅就係一個空 DB**,而畫面會睇落好正常。正確做法係 `docker start uop-postgres uop-redis`(舊 container 揸住真數據同啱嘅 port binding)。§9 舊有嗰條記嘅係「`Up (healthy)` 但冇 listener」,**同呢個唔同族**。
+
+🔴 **②`prisma generate` 撞 `EPERM ... query_engine-windows.dll.node`** —— 因為一個殘留 api 進程**鎖住咗個 engine DLL**。⇒ **`kill-zombies` 要行喺 `sync-code` 之前**,而 SOP 目前個次序係反嘅。
+
+📌 順帶:呢個 DB **叫 `platform` 唔叫 `uop`**。
+
+### 5433 交還
+
+驗到 §9 硬規則要求嗰個標準:**真 TCP connect = True** + `pg_isready accepting` + **佢個真 DB `ai_document_extraction` 仲喺**(唔係一個空 recreate)。**唔係睇 `docker ps` 個 `Up (healthy)`。** 順手清咗個空 volume 同 network。
+
+### 數字
+
+web **403 → 414**(6 紅 = pre-existing,數目一個字冇變)· tsc 0 / lint 0 · 新 test 11 條 · **四張 render 全部零橫向溢出**,token 兩個 theme 真 swap。
+
+### 未收
+- 🚧 期二剩 `G4`(要重新答 **OQ-7**)· `G5`(要答 **OQ-5**)· `G6`(SSE)
+- 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)

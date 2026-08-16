@@ -469,6 +469,61 @@ export interface PermissionEntry {
 }
 
 /**
+ * GET /agent/kill-switch → 期二 G3 / plan B5. ADMIN-only.
+ *
+ * 🔴 TWO facts, and the second is the point. `enabled` is the switch;
+ * `settled` is whether anything agent-originated is still in the system.
+ * Switching off does NOT remove runs already parked for approval — they become
+ * inert, and live again the moment the switch does. An operator who reads only
+ * `enabled` during an incident will conclude the agent has stopped when it has
+ * not.
+ */
+export interface AgentKillSwitchStatus {
+  principal: string;
+  enabled: boolean;
+  liveRuns: number;
+  pendingProposals: number;
+  settled: boolean;
+  updatedAt: string | null;
+}
+
+/** One person's reviewing record (期二 G7). */
+export interface ReviewerStats {
+  approverId: string | null;
+  displayName: string | null;
+  decided: number;
+  approved: number;
+  rejected: number;
+  approvalRate: number | null;
+  medianSecondsToDecide: number | null;
+  fastDecisions: number;
+}
+
+/**
+ * GET /agent/review-stats → 期二 G7 / plan B7 (R13). ADMIN-only.
+ *
+ * 🔴 One half of this is evidence and the other half is not, and the screen has
+ * to say which. `fastDecisions` is the signal — a proposal decided seconds
+ * after it appeared was not read, and that needs no assumptions.
+ * `medianSecondsToDecide` is context ONLY: the clock starts when the proposal
+ * was created, not when a person first saw it, so a long median may equally
+ * mean nobody was at their desk.
+ */
+export interface AgentReviewStats {
+  windowDays: number;
+  since: string;
+  decided: number;
+  approved: number;
+  rejected: number;
+  approvalRate: number | null;
+  medianSecondsToDecide: number | null;
+  fastDecisions: number;
+  fastReviewSeconds: number;
+  pending: number;
+  byReviewer: ReviewerStats[];
+}
+
+/**
  * GET /admin/audit → one platform audit-trail event (W29 / ADR-0009). ADMIN-only
  * — before/after may carry P-B whitelisted PII (email / displayName), so a 403
  * for any other role is authoritative and the page degrades to restricted.

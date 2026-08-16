@@ -148,7 +148,7 @@
 - [x] G2-g ✅ **Falsification ×5 真紅零誤傷**:①拆走 derive loop ⇒ **6 紅** ②agent row 靜靜畀個 `Role.REGIONAL` ⇒ **2 紅**(D7 條 + snapshot)③`AgentApprovalController` 加 `OPCO_IT` ⇒ **2 紅** ④`schema.prisma` 個 `AgentPrincipal` 加 `role Role` ⇒ **1 紅,而其餘全部照綠** —— **正正就係嗰條 test 存在嘅理由**:derive 出嚟嗰啲 row 個 `roles: []` 係 hardcode 嘅,schema 加咗 role 佢哋一個都唔會察覺,矩陣會由「啱」變成「靜靜報少咗」⑤前端拆走 agent 段文案 ⇒ **1 紅**
 - [x] G2-h ✅ 前端:`Access matrix`(舊名 `Role & endpoint matrix` 而家會**錯**,因為表入面有行既唔係 role 亦唔係 endpoint)· 兩個新 badge 用返既有 `purple`(DS-8 AI 色)—— **刻意唔用 `warn`**,因為「要人批」正正係令 propose tool **安全**嗰件事,tint 成風險就係對住一行設計正常運作嘅嘢大叫 · endpoint 同 tool **分開數**(夾埋數出嚟嗰個「N endpoints」對邊半邊都唔真)· 冇 tool 嘅部署**成段消失**,唔會出現「plus 0 agent tools」
 - [x] G2-i 🔴 **web test 第一版自己係假嘅,而佢自己撞紅先揭穿** —— `getByText('Agent proposal')` 撞「found multiple elements」,因為我新加嗰段解釋文案入面都有呢個字。⇒ **一個 page-wide match 可以淨係靠嗰段「描述緊嗰行」嘅文案綠**,而唔係靠嗰行本身。改成 `rowFor(path)` + `within(row)`。同 F10-2 嗰族一模一樣:**綠嘅理由同條 test 聲稱嘅理由唔同**
-- [ ] G2-j 🚧 **H6 真 render 未做** —— 見下面「已知延後」
+- [x] G2-j ✅ **H6 真 render 做咗(2026-08-16)** —— 見下面 `G-UI`
 - [x] G3 ✅ **Blast-radius limit + kill switch(2026-08-16)** —— api **1218 → 1243 / 83 → 85**,tsc 0 / lint 0,**falsification ×7 真紅零誤傷**。web 一個字冇改(UI 見 `G3-h`)
 - [x] G3-a ✅ **Blast radius = 一個 run 可以自己撳幾多次 tool(`MAX_AUTONOMOUS_TOOL_CALLS = 25`)**,閘企喺 **registry** 唔喺 adapter —— D1 明文寫住「adapter 要決定嘢嘅時候,個決定應該搬返入 registry」,而 G4 個第二個 adapter 就係要靠呢點先唔使重寫一次。**每個 tool 喺出生嗰刻被 wrap**(唔係六個 `execute` 各自 check),所以下個月加嘅 tool 係**因為佢喺邊度宣告**而被 cap,唔係因為作者記得
 - [x] G3-b 🔴 **counter 讀 `AgentStep` 唔係記喺 memory** —— run 隔夜批准之後喺**另一個 process** resume,而 registry 揸住 per-run counter 就係一個冇人清嘅 map。⚠️ **誠實講個代價**:step 寫唔入就會令 counter 唔郁 ⇒ **fail-OPEN**;接受係因為「action ledger 寫唔到」本身係大過「agent 講多咗嘢」嘅警號,而 `onToolExecuted` **結構上唔准 fail 一個 tool call**(provider 明文 swallow),所以另一種接法根本冇得揀
@@ -163,7 +163,7 @@
 - [x] G3-k ✅ **W28 drift test 第二次捉到新 agent write surface** —— `AgentKillSwitchController` 一加,`discovers every controller in src` 即刻紅,而**唔係靠 review**。snapshot 睇過先更新:**只加兩行,兩行都 `[ADMIN]`**。⚠️ ADMIN-only 比 run / approval 兩個 surface 窄,係本單決定:嗰兩個決定一張單點算,呢個決定**個能力存唔存在**
 - [x] G3-l ✅ **Falsification ×7 真紅零誤傷**:①拆走個 cap ⇒ **2 紅** ②cap 埋 `propose_*` ⇒ **1 紅** ③counter 唔篩 `status: 'ok'` ⇒ **1 紅** ④`approve` 拆走 gate ⇒ **2 紅** ⑤`reject` 加返 gate ⇒ **1 紅** ⑥`settled = !enabled` ⇒ **1 紅** ⑦冇 row 當 disabled ⇒ **1 紅**。實作檔全部還原乾淨
 - [x] G3-m ✅ **刻意冇加一條 boundary static test** —— behavioural test 已經 assert 咗「拆走 gate 會點」,而 static test 只 assert「嗰行字喺唔喺度」⇒ **今次真係重複**(G1 嗰次唔重複,係因為位置參數偷渡 grep 睇唔到)。**兩者分別喺有冇一個 grep 睇唔到嘅壞版本**
-- [ ] G3-n 🚧 **UI 未做**(kill switch 狀態 + 開關掣)—— 見下面「已知延後」
+- [x] G3-n ✅ **UI 做咗(2026-08-16)** —— 見下面 `G-UI`
 - [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)
 - [ ] G5 BullMQ 落地 —— 🔴 **開工前要答 OQ-5(`awaiting_approval` 過期)**
 - [ ] G6 SSE transport —— 還 `ADR-0029 A2` 嗰筆基建債
@@ -182,7 +182,23 @@
 - [x] G7-l 🔴 **試過寫一條 boundary static test,寫完拆咗** —— 想 assert「全 `src/` 只有 approval orchestrator 寫 `decidedAt`」,但個 grep **分唔開 write 同 Prisma `select`/`where`**(`decidedAt: true` 係 select、`decidedAt: { not: null }` 係 where)⇒ 兩個 false positive。**改成一條 behavioural test 釘住真正嘅風險位**(`abortRun` 個 `updateMany` 冇 `decidedAt` / `approvedById`),而「冇第二個地方寫」嗰半**既有嘅 `writersOf('agentProposal')` 已經覆蓋咗**
 - [x] G7-m ✅ **Falsification ×7 真紅零誤傷**:①人口放闊(唔要 `not: null`)⇒ **1 紅** ②`failed` 當 rejection ⇒ **1 紅** ③rate 返 `0` 唔返 `null` ⇒ **1 紅** ④mean 代 median ⇒ **2 紅**(修完 fixture 之後)⑤fast 門檻改 inclusive ⇒ **1 紅** ⑥`abortRun` 補 `decidedAt` ⇒ **1 紅** ⑦拆走 per-reviewer ⇒ **5 紅**
 - [x] G7-n ✅ **W28 drift test 第三次捉到新 agent surface** —— snapshot 睇過先更新:**只加一行 `GET /agent/review-stats → roles [ADMIN]`**
-- [ ] G7-o 🚧 **UI 未做** —— 見下面「已知延後」
+- [x] G7-o ✅ **UI 做咗(2026-08-16)** —— 見下面 `G-UI`
+
+---
+
+## `G-UI` —— 三個 UI 項一次過收(2026-08-16,Chris 批准停 `ai-doc-extraction-db`)
+
+- [x] G-UI-1 ✅ **新 Settings tab「AI agent」** = kill switch card + review stats card。**唔擺落 Integrations**:嗰個 tab 講 **vendor wiring**(邊個 runtime、邊個 model),呢兩個講 **operation**(個能力行唔行、前面道人閘仲有冇人用)。一個 view 一個 primary(H6)= 個掣;數字係唯讀
+- [x] G-UI-2 🔴 **badge tone 跟 `settled` 唔跟 `enabled`** —— 「閂咗」係一個**打算之內**嘅狀態,唔應該嘈;「閂咗但仲有 run park 住」先係要人知嗰個。⇒ `Running`(purple/AI 色)· `Switched off`(neutral)· **`Switched off — not settled`(warn)**
+- [x] G-UI-3 🔴 **dialog 兩個方向講唔同嘢,而「開返」嗰個先係嚇親人嗰個** —— 閂:講清楚**連 approval 都會拒**(唔止新 run),而已經 park 咗嘅唔會消失。開返:**逐個數報出嚟**(「N run + M proposal 會變返可批准」)兼明講「入面可能有一個真派 licence 嘅 assign」
+- [x] G-UI-4 🔴 **G7 個「點讀呢啲數」寫上畫面,唔淨係擺喺 DTO** —— 「幾秒 = 冇讀過」係證據 · median 係 **context, not proof of care**(個鐘由 proposal 建立行起)。**一個把慢 median 當勤力展示嘅 dashboard,就係自己作嗰個令人安心嘅解讀**
+- [x] G-UI-5 🔴🔴 **render 捉到一個四層 test 全綠嘅真缺陷 —— CH-030 個教訓原封重演**:`Select` 個 wrapper 係 `w-full`,而佢個 chevron 係 `absolute` 貼住嗰個 wrapper ⇒ 我淨係 size 咗入面個 `<select>`,**個箭嘴飛咗去成張 card header 最右邊**,同個掣完全分家。tsc / lint / 11 條 UI test **全部綠**。改成**外面包一個 `w-[150px]` div**;順帶連 subtitle 都唔再折行。⇒ **「字喺唔喺度」同「佢喺邊」仍然係兩件事**
+- [x] G-UI-6 ✅ **兩個 tab × 兩個 theme = 四張,全部零橫向溢出**(`scrollWidth === clientWidth === 1440`)· token 真 swap(`--bg` `#f5f5f6`↔`#08080a` · `--card` `#ffffff`↔`#141417` · `--accent` `#E60027`↔`#ff3355` · `--purple` `#6d28d9`↔`#a982f0`)· 幾何 light/dark 逐個相等
+- [x] G-UI-7 🔴🔴 **順帶喺真 Postgres 上驗到成套 G7 邏輯,唔係 mock**:`decided 4 / approved 3` ⇒ **`failed` 真係當咗批准**(G1 嗰行)· `medianSecondsToDecide: 5`(真值 [3,4,6,1320] 嘅 median = 5,而 **mean 會係 333**)· `approvalRate: 0.75` · byReviewer 兩行(一個有名 100%/4s/3 快、一個 `displayName: null`)· kill switch `enabled:false + liveRuns:1 + pendingProposals:1 ⇒ settled:false`。**mock 證得到公式,證唔到 Prisma 個 where 真係咁行**
+- [x] G-UI-8 🔴 **H4:fixture 用一個 `.invalid` 假帳戶,唔用 DB 入面兩個真人** —— 呢個 panel 成個作用就係**點名**,用真名 render 就係把真名寫入一份 artifact。fixture 全部 `zzrf-` 前綴,收工逐張表對返數:**0 principals / 0 runs / 0 proposals / 2 users**(同開工前逐字一樣),screenshot 亦已刪
+- [x] G-UI-9 ⚠️ **兩個新環境陷阱,§9 未記過**(見 progress Day 15)—— ①**呢個 worktree 個 compose project name 唔同咗**,`docker compose up -d` 唔係 start 返舊 container,係**試圖新建**(撞名失敗)兼**開咗一個空 `ai-agent_pgdata` volume** ⇒ 若果佢成功咗就係一個**空 DB**;正確做法係 `docker start uop-postgres uop-redis` ②`prisma generate` 撞 **EPERM**,因為一個殘留 api 進程**鎖住咗 engine DLL** ⇒ **`kill-zombies` 要行喺 `sync-code` 之前**
+- [x] G-UI-10 ✅ **5433 交還驗到最嚴嗰個標準**(§9 硬規則):**真 TCP connect = True** + `pg_isready accepting` + 佢個真 DB `ai_document_extraction` 仲喺 ⇒ 唔係 `docker ps` 個 `Up (healthy)`。順手清咗個空 volume 同 network
+- [x] G-UI-11 ✅ web **403 → 414**(6 紅 = pre-existing,數目一個字冇變)· tsc 0 / lint 0 · 新 test 11 條
 
 ---
 
@@ -200,8 +216,8 @@
 | 🆕 infra | 🟡 **草擬咗,未發出** → `docs/13-deployment/11-azure-openai-infra-request.md`(**Q0 治理 + Q1 auth/E4 + Q2 deployment/OQ-1 + Q3 abuse monitoring + Q4 outbound**,連一段可直接發嘅英文全文) | W46 **第一個外部依賴**,而本項目 infra 依賴 B1/B4/B7/B8/B9 五次每次都要等。🔴 **草擬過程查到一個唔喺任何 W46 文件入面嘅障礙**:`05-rci-par-process.md:4`「**開資源前必經 PAR**」,而同一份 PAR Section 1 `:54` **明文申報咗「Azure OpenAI 暫無」** ⇒ 開佢同我哋自己寫落治理文件嗰句相反;而嗰份 PAR **仲未提交**,`09-dev-as-built.md:125`「DEV 要唔要走 PAR,要問」**亦從來冇問過** | 🟢 **路已揀 = B**(Chris 2026-08-16:治理同技術同一封,`Q0` 第一條)⇒ **份嘢可以直接發,等 Chris 發**。**A14 嘅時間表由佢決定** |
 | ~~F10-2e~~ | ~~**`agent-run.controller.ts` / `agent-approval.controller.ts` 兩個都冇 spec 檔**;而 **BUG-011 個教訓逐字就係呢條縫**(三層 test 可以全綠而 bug 住喺中間)~~ | 🟢 **2026-08-16 同日補咗** —— 8 + 4 條,api **1199 / 83**;兩個 controller falsification 各一真紅零誤傷。🔴 **順帶查證到:呢個 app 全 `src/` 零個 `ClassSerializerInterceptor`** ⇒ **DTO 係文件唔係過濾器**,`runState` 唯一嗰道閘就係 service 個 `select` | ✅ |
 | ~~F11-1b~~ | ~~**`STEP_LABEL` 同 `tool-registry.ts` 冇嘢釘住兩者對應**~~ | 🟢 **2026-08-16 收咗,喺 `G1` 之前**(佢就係第一個會踩中呢個缺口嘅改動)。**揀咗 parity test 唔係改 render 行為** —— §13「兩種都 reasonable → 揀更接近既有 pattern 嗰個」,而 source-scanning test 正正就係 `agent.boundary.spec.ts` 個 idiom;改 render 反而會令一個**今日唔存在**嘅狀態霸咗畫面一個位置。`ai-assist-step-labels.test.ts`(4 條)讀 API 個 registry 對返 `STEP_LABEL`,**兩個方向都驗**(缺 label / 多咗一個冇嘢 emit 得到嘅 label)。⚠️ **順帶要處理埋一個 lint 訊號**:由 component 檔 export 一個 constant 會破 fast refresh ⇒ `STEP_LABEL` 搬咗去 `ai-assist-labels.ts`(lint 建議嘅做法,亦令 test 個 import 乾淨咗)。falsification:抽走 `get_ledger` ⇒ **1 紅 3 綠**,而**錯誤訊息直接點名嗰個 tool** | ✅ |
-| 🆕 **G7-o** | **R13 監測冇 UI** —— 數字齊晒但要打 API 先睇到 | ⚠️ **同前兩個唔同,呢個 UI 唔淨係方便** —— G7-a 個重點就係「**只能靠數字,靠唔到留意**」,而一個要打 API 先睇到嘅數字,**冇人會定期望** ⇒ **R13 嘅緩解措施實際上要等 UI 先真正生效**。⚠️ 亦要諗定擺喺邊(Settings 一個新 tab? Audit 頁旁邊?)—— **未決** | **同 `G2-j` / `G3-n` 一批**(期二 render 一次過) |
-| 🆕 **G3-n** | **Kill switch 冇 UI** —— 狀態(`enabled` / `settled` / 幾多個 run park 住)同開關掣 | **enforcement 全部做齊咗**,缺嘅係方便;ADMIN 而家打 `PATCH /api/agent/kill-switch` 開關得到(沿用 **CH-026 `G-7`** 由 API 做嘅先例)。⚠️ 一齊排係因為佢一定要 H6 render 驗,而 render 本身卡住 —— 唔想出一個「寫好但冇 render 驗過」嘅安全控制 | **同 `G2-j` 一批**(期二 render 一次過) |
-| 🆕 **G2-j** | **`PermissionsPanel` 嘅 H6 light + dark 真 render 未做** | **卡本機 stack**:`ai-doc-extraction-db` 揸住 **5433**(§9 硬衝突,停佢要 Chris 批),而 `render-check.mjs` 要 driver 真 app + ADMIN session(`AUTH_DEV_BYPASS=true` 可以頂到 auth 嗰半)。⚠️ **唔係「低風險所以唔使做」** —— 用到嘅 primitive(`purple` badge / `text-fg-muted` 段落)兩個 theme 都已經有證據,但 **CH-030 個教訓就係四層 test 全綠都捉唔到「佢喺邊」**,而呢版新增咗一個**明顯長過舊值**嘅 guard cell(`AgentApprovalController` 23 字 vs `IntakeKeyGuard` 14 字) | **期二 render 一次過做**(G3/G6/G7 掂到 UI 就一齊),command:`node apps/web/scripts/render-check.mjs --out <dir> --url /settings` |
+| ~~G7-o~~ | ~~UI / render 未做~~ | 🟢 **2026-08-16 三個一次過收晒**(Chris 批准停 `ai-doc-extraction-db`)—— 見 `G-UI` | ✅ |
+| ~~G3-n~~ | ~~UI / render 未做~~ | 🟢 **2026-08-16 三個一次過收晒**(Chris 批准停 `ai-doc-extraction-db`)—— 見 `G-UI` | ✅ |
+| ~~G2-j~~ | ~~UI / render 未做~~ | 🟢 **2026-08-16 三個一次過收晒**(Chris 批准停 `ai-doc-extraction-db`)—— 見 `G-UI` | ✅ |
 | R11–R19 | 未入 `RISK_REGISTER.md`(🆕 R17–R19 由 ADR-0037 新增) | living doc,ADR / plan 已記 | 期一收尾 |
 | — | 🆕 **既有 gap(唔喺 W46 範圍)**:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏咗 `licenseOpsProvider` / `ticketUpdateProvider` / `acsSenderAddress` 等 ⇒ 改 seam provider 唔會出現喺 audit `before`/`after` | W39 / W40 / CH-011 三批欄都中 | 開一張 CH |

@@ -3,6 +3,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import type {
   AddLineItemBody,
   AdminUser,
+  AgentKillSwitchStatus,
   AgentRun,
   AllocationResetBody,
   AllocationResetResult,
@@ -191,6 +192,25 @@ export function useAbortAgentRun(requestId: string) {
       apiPost<AgentRun>(`/agent/runs/${runId}/abort`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentRunKey(requestId) });
+    },
+  });
+}
+
+/**
+ * PATCH /agent/kill-switch — 期二 G3. ADMIN-only.
+ *
+ * Invalidates the review stats too: switching the agent off is exactly when
+ * somebody is looking at both, and a stale approval rate beside a freshly
+ * flipped switch is the kind of small inconsistency that makes a person
+ * distrust the screen at the worst moment.
+ */
+export function useSetAgentKillSwitch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { enabled: boolean; reason?: string }) =>
+      apiPatch<AgentKillSwitchStatus>('/agent/kill-switch', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agent'] });
     },
   });
 }
