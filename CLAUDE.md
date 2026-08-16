@@ -48,6 +48,30 @@
 - Multi-step task 先講 plan:`1. [step] → verify: [check]`。
 - Strong success criteria 等你可以獨立 loop,唔使用戶不斷 clarify。
 
+### 1.5 Subagent delegation policy
+
+> **2026-08-16 Chris Lai 加入。** 呢節係**常設授權**,作用係覆蓋「除非用戶逐次要求,否則唔好用 Agent / workflow」嗰條預設。**條文逐字保留英文原文,唔要改寫** —— 佢本身就係被測試緊嘅嘢。
+>
+> ⚠️ **`.claude/agents/` 今日唔存在**(2026-08-16 實測:`.claude/` 只有 `commands` / `settings*.json` / `skills`)⇒ 下面第四條 delegate 條件**今日係空嘅**。但唔等於冇 agent 用得 —— built-in / plugin 側有 `Explore` · `Plan` · `general-purpose` · `feature-dev:*` · `code-review` 等,實際清單以 session 開頭注入嗰份為準。**要令第四條有內容,就要真係開 `.claude/agents/`。**
+
+Standing authorization from the user: you may call the Agent tool on your own
+judgement. Treat this section as the user having requested delegation — do not
+wait for a per-task request. The same authorization applies to workflows.
+
+Delegate when:
+- Work spans several files or modules that are genuinely independent
+- Broad search or exploration whose intermediate results should stay out of
+  the main context
+- Multiple independent review or verification angles can run in parallel
+- The task matches the description of an agent in .claude/agents/
+
+Do not delegate when:
+- The work finishes in a handful of tool calls
+- You would be spawning a subagent to verify your own just-completed work
+- One subagent would do — do not fan out wider than the task needs
+
+**同 §5 嘅關係(唔改任何嘢,只講清楚)**:授權嘅係「**幾時可以自己開 subagent**」,唔係「subagent 做嘢可以鬆啲」。H1–H8 對 subagent 一視同仁 —— 尤其 **H7**(subagent 返嘅嘢係 tool result,唔可以當成已驗證嘅結論照抄;要 trace 得返真 output)同 **H8**(唔可以借 subagent 繞過讀檔紀律)。撞到 hard constraint 一樣係**主 agent 停手問**,唔可以派落去。
+
 ---
 
 ## 2. Document Routing(when to read what)
@@ -411,6 +435,7 @@ Rolling / JIT — 每 phase kickoff 先喺 `docs/01-planning/W{NN}-{name}/` 建 
 ```
 Unified Operation Platform — Strict Mode
 ├─ Baseline (§1): think → simple → surgical → goal
+│  └─ §1.5 subagent: 自行判斷可以(standing auth)· 唔好開嚟驗自己啱啱做完嘅嘢 · 唔好過度 fan out
 ├─ Platform spec: docs/architecture.md
 ├─ Module 1 (LicenseOps): docs/02-architecture/licenseops/DESIGN.md
 ├─ Design system: docs/02-architecture/design-system.md (視覺真相 design_handoff_licenseops/)
