@@ -131,7 +131,13 @@
 
 ## 期二(G1–G7)—— 未開工
 
-- [ ] G1 `propose_assign` + 批准後行返 **8 道閘一道唔少**(A/B1)
+- [x] G1 ✅ **`propose_assign` + 批准後行返 8 道閘一道唔少(2026-08-16)** —— api **1199 → 1212 / 83**,tsc 0,lint 0。`propose_assign` 落 registry(`needsApproval: true`,execute 唯讀)· `kindOf` → `'assign'` · `agent-approval` 分流去 **`AssignService.assignLineItem`**(**同 request 畫面撳嗰粒掣係同一個 call**)
+- [x] G1-a 🔴 **R12/H1 覆蓋確認咗先開工** —— `tool-registry.ts` 頂寫住「加一行 = 擴權 = 要 ADR(R12)」,而 **`propose_assign` 由 ADR-0036 §3.2 + plan §2.2/§3.2 一開始就明文列咗** ⇒ 佢係 ADR 計劃咗嘅 tool,唔係新塞一行入 allow-list。**boundary spec 一條 ban 都唔使鬆** —— 禁令針對 `src/agent/`,而 crossing 一直住喺 `agent-approval`(F9-3 早就命名咗佢)⇒ **今次係用返嗰個許可,唔係擴闊佢**
+- [x] G1-b 🔴 **四個 ADR 冇指定、屬本單嘅決定(R3)**:**①agent 路徑冇 budget override** —— schema 冇呢個欄、call 只有三個 argument。ADR-0016 D3 話佢 ADMIN-only 兼要**寫低理由**,而**畀 model 作嗰句理由、再叫人批准佢冇寫過嘅字,就係最壞嗰種 rubber-stamp**;要 override 就喺 request 畫面自己做 **②gate 拒絕 ⇒ proposal 標 `failed` 唔係 `executed`**(`executed` 正正就係 `propose_assign.execute` 搵嗰個 —— 標錯就等於同個 model 報告一件冇發生過嘅成功)**③拒絕之後仍然 resume,但用 `approved: false` + 真原因** ——「**人拒絕**」同「**平台拒絕**」係兩件唔同嘅事,合埋就係喺 transcript 度講錯發生咗乜 **④只有 ADR-0029 `blocked` body 當拒絕**,其餘(403 / DB error)原封 rethrow
+- [x] G1-c 🔴🔴 **同一個改動入面連中三次「自己個註釋觸發自己條 test」** —— boundary spec grep `budgetOverrideReason` / `usageLocation`,而我喺 `agent-approval.service.ts` 同 `tool-registry.ts` 兩處嘅**解釋性註釋**都寫咗嗰兩個字。**CH-029 犯過一模一樣嘅**(「一個解釋規矩嘅註釋觸發咗嗰條規矩」)⇒ 沿用當時做法:**改註釋,唔鬆 test**,兼喺註釋度寫明「呢個名刻意唔喺呢度出現」
+- [x] G1-d 🔴🔴 **falsification 揭到 boundary grep 單獨唔夠** —— 把 model 自己嘅 `reasoning` **用位置參數**傳做第四個 argument(即係真正嘅壞版本):**boundary 條 grep 完全睇唔到**(冇出現過個名),紅嘅係 approval spec 嗰條 **arity assert**(`toHaveBeenCalledWith` 三個 argument)。⇒ **一條睇個名、一條睇個 call 嘅形狀,兩條唔係重複** —— 已寫入 boundary spec 註釋
+- [x] G1-e ✅ **Falsification ×2 真紅零誤傷**:①blocked 都標 `executed` ⇒ **1 紅** ②位置參數偷渡 override ⇒ **1 紅**。⚠️ **第三個(拆走「只有 `blocked` 先算拒絕」)拆唔落 —— 佢一拆就唔 compile**:TS narrowing 令你冇檢查過就砌唔到嗰句 refusal 訊息。**呢個係比一條紅 test 更強嘅保證,照實記低**
+- [x] G1-f ✅ 新 test:registry 4 條(第二層閘 / 只認 `executed` / 403 跨 OpCo / 唔存在嘅 line item)· approval 7 條(actor + 三個 argument · executed + resume true · 拒絕三態 · 非 gate error rethrow · 冇 lineItem 嘅 payload)· boundary 2 條。⚠️ **兩條舊 test 要跟住改,而佢哋紅得啱**:`refuses a pause on a write tool it cannot classify` 本來攞 `propose_assign` 做「分類唔到」嘅例子(而家佢分類到喇)· `does not expose propose_assign yet` —— **佢本來就係為咗有一日要被人特登刪先存在**
 - [ ] G2 `derivePermissions()` 認得 `AgentPrincipal` + W28 drift test
 - [ ] G3 Blast-radius limit + kill switch(要分「配置停咗」同「真係停咗」)
 - [ ] G4 `ClaudeToolRunnerProvider` —— 證明 D1 一份定義兩邊行得通(B3)

@@ -4,6 +4,7 @@ import type { AppUser } from '@prisma/client';
 import { AgentApprovalService } from './agent-approval.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestService } from '../fulfilment/request.service';
+import { AssignService } from '../fulfilment/assign.service';
 import { AiAssistService } from '../agent/ai-assist.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
@@ -49,6 +50,7 @@ describe('AgentApprovalService', () => {
     skuCatalog: { findMany: jest.Mock };
   };
   let requests: { addLineItem: jest.Mock };
+  let assign: { assignLineItem: jest.Mock };
   let aiAssist: { resumeRun: jest.Mock };
   let audit: { log: jest.Mock };
 
@@ -59,6 +61,7 @@ describe('AgentApprovalService', () => {
       skuCatalog: { findMany: jest.fn() },
     };
     requests = { addLineItem: jest.fn() };
+    assign = { assignLineItem: jest.fn() };
     aiAssist = { resumeRun: jest.fn() };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
 
@@ -70,6 +73,11 @@ describe('AgentApprovalService', () => {
       { id: 'cat-b', skuId: GUID_B },
     ]);
     requests.addLineItem.mockResolvedValue({ id: 'line-1' });
+    assign.assignLineItem.mockResolvedValue({
+      outcome: 'assigned',
+      steps: [{ key: 'directory', status: 'ok' }],
+      lineItem: { id: 'line-1' },
+    });
     aiAssist.resumeRun.mockResolvedValue({
       runId: 'run-1',
       status: 'completed',
@@ -81,6 +89,7 @@ describe('AgentApprovalService', () => {
         AgentApprovalService,
         { provide: PrismaService, useValue: prisma },
         { provide: RequestService, useValue: requests },
+        { provide: AssignService, useValue: assign },
         { provide: AiAssistService, useValue: aiAssist },
         { provide: AuditService, useValue: audit },
       ],
@@ -195,15 +204,159 @@ describe('AgentApprovalService', () => {
       expect(aiAssist.resumeRun).not.toHaveBeenCalled();
     });
 
-    it('refuses a kind it cannot carry out yet', async () => {
+    it('refuses a kind it cannot carry out', async () => {
+      // 'assign' used to be this example. 期二 G1 made it real, so the test
+      // moved to a kind nothing mints — the claim is about the default, not
+      // about any particular unimplemented feature.
       prisma.agentProposal.findUnique.mockResolvedValue(
-        pendingProposal({ kind: 'assign' }),
+        pendingProposal({ kind: 'reprovision_mailbox' }),
       );
 
       await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
         BadRequestException,
       );
       expect(requests.addLineItem).not.toHaveBeenCalled();
+      expect(assign.assignLineItem).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── 期二 G1 — approve an assign proposal ────────────────────
+
+  /**
+   * 🔴 The point of G1 is not that an agent can assign a licence. It is that
+   * approving one changes NOTHING about how the assign runs: same service, same
+   * eight gates, same actor rules — and the gates can still say no to a person
+   * who already said yes.
+   */
+  describe('approve — assign (期二 G1)', () => {
+    const assignProposal = (overrides: Record<string, unknown> = {}) =>
+      pendingProposal({
+        kind: 'assign',
+        payload: { lineItemId: 'line-1' },
+        ...overrides,
+      });
+
+    it('runs the existing assign path as the approver, with no override', async () => {
+      prisma.agentProposal.findUnique.mockResolvedValue(assignProposal());
+
+      await service.approve('p1', approver);
+
+      // 🔴 Three arguments, and the fourth is the point: ADR-0016 D3's budget
+      // override is ADMIN-only and needs a written reason, so it must never
+      // arrive from this path. `toHaveBeenCalledWith` pins arity exactly —
+      // a fourth argument appearing here fails.
+      expect(assign.assignLineItem).toHaveBeenCalledWith(
+        'line-1',
+        undefined,
+        approver,
+      );
+      // And the line-item path is untouched: an assign proposal creates nothing.
+      expect(requests.addLineItem).not.toHaveBeenCalled();
+    });
+
+    it('marks it executed and resumes with approved: true', async () => {
+      prisma.agentProposal.findUnique.mockResolvedValue(assignProposal());
+
+      await service.approve('p1', approver);
+
+      const update = prisma.agentProposal.update.mock.calls[0][0] as {
+        data: { status: string; payload: Record<string, unknown> };
+      };
+      expect(update.data.status).toBe('executed');
+      expect(update.data.payload.assign).toEqual({
+        outcome: 'assigned',
+        steps: [{ key: 'directory', status: 'ok' }],
+      });
+
+      expect(aiAssist.resumeRun).toHaveBeenCalledWith('run-1', [
+        { ref: 'call-1', approved: true },
+      ]);
+    });
+
+    /**
+     * 🔴 The counter-intuitive half, and the one F8 puts on the screen in
+     * words: approving decides that this SHOULD happen, never that it MAY.
+     */
+    describe('when the platform’s gates refuse', () => {
+      const blocked = Object.assign(new BadRequestException('x'), {
+        response: {
+          outcome: 'blocked',
+          failedAt: 'budget',
+          steps: [],
+          message: 'OpCo budget exceeded',
+        },
+      });
+
+      beforeEach(() => {
+        prisma.agentProposal.findUnique.mockResolvedValue(assignProposal());
+        assign.assignLineItem.mockRejectedValue(blocked);
+      });
+
+      it('marks the proposal failed, never executed', async () => {
+        await service.approve('p1', approver);
+
+        const update = prisma.agentProposal.update.mock.calls[0][0] as {
+          data: { status: string; rejectedReason: string | null };
+        };
+        // `executed` is what `propose_assign.execute` looks for. Marking a
+        // blocked assign executed would let the tool report a success back to
+        // the model for something that never happened.
+        expect(update.data.status).toBe('failed');
+        expect(update.data.rejectedReason).toContain('budget');
+      });
+
+      it('resumes with approved: false AND the real reason, not a human rejection', async () => {
+        await service.approve('p1', approver);
+
+        const [, decisions] = aiAssist.resumeRun.mock.calls[0] as [
+          string,
+          { approved: boolean; reason?: string }[],
+        ];
+        expect(decisions[0].approved).toBe(false);
+        // "a person said no" and "the platform said no" are different facts.
+        // The agent is told which one, so it can react to the gate instead of
+        // re-proposing the same thing at a person.
+        expect(decisions[0].reason).toContain('budget');
+        expect(decisions[0].reason).toContain('OpCo budget exceeded');
+      });
+
+      it('still records the decision in the audit trail', async () => {
+        await service.approve('p1', approver);
+
+        expect(audit.log).toHaveBeenCalledWith(
+          prisma,
+          expect.objectContaining({
+            action: AUDIT_ACTIONS.AGENT_PROPOSAL_DECIDED,
+            actorId: approver.id,
+          }),
+        );
+      });
+    });
+
+    /**
+     * ⚠️ Only an ADR-0029 `blocked` body counts as a refusal. Anything else is
+     * a real failure, and telling the agent "the platform refused" would be a
+     * statement about what happened that is not true (INC-001).
+     */
+    it('rethrows a non-gate failure instead of reporting it as a refusal', async () => {
+      prisma.agentProposal.findUnique.mockResolvedValue(assignProposal());
+      assign.assignLineItem.mockRejectedValue(new Error('connection reset'));
+
+      await expect(service.approve('p1', approver)).rejects.toThrow(
+        'connection reset',
+      );
+      expect(aiAssist.resumeRun).not.toHaveBeenCalled();
+    });
+
+    it('refuses a payload that names no line item', async () => {
+      prisma.agentProposal.findUnique.mockResolvedValue(
+        assignProposal({ payload: { reasoning: 'looks ready to me' } }),
+      );
+
+      await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(assign.assignLineItem).not.toHaveBeenCalled();
     });
   });
 

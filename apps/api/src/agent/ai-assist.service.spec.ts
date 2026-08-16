@@ -243,7 +243,12 @@ describe('AiAssistService', () => {
       // Unreachable through today's registry — which is the point: if a future
       // tool ever pauses here, a proposal with a guessed `kind` is a row someone
       // would approve without knowing what they approved.
-      runtime.start.mockResolvedValue(awaitingTurn('propose_assign'));
+      //
+      // ⚠️ This used to name `propose_assign`. 期二 G1 turned that into a real,
+      // classifiable tool, and this test went red the moment it did — correctly:
+      // its subject is the UNCLASSIFIABLE case, and its example had stopped
+      // being one. The stand-in below is deliberately not on any roadmap.
+      runtime.start.mockResolvedValue(awaitingTurn('propose_something_new'));
 
       await expect(service.startRun(admin, 'req-1')).rejects.toBeInstanceOf(
         BadRequestException,

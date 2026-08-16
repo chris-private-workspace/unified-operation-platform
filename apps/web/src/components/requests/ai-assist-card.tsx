@@ -122,10 +122,27 @@ function StepRow({ step }: { step: AgentStep }) {
   );
 }
 
-/** The proposed SKUs, read out of the model's own payload. */
+/** Operator-facing title per proposal kind. */
+const PROPOSAL_TITLE: Record<string, string> = {
+  line_items: 'Proposed line items',
+  assign: 'Proposed licence assignment',
+};
+
+/**
+ * The proposal, read out of the model's own payload.
+ *
+ * 🔴 Every kind has to render something specific here, and the reason is not
+ * polish: the Approve button beside this block causes real work — for `assign`
+ * (期二 G1) it assigns a licence. A kind this function does not understand would
+ * fall through to "Nothing proposed." while that button still worked, and a
+ * person would be approving something the screen declined to describe. So the
+ * fallback below says it cannot describe the proposal, rather than implying
+ * there is nothing in it.
+ */
 function ProposalSummary({ payload }: { payload: unknown }) {
   const items = (payload as { items?: { skuId: string; quantity: number }[] })
     ?.items;
+  const lineItemId = (payload as { lineItemId?: string })?.lineItemId;
   const reasoning = (payload as { reasoning?: string })?.reasoning;
 
   return (
@@ -148,8 +165,19 @@ function ProposalSummary({ payload }: { payload: unknown }) {
             </span>
           ))}
         </div>
+      ) : lineItemId ? (
+        // DS-5 — an id is an identifier, so it is mono, like every other one
+        // on this page.
+        <span className="font-mono text-[11.5px] text-fg">
+          {lineItemId}{' '}
+          <span className="font-sans text-fg-subtle">
+            — the platform runs its eight checks on this line
+          </span>
+        </span>
       ) : (
-        <span className="text-[11.5px] text-fg-subtle">Nothing proposed.</span>
+        <span className="text-[11.5px] text-danger">
+          This proposal cannot be displayed — do not approve it.
+        </span>
       )}
     </div>
   );
@@ -248,7 +276,7 @@ export function AiAssistCard({ requestId }: AiAssistCardProps) {
             className="flex flex-col gap-[10px] rounded-lg border border-border bg-hover px-[12px] py-[11px]"
           >
             <span className="text-[12px] font-semibold text-fg">
-              Proposed line items
+              {PROPOSAL_TITLE[proposal.kind] ?? 'Proposal'}
             </span>
             <ProposalSummary payload={proposal.payload} />
             {/* 🔴 F8-3 / ADR-0036 D3 — the counter-intuitive half, said out

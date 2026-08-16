@@ -5,9 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { AppUser } from '@prisma/client';
+import { Prisma, type AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequestService } from '../fulfilment/request.service';
+import { AssignService } from '../fulfilment/assign.service';
+import type { AssignStep } from '../fulfilment/assign-step';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import {
@@ -38,6 +40,23 @@ interface LineItemsPayload {
   items: { skuId: string; quantity: number }[];
 }
 
+/** The shape `propose_assign` puts in `AgentProposal.payload`. */
+interface AssignPayload {
+  lineItemId: string;
+}
+
+/**
+ * What `AssignService` throws when a gate refuses (ADR-0029): a 400 whose body
+ * carries the step list. Narrowed here rather than imported because the shape
+ * IS the contract — that is ADR-0029's own wording — and because the agent path
+ * only needs to read it, never to build one.
+ */
+interface BlockedAssign {
+  outcome?: string;
+  failedAt?: string;
+  message?: string;
+}
+
 @Injectable()
 export class AgentApprovalService {
   private readonly logger = new Logger(AgentApprovalService.name);
@@ -45,6 +64,7 @@ export class AgentApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly requests: RequestService,
+    private readonly assign: AssignService,
     private readonly aiAssist: AiAssistService,
     private readonly audit: AuditService,
   ) {}
@@ -88,8 +108,10 @@ export class AgentApprovalService {
   ): Promise<AiAssistRunResult> {
     const proposal = await this.loadDecidable(proposalId);
 
+    if (proposal.kind === 'assign')
+      return this.approveAssign(proposal, approver);
+
     if (proposal.kind !== 'line_items') {
-      // `assign` joins this in 期二 G1, and it arrives with its own 8 gates.
       throw new BadRequestException(
         `Proposals of kind '${proposal.kind}' cannot be approved yet`,
       );
@@ -159,6 +181,123 @@ export class AgentApprovalService {
   }
 
   // ── the domain half ────────────────────────────────────────
+
+  /**
+   * 期二 G1 — an approved `assign` proposal runs `AssignService.assignLineItem`,
+   * which is the SAME call the request screen makes. All eight gates, in order,
+   * none skipped.
+   *
+   * 🔴 The approver is the actor, and the call stops at three arguments: the
+   * budget-override parameter is never supplied on this path, and there is no
+   * route for one to reach it (see `propose_assign`). ADR-0016 D3 makes that
+   * override ADMIN-only AND requires a written reason; routing it through here
+   * would mean approving a sentence a model composed. An operator who wants to
+   * override does it on the request screen, as themselves, with their own words.
+   *
+   * ⚠️ The name of that parameter is deliberately not written anywhere in this
+   * file — `agent.boundary.spec.ts` greps for it, and a comment explaining the
+   * rule would trip the rule. CH-029 hit exactly this and the fix there was the
+   * same: change the comment, never loosen the check.
+   *
+   * 🔴 A refusal is NOT a failure of this method. ADR-0016's gates exist to say
+   * no, and F8 tells the approver so in as many words ("Approving runs the
+   * platform's normal checks — they can still refuse"). So a blocked assign:
+   *
+   *   - marks the proposal `failed`, never `executed` — which is what stops
+   *     `propose_assign.execute` from reporting a success back to the model
+   *   - resumes the run with `approved: false` AND the real reason, so the
+   *     agent learns which gate said no instead of being told a person
+   *     rejected it. Those are different facts and the transcript should not
+   *     merge them.
+   *
+   * ⚠️ Only an ADR-0029 `blocked` body is treated this way. Anything else — a
+   * 403 because the approver is out of scope, a database error — is rethrown
+   * untouched: reporting those to the agent as "the platform refused" would be
+   * a lie about what happened, and INC-001 is this project's own record of what
+   * that costs.
+   */
+  private async approveAssign(
+    proposal: {
+      id: string;
+      runId: string;
+      payload: unknown;
+      interruptionRef: string | null;
+    },
+    approver: AppUser,
+  ): Promise<AiAssistRunResult> {
+    const { lineItemId } = this.parseAssignPayload(proposal.payload);
+
+    let assigned: { outcome: string; steps: AssignStep[] } | null = null;
+    let refusal: string | null = null;
+
+    try {
+      const result = await this.assign.assignLineItem(
+        lineItemId,
+        undefined,
+        approver,
+      );
+      // Only these two fields are kept. The full return also carries the line
+      // item row, and this payload is both shown on screen and handed back to
+      // the model — so it stays as small as the thing it has to explain.
+      assigned = { outcome: result.outcome, steps: result.steps };
+    } catch (error) {
+      const body = (error as { response?: BlockedAssign })?.response;
+      if (body?.outcome !== 'blocked') throw error;
+
+      refusal = `The platform refused at the '${body.failedAt}' check: ${body.message}`;
+      this.logger.warn(
+        `Approved assign proposal ${proposal.id} was blocked at ${body.failedAt}`,
+      );
+    }
+
+    await this.prisma.agentProposal.update({
+      where: { id: proposal.id },
+      data: {
+        status: refusal ? 'failed' : 'executed',
+        approvedById: approver.id,
+        rejectedReason: refusal,
+        decidedAt: new Date(),
+        payload: {
+          ...(proposal.payload as unknown as Record<string, unknown>),
+          // Always written, `null` when the gates refused. An absent key would
+          // read as "not recorded"; null says "nothing was assigned", which is
+          // the fact.
+          //
+          // Cast for the same reason `outbound-failure.service.ts:58` casts:
+          // Prisma's InputJsonValue rejects a declared interface (no index
+          // signature), and `AssignStep` is one.
+          assign: assigned as Prisma.InputJsonValue | null,
+        },
+      },
+    });
+
+    await this.auditDecision(
+      proposal,
+      approver,
+      refusal
+        ? `approved, then blocked by the platform: ${refusal}`
+        : `approved: line item ${lineItemId} assigned`,
+    );
+
+    return this.aiAssist.resumeRun(proposal.runId, [
+      {
+        ref: proposal.interruptionRef ?? '',
+        approved: refusal === null,
+        ...(refusal ? { reason: refusal } : {}),
+      },
+    ]);
+  }
+
+  /** `propose_assign` names exactly one line item, and nothing else. */
+  private parseAssignPayload(payload: unknown): AssignPayload {
+    const lineItemId = (payload as AssignPayload | null)?.lineItemId;
+    if (typeof lineItemId !== 'string' || lineItemId.length === 0) {
+      throw new BadRequestException(
+        'This proposal names no line item to assign',
+      );
+    }
+    return { lineItemId };
+  }
 
   /**
    * Run the EXISTING line-item creation path, once per proposed SKU.

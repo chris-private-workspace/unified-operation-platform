@@ -172,7 +172,7 @@ describe('OpenAiAgentsProvider', () => {
       // Same fact as the registry's own allow-list test, checked on the far
       // side of the conversion — that is the point: it is the crossing that
       // could lose it.
-      expect(needing).toEqual(['propose_line_items']);
+      expect(needing).toEqual(['propose_line_items', 'propose_assign']);
     });
   });
 

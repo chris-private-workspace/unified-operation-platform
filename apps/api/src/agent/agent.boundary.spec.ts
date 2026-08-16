@@ -139,6 +139,55 @@ describe('agent module boundary (ADR-0036 D0)', () => {
       expect(approvalService()).toContain('requests.addLineItem');
       expect(approvalService()).not.toContain('prisma.requestLineItem');
     });
+
+    /**
+     * 期二 G1 — the second legal crossing, named here for the same reason the
+     * first one is.
+     *
+     * 🔴 Nothing above was loosened to allow it. The bans are on `src/agent/`,
+     * and `agent-approval` was already the one module permitted to see both
+     * sides — so this is that permission being USED, not widened. Worth stating
+     * because the file's own header warns that a legal crossing makes the next
+     * one easier to argue for, and this is the next one.
+     */
+    it('assigns only through AssignService — never Graph, never the seam, never Prisma', () => {
+      expect(approvalService()).toContain(
+        "from '../fulfilment/assign.service'",
+      );
+      expect(approvalService()).toContain('assign.assignLineItem');
+
+      // The three ways this could have skipped the eight gates instead.
+      expect(approvalService()).not.toContain('GraphService');
+      expect(approvalService()).not.toContain('license-ops');
+      expect(approvalService()).not.toContain('prisma.opcoSkuLedger');
+    });
+
+    /**
+     * 🔴 ADR-0016 D3 — the budget override is ADMIN-only and needs a WRITTEN
+     * reason, which is the one thing a model must never be able to supply.
+     *
+     * A string check, because that is what the claim actually is: the parameter
+     * has no route to this path at all. `assignLineItem`'s fourth argument is
+     * optional, so passing it would compile silently — there is no type to
+     * lean on here.
+     *
+     * ⚠️ And this check alone is NOT enough, which a falsification proved
+     * rather than a review noticing: passing the model's own `reasoning`
+     * POSITIONALLY as the fourth argument never spells the name, so this test
+     * stayed green. What caught it was the arity assertion in
+     * `agent-approval.service.spec.ts` (`toHaveBeenCalledWith` with exactly
+     * three arguments). The two are not redundant — one watches the name, the
+     * other watches the shape of the call.
+     */
+    it('never supplies a budget override on the agent path', () => {
+      expect(approvalService()).not.toContain('budgetOverrideReason');
+
+      const registry = read(join(AGENT_DIR, 'tool-registry.ts'));
+      expect(registry).not.toContain('budgetOverrideReason');
+      // The same for usage location: an agent proposes WHICH line to assign,
+      // never the parameters the assign runs under.
+      expect(registry).not.toContain('usageLocation');
+    });
   });
 
   // ── F9-2 — the action ledger has exactly one author ────────

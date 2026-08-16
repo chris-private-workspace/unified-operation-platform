@@ -34,6 +34,7 @@ describe('AgentToolRegistry', () => {
     skuCatalog: { findMany: jest.Mock; findUnique: jest.Mock };
     opcoSkuLedger: { findUnique: jest.Mock };
     agentProposal: { findFirst: jest.Mock };
+    requestLineItem: { findUnique: jest.Mock };
   };
 
   const tool = (name: string) => {
@@ -48,6 +49,7 @@ describe('AgentToolRegistry', () => {
       skuCatalog: { findMany: jest.fn(), findUnique: jest.fn() },
       opcoSkuLedger: { findUnique: jest.fn() },
       agentProposal: { findFirst: jest.fn() },
+      requestLineItem: { findUnique: jest.fn() },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -73,6 +75,7 @@ describe('AgentToolRegistry', () => {
       'search_catalog:false',
       'get_ledger:false',
       'propose_line_items:true',
+      'propose_assign:true',
     ];
 
     it('exposes exactly these tools, in this order, with these approval flags', () => {
@@ -104,12 +107,22 @@ describe('AgentToolRegistry', () => {
     });
 
     /**
-     * Different reason from the list above: propose_assign IS planned (G1), it
-     * just carries action power that期一 has not earned yet. When it lands, this
-     * line has to be deleted deliberately — which is the point.
+     * 期二 G1 — `propose_assign` landed. The line that used to assert its
+     * ABSENCE was deleted deliberately, which is what it was there for.
+     *
+     * 🔴 What replaces it is the narrower claim that now matters: it is here,
+     * and it can only ever name a line item. The parameters it does NOT have
+     * are the gates it cannot talk its way past — ADR-0016 D3's budget
+     * override above all, which is ADMIN-only and demands a written reason.
      */
-    it('does not expose propose_assign yet (G1, 期二)', () => {
-      expect(registry.get('propose_assign')).toBeUndefined();
+    it('exposes propose_assign, and it can name nothing but a line item', () => {
+      const assign = registry.get('propose_assign');
+
+      expect(assign?.needsApproval).toBe(true);
+      expect(Object.keys(assign!.parameters.properties).sort()).toEqual([
+        'lineItemId',
+        'reasoning',
+      ]);
     });
 
     it('gives every tool a strict-mode-shaped schema', () => {
@@ -399,6 +412,77 @@ describe('AgentToolRegistry', () => {
           }),
         }),
       );
+    });
+
+    /**
+     * 期二 G1 — the same second layer, on the tool that can cause a real
+     * licence assignment.
+     *
+     * 🔴 It matters more here than on `propose_line_items`. If `needsApproval`
+     * ever stops stopping the run, the next thing that happens on this path is
+     * a licence leaving the tenant. So `execute` refuses unless a person has
+     * already decided AND the platform already did the work.
+     */
+    describe('propose_assign (G1)', () => {
+      const runAssign = (args: Record<string, unknown>, user = admin) =>
+        tool('propose_assign').execute(args, ctx(user));
+
+      const line = {
+        id: 'line-1',
+        stage: 'READY',
+        request: { opcoId: 'opco-a' },
+      };
+
+      it('refuses when no person has approved an assign for this run', async () => {
+        prisma.requestLineItem.findUnique.mockResolvedValue(line);
+        prisma.agentProposal.findFirst.mockResolvedValue(null);
+
+        await expect(
+          runAssign({ lineItemId: 'line-1', reasoning: 'ready' }),
+        ).rejects.toThrow(/No approved assign proposal/);
+      });
+
+      it('will not accept a proposal the gates refused', async () => {
+        prisma.requestLineItem.findUnique.mockResolvedValue(line);
+        prisma.agentProposal.findFirst.mockResolvedValue(null);
+
+        await expect(
+          runAssign({ lineItemId: 'line-1', reasoning: 'ready' }),
+        ).rejects.toThrow(/No approved assign proposal/);
+
+        // The query is the assertion: a blocked assign is stored as `failed`,
+        // so asking only for `executed` is what keeps a refusal from reading
+        // back to the model as a success.
+        expect(prisma.agentProposal.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              runId: 'run-1',
+              kind: 'assign',
+              status: 'executed',
+            }),
+          }),
+        );
+      });
+
+      it('403s a scoped caller naming another OpCo’s line item', async () => {
+        prisma.requestLineItem.findUnique.mockResolvedValue({
+          ...line,
+          request: { opcoId: 'opco-z' },
+        });
+
+        await expect(
+          runAssign({ lineItemId: 'line-1', reasoning: 'ready' }, opcoIt),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(prisma.agentProposal.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('refuses an unknown line item', async () => {
+        prisma.requestLineItem.findUnique.mockResolvedValue(null);
+
+        await expect(
+          runAssign({ lineItemId: 'nope', reasoning: 'ready' }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
     });
 
     it('403s a scoped caller proposing onto another OpCo request', async () => {

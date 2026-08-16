@@ -762,8 +762,58 @@ web **392 → 396 passed**(6 紅 = 已知 pre-existing,數目一個字冇變)· 
 
 ---
 
+## Day 11 — 2026-08-16(期二 `G1` — agent 第一次有 action 權)
+
+### 開工前確認 R12 / H1 已被覆蓋
+
+`tool-registry.ts` 頂明文寫住「**加一行 = 擴權 = 要 ADR(R12)**」。而 **`propose_assign` 由 ADR-0036 §3.2 + plan §2.2/§3.2 一開始就列咗** ⇒ 佢係 ADR 計劃咗嘅 tool,唔係新塞一行入 allow-list。
+
+🟢 **boundary spec 一條 ban 都唔使鬆。** 禁令針對 `src/agent/`,而 crossing 一直住喺 `agent-approval` —— F9-3 早就命名咗佢做「唯一合法跨界」。⇒ **今次係用返嗰個許可,唔係擴闊佢**,而呢個分別要講清楚,因為 F9-3 自己寫過:**有咗一個合法跨界之後,非法嗰個會變得易 argue。**
+
+### 四個 ADR 冇指定、屬本單嘅決定(R3)
+
+| # | 決定 | 點解 |
+|---|---|---|
+| ① | **agent 路徑冇 budget override** | schema 冇呢個欄,call 只有三個 argument。ADR-0016 D3 話佢 ADMIN-only 兼**要寫低理由** —— 而**畀 model 作嗰句理由、再叫人批准佢冇寫過嘅字,就係最壞嗰種 rubber-stamp**。要 override 就喺 request 畫面自己做 |
+| ② | gate 拒絕 ⇒ proposal 標 **`failed`** 唔係 `executed` | `executed` 正正就係 `propose_assign.execute` 搵嗰個 ⇒ 標錯就等於**同個 model 報告一件冇發生過嘅成功** |
+| ③ | 拒絕之後**仍然 resume**,但 `approved: false` + 真原因 | 「**人拒絕**」同「**平台拒絕**」係兩件唔同嘅事,合埋就係喺 transcript 度講錯發生咗乜 |
+| ④ | 只有 ADR-0029 `blocked` body 當拒絕 | 403 / DB error 原封 rethrow。報做「平台拒絕」就係對發生咗乜嘅虛假陳述(INC-001) |
+
+### 🔴🔴 同一個改動入面連中三次「自己個註釋觸發自己條 test」
+
+boundary spec grep `budgetOverrideReason` / `usageLocation`,而我喺 **`agent-approval.service.ts` 同 `tool-registry.ts` 兩處嘅解釋性註釋**都寫咗嗰兩個字 —— 一次寫,兩次改。
+
+**CH-029 犯過一模一樣嘅**(「一個解釋規矩嘅註釋觸發咗嗰條規矩」)⇒ 沿用當時做法:**改註釋,唔鬆 test**,兼喺註釋度寫明「呢個名刻意唔喺呢度出現,因為條 test grep 佢」。
+
+### 🔴🔴 而 falsification 揭到 boundary grep 單獨唔夠
+
+把 model 自己嘅 `reasoning` **用位置參數**傳做第四個 argument —— 即係真正嘅壞版本,冇人會特登寫個參數名落去。
+
+**boundary 條 grep 完全睇唔到**(個名一次都冇出現)。紅嘅係 approval spec 嗰條 **arity assert**(`toHaveBeenCalledWith` 三個 argument)。
+
+⇒ **一條睇個名,一條睇個 call 嘅形狀 —— 兩條唔係重複。** 已寫入 boundary spec 註釋,唔係留喺 progress 度等人搵。
+
+### Falsification ×2 真紅零誤傷,加一個拆唔落嘅
+
+①blocked 都標 `executed` ⇒ **1 紅** ②位置參數偷渡 override ⇒ **1 紅**。
+
+⚠️ **③(拆走「只有 `blocked` 先算拒絕」)拆唔落 —— 佢一拆就唔 compile。** TS narrowing 令你冇檢查過就砌唔到嗰句 refusal 訊息(`body` 可能 undefined)。**呢個係比一條紅 test 更強嘅保證**,但佢唔會出現喺任何 test 報告入面,所以照實記低。
+
+### 兩條舊 test 紅得啱
+
+`refuses a pause on a write tool it cannot classify` 本來攞 `propose_assign` 做「分類唔到」嘅例子 —— 而家佢分類到喇,所以**條 test 一定要紅**:佢個主題係「分類唔到嘅情況」,而個例子唔再係。改用一個刻意唔喺任何 roadmap 上嘅名。
+
+`does not expose propose_assign yet (G1, 期二)` —— **佢本來就係為咗有一日要被人特登刪先存在。**
+
+### 數字
+
+api **1199 → 1212 / 83** 全綠 · tsc 0 · lint 0(⚠️ 兩個 prettier error `--fix` 咗先過)。新 test 13 條:registry 4 · approval 7 · boundary 2。
+
+---
+
 ### 未收
 - 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
-- 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)
+- 🚧 **期二剩 `G2`–`G7`**:`G4` 開工前要**重新答 OQ-7**(ADR-0037 E7:Claude 唔喺公司信任面,唔可以引用本 ADR 當已答)· `G5` 開工前要答 **OQ-5**
+- 🚧 **`propose_assign` 嘅前端未做** —— F8 張卡今日只認得 `line_items` 嗰種 proposal payload(`ProposalSummary` 讀 `items[]`);一個 `assign` proposal 會 render 成 `Nothing proposed.`。**唔喺 G1 範圍**,但要記住
 - 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)

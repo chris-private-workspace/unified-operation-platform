@@ -180,6 +180,53 @@ describe('🔴 F8-3 — approving is not a bypass', () => {
   });
 });
 
+/**
+ * 期二 G1 — an `assign` proposal is a different payload shape, and the Approve
+ * button beside it assigns a real licence.
+ *
+ * 🔴 These exist because G1 nearly shipped without them. `ProposalSummary` read
+ * only `payload.items`, so an assign proposal rendered as "Nothing proposed."
+ * with a working Approve button next to it — a person could have authorised
+ * something the screen had declined to describe, which is worse than the
+ * feature not existing.
+ */
+describe('🔴 G1 — an assign proposal has to describe itself', () => {
+  const assignRun = (payload: Record<string, unknown>) =>
+    RUN({
+      proposals: [
+        {
+          id: 'p1',
+          kind: 'assign',
+          status: 'pending',
+          payload,
+          createdAt: '2026-08-16T01:00:06Z',
+        },
+      ],
+    } as Partial<AgentRun>);
+
+  it('names the line item and says the platform still checks it', () => {
+    showRun(
+      assignRun({ lineItemId: 'line-abc', reasoning: 'This line is READY.' }),
+    );
+
+    expect(screen.getByText('Proposed licence assignment')).toBeTruthy();
+    expect(screen.getByText(/line-abc/)).toBeTruthy();
+    expect(screen.getByText('This line is READY.')).toBeTruthy();
+    // The counter-intuitive half stays on screen for this kind too.
+    expect(screen.getByText(/they can still refuse/i)).toBeTruthy();
+  });
+
+  it('refuses to imply emptiness when it cannot read the payload', () => {
+    // A kind or shape this build does not understand. The old fallback said
+    // "Nothing proposed.", which reads as "there is nothing here" — beside a
+    // button that would have gone ahead anyway.
+    showRun(assignRun({ somethingElse: true }));
+
+    expect(screen.getByText(/cannot be displayed/i)).toBeTruthy();
+    expect(screen.queryByText('Nothing proposed.')).toBeNull();
+  });
+});
+
 describe('stopping a run', () => {
   it.each(['running', 'awaiting_approval'] as const)(
     'offers Stop while the run is %s',

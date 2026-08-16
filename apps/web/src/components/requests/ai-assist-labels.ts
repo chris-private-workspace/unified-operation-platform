@@ -25,4 +25,5 @@ export const STEP_LABEL: Record<string, string> = {
   search_catalog: 'Searched the catalogue',
   get_ledger: 'Checked the OpCo ledger',
   propose_line_items: 'Proposed line items',
+  propose_assign: 'Proposed assigning the licence',
 };

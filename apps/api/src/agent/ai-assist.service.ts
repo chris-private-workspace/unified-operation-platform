@@ -596,10 +596,11 @@ export class AiAssistService {
  * 🔴 Throws on anything unrecognised rather than defaulting. A pause the
  * platform cannot classify must not become a proposal with a plausible-looking
  * kind — that is a row a person would approve without knowing what they were
- * approving. `propose_assign` joins this list in 期二 G1.
+ * approving. `propose_assign` joined this list in 期二 G1.
  */
 function kindOf(toolName: string): string {
   if (toolName === 'propose_line_items') return 'line_items';
+  if (toolName === 'propose_assign') return 'assign';
   throw new BadRequestException(
     `A run paused on an unrecognised write tool: ${toolName}`,
   );

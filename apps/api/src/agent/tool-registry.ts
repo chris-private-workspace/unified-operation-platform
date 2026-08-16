@@ -89,6 +89,7 @@ export class AgentToolRegistry {
       this.searchCatalog(),
       this.getLedger(),
       this.proposeLineItems(),
+      this.proposeAssign(),
     ]);
   }
 
@@ -475,6 +476,99 @@ export class AgentToolRegistry {
         if (!proposal) {
           throw new BadRequestException(
             'No approved line-item proposal for this run — a person has to approve it first',
+          );
+        }
+
+        return {
+          proposalId: proposal.id,
+          status: proposal.status,
+          approvedById: proposal.approvedById,
+          result: proposal.payload,
+        };
+      },
+    };
+  }
+
+  /**
+   * 期二 G1 — propose assigning a licence that is already a READY line item.
+   *
+   * Named in ADR-0036 §3.2 and plan §2.2 from the start, so this is the tool the
+   * ADR planned rather than a new row being slipped into the allow-list (R12).
+   *
+   * 🔴 Three things this tool deliberately CANNOT express, each of them a gate
+   * somebody could otherwise talk their way past:
+   *
+   *  1. **No budget override.** ADR-0016 D3 makes that override ADMIN-only and
+   *     demands a written reason, because it is the one gate a person is
+   *     allowed to overrule. Putting it in this schema would let a model
+   *     compose the sentence that overrules it — and the approver would be
+   *     agreeing to a reason they did not write. If budget blocks, the operator
+   *     overrides it on the request screen, as themselves.
+   *  2. **No usage-location override.** Same shape, smaller blast radius.
+   *  3. **No SKU, no quantity, no request.** It names ONE existing line item.
+   *     Anything the agent might want to change about what is being assigned
+   *     has to go through `propose_line_items` first — and be approved there.
+   *
+   * Like `propose_line_items`, `execute` is READ-ONLY and only ever runs after
+   * a person has decided (D3): the platform performs the assign, marks the
+   * proposal, and only then resumes the run.
+   */
+  private proposeAssign(): AgentTool {
+    return {
+      name: 'propose_assign',
+      description:
+        'Propose assigning the licence for ONE existing READY line item. This assigns nothing: a person decides, and the platform then runs its own eight checks — which can still refuse. Use get_request to find lineItemId.',
+      parameters: {
+        type: 'object',
+        properties: {
+          lineItemId: {
+            type: 'string',
+            description: 'Line item id (cuid) from get_request.',
+          },
+          reasoning: {
+            type: 'string',
+            description:
+              'Why this line is ready to assign, in terms of the request. A person reads this before approving.',
+          },
+        },
+        required: ['lineItemId', 'reasoning'],
+        additionalProperties: false,
+      },
+      needsApproval: true,
+      execute: async (args: unknown, ctx: AgentToolContext) => {
+        const record = asRecord(args);
+        const lineItemId = requireString(record, 'lineItemId');
+        requireString(record, 'reasoning');
+
+        const line = await this.prisma.requestLineItem.findUnique({
+          where: { id: lineItemId },
+          select: {
+            id: true,
+            stage: true,
+            request: { select: { opcoId: true } },
+          },
+        });
+        if (!line) throw new NotFoundException('Line item not found');
+        assertOpcoScope(ctx.user, line.request.opcoId);
+
+        /**
+         * 🔴 The same second layer `propose_line_items` carries, and it matters
+         * more here: if `needsApproval` ever fails to stop the run, the next
+         * thing that would happen is a real licence being assigned. This
+         * refuses instead, and refuses loudly.
+         *
+         * Note it looks for `executed` — the approval path marks a proposal
+         * the gates REFUSED as `failed`, so a blocked assign never reads as an
+         * approved one here.
+         */
+        const proposal = await this.prisma.agentProposal.findFirst({
+          where: { runId: ctx.runId, kind: 'assign', status: 'executed' },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, status: true, approvedById: true, payload: true },
+        });
+        if (!proposal) {
+          throw new BadRequestException(
+            'No approved assign proposal for this run — a person has to approve it first',
           );
         }
 
