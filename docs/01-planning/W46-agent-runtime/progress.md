@@ -659,8 +659,68 @@ api **1184 / 81** 全綠零跌 · web **392 passed**,**6 條紅逐條核對過�
 | `openai-agents.provider.ts` **零 Azure 接線** | grep:只有 `resolveModel()` | `E2` 未寫,**係我哋嘅工作唔係 infra 嘅** |
 | `aca-dev.json` **零個 `AGENT_*` / `OPENAI_*` env** | grep = **0** | 部署 template 要加,同上 |
 
+## Day 10 — 2026-08-16(F10-1 + F10-2 — falsification sweep)
+
+### Baseline
+
+`--testPathPattern "src[\\/]agent"` = **7 suites / 138 tests** 全綠。⚠️ 順帶一個坑:第一次用 `"agent"` 做 pattern **match 咗成個 suite(81 個)** —— 因為 **repo 目錄本身就叫 `ai-agent`**,每條路徑都含 `agent`。
+
+### 掃法
+
+只掃**未做過 falsification 嗰批**(之前做咗嘅見 checklist `F10-2e`)。**四道閘,結果 2 綠 2 紅 —— 而兩個綠就係兩個洞。**
+
+### 🔴🔴 洞 ① —— `getRun` 個 `runState` 排除,零測試覆蓋
+
+把 `runState: true` 加返落 `select` ⇒ **142 條全綠**。
+
+即係話 Day 8 嗰個「差啲開咗個窿」嘅修正,**由改完嗰刻起就冇任何嘢守住** —— A13 喺 wire 上驗過一次,但**一次 live 觀察唔係一道 regression 閘**。
+
+⚠️ **而佢結構上唔可能靠 assert 回傳值捉到**:Prisma 係 mock,回傳咩由 test 自己講。⇒ **只有「服務傳咗咩 argument 畀 Prisma」先載得住呢個事實** —— **道閘就係 query shape 本身**。
+
+新增 4 條 test。**兩次 falsification 證咗兩條 assert 唔係重複**:
+
+| falsification | 紅嗰條 | |
+|---|---|---|
+| `runState: true` 加返落 `select` | `never selects runState` | 2 紅 140 綠 |
+| `select` → `include` | `uses select rather than include` | 2 紅 140 綠 |
+
+**兩次紅嘅係唔同一對。** 我喺 test 註釋寫咗「呢兩條唔係重複」,而家嗰句係證出嚟唔係聲稱。
+
+### 🔴🔴 洞 ② —— SKU 存在性嘅兩條 test,一直靠錯嘅理由綠
+
+拆走 `Unknown or inactive skuId` 個 throw ⇒ **142 全綠**。而條 test **明明就喺度**,名仲要叫 `refuses a GUID that is not in the catalogue (hallucinated id)`。
+
+**點解**:再落兩道閘,`propose_line_items` 因為冇 approved proposal 而再拒絕一次,**而佢掟嘅係同一個 `BadRequestException`**;`agentProposal.findFirst` 又係一個裸 `jest.fn()` 返 `undefined` ⇒ **每個 case 都一路行到嗰度先掟**。
+
+⇒ 兩條改成 assert **訊息**(hardcode,唔由被測 code 推導)**+** `agentProposal.findFirst` 冇被 call 過(即證佢喺**上一道**閘就停咗)。**單靠訊息唔夠 —— 兩道閘掉轉次序佢一樣綠。** 修完再 falsify:**2 紅 140 綠**。
+
+📌 **格式檢查同存在性檢查係兩件事,而只有一件有守**:`F2-9②` 驗咗 GUID **格式**,但**幻覺出嚟嘅 GUID 格式完全合法** —— 真正攔住佢嘅係存在性,而嗰道正正就係冇守嗰道。
+
+### ✅ 兩道證實有守
+
+`kindOf()` 拆走 throw 改成一律返 `'line_items'` ⇒ **1 紅** · step detail 拆走 `scrubPii` ⇒ **2 紅**。兩次零誤傷。
+
+### 📌 方法論 —— 第四次撞同一族,今次係最貴嗰個版本
+
+`CLAUDE.md §9` 早就記低:**一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事;唯一分辨方法係拆走實作睇佢紅唔紅。**
+
+洞 ② 就係佢本人 —— test 名啱、位置啱、assert 睇落合理,**而佢由頭到尾釘住緊另一道閘**。
+
+⚠️ **可操作嘅一句**:`toBeInstanceOf(SomeException)` 喺一條**有多道閘、而每道都掟同一個 exception type** 嘅路徑上,基本上等於冇 assert 過。分辨方法只有兩個:**assert 訊息**,或者 **assert「下一道閘冇被行到」**。
+
+### 數字
+
+api **1184 → 1188 / 81**(零跌)· tsc 0 · lint 0。實作檔**全部還原乾淨** —— `git diff --stat` 只有兩個 spec 檔,**零 production code 改動**(falsification sweep 應有嘅收尾形狀)。**W46 falsification 累計 ×18,全部真紅零誤傷。**
+
+### 🚧 sweep 刻意冇掃嗰兩道
+
+`agent-run.controller.ts` / `agent-approval.controller.ts` **兩個都冇 spec 檔**。今次個 `runState` test 落咗喺 **service 層**(query shape 嘅正確位置),**但 controller ↔ DTO 嗰條縫仍然冇嘢守** —— 而 **BUG-011 個教訓逐字就係呢條縫**。已開項 `F10-2e`,target 期二 `G1` 之前。
+
+---
+
 ### 未收
 
+- 🚧 **F10-2e**(兩個 controller 冇 spec)· **F11-1b**(`STEP_LABEL` 冇嘢釘住)—— 兩個都 target 期二 `G1` 之前
 - 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
 - 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
 - 🚧 **F10-2** falsification 收尾 · **F11-1b**(上面嗰個缺口,要 Chris 揀修法)

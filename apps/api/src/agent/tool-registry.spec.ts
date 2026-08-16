@@ -296,6 +296,22 @@ describe('AgentToolRegistry', () => {
       expect(prisma.request.findUnique).not.toHaveBeenCalled();
     });
 
+    /**
+     * 🔴 F10-2 — both tests below used to assert only `BadRequestException`,
+     * and both passed with the existence check DELETED.
+     *
+     * The reason is worth keeping: two gates further down, `propose_line_items`
+     * refuses again when no approved proposal exists, and it refuses with the
+     * SAME exception type. `agentProposal.findFirst` is a bare mock returning
+     * undefined, so every one of these cases reached that second gate and threw
+     * there. The tests looked strict, named the right thing, and pinned
+     * nothing.
+     *
+     * So each now asserts the MESSAGE (hardcoded, not derived from the code
+     * under test) and that execution never reached the next gate. Either alone
+     * would be weaker: the message alone would still pass if the order of the
+     * two gates were swapped.
+     */
     it('refuses a GUID that is not in the catalogue (hallucinated id)', async () => {
       prisma.request.findUnique.mockResolvedValue({
         id: 'r1',
@@ -303,9 +319,10 @@ describe('AgentToolRegistry', () => {
       });
       prisma.skuCatalog.findMany.mockResolvedValue([]);
 
-      await expect(
-        propose([{ skuId: GUID, quantity: 1 }]),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(propose([{ skuId: GUID, quantity: 1 }])).rejects.toThrow(
+        /Unknown or inactive skuId/,
+      );
+      expect(prisma.agentProposal.findFirst).not.toHaveBeenCalled();
     });
 
     it('refuses a SKU that exists but is inactive', async () => {
@@ -322,7 +339,8 @@ describe('AgentToolRegistry', () => {
           { skuId: OTHER_GUID, quantity: 1 },
           { skuId: GUID, quantity: 1 },
         ]),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toThrow(/Unknown or inactive skuId/);
+      expect(prisma.agentProposal.findFirst).not.toHaveBeenCalled();
     });
 
     it.each([

@@ -724,4 +724,88 @@ describe('AiAssistService', () => {
       expect(runtime.start).not.toHaveBeenCalled();
     });
   });
+
+  /**
+   * 🔴 F10-2 — the gate here is the QUERY SHAPE, and that is why it needed its
+   * own test rather than an assertion on a returned object.
+   *
+   * `runState` is the SDK's serialised state: the model's message history,
+   * verbatim and never scrubbed (D6 scrubs on the way into `AgentMessage`,
+   * which is a different column written for a different purpose). Selecting it
+   * here would hand the client the unredacted original of the very transcript
+   * the platform is careful to redact.
+   *
+   * The falsification that produced these tests: putting `runState: true` back
+   * into the `select` left all 138 agent tests green. Nothing was watching —
+   * and because Prisma is mocked, no assertion on the RETURN value ever could
+   * be. The mock returns whatever the test tells it to, so only the arguments
+   * the service passes to Prisma carry the fact.
+   */
+  describe('getRun — the API read path may not carry runState', () => {
+    const parked = {
+      id: 'run-1',
+      requestId: 'req-1',
+      status: 'awaiting_approval',
+      steps: [],
+      messages: [],
+      proposals: [],
+      request: { opcoId: 'opco-a' },
+    };
+
+    /** The single argument object handed to `agentRun.findUnique`. */
+    const findUniqueArg = () =>
+      prisma.agentRun.findUnique.mock.calls.at(-1)?.[0] as {
+        select?: Record<string, unknown>;
+        include?: Record<string, unknown>;
+      };
+
+    it('never selects runState', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(parked);
+
+      await service.getRun(admin, 'run-1');
+
+      // Falsy, not absent: `runState: false` is a legitimate spelling that also
+      // does not leak. What must never happen is it being asked for.
+      expect(findUniqueArg().select?.runState).toBeFalsy();
+    });
+
+    it('uses select rather than include, because include returns every scalar', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(parked);
+
+      await service.getRun(admin, 'run-1');
+
+      // `include` pulls the relations AND every scalar on the row, so it
+      // reintroduces `runState` no matter how carefully the relations are
+      // listed. The two assertions are not redundant: the one above catches an
+      // added field, this one catches the shorter spelling.
+      expect(findUniqueArg().include).toBeUndefined();
+      expect(findUniqueArg().select).toBeDefined();
+    });
+
+    it('sends the request-card read down the same path, not a second query', async () => {
+      prisma.request.findUnique.mockResolvedValue({ opcoId: 'opco-a' });
+      prisma.agentRun.findFirst.mockResolvedValue({ id: 'run-1' });
+      prisma.agentRun.findUnique.mockResolvedValue(parked);
+
+      await service.findLatestForRequest(admin, 'req-1');
+
+      // If this ever stops going through getRun, the guard above stops
+      // covering the endpoint the card actually calls.
+      expect(prisma.agentRun.findUnique).toHaveBeenCalledTimes(1);
+      expect(findUniqueArg().select?.runState).toBeFalsy();
+      expect(findUniqueArg().include).toBeUndefined();
+    });
+
+    it('still refuses a run belonging to another OpCo', async () => {
+      // opcoIt is scoped to opco-a; this run hangs off a request in opco-b.
+      prisma.agentRun.findUnique.mockResolvedValue({
+        ...parked,
+        request: { opcoId: 'opco-b' },
+      });
+
+      await expect(service.getRun(opcoIt, 'run-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+  });
 });
