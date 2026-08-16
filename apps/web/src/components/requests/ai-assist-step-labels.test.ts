@@ -25,13 +25,32 @@ import { STEP_LABEL } from './ai-assist-labels';
  */
 
 const REGISTRY = join(__dirname, '../../../../api/src/agent/tool-registry.ts');
+const SERVICE = join(
+  __dirname,
+  '../../../../api/src/agent/ai-assist.service.ts',
+);
 
 /**
- * Keys the PLATFORM writes directly rather than deriving from a tool name —
- * `ai-assist.service.ts` `recordStep` call sites. Hardcoded on purpose: if one
- * is renamed, this list is where the rename has to be noticed.
+ * 🔴🔴 期二 G5 — this used to be a hardcoded list, and it let exactly the
+ * defect this file exists to prevent through.
+ *
+ * The old version was `['start','abort','run','proposal']` with a comment
+ * saying "hardcoded on purpose: if one is renamed, this list is where the
+ * rename has to be noticed". That reasoning is sound for RENAMES and silent for
+ * ADDITIONS — so when G5 added a `key: 'expired'` step, this suite stayed
+ * green while the request screen would have rendered a raw `expired`.
+ *
+ * ⚠️ The shape is worth naming: the registry half was DERIVED and the platform
+ * half was WRITTEN DOWN, in the same file, guarding the same map. Only the
+ * derived half could see something new. Both halves are derived now.
  */
-const PLATFORM_KEYS = ['start', 'abort', 'run', 'proposal'];
+function platformStepKeys(): string[] {
+  const source = readFileSync(SERVICE, 'utf8');
+  const keys = [...source.matchAll(/^\s*key: '([a-z_]+)',$/gm)].map(
+    (m) => m[1],
+  );
+  return [...new Set(keys)];
+}
 
 function registryToolNames(): string[] {
   const source = readFileSync(REGISTRY, 'utf8');
@@ -62,15 +81,28 @@ describe('AI Assist step labels stay level with the tool registry (F11-1b)', () 
     ).toEqual([]);
   });
 
+  it('finds the service — same vacuous-pass guard as the registry above', () => {
+    const keys = platformStepKeys();
+    expect(keys.length).toBeGreaterThanOrEqual(4);
+    // Named anchors, so a regex that silently starts matching something else
+    // (or nothing) fails here rather than making every assertion below vacuous.
+    expect(keys).toContain('start');
+    expect(keys).toContain('proposal');
+  });
+
   it('has a label for every key the platform writes itself', () => {
-    const missing = PLATFORM_KEYS.filter((key) => !STEP_LABEL[key]);
-    expect(missing).toEqual([]);
+    const missing = platformStepKeys().filter((key) => !STEP_LABEL[key]);
+
+    expect(
+      missing,
+      `Platform step keys with no STEP_LABEL entry — they would render as a raw key on the request screen: ${missing.join(', ')}`,
+    ).toEqual([]);
   });
 
   it('carries no label for a key nothing can emit', () => {
     // The other direction. A leftover label is harmless on screen but it is a
     // claim that a step exists, and it is how this map drifts into fiction.
-    const known = new Set([...registryToolNames(), ...PLATFORM_KEYS]);
+    const known = new Set([...registryToolNames(), ...platformStepKeys()]);
     const orphans = Object.keys(STEP_LABEL).filter((key) => !known.has(key));
 
     expect(

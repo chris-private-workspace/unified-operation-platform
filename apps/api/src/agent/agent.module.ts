@@ -8,6 +8,7 @@ import { OpenAiAgentsProvider } from './openai-agents.provider';
 import { ClaudeToolRunnerProvider } from './claude-tool-runner.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
 import { AiAssistService } from './ai-assist.service';
+import { AgentRunExpiryService } from './run-expiry.service';
 import { AgentKillSwitchService } from './kill-switch.service';
 import { AgentReviewStatsService } from './review-stats.service';
 import { AgentRunController } from './agent-run.controller';
@@ -58,6 +59,11 @@ import { AgentReviewStatsController } from './review-stats.controller';
       ],
     },
     AiAssistService,
+    // 期二 G5 / OQ-5 — the clock half of run expiry. Not exported: nothing
+    // should be triggering expiry on demand. The `resumeRun` path reaches the
+    // same behaviour through `AiAssistService.expireRun`, which is where the
+    // row changes live.
+    AgentRunExpiryService,
     // 期二 G3 — the kill switch. Exported because `agent-approval` has to ask
     // it before an approval can assign anything (G1): the branch that can cause
     // a real side-effect is the one a switch marked "off" must actually stop.

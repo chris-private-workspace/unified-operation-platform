@@ -20,6 +20,10 @@ export const STEP_LABEL: Record<string, string> = {
   proposal: 'Proposal raised for review',
   abort: 'Run stopped',
   run: 'Run',
+  // 期二 G5 — worded so the row says WHY it ended without anyone acting. "Run
+  // expired" alone would read as a system fault; the detail line carries the
+  // threshold, and this carries the fact that the clock, not a person, ended it.
+  expired: 'Expired without a decision',
   get_request: 'Read the request',
   list_pending_requests: 'Listed open requests',
   search_catalog: 'Searched the catalogue',

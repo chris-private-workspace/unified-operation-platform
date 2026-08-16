@@ -625,7 +625,16 @@ model AgentRun {
   requestId String?
   request   Request?       @relation(fields: [requestId], references: [id])
 
-  // running | awaiting_approval | approved | rejected | completed | failed | aborted
+  // running | awaiting_approval | approved | rejected | completed | failed |
+  // aborted | expired
+  //
+  // 🔴 `expired` (期二 G5 / plan OQ-5) is NOT a flavour of `aborted`. `aborted`
+  // means the platform cleared this up on someone's instruction; `expired`
+  // means nobody decided in time. G7's population (`decidedAt != null`) is
+  // built on that distinction — merging them would blend "nobody reviewed
+  // this" into "the platform stopped it", and the first is precisely what R13
+  // measures. Adding a value costs no migration, which is ADR-0031 D1's
+  // String-not-enum decision paying off.
   // String rather than a Prisma enum for ADR-0031 D1's reason: an enum mints a
   // second list to keep in step with this one.
   status String

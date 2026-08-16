@@ -840,7 +840,16 @@ export type AgentRunStatus =
   | 'rejected'
   | 'completed'
   | 'failed'
-  | 'aborted';
+  | 'aborted'
+  /**
+   * 期二 G5 / plan OQ-5 — nobody decided within the threshold (7 days), or the
+   * saved state turned out to be unreadable (R16).
+   *
+   * 🔴 Distinct from `aborted` on purpose: that one means a person stopped the
+   * run. Collapsing them would hide "nobody reviewed this", which is exactly
+   * what R13 exists to make visible.
+   */
+  | 'expired';
 
 /** 🟢 Written by the PLATFORM around real execution. The audit truth (D4). */
 export interface AgentStep {

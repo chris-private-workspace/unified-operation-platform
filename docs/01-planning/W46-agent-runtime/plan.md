@@ -338,7 +338,7 @@ index 喺 Prisma 側表達唔到)。
 | ① **門檻** | **7 日** | 🟢 **Chris 2026-08-16** |
 | ② **過期落咩 status** | **新開 `expired`**,唔塞 `aborted` | 🟡 AI 建議 |
 | ③ **R16 結構過期** | **版本標記 + 主動對比**,唔淨係靠時間閘 | 🟡 AI 建議 |
-| ④ **fail loud 畀邊個** | 走返 **`OutboundFailure`** + Delivery failures 畫面 | 🟡 AI 建議 |
+| ④ **fail loud 畀邊個** | 🔄 **`AgentStep`**(原建議 `OutboundFailure`,實作當日更正 —— 見下) | 🟡 AI 建議 |
 
 **① 7 日** —— 呢個唔係 SLA 係一道**回收閘**:太短會殺死「週末 + 一個假期」之後仍然有效嘅 proposal,
 太長就等於冇。而 `AgentProposal.decidedAt` 令實際 median 量得返 ⇒ **收緊隨時做得,唔使一次揀啱。**
@@ -352,8 +352,18 @@ index 喺 Prisma 側表達唔到)。
 **③ 版本標記** —— 四條入面**唯一真正冇現成答案**嗰條。只做「標記 + 對比 + fail loud」,
 **唔做自動 resume 修復** —— 修復係另一個問題,而**知唔知道**先係 R16 問嘅嘢。
 
-**④ `OutboundFailure`** —— 佢就係平台**已有嘅 stateful 修復佇列**(ADR-0011),而「一個 run 過期咗要人知」
-同「一封信寄唔出要人知」係同一種事。另開一個地方就係**第二個「有嘢等緊人」嘅答案**(BUG-005 / BUG-011 同族)。
+**④ ~~`OutboundFailure`~~ → 🔄 `AgentStep`(2026-08-16 實作當日更正)**
+
+原本建議行 `OutboundFailure`,理由係「佢就係平台已有嘅 stateful 修復佇列」。**寫 code 嗰陣睇返佢先發現
+建議錯咗**:`OutboundFailure` 係**重做得到嘅嘢**嘅佇列(Delivery failures 畫面有 retry 掣),
+而一個過期 run **重做唔到** —— 佢個 state 唔係太舊就係讀唔到,resume 佢等於喺一個冇人畀過嘅批准之下
+執行 tool call。擺一個永遠撳唔得嘅 retry 掣落嗰個畫面,比冇更差(**同 G1 嗰個
+`Nothing proposed.` 一模一樣嘅錯**)。
+
+🟢 **改用 `AgentStep`** —— 佢就係 **D4 講嘅 action ledger**,而「平台令佢過期」正正係平台自己做嘅事;
+F8 張卡**已經 render steps** ⇒ **零前端改動就見到**。⚠️ 而 `agent.boundary.spec.ts` assert
+**`AgentStep` 只有一個 writer**,所以 sweep 唔可以自己寫 ⇒ 機制住喺 `AiAssistService.expireRun`,
+sweep 只決定「幾時」(CH-015 `openSyncGate` 先例)。
 
 📌 **仲有一個唔屬於 OQ-5 嘅決定留返畀 G5 實作**:**expiry 由邊個執行** —— BullMQ delayed job(綁 run
 建立嗰刻)vs `@nestjs/schedule` 批次 sweep。
@@ -393,3 +403,4 @@ index 喺 Prisma 側表達唔到)。
 | 2026-08-16 | 🟢🟢 **`ADR-0038` `Accepted`(Chris,四條後果過目之後)⇒ `G4` 嘅 R1 gate 過,開得工**。🟢 **同 ADR-0037 有一個分別要記住**:嗰邊個 `Accepted` **唔等於每一條都答咗**(`E4` auth 係知情之下 deferred),而本 ADR **D1–D6 六條全部批咗,零 deferred** —— `D6` 唔係一條未答嘅決定,**佢本身就係決定**(「G4 第一步係查嗰三樣,唔係寫 adapter」)。⇒ **`OQ-1` / `OQ-5` / `ADR-0037 E4` 嗰個「approved as deferred」形狀唔適用喺呢度**,唔好順手當佢又係一格半開嘅嘢 |
 | 2026-08-16 | 🟢 **`OQ-5` 答咗(Chris:**7 日**)⇒ `G5` gate 過** —— **W46 七條 OQ 而家淨低 `OQ-1` 一條真正未答**(佢卡 infra,同 `E4` 一齊)。🔴 **但一個數字答唔到成條問題,而四格嘅來源唔一樣,呢個分別要留喺 doc 度**:①門檻 7 日 = **Chris 答**;②新 status `expired` ③R16 版本標記 + 主動對比 ④fail loud 走 `OutboundFailure` = **AI 建議,佢冇反對但冇逐條講**(沿用 `CH-015` / `F9-8` 先例:**兩種證據都算數,但唔可以寫成同一種**)。🔴 **②嘅理由唔係「講得準啲」係 G7** —— `aborted` 已經專指「平台執手尾」(`abortRun` 兩個決定欄都唔寫),塞埋過期落去就係把「冇人審」同「平台停咗佢」溝埋,**而前者正正係 R13 要量嗰樣**;🟢 零 migration,因為 `status` 係 `String` 唔係 Prisma enum(**ADR-0031 D1 喺呢度回本**)|
 | 2026-08-16 | 🟢🟢 **期二 `G4` 落地 —— `ADR-0036 D1` 第一次真被測試,而佢成立**。api **1260 → 1289 / 87 → 88** 全綠零跌 · tsc 0 / lint 0 · **falsification ×7 真紅零誤傷**。**registry / 六個 tool / `AgentTool` / `AgentToolSchema` / seam ⑤ vocabulary 一個字冇改**(ADR-0037 `E2` 立嗰條尺:要改 registry 就係 D1 錯咗 ⇒ 唔使返轉頭);最硬證據係一句 `toBe` —— **schema object 由 registry 去到 SDK 係同一個 reference**,唔係結構相等嘅複製品。<br>🔴 **三件靠估會錯嘅嘢,兩件當場紅畀我睇** ⇒ **D4 由一條規矩變成回本咗嘅嘢**:①`betaTool` emit **`input_schema`** 唔係 `inputSchema` ②**`BetaRunnableTool` 個 union 包住 Anthropic 內建 tool**(冇 `inputSchema`,TS 拒絕直接 cast)⇒ 🟢 **D2 多咗一層意思:內建 tool 由同一個 `tools` array 入嚟,而 `toClaudeTools` 只 map registry** ③🔴🔴 **`BetaToolRunner.js` `:23,27` 先 `yield`、`:54` 先執行 tool** ⇒ `break` 就係 approval gate,**但 `:31-33` 個 push 排喺 `yield` 之後 ⇒ 一 break 就跳過**,唔補返個 assistant turn,resume 嗰陣 `tool_result` 指住唔存在嘅 `tool_use` = **API 400**。**冇任何 type signature 講呢件事。**<br>🔴 **ADR-0036 兩處要更正,兩處都唔係 H1**:**`D3`「用 SDK 原生 pause/resume」喺 Claude 側唔成立**(冇 pause/resume,冇 `needsApproval` 欄)—— 但 D3 嘅**實質決定**(一律要人批 · 批准真相落平台 DB)一個字冇變,而且呢邊**更加成立**(冇 SDK 側 approval state 可以誤當真相);**approval 喺呢邊唔係一個機制,係唔繼續**。📌 **而咁樣先令 seam ⑤ 真正回本** —— `AgentTurn` 呢套 vocabulary 載得起兩個唔似樣嘅暫停機制(ADR-0017 D2)。**`D9`** 寫嘅 `tool_runner` 實際叫 **`toolRunner`**。<br>🟢 **D6 三條全部通過**:`@anthropic-ai/sdk@0.117.1` · **MIT** · deps 得兩個 · **`zod` 係 optional peerDependency ⇒ R20 幾乎唔存在** · **零新 env**(`ANTHROPIC_API_KEY` F3 已經喺 `.env.example`)。<br>🔴 **D3 落地成兩樣嘢唔係一句話**:①明文讀 env 再自己 check(**`new Anthropic()` 唔傳 key 會靜靜攞同一個 env var** ⇒ 交畀 SDK 就等於一個冇人覆核過嘅環境變數係唯一嗰道嘢,**同 D11 tracing 同形狀**)②一條 test assert **constructor 完全冇被 call**(「佢 throw 咗」對一個建咗 client 先失敗嘅版本一樣成立)。secret 走 `ConfigService` 唔走 `ConnectorConfig`(**ADR-0013 Model C**;加 DB 欄仲會係 H1)。<br>⚠️ **我個 falsification script 自己喺「令人安心」嗰方向壞咗**:jest 成功時把 summary 寫去 **stderr**,而 script 成功路只讀 stdout ⇒ baseline / restored 兩行 `NO TEST LINE`,即「還原乾淨」冇驗到。補跑真 jest(36/36)+ `git diff --stat`(零殘留)先收 —— **同 G7 嗰句「risk metric 喺令人安心嗰方向出錯衰過冇 metric」同源** |
+| 2026-08-16 | 🟢 **期二 `G5` 拆兩半,`G5-A`(run expiry / OQ-5)落地** —— api **1289 → 1308 / 88 → 89** · web **414 → 415**(6 紅 = pre-existing)· 兩邊 tsc 0 / lint 0 · **falsification ×9 真紅零誤傷**。🔴 **R3:拆兩半嘅理由唔係工作量** —— **`G5-B`(BullMQ)會改 API 契約**(`POST /agent/runs` 而家同步等 LLM 返 `AgentRunDto`,推去 worker 就變成返一個 pending run ⇒ F8 張卡要改),**而前端點知幾時完 = 就係 `G6` SSE** ⇒ **B 同 G6 係同一件事嘅兩半**,B 冇 G6 就要 polling,而 polling 唔係過渡係一個會留低嘅設計 ⇒ **等 Chris 一句**。<br>🔴🔴 **OQ-5 ① 指住一個真 bug,唔止係一個門檻**:`resumeRun` 個 R16 檢查 **throw 咗但唔改 row**,而佢排喺 `try` **之前** ⇒ 永遠唔會經 `failRun` ⇒ run 停喺 `awaiting_approval` **永遠**;加上 OQ-3 ⇒ **嗰張單永遠開唔到新 run,平台冇自愈路**。⚠️ **成個檔其他路都處理咗,就係呢個早退冇,而冇任何嘢係紅嘅。**<br>🔄 **我更正咗自己嘅 ④ 建議**:`OutboundFailure` → **`AgentStep`** —— 前者係**重做得到嘅嘢**嘅佇列(有 retry 掣)而過期 run 重做唔到,擺個永遠撳唔得嘅掣落 Delivery failures **同 G1 嗰個 `Nothing proposed.` 一模一樣嘅錯**。<br>🔴 **兩個入口一個實現**(`expireRun` 機制 / sweep 決定幾時)—— **唔係品味**:`agent.boundary.spec.ts` assert **`AgentStep` 只有一個 writer**,跟 **CH-015 `openSyncGate`** 形狀。<br>🔴 **兩個刻意唔做**:①sweep **唔掃 `running`**(有 in-flight call,由另一個 process 令佢過期就係平台講一件仲做緊嘅事做完咗;要 heartbeat 唔係門檻)②過期 proposal **唔寫 `decidedAt`**(寫咗就令佢入 G7 人口做 rejection ⇒ **一隊人愈唔審批准率愈低,睇落愈嚴謹**)。<br>🟢 **F11-1b 嗰個對比拎到實證**:`'expired'` 入 union ⇒ web tsc 即出**兩個 `TS2741`**(`RUN_TONE`/`RUN_LABEL`),而隔籬 `Record<string, string>` 嘅 `STEP_LABEL` **一聲不響**。<br>🔴🔴 **順帶修咗 F11-1b 自己一個缺口**:`PLATFORM_KEYS` 係 hardcode,註釋寫住「for renames」⇒ **對新增完全靜音**;同一個檔守住同一個 map,registry 嗰半 derived、platform 嗰半 written-down ⇒ **兩半兩種強度,而弱嗰半正正就係今日踩中嗰半**。<br>⚠️ **falsification ⑧ 出乎預期(紅咗),而個教訓係方法論**:要證「舊版盲」就要**同時**拆走 label(⑨ = **5 綠**)—— **一個 mutation 證唔到嘢,唔等於個 claim 錯,可能只係 mutation 揀錯咗位** |

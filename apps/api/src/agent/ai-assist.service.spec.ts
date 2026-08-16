@@ -741,6 +741,96 @@ describe('AiAssistService', () => {
         expect(runtime.resume).not.toHaveBeenCalled();
       },
     );
+
+    /**
+     * 🔴🔴 期二 G5 — throwing was not enough, and this is the assertion that
+     * says so.
+     *
+     * Before G5 this path threw and left the row at `awaiting_approval`
+     * FOREVER. OQ-3 allows one non-terminal run per request, so a single
+     * unreadable state permanently locked that request out of ever getting
+     * another run, with no path back (plan OQ-5 ①).
+     *
+     * ⚠️ Where the defect lived is the part worth remembering: this check sits
+     * BEFORE the `try` that calls `failRun`, so it was the one early return
+     * nobody handled — and nothing in the file looked wrong.
+     */
+    it('ends the run instead of leaving it parked forever (OQ-5 / R16)', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(parkedRun({ runState: '' }));
+
+      await expect(
+        service.resumeRun('run-1', [{ ref: 'call-1', approved: true }]),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+
+      const update = prisma.agentRun.update.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(update.data.status).toBe('expired');
+      expect(update.data.endedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  // ── expiry (期二 G5 / plan OQ-5) ────────────────────────────
+
+  describe('expireRun', () => {
+    it('marks the run expired and records why on the action ledger', async () => {
+      await service.expireRun('run-1', 'No decision was made within 7 days');
+
+      const step = prisma.agentStep.create.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(step.data.key).toBe('expired');
+      expect(step.data.status).toBe('failed');
+      expect(step.data.detail).toContain('7 days');
+      // Honest, not pessimistic: there is no "try again" for this run — its
+      // state is either too old to trust or unreadable, so the repair is a
+      // person starting a new one.
+      expect(step.data.retryable).toBe(false);
+      expect(step.data.whoFixes).toBe('operator');
+
+      const update = prisma.agentRun.update.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(update.data.status).toBe('expired');
+    });
+
+    /**
+     * 🔴 `expired`, not `aborted` — and the reason is G7, not tidiness.
+     * `aborted` already means "the platform cleared this up on instruction".
+     * Merging expiry into it would blend "nobody reviewed this" with "the
+     * platform stopped it", and the first is exactly what R13 measures.
+     */
+    it('does not reuse the aborted status', async () => {
+      await service.expireRun('run-1', 'anything');
+      const update = prisma.agentRun.update.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(update.data.status).not.toBe('aborted');
+    });
+
+    /**
+     * 🔴🔴 The assertion G7 depends on.
+     *
+     * Writing `decidedAt` here would put every expired proposal into
+     * review-stats' population as a rejection — so a team that ignores
+     * proposals until they lapse would show a FALLING approval rate, i.e. would
+     * look more sceptical the less they read. A risk metric must not improve
+     * when the behaviour it measures gets worse.
+     */
+    it('rejects pending proposals WITHOUT writing the decision columns', async () => {
+      await service.expireRun('run-1', 'No decision was made within 7 days');
+
+      const call = prisma.agentProposal.updateMany.mock.calls.at(-1)?.[0] as {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      };
+      expect(call.where).toEqual({ runId: 'run-1', status: 'pending' });
+      expect(call.data.status).toBe('rejected');
+      expect(call.data.rejectedReason).toContain('expired');
+      // Absent, not null: either spelling of "we wrote it" is the bug.
+      expect(call.data).not.toHaveProperty('decidedAt');
+      expect(call.data).not.toHaveProperty('approvedById');
+    });
   });
 
   // ── the refusals ───────────────────────────────────────────

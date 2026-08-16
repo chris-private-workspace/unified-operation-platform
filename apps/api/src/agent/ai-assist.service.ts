@@ -252,6 +252,21 @@ export class AiAssistService {
      * nobody gave for them.
      */
     if (typeof run.runState !== 'string' || run.runState.trim() === '') {
+      /**
+       * 🔴🔴 期二 G5 — this used to throw and leave the row untouched, and that
+       * was a real defect plan OQ-5 ① names: the run stayed `awaiting_approval`
+       * FOREVER. Because OQ-3 allows only one non-terminal run per request, a
+       * single unreadable state permanently blocked that request from ever
+       * getting another run — and the platform had no path back.
+       *
+       * ⚠️ Note where the bug lived: this check sits BEFORE the `try` below, so
+       * it never reached `failRun`. Everything after it was handled; this one
+       * early return was not, and nothing was red about that.
+       */
+      await this.expireRun(
+        run.id,
+        'The saved state is not readable, so this run cannot be resumed (R16)',
+      );
       throw new ServiceUnavailableException(
         'This run has no readable saved state and cannot be resumed (R16)',
       );
@@ -390,6 +405,71 @@ export class AiAssistService {
     });
 
     return this.getRun(user, runId);
+  }
+
+  /**
+   * 期二 G5 / plan OQ-5 — end a run that nobody decided on.
+   *
+   * 🔴 Public because it has TWO callers and they must not drift apart
+   * (the `openSyncGate` precedent from CH-015, where a sweep and an on-demand
+   * check both had to open the same gate the same way):
+   *
+   *   `AgentRunExpiryService`  — the clock: parked longer than the threshold
+   *   `resumeRun`              — the structure: saved state is unreadable (R16)
+   *
+   * The two are genuinely different expiries, and OQ-5 names both. A time
+   * threshold cannot detect the second one: it is caused by a DEPLOYMENT, not
+   * by elapsed time, so an upgrade could make every parked run unresumable
+   * within the same minute.
+   *
+   * 🔴 `expired` rather than `aborted`, and the reason is G7 not tidiness.
+   * `aborted` already means "the platform cleared this up" — `abortRun` above
+   * writes it, and G7's population (`decidedAt != null`) is built around that
+   * distinction. Folding expiry into it would merge "nobody reviewed this" with
+   * "the platform stopped it", and the FIRST of those is exactly what R13 is
+   * trying to measure. Zero migration: `AgentRun.status` is a `String`, not a
+   * Prisma enum — ADR-0031 D1 paying off.
+   */
+  async expireRun(runId: string, reason: string): Promise<void> {
+    this.logger.warn(`AI-Assist run ${runId} expired: ${scrubPii(reason)}`);
+
+    await this.writeStep(runId, {
+      key: 'expired',
+      status: 'failed',
+      detail: reason,
+      /**
+       * NOT retryable, and that is the honest answer rather than a pessimistic
+       * one: there is no "try again" for this run. Its saved state is either
+       * too old to trust or unreadable, and resuming it would execute tool
+       * calls under an approval nobody gave. Starting a NEW run is the repair,
+       * which is a person's action — hence `operator`.
+       */
+      retryable: false,
+      whoFixes: 'operator',
+    });
+
+    await this.prisma.agentRun.update({
+      where: { id: runId },
+      data: { status: 'expired', endedAt: new Date() },
+    });
+
+    /**
+     * 🔴 Same as `abortRun`: pending proposals go with the run, and the two
+     * decision columns stay NULL.
+     *
+     * Writing `decidedAt` here would put every expired proposal into G7's
+     * population as a rejection — so a team that ignores proposals until they
+     * lapse would show a FALLING approval rate, i.e. would look more sceptical
+     * the less they read. R13's metric must not improve when the behaviour it
+     * measures gets worse.
+     */
+    await this.prisma.agentProposal.updateMany({
+      where: { runId, status: 'pending' },
+      data: {
+        status: 'rejected',
+        rejectedReason: `The run expired before anyone decided: ${reason}`,
+      },
+    });
   }
 
   // ── the parts that write ───────────────────────────────────

@@ -1342,3 +1342,82 @@ jest **成功時把 summary 寫去 stderr**,而 script 成功路只讀 stdout �
 - 🚧 `F11-2` / `A14` live —— 卡 infra request(未發出)
 - 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
 - 🔴 **Claude 側 OQ-7 仍然未答** —— G4 唔需要佢,真打之前需要(ADR-0037 E7 / ADR-0038 D5)
+
+---
+
+## Day 18 — 2026-08-16(期二 `G5-A` — run expiry / OQ-5)
+
+api **1289 → 1308 / 88 → 89** · web **414 → 415**(6 紅 = pre-existing,數目一個字冇變)·
+兩邊 tsc 0 / lint 0 · **falsification ×9 真紅零誤傷**(內含一個反方向)。
+
+### 🔴 開工第一件事係把 G5 拆兩半,而理由唔係工作量
+
+| | |
+|---|---|
+| **A. run expiry(OQ-5)** | 🟢 零 API 契約改動、零前端行為改動、有現成 pattern(`SyncSweepService`)⇒ **今日做咗** |
+| **B. BullMQ 落地** | 🔴 `POST /agent/runs` 而家**同步等 LLM 返 `AgentRunDto`**。推去 worker = 契約由「返結果」變「返一個 pending run」⇒ F8 張卡要改,**而前端點知幾時完 = 就係 `G6` SSE** |
+
+⇒ **B 同 G6 係同一件事嘅兩半**。B 冇 G6 就要 polling,而 polling 唔係一個過渡 —— 佢係一個會留低嘅設計。
+**等 Chris 一句。**
+
+### 🔴🔴 OQ-5 ① 唔止係一個門檻,佢指住一個真 bug
+
+`resumeRun` 個 R16 檢查(saved state 讀唔到)**throw 咗但唔改 row**,而佢排喺 `try` **之前** ⇒
+**永遠唔會經 `failRun`** ⇒ run 停喺 `awaiting_approval` **永遠**。加上 OQ-3(一張 request 只准一個
+非終態 run)⇒ **嗰張單永遠開唔到新 run,而平台冇任何自愈路**。
+
+⚠️ **成個檔其他路都處理咗,就係呢個早退冇** —— 而冇任何嘢係紅嘅。
+
+### 🔴 兩個入口一個實現,而呢個唔係品味
+
+`AiAssistService.expireRun()` = 機制;`AgentRunExpiryService` 只決定「幾時」。
+
+**`agent.boundary.spec.ts` assert `AgentStep` 只有一個 writer** ⇒ sweep 自己寫 step 就會被佢捉到,
+而佢係啱嘅。形狀跟 **CH-015 `openSyncGate`**(sweep 同 on-demand 兩條路唔可以漂)。
+
+### 🔄 我更正咗自己嘅 ④ 建議:`OutboundFailure` → `AgentStep`
+
+寫 code 嗰陣睇返 `OutboundFailure` 先發現建議錯咗:佢係**重做得到嘅嘢**嘅佇列(Delivery failures
+有 retry 掣),而一個過期 run **重做唔到**。擺個永遠撳唔得嘅掣落嗰個畫面 —— **同 G1 嗰個
+`Nothing proposed.` 一模一樣嘅錯**。
+
+`AgentStep` = D4 action ledger,而 F8 張卡已經 render steps ⇒ **零前端改動就見到**。
+
+### 🔴 兩個「刻意唔做」,兩個都寫低咗
+
+**sweep 唔掃 `running`** —— 佢有 in-flight model call,由另一個 process 令佢過期就係平台自己講一件
+仲做緊嘅事做完咗。要偵測真死咗嗰啲需要 **heartbeat 唔係門檻** ⇒ **列做已知缺口,唔喺度塞一個錯答案**。
+
+**過期 proposal 唔寫 `decidedAt`/`approvedById`** —— 寫咗就會令佢哋入 G7 個人口做 rejection ⇒
+**一隊人愈唔審,批准率愈低,睇落愈嚴謹**。⚠️ 一個 risk metric 唔可以喺佢量緊嘅行為變差嗰陣自己變靚。
+
+### 🟢 F11-1b 嗰個對比,今日拎到實證
+
+加 `'expired'` 落 `AgentRunStatus` union,web tsc 即刻出**兩個** `TS2741`(`RUN_TONE` + `RUN_LABEL`)——
+**`Record<AgentRunStatus, …>` 真係守住咗**。而隔籬 `STEP_LABEL` 係 `Record<string, string>`,**一聲不響**。
+
+### 🔴🔴 順帶修咗 F11-1b 自己一個缺口
+
+`ai-assist-step-labels.test.ts` 個 `PLATFORM_KEYS` 係 **hardcode**,註釋仲寫住
+「hardcoded on purpose: if one is renamed, this list is where the rename has to be noticed」——
+**個理由對「改名」成立,對「新增」完全靜音**。
+
+⚠️ **形狀值得記**:同一個檔、守住同一個 map,registry 嗰半係**掃出嚟**(新 tool 捉到)、
+platform 嗰半係**手寫**(新 key 捉唔到)⇒ **兩半用咗兩種強度,而弱嗰半正正就係我今日踩中嗰半。**
+而家兩半都掃,各自有 vacuous-pass guard。
+
+### ⚠️ 一個 mutation 證唔到嘢,唔等於個 claim 錯 —— 可能只係 mutation 揀錯位
+
+Falsification ⑧(把 `platformStepKeys` 改返 hardcode)我**預期綠**(證明舊版盲),佢**紅咗**。
+原因:條 test **另一半**(orphan label,反方向嗰條)捉到 —— `STEP_LABEL` 有 `expired` 而 known set 冇。
+
+⇒ 要證「舊版盲」就要**同時**拆走 label(⑨),而 ⑨ **真係 5 綠**。
+📌 如果我停喺 ⑧ 就會寫低一個**同證據相反**嘅結論;如果我因為 ⑧ 紅就話「舊版本冇問題」,
+就會漏咗一個真缺口。**兩個方向都要走一次先講得出邊個係真。**
+
+### 未收
+- 🚧 **`G5-B` BullMQ** —— 等 Chris 一句(見上)
+- 🚧 `G6`(SSE)—— 零 gate
+- 🚧 `F11-2` / `A14` live —— 卡 infra request(未發出)
+- 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
+- 🔴 **`running` run 死咗冇人知** —— 本單刻意冇處理(要 heartbeat),已寫入 code 註釋

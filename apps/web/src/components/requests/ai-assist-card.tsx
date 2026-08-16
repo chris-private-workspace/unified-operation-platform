@@ -55,6 +55,15 @@ const RUN_TONE: Record<AgentRunStatus, BadgeTone> = {
   completed: 'ok',
   failed: 'danger',
   aborted: 'neutral',
+  /**
+   * 期二 G5 — `warn`, deliberately NOT the `neutral` that `aborted` carries.
+   *
+   * `aborted` is a decided ending: somebody pressed Stop. `expired` is an
+   * ending nobody chose — a proposal sat unread until the platform had to
+   * unstick itself. Giving them the same tone would render the distinction the
+   * API keeps (and G7 measures) as the same thing on screen.
+   */
+  expired: 'warn',
 };
 
 const RUN_LABEL: Record<AgentRunStatus, string> = {
@@ -65,6 +74,9 @@ const RUN_LABEL: Record<AgentRunStatus, string> = {
   completed: 'Done',
   failed: 'Failed',
   aborted: 'Stopped',
+  // Says what happened, not what state it is in: "Expired" alone reads as a
+  // system fault, and this ending is about a decision that never came.
+  expired: 'Expired unreviewed',
 };
 
 const STEP_ICON: Record<AgentStep['status'], LucideIcon> = {
