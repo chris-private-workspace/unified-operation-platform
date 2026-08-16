@@ -1,16 +1,16 @@
 # ADR-0039: Agent run 轉背景執行 + SSE —— 兼還 ADR-0029 A2 嗰筆基建債
 
 **Date**: 2026-08-16
-**Status**: **Proposed**
-**Approver**: Chris Lai(方向已批 2026-08-16「要併埋一齊做」;後果待過目)
+**Status**: **Accepted**
+**Approver**: Chris Lai(方向 2026-08-16 批「要併埋一齊做」;**五條後果同日過目 ⇒ Accepted**)
 
 > 🚧 同 ADR-0036 / 0037 / 0038 一樣,本文件住喺 branch `feat/w46-agent-runtime`,**未 merge 落 `main`**。
 >
-> 🔴 **點解係 `Proposed`** —— Chris 2026-08-16 批嘅係「G5-B 同 G6 併埋一齊做」。佢批嗰陣見到嘅係
-> 「BullMQ + SSE 一齊做」。而查證之後浮出嚟嘅五條後果(**F2** 契約其實唔使 break · **F4** SSE 同
-> 多 replica 令 **Redis 由「BullMQ 要」升級成「SSE 都要」** · **F5** 🔴 **DEV 根本冇 Redis,
-> 又一個 infra 依賴** · **F6** nginx 住喺 web container 要改 · **F7** ACA 支唔支援 SSE **未驗證**)
-> 佢未見過。沿用 ADR-0037 / 0038 同一條路。
+> **批准路徑**(留低係因為佢同 ADR-0037 / 0038 係同一條):Chris 先批方向「G5-B 同 G6 併埋一齊做」,
+> 佢批嗰陣見到嘅係「BullMQ + SSE 一齊做」;查證之後浮出五條佢未見過嘅後果(**F2** 契約其實唔使
+> break · **F4** SSE 同多 replica 令 **Redis 由「BullMQ 要」升級成「SSE 都要」** · **F5** 🔴 **DEV
+> 根本冇 Redis,又一個 infra 依賴** · **F6** nginx 住喺 web container 要改 · **F7** ACA 支唔支援
+> SSE **未驗證**)⇒ 補一輪過目先 `Accepted`。
 
 ---
 
@@ -130,6 +130,43 @@ ACA 可以行多過一個 replica。之下:
 **httpOnly cookie** ⇒ 現有 guard 原封適用。
 
 ⚠️ **代價講白**:Bearer-token 呢條路(ADR-0002,保留住)**用唔到 SSE**。今日冇 caller 需要。
+
+### F9 —— pub/sub 行 BullMQ 自己個 `QueueEvents`,**唔加 `ioredis`**
+
+> 📌 **F9 / F10 係實作查證嗰陣加嘅兩格,Chris 冇單獨批過**。兩格都係**收窄**唔係擴大
+> (F9 少一個 dependency,F10 少一條資料路),形狀跟 **ADR-0035**(收窄原決定範圍)。
+
+F4 要 pub/sub。直覺做法係 `npm i ioredis` 自己開一條 subscriber 連線 —— 而 **BullMQ 已經有**:
+worker 側 `job.updateProgress(payload)`,觀察側 `new QueueEvents(name)` 收 `progress`,
+**行 Redis stream,每個 replica 各自收到自己嗰份**。
+
+三個理由揀佢:
+
+1. 🟢 **零新 dependency。** `ioredis` 今日只係 `bullmq` 嘅 transitive dep —— 直接 import 一個
+   transitive dep,係一個「上游換 client 就靜靜爆」嘅寫法。
+2. 🟢 **連線生命週期唔使我哋管。** Redis pub/sub 嗰條 subscriber 連線入咗 subscribe mode
+   就唔可以再發其他 command ⇒ 自己做就一定係第二條連線 + 自己 reconnect。
+3. 🟢 **stream 有 buffer,pub/sub 冇。** pub/sub 係 fire-and-forget:訂閱者遲一格就永遠收唔到。
+
+⚠️ **代價**:`progress` 呢個名係借嚟用嘅 —— 我哋送嘅唔係百分比,係「有嘢變咗」(F10)。
+**寫咗落 code 註釋,唔靠讀者估。**
+
+### F10 —— SSE 只送「**邊個 run 有嘢變咗**」,唔送內容
+
+event payload = `{ runId }`。前端收到就 refetch `GET /agent/runs/:id`。
+
+🔴 **點解唔直接 stream step / status**(三個理由,由重到輕):
+
+1. **唔養第二個真相。** stream 出去嘅 step 同 refetch 返嚟嘅 step 一旦有任何差,畫面就會有兩個
+   版本 —— 而 **CH-028 刻意唔喺 Platform view 計 delta,講嘅就係同一件事**(兩邊唔同源 = 養一個
+   對唔上嘅第二真相)。
+2. 🔴 **H4。** `AgentStep.detail` 入面可以有 vendor error,而 vendor error 引用嘅 path 帶 UPN
+   (BUG-004)。今日佢**入表之前**經 `scrubPii`;把佢再放上一條**新** transport,就係開多一條
+   要記住去 scrub 嘅路。**唔開嗰條路,就冇嘢要記住。**
+3. **回退去 polling 唔使改契約**(F2)—— 一個只送「變咗」嘅 SSE,同 polling 係同一個 read path。
+
+⚠️ **一個 race 要明寫**:run 喺瀏覽器連上 SSE **之前**就完咗 ⇒ 冇 event 可收,畫面等到天光。
+⇒ **連上嗰刻即刻發一個 tick**,前端 refetch 見到終態就自己收線。
 
 ---
 
