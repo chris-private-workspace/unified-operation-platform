@@ -5,6 +5,7 @@ import { SeamRuntimeRegistry } from '../integration/seam-runtime.registry';
 import { AgentToolRegistry } from './tool-registry';
 import { AgentRuntimeProvider } from './agent-runtime.provider';
 import { OpenAiAgentsProvider } from './openai-agents.provider';
+import { ClaudeToolRunnerProvider } from './claude-tool-runner.provider';
 import { agentRuntimeProviderFactory } from './agent-runtime.factory';
 import { AiAssistService } from './ai-assist.service';
 import { AgentKillSwitchService } from './kill-switch.service';
@@ -37,15 +38,21 @@ import { AgentReviewStatsController } from './review-stats.controller';
   imports: [IntegrationModule],
   providers: [
     AgentToolRegistry,
-    // ADR-0036 seam ⑤ — the concrete runtime is instantiable, but consumers
+    // ADR-0036 seam ⑤ — both concrete runtimes are instantiable, but consumers
     // inject the abstract class only, so nothing downstream can tell which one
-    // it got (D0). The second implementation lands in 期二 G4.
+    // it got (D0). 期二 G4 added the second one.
+    //
+    // 🔴 Instantiating ClaudeToolRunnerProvider is NOT the same as being able to
+    // use it: it refuses to build a client without ANTHROPIC_API_KEY, which is
+    // unset everywhere (ADR-0038 D3 — OQ-7's Claude half is unanswered).
     OpenAiAgentsProvider,
+    ClaudeToolRunnerProvider,
     {
       provide: AgentRuntimeProvider,
       useFactory: agentRuntimeProviderFactory,
       inject: [
         OpenAiAgentsProvider,
+        ClaudeToolRunnerProvider,
         ConnectorConfigService,
         SeamRuntimeRegistry,
       ],

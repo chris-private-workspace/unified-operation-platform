@@ -1252,3 +1252,93 @@ OQ-5 一段 / §9 changelog)· `checklist.md`(`G4-pre-1..3` + `G5-pre-1`)· `BAC
 - 🚧 `G6`(SSE)—— **零 gate,即刻開得**
 - 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)
 - 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
+
+---
+
+## Day 17 — 2026-08-16(期二 `G4` — 第二個 runtime,**D1 第一次真被測試**)
+
+api **1260 → 1289 / 87 → 88 suites** 全綠零跌 · tsc 0 / lint 0 · **falsification ×7 真紅零誤傷** ·
+web 一個字冇改。
+
+### 🟢🟢 結論先講:D1 成立,而且係最強嗰個版本
+
+ADR-0037 `E2` 換 client 嗰次只證到「換 **endpoint** 唔使改」。今次換嘅係**成個 SDK**,即 D1 當初嘅原話。
+
+**`AgentToolRegistry`、六個 tool、`AgentTool`、`AgentToolSchema`、seam ⑤ 個 vocabulary —— 一個字冇改。**
+按 E2 立嗰條尺(「要改 registry 就係 D1 錯咗,要返轉頭講唔係硬塞」)⇒ **唔使返轉頭。**
+
+最硬嗰條證據係一句 `toBe`:**schema object 由 registry 去到 SDK 係同一個 reference**,唔係一個結構相等嘅複製品。
+
+### 🔴 三件靠估會錯嘅事,全部由真嘢糾正 —— 呢啲就係 D4 買嘅嘢
+
+**① `input_schema` 唔係 `inputSchema`** —— `betaTool` 收 camelCase option、emit API 個 snake_case wire 欄。
+D1 唔受損:改嘅只係托住 schema 嗰個 key,而**改 key 名正正就係 adapter 唯一獲准做嘅事**。
+
+**② `BetaRunnableTool` = `BetaToolUnion & { run }`,個 union 包住 Anthropic 內建 tool**(text editor / bash …),
+嗰啲**冇 `inputSchema`** ⇒ TypeScript 拒絕直接 cast,而佢係啱嘅。
+🟢 **D2 因此多咗一層意思**:內建 tool 由**同一個 `tools` array** 入嚟。`toClaudeTools` 只 map registry ——
+**「邊界喺 registry」呢句,喺 SDK 自己遞一個 shell 畀你嗰陣仍然成立。**
+
+**③ 🔴🔴 一個只有真 SDK 講得出嘅陷阱。**
+`lib/tools/BetaToolRunner.js`:iterator **`:23,27` 先 `yield`,`:54` 先執行 tool** ⇒ **`break` 出個 loop 就係
+approval gate**(generator 停喺 `yield`,`#generateToolResponse` 永遠到唔到)。
+**但同一段 code 喺 `:31-33` 把 assistant turn push 落 `params.messages`,而嗰句排喺 `yield` 之後** ⇒
+**一 `break` 就跳過咗** ⇒ 唔自己補 push,`tool_use` block 唔會入 saved conversation,resume 嗰陣個
+`tool_result` 指住一個唔存在嘅 call = **API 400**。
+⚠️ **冇任何 type signature 講呢件事**,而任何一個「幫手」嘅 fake 都會掩蓋佢 —— 所以個 fake runner 特登
+**唔**做嗰個 push。
+
+📌 三件加埋就係 **ADR-0038 D4 由「一條規矩」變成「一件回本咗嘅嘢」**:第一件同第二件**當場**紅畀我睇。
+
+### 🔴 ADR-0036 兩處要更正,而兩處都唔係 H1
+
+**`D3`「用 SDK 原生 pause/resume」** —— Tool Runner **冇** pause/resume,亦冇 `needsApproval` 欄。
+D3 嘅**實質決定**(write tool 一律要人批 · 批准真相落平台 DB 唔落 SDK state)**一個字冇變**,
+而且喺呢個 runtime **更加成立** —— 佢根本冇 SDK 側 approval state 可以畀人誤當真相。
+變嘅只係「點實現」:**approval 喺呢邊唔係一個機制,係唔繼續。**
+
+📌 **而咁樣先令 seam ⑤ 真正回本**:ADR-0017 D2 講 seam 嘅核心設計工作就係嗰套 vocabulary,
+而 `AgentTurn`(`completed | awaiting_approval` + `state` + `pendingApprovals`)**載得起兩個唔似樣嘅暫停機制**。
+
+**`D9`** 寫 `client.beta.messages.tool_runner` —— 實際叫 **`toolRunner`**。小事,但正正係靠記憶寫 API 名嗰種。
+
+### 🔴 D3(唔打網絡)落地成兩樣嘢,唔係一句話
+
+1. `buildClient()` **明文讀 `ANTHROPIC_API_KEY` 再自己 check**。
+   **`new Anthropic()` 唔傳 key 會靜靜攞同一個 env var** ⇒ 交畀 SDK 就等於「一個冇人覆核過嘅
+   環境變數」係平台同第三方之間唯一嗰道嘢 —— **同 ADR-0036 D11 tracing 完全同一個形狀**。
+2. 一條 test assert **`Anthropic` constructor 完全冇被 call**。
+   「佢 throw 咗」對一個**建咗 client、開咗連線、之後先失敗**嘅版本一樣成立。
+
+🟢 **secret 走 `ConfigService` 唔走 `ConnectorConfig`** —— ADR-0013 Model C;加個 DB 欄仲會係 **H1**。
+🟢 **零新 env**:`ANTHROPIC_API_KEY` F3 嗰陣已經喺 `.env.example`,今次只更新註釋(標明 **R21:填咗佢 = 真打**)。
+
+### 🔴 factory 唔再 fall back,而個 test 要搬位
+
+揀 `claude-tool-runner` 而家真係行佢;冇 key 就 **503,唔會靜靜跌返去 OpenAI** ——
+**平台唔可以用「喺第二度行咗」嚟回答「喺 Claude 行」。**
+
+⚠️ 而 BUG-011 嗰條 `recordChoice` test **要搬去 typo case**:Claude 已實作之後,喺嗰度 assert 就變成
+`'claude-tool-runner'` 同自己比 —— **factory 記邊個字串都會綠**。同 W46 已經中過三次嗰族一樣
+(一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事)。
+
+### ⚠️ 我個 falsification script 自己有洞,捉返咗
+
+jest **成功時把 summary 寫去 stderr**,而 script 成功路只讀 stdout ⇒ **baseline 同 restored 兩行都係
+`NO TEST LINE`** —— 即係話「還原乾淨」呢個結論**根本冇驗到**,而七個 mutation 嘅紅係真嘅。
+補跑一次真 jest(**36/36 綠**)+ `git diff --stat`(零殘留)先收。
+
+📌 **形狀**:一個 verify 工具**自己**可以喺「令人安心」嗰個方向靜靜壞 —— 同 G7 嗰句
+「risk metric 喺令人安心嗰個方向出錯,衰過冇 metric」同源。
+
+### 數字
+
+`@anthropic-ai/sdk@0.117.1`(6 個 package)· **MIT** · deps 得兩個 · **`zod` 係 optional peerDependency**
+(⇒ **R20 幾乎唔存在**)· 新 test **28 + 1**(provider spec 28 · factory 多一條 Claude 側 `recordChoice`)。
+
+### 未收
+- 🚧 `G5` —— OQ-5 答咗(7 日),未開工
+- 🚧 `G6`(SSE)—— 零 gate
+- 🚧 `F11-2` / `A14` live —— 卡 infra request(未發出)
+- 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
+- 🔴 **Claude 側 OQ-7 仍然未答** —— G4 唔需要佢,真打之前需要(ADR-0037 E7 / ADR-0038 D5)

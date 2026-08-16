@@ -170,6 +170,53 @@ Chris「架構證明」呢個定位嘅直接後果:**G4 唔會送任何 `rawRequ
 
 ---
 
+## Outcome —— 實作當日(2026-08-16)驗到嘅嘢
+
+> 沿用 **ADR-0031** 加 `§Outcome` 嘅先例。本段唔改上面任何決定,只記低「決定執行之後,
+> 真嘢答咗乜」—— 因為 **D6 三條當時係未知數,而佢哋而家有答案**。
+
+### D6 三條 —— 全部通過
+
+| # | 結果 |
+|---|---|
+| ① `betaTool()` 形狀 | 🟢🟢 **D1 成立** —— `name` / `description` 逐字過;`parameters` → `inputSchema` **純改名**;**registry / 六個 tool / `AgentTool` / `AgentToolSchema` 一個字冇改** |
+| ② transitive | 🟢 **R20 幾乎唔存在** —— deps 得兩個(`standardwebhooks` / `json-schema-to-ts`),**`zod` 係 optional peerDependency**(SDK 自己唔 ship 佢),冇自帶 HTTP client |
+| ③ license | 🟢 **MIT** |
+
+**版本**:`@anthropic-ai/sdk@0.117.1`,`npm i` 加咗 6 個 package。🟢 **零新 env** —— `ANTHROPIC_API_KEY` F3 嗰陣已經喺 `.env.example`。
+
+### 🔴 三件「靠估就會錯」嘅事,全部由真嘢糾正 —— 呢啲就係 D4 買嘅嘢
+
+**① `betaTool` 出嘅係 `input_schema`(snake_case),唔係 `inputSchema`。**
+option 收 camelCase,emit API 個 wire 欄。**D1 唔受損** —— schema **object 本身**係 `toBe`(identity)過去嘅,改嘅只係托住佢嗰個 key,而**改 key 名正正就係 adapter 唯一獲准做嘅事**。
+
+**② `BetaRunnableTool` = `BetaToolUnion & { run }`,而個 union 包住 Anthropic 自己嘅內建 tool**(text editor / bash …)—— 嗰啲**冇 `inputSchema`**,所以 TypeScript 拒絕直接 cast,而佢係啱嘅。
+⇒ 🟢 **D2 喺呢個 runtime 有新一層意思**:內建 tool 由**同一個 `tools` array** 入嚟。`toClaudeTools` 只 map registry ⇒ **「邊界喺 registry」呢句,喺 SDK 自己個型別遞一個 shell 畀你嗰陣仍然成立**。
+
+**③ 🔴🔴 `AgentTurn.state` 唔可以只靠 runner —— 一個只有真 SDK 先講得出嘅陷阱。**
+`lib/tools/BetaToolRunner.js`:iterator **`:23,27` 先 `yield`,`:54` 先執行 tool** ⇒ **`break` 出個 loop 就係 approval gate**(generator 停喺 `yield`,`#generateToolResponse` 永遠到唔到)。
+**但同一段 code 喺 `:31-33` 把 assistant turn push 落 `params.messages`,而嗰句排喺 `yield` 之後** ⇒ **一 `break` 就跳過咗**。唔自己補 push,個 `tool_use` block 就唔會入 saved conversation,resume 嗰陣 `tool_result` 指住一個唔存在嘅 `tool_use` = **API 400**。
+⚠️ **冇任何 type signature 講呢件事**,而任何一個「幫手」嘅 fake 都會掩蓋佢。
+
+### 🔴 ADR-0036 兩處要更正,而兩處都**唔係** H1
+
+**`D3`** 寫「用 SDK 原生 pause/resume」—— **Tool Runner 冇原生 pause/resume,亦冇 `needsApproval` 欄**。
+D3 嘅**實質決定**(write tool 一律要人批 · 批准真相落平台 DB 唔落 SDK state)**一個字冇變**,而且喺呢個 runtime **更加成立**(佢根本冇 SDK 側 approval state 可以誤當真相)。變嘅只係「點實現」:approval 喺呢邊唔係一個機制,係**唔繼續**。
+📌 **而咁樣先令 seam ⑤ 真正回本** —— ADR-0017 D2 講 seam 嘅核心設計工作就係嗰套 vocabulary,而 `AgentTurn` 呢套 vocabulary **載得起兩個唔似樣嘅暫停機制**。
+
+**`D9`** 寫 `client.beta.messages.tool_runner` —— 實際叫 **`toolRunner`**(camelCase)。小事,但正正係「靠記憶寫 API 名」嗰種。
+
+### 🟢 一個對平台有利嘅副產品:R16 喺呢個 runtime 幾乎唔存在
+
+`AgentTurn.state` 喺呢邊 = `JSON.stringify(messages)`,即 **Messages API 自己嘅公開 wire 格式**,唔係 SDK 內部結構 ⇒ **SDK 升級整唔死一個 parked run** 嘅方式,同 `RunState.fromString` 嗰邊唔同。仍然驗證唔靠信(非 JSON / 空 array / object / `null` 四種都 503)。
+
+### 數字
+
+api **1260 → 1289 / 87 → 88 suites** 全綠零跌 · tsc 0 · lint 0 · **falsification ×7 真紅零誤傷**
+(拆 push ⇒ 1 紅 · `needsApproval` 改由 message 讀 ⇒ **10 紅** · 由 SDK 自己搵 key ⇒ 2 紅 · rebuild schema ⇒ 1 紅 · 拆 undecided 閘 ⇒ 1 紅 · rejection 唔標 `is_error` ⇒ 1 紅 · factory 繼續 fall back ⇒ 2 紅),實作檔還原後 **36/36 綠**。
+
+---
+
 ## References
 
 - **ADR-0036 `D1`** —— 本 ADR 存在嘅唯一理由;`D2`(靠架構唔靠自律)· `D9`(Tool Runner 唔用 Agent SDK,連 issue #115)

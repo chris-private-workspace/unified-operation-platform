@@ -29,6 +29,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@azure/communication-email": "^1.1.0",
     "@azure/identity": "^4.5.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
