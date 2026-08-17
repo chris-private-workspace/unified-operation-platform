@@ -1,6 +1,8 @@
 # AI Agent — Tier 2 Scope Report(pre-doc)
 
-**Status**: `draft` —— **未 approve,一行 code 都唔准寫**(PROCESS §1.4 R1)
+**Status**: 🟢 **`scope approved`**(Chris 2026-08-17 —— 三條 OQ 答齊 + 次序拍板)
+—— ⚠️ **但每個 phase 開工前仍然要自己嘅 `plan.md`**(PROCESS R1);本文件係 scope
+report,唔係任何一個 phase 嘅 contract。**Tier 2 開工要等 W46 落地**(§7 / §8.1)。
 **Created**: 2026-08-17
 **Owner**: Chris Lai
 **前身**: W46 `agent-runtime`(Tier 1)· `ADR-0036`(決策 SSOT)· `ADR-0037` / `0038` / `0039`
@@ -21,7 +23,7 @@
 |---|---|
 | **R-A** | 獨立嘅 AI agent **管理頁面(一系列)**,唔係塞喺 Settings 一個 tab |
 | **R-B** | 可以**建立同配置多個唔同 agent**,而且**決定用邊一個** |
-| **R-C** | **每個 agent 嘅設置範圍**(佢做得到啲乜、睇得到啲乜) |
+| **R-C** | **每個 agent 嘅設置範圍**(佢做得到啲乜、睇得到啲乜)—— ⚠️ **2026-08-17 收窄咗**:`OQ-1` / `OQ-2` 答完之後,呢條指嘅係 **model / prompt / 上限**,**唔係**權限範圍(見 §3 `G2`) |
 | **R-D** | agent 相關嘅 **security / access / permission 管理** |
 | **R-E** | **全站 agent 互動 dock** —— 唔限 request detail,dashboard 或任何頁面都可以喺右邊彈出,**可開可收**,而且**打開時唔會阻住操作底下嗰版** |
 
@@ -111,20 +113,26 @@ change on every model upgrade.」
 ⚠️ 但要先答一條問題(見 §5 OQ-1):**「多個 agent」係指「同一套能力、唔同 model」,
 定係「唔同能力」?** 兩個答案通向完全唔同嘅設計。
 
-### G2 · Per-agent capability scope(對 **R-C**)
+### ~~G2 · Per-agent capability scope(對 **R-C**)~~ — 🟢🟢 **2026-08-17 消失咗**
 
-**要做**:每個 agent 有自己嘅 tool allow-list + 自己嘅資料可見範圍。
+> **本節保留原文做記錄。** 佢曾經係本 Tier 最重嗰塊(要一份新 ADR、要改安全模型),
+> 而 `OQ-1` + `OQ-2` 兩個答案把佢兩半各自拆走。**呢個係本文件最大嘅一個變化,所以
+> 唔刪走,留住畀下一個人睇到「點解冇咗」。**
 
-**撞**:🔴🔴 **兩個 W46 中心決定**
+原本要做嘅係兩件事,而家逐件對返答案:
 
-1. **`ADR-0036 D1`** ——「一份 tool 定義,兩個 runtime 共用」。per-agent allow-list
-   會令佢由「一份」變成「N 份」。⚠️ **注意分辨**:D1 講嘅係「**唔好因為 runtime 唔同
-   而有兩份**」;per-agent 係另一個維度。所以呢個**唔一定**推翻 D1,但**一定要喺 ADR
-   入面明文講清楚兩者關係**,否則下一個人會用 D1 嚟反對佢,或者反過嚟用佢嚟繞過 D1。
-2. **scope 綁人呢個模型** —— 一旦 agent 自己有 scope,就會出現「agent 睇到啟動者
-   睇唔到嘅嘢」。🔴 **呢個係安全模型改動,唔係一個欄。**
+| 原本 | 答案之後 |
+|---|---|
+| 每個 agent 有自己嘅 **tool allow-list** | ❌ **唔使做** —— `OQ-1` 答「同一套能力」⇒ allow-list 維持全域一份,**`ADR-0036 D1` 一個字唔使郁** |
+| 每個 agent 有自己嘅 **資料可見範圍** | ❌ **唔使做** —— `OQ-2` 答「唔可以大過啟動者」⇒ scope 維持綁人,**安全模型一個字唔使改** |
 
-**⇒ 要一份新 ADR,而且係本 Tier 最重嗰份。**
+🔴 **值得記低嘅係呢兩條問題點解值得問**:兩個答案都係「唔改」,而**唔問嘅話,兩件都
+好可能會被順手做咗** —— 「每個 agent 有自己嘅權限」聽落係一個合理嘅 feature,而佢
+實際上會**軟化一個安全邊界**兼**推翻一個中心決定**。⇒ 本 Tier 由「兩份新 ADR」變成
+「零份」,唔係因為縮水,係因為問清楚咗。
+
+⚠️ **`R-C`(每個 agent 嘅設置範圍)冇被丟掉,佢只係換咗意思** —— 而家指嘅係
+**model / prompt / 上限**呢類設定,唔係「權限範圍」。呢部分落 `T2-a` 同 `T2-e`。
 
 ### G3 · Security / access / permission 管理(對 **R-D**)
 
@@ -182,35 +190,94 @@ context passing,而佢直接關安全(見 OQ-3)。
 > 唔好同「加功能」混喺同一個 phase —— 否則 review 嗰陣分唔開「呢個改動係新功能定係
 > 改咗個安全模型」。
 
+> 🟢 **2026-08-17 更新** —— 三條 OQ 答咗之後由**五個 phase 變四個**,而拆走嗰個
+> (`T2-b`)正正就係唯一一個要改安全模型 / 要新 ADR 嗰個。
+
 | Phase | 內容 | 依賴 | 觸發 |
 |---|---|---|---|
-| **T2-a** | **Agent registry + 揀 agent** —— `AgentPrincipal` CRUD + 啟動 run 揀 agent + 管理頁面第一版 + **run list endpoint** | — | H1(additive schema) |
-| **T2-b** | 🔴 **Per-agent capability scope** —— allow-list + 可見範圍 | T2-a | **H1 + 新 ADR**(本 Tier 最重) |
-| **T2-c** | **Conversation session** —— chat model + streaming(純後端 + 一個最小 UI) | — | H1 + 新 ADR |
-| **T2-d** | **全站 dock** —— `Drawer` primitive + layout + context passing | T2-c | **H6 + design-system 更新** |
-| **T2-e** | **Per-agent security / permission 管理** | T2-a, T2-b | H1(權限模型) |
+| **T2-a** | **Agent registry + 揀 agent** —— `AgentPrincipal`(或 `AgentProfile`,見 §5.4)CRUD + model / prompt 設定 + 啟動 run 揀 agent + 管理頁面第一版 + **run list endpoint** | — | **H1**(additive schema) |
+| **T2-c** | **Conversation session** —— chat model + streaming(純後端 + 一個最小 UI) | — | **H1** + 一份新 ADR(互動模型) |
+| **T2-d** | **全站 dock** —— `Drawer` primitive + layout + **context passing(`D-CTX`)** | T2-c · **`B6`** | **H6**(新 primitive,要更新 design-system)+ `D-CTX` |
+| **T2-e** | **Agent 管理第二版** —— per-agent kill switch / 上限 / 建立權限 | T2-a | H1(細) |
 
-**建議先後**:`T2-a` → `T2-c` → `T2-d` → `T2-b` → `T2-e`
+**建議先後**:`T2-a` → `T2-c` → `T2-d` → `T2-e`
 
-🔴 **點解 `T2-b` 排喺 dock 之後而唔係緊接 `T2-a`**:佢係本 Tier 唯一一塊會**改安全模型**
-嘅嘢,而 `T2-c`/`T2-d` 交付咗之後,你會**真係用過**多 agent 互動,嗰陣先答得準「每個
-agent 應該有幾大範圍」。今日答呢條題,係喺冇使用經驗嘅情況下設計一個權限模型。
+🔴 **`T2-d` 有一個唔喺本 Tier 入面嘅前置依賴:`B6`(SSE 喺 DEV 真通)。**
+dock 個 chat 要靠嗰條管道,而 `B6` 今日卡「DEV 冇 Redis」+「ACA ingress 對 SSE 嘅行為
+未驗證兼且改唔到」。⇒ **W46 收唔到 `B6`,`T2-d` 就唔應該開工** —— 否則會喺一條未證實
+通嘅管道上面砌一個全站功能。
 
-⚠️ **但如果 OQ-1 答「唔同 agent = 唔同能力」,`T2-b` 就要排前** —— 因為嗰個答案之下,
-`T2-a` 冇咗 allow-list 就唔完整。**呢個係本文件最重要嘅一條依賴。**
+⚠️ **`T2-a` 開工之前要先答 §5.4 個 A vs B**(model / prompt 落 `AgentPrincipal` 定
+另開 `AgentProfile`)—— 佢決定 schema 形狀,而 schema 一落 migration 就改唔返轉頭。
 
 ---
 
 ## 5. Open Questions(要 Chris 答,答案改變設計)
 
+### 5.1 🟢 已答(Chris 2026-08-17)
+
+| # | 問題 | **答案** | 後果 |
+|---|---|---|---|
+| **OQ-1** | 「多個 agent」係指 ①同一套能力、唔同 model / prompt,定 ②唔同能力(唔同 tool 集)? | 🟢 **①同一套能力,唔同 model / prompt** | 🟢🟢 **`ADR-0036 D1` 一個字都唔使郁** —— tool allow-list 維持**全域一份**。⇒ **`T2-b` 嘅 allow-list 半邊直接消失** |
+| **OQ-2** | agent 嘅 scope 可唔可以大過啟動佢嗰個人? | 🟢 **不可以** | 🟢🟢 **scope 模型維持「綁啟動者」,一個字唔使改** ⇒ **`T2-b` 嘅 scope 半邊都消失**,安全紅線關咗 |
+| **OQ-3** | dock 入面個 agent,睇唔睇到你而家開緊嗰版嘅資料? | 🟢 **需要睇到** | 每一版變成一個 context source ⇒ **新增 `D-CTX` 一條硬約束**(見 §5.2) |
+
+🔴 **三個答案夾埋嘅淨效果:本 Tier 最重嗰塊(`T2-b`)冇咗,兩份新 ADR 變成零份。**
+`OQ-1` 拆走 allow-list 嗰半、`OQ-2` 拆走 scope 嗰半,而 `T2-b` 由頭到尾就係嗰兩件事。
+
+### 5.2 🔴 `D-CTX` —— 由 `OQ-3` 衍生嘅硬約束(唔係建議)
+
+`OQ-3` 答「睇到」,而 `OQ-2` 答「唔可以大過啟動者」。兩者**唔矛盾**,但佢哋一齊
+成立**只係因為**加咗以下呢條:
+
+> **前端送上嚟嘅 context 一律當「一個提示」,唔當「一個授權」。**
+> dock 話「我而家喺 request X」,後端**必須自己重新 scope 檢查一次**,唔可以因為
+> 前端顯示緊佢就當用戶有權睇。
+
+⚠️ **點解要寫成硬約束**:今日 agent 攞資料一定經 tool,而 tool 帶住啟動者嘅 scope
+(§2.3)—— 呢條路本身係安全嘅。而 dock 引入嘅新嘢係**一條由前端流向後端嘅 context**,
+佢係本平台**第一次**有「畫面話畀後端聽而家睇緊乜」。歷史上呢類 channel 就係提權洞
+嘅慣常位置,而佢**唔會喺 test 度自己浮出嚟**(前端 test 自己砌 fixture,後端 test
+自己砌 context —— 又係 BUG-011 嗰條縫)。
+
+📌 **一個連帶問題(要喺 `T2-d` 之前答)**:「當前頁面嘅資料」係指
+**①route + 主要 entity id**(例如 `request:cmsxxx`),定 **②頁面 render 咗嘅嘢**?
+①好答得多兼且天然 fail-closed(後端照樣要自己攞返資料、照樣過 scope);
+②等於把 UI state 變成 agent 嘅資料來源,而 UI state 冇 scope 概念。
+**建議 ①**,但呢個係設計決定,唔係本文件可以自己拍板。
+
+### 5.3 🟡 未答(唔急,但要記住)
+
 | # | 問題 | 點解重要 |
 |---|---|---|
-| **OQ-1** | 「多個 agent」係指 **①同一套能力、唔同 model / prompt**,定 **②唔同能力(唔同 tool 集)**? | 決定 `T2-b` 排前定排後,亦決定 `AgentPrincipal` 加咩欄 |
-| **OQ-2** | agent 嘅 scope **可唔可以大過**啟動佢嗰個人? | 🔴 安全紅線。答「可以」= 一條提權路徑,要獨立 ADR 論證;答「唔可以」= scope 變成「人 ∩ agent」,設計簡單好多 |
-| **OQ-3** | dock 入面個 agent,**睇唔睇到你而家開緊嗰版嘅資料**? | 答「睇到」= 每個頁面都變成一個 context source,而「佢睇到嘅嘢」唔再由一個 endpoint 講晒 ⇒ 影響 §2.3 個 scope 模型同 audit |
 | **OQ-4** | 對話要唔要 **persist**?留幾耐? | 關 `AuditLog` retention(BACKLOG `audit-retention` 一直未做)+ H4(對話會含 PII) |
 | **OQ-5** | 邊個可以**建立 / 改** agent?ADMIN only? | 關 `T2-e`,亦關 W28 個 code-derived 權限模型 |
 | **OQ-6** | Claude 側要唔要**真打網絡**? | `ADR-0038 D3` 今日明文禁,而 `G4-pre-3` 講咗真打之前要重新答 `OQ-7`(inference 側 PII) |
+| 🆕 **OQ-8** | **model 升級係「改一個現有 agent」定「建一個新 agent」?** | 🔴 **由 `OQ-1` 個答案直接引爆,見 §5.4** |
+
+### 5.4 🔴 `OQ-1` 個答案同 `AgentPrincipal` 自己個註釋有直接張力
+
+`AgentPrincipal` 個註釋明文寫住:
+
+> `name` 係 **capability, not the model behind it**。Which LLM answers is runtime
+> config(`ConnectorConfig`, ADR-0013 Model C); **baking it in here would make
+> "who did this" change on every model upgrade.**
+
+而 `OQ-1` 答「多個 agent = 唔同 model / prompt」⇒ **model 就係區分兩個 agent 嘅嘢**,
+同上面呢句正面相反。呢個唔係一個可以靜靜繞過嘅細節 —— 佢係 `AgentRun.principalId`
+指住邊個嘅語意。
+
+**三個做法**:
+
+| | 做法 | 代價 |
+|---|---|---|
+| **A** | model / prompt 直接落 `AgentPrincipal` | 推翻上面嗰句。model 一升級,要決定改現有定建新(= **OQ-8**) |
+| **B** | `AgentPrincipal` 維持 capability,另開 `AgentProfile`(model + prompt)掛落佢 | 兩層,但 `who did this` 穩定,而歷史 run 記得返當時用邊個 profile |
+| **C** | model / prompt 落 `ConnectorConfig`(跟原設計) | 一次得一個,**答唔到「多個」**⇒ 唔符合 `OQ-1` |
+
+⇒ **C 出局。A vs B 係 `T2-a` 開工前要答嘅第一條題**,而 **B 睇落更貼近現有設計嘅意圖**
+(佢保住咗「audit 歸屬唔應該隨 model 升級而變」呢個原意,同時滿足「多個」)。
+**但呢個要 owner 拍板,唔係本文件決定。**
 
 ---
 
@@ -237,11 +304,32 @@ agent 應該有幾大範圍」。今日答呢條題,係喺冇使用經驗嘅情�
 
 ---
 
-## 8. 下一步(等 approve)
+## 8. 下一步
 
-1. Chris 答 **OQ-1 / OQ-2 / OQ-3**(其餘四條可以遲啲)—— 呢三條決定 phase 次序同安全模型
-2. 決定 W46 落地次序(§7)
-3. approve 之後:開第一個 Tier 2 phase folder(揀號嗰刻**重新掃一次** remote branch)+
-   為 `T2-b` / `T2-c` 各寫一份 ADR
+🟢 **Chris 2026-08-17 批咗方向同次序** —— `OQ-1`/`OQ-2`/`OQ-3` 答齊,兼且拍板
+**先把 W46 落地,再開 Tier 2**(§7 建議獲接納)。
 
-**本文件 approve 之前,唔開 phase folder、唔寫 code。**
+### 8.1 而家做(W46 落地)
+
+1. **merge W46 落 `main`**
+2. **部署 DEV** —— ⚠️ 部署之前 **Redis 要喺度**,否則 `POST /agent/runs` 直接 503
+   (`ADR-0039 F1`:個 POST 而家只 enqueue)
+3. 收 **`A1` DEV 半邊**(三個 migration 對 DEV 跑)+ **`B6`**(SSE 喺 DEV 真通)
+   —— ⚠️ **`B6` 唔止係 W46 手尾,佢係 `T2-d` 嘅前置**
+
+### 8.2 W46 落地之後(Tier 2 開工)
+
+1. 答 **§5.4 A vs B**(model / prompt 落 `AgentPrincipal` 定另開 `AgentProfile`)
+   —— `T2-a` 嘅 schema 形狀,一落 migration 就改唔返轉頭
+2. 答 **§5.2 個連帶問題**(context = route + entity id,定 render 咗嘅嘢)——
+   `T2-d` 之前要有答案,建議 ①
+3. 開 `T2-a` 嘅 phase folder —— **揀號嗰刻重新掃一次** remote branch(PROCESS §2.1)
+4. 為 **`T2-c`**(互動模型)寫一份 ADR。⚠️ **`T2-a` 唔一定要 ADR**,佢係 additive
+   schema + 新 endpoint;但如果 §5.4 揀咗 **A**(推翻「`name` 係 capability 唔係
+   model」嗰句),**就要一份**
+
+### 8.3 仍然成立嘅約束
+
+- **每個 phase 開工前仍然要自己嘅 `plan.md`**(PROCESS R1)—— 本文件係 scope report,
+  唔係任何一個 phase 嘅 contract
+- **`D-CTX`(§5.2)由 `T2-d` 第一日起就要當硬約束**,唔係「之後再 harden」
