@@ -51,21 +51,23 @@
 
 ## `F5` — 管理 UI(H6)
 
-- [ ] F5-1 route / nav(跟 `OQ-B`)
-- [ ] F5-2 profile 列表 + 建立 / 編輯 dialog
-- [ ] F5-3 run 列表(狀態 / profile / 時間 / 入得去)
-- [ ] F5-4 舊 run 顯示「(W47 之前)」,**唔隱藏**(`OQ-D`)
-- [ ] F5-5 DS-5:id / 數字 mono · DS-3:一個 view 一個 primary · DS-8:狀態走 Badge
-- [ ] F5-6 跑 `ui-design` skill 自檢
-- [ ] F5-7 light + dark 真 render + 零橫向溢出(⚠️ 跑 full web suite 前停 dev server)
+- [x] F5-1 ✅ route `/agent` + sidebar entry(**自己一個 predicate `canManageAgentProfiles`**,唔借 `canSeeAdminNav` —— 跟 `roles.ts` 自己嘅慣例:「開唔開得 admin console」同「改唔改得每個未來 run 用邊個 model」係兩條問題)
+- [x] F5-2 ✅ profile 表 + create / edit dialog(plain `useState` + `validateProfileForm` 純函數,跟 `users-panel` 先例)。🔴 **`prompt` 睇得到改唔到 —— H6 STOP,未批**(見下 `F5-8`)
+- [x] F5-3 ✅ run 列表(時間 / 狀態 / profile / request · 狀態 + profile 兩個篩選 · cursor 分頁)。⚠️ **filter 一改就要清 cursor** —— 舊 cursor 指向一個唔再存在嘅結果集,而個症狀似壞資料唔似 bug
+- [x] F5-4 ✅ 舊 run 顯示「Before W47」**唔隱藏**(`OQ-D`)—— 真 render 驗到:本機 3 個 W46 run **三個都顯示咗**
+- [x] F5-5 ✅ DS-5(model / 時間 / requestId / 頁碼 mono;profile **名**唔係識別碼 ⇒ sans)· DS-3(一個 primary,**有 test 數住 `bg-accent` 只得一個**)· DS-8(6 個既有 tone,零新色)
+- [x] F5-6 ✅ `ui-design` 逐條答過 —— 12 條入面 **DS-11 一開始係 ❌**(prototype 冇呢個畫面)⇒ 補咗入 `design-system.md §6` owner-approved 表
+- [x] F5-7 ✅ light + dark 真 render(用 W46 committed 嗰個 `render-check.mjs`,唔再靠 session 有咩瀏覽器工具):token 真 swap(`#f5f5f6`→`#08080a` · accent `#E60027`→`#ff3355`)· **零橫向溢出**(scrollWidth = clientWidth = 1440)· 真數據
+- [x] F5-8 🔴 **H6 STOP —— textarea 未批,`prompt` 因此改唔到**。實測 `design_handoff_licenseops` 同 `apps/web/src/components/ui` **兩邊都零 textarea** ⇒ 加一個係新 primitive,要 owner 批。表入面照顯示「Built-in / Custom」,免得一個靜靜帶住自訂指示嘅 profile 喺全個產品都見唔到
+- [x] F5-9 ⚠️ **render 揾到兩件唔喺本單修嘅事**:①header 個 primary 掣掉咗落標題下面 —— 根因係 `Card` 有自己一個 body wrapper,落 `className` 嘅 flex 包唔到 children,而 **`/audit` 一模一樣**(render 對比過)⇒ 既有樣式,唔單方面改 ②dark 之下 `IconButton` 個 pencil 對比偏弱(既有 primitive)
 
 ## `F6` — Gate
 
-- [ ] F6-1 root `npm test`(api + web)exit 0
-- [ ] F6-2 root `npm run lint` exit 0
-- [ ] F6-3 root `npm run build` exit 0
-- [ ] F6-4 `agent.boundary.spec.ts` 全綠(G3)
-- [ ] F6-5 falsification 逐個真跑真紅 + 還原後**真跑一次**(唔可以只睇 `git diff`)
+- [x] F6-1 ✅ root `npm test` exit 0 —— api **1410 / 94 suites** · web **449 / 44**。🔴 **第一次跑紅咗一條同我無關嘅 test**:`requests.new-request-flag.test.tsx` render 成個 router,而我加咗 `/agent` 落去 ⇒ parallel run 5009ms 撞爆 5s,**單獨跑 1512ms 綠**。⚠️ **嗰個檔早就記錄過同一件事一次**(當時靠拆 loader 買 margin)⇒ 第二次唔應該再買,改成 per-test budget + 註釋講明呢個成本會隨 app 增長
+- [x] F6-2 ✅ root `npm run lint` exit 0
+- [x] F6-3 ✅ root `npm run build` exit 0
+- [x] F6-4 ✅ `agent.boundary.spec.ts` 全綠 —— 兼且**多咗一條**:兩個 adapter 唔准 import `ConnectorConfigService`(`F3-7`)
+- [x] F6-5 ✅ falsification **五次**逐個真跑真紅,每次還原後真跑:①cross-principal guard ②profile model ③profile prompt ④banned import ⑤list scope filter
 
 ## `F7` — Live 驗
 
