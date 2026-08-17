@@ -125,7 +125,7 @@
 - [x] F11-1 ✅ **A13:H6 light + dark 真 render 收咗**(2026-08-16,**Chris 批准停 `ai-doc-extraction-db`**)。**四個狀態 × 兩個 theme = 八張**:①預設(proposal + steps + 摺埋嘅 transcript)②transcript 展開 ③reject 對話框 ④未開 run 嘅 empty state。**幾何完全一樣**(728 / 1108 / 239 / 334 px 兩個 theme 逐個相等)⇒ 零 layout drift;**兩個 theme 零橫向溢出**(`scrollWidth === clientWidth === 1440`);token 真 swap(`--bg` `#f5f5f6`↔`#08080a` · `--card` `#ffffff`↔`#141417` · `--accent` `#E60027`↔`#ff3355` · **`--purple` `#6d28d9`↔`#a982f0`**,最後嗰個就係 DS-8 個 AI tone)
 - [x] F11-1a 🔴🔴 **本 session 一開始冇 browser tool ⇒ Chris 2026-08-16 批准 `playwright` 落 `apps/web` devDependency**(H2 §5.2 明文例外:dev dependency)。**點解值得記住**:呢個項目由 CH-002 起,「render 驗唔驗到」一路取決於**當日 session 啱啱有冇 browser tool** —— CH-016 驗到、W43 驗唔到照寫「未 render 驗」。⇒ 加一個 dev dep + `apps/web/scripts/render-check.mjs` 令佢**可重複**,唔再靠彩數。⚠️ `npx playwright install chromium` 真落載到(191.8 MiB + 114.5 MiB),**公司 proxy 冇封 `cdn.playwright.dev`** —— 同 RISK R1(Prisma engine CDN 被封)**唔同結果**,所以唔可以由 R1 推論其他 CDN 都封
 - [x] F11-1b ⚠️ **render 順帶揭到一個潛在缺口(唔係今日嘅 bug)**:卡入面 `STEP_LABEL[step.key] ?? step.key`,而平台今日寫得出嘅 key **啱啱好九個全部有 label**(`start`/`abort`/`run`/`proposal` + registry 五個 tool 名)⇒ **今日係啱嘅**。但 `AgentStep.key` 係 `string`,**冇任何嘢釘住呢個對應** —— 邊日有人喺 `tool-registry.ts` 加個 tool 而冇掂 `ai-assist-card.tsx`,操作員畫面就會出一個 raw snake_case key。🔴 **而隔籬 `MESSAGE_LABEL` 係 `Record<AgentMessage['role'], string>` ⇒ TypeScript 幫佢守住**:兩個 map 喺 code 入面**睇落一模一樣**,一個有型別保護一個冇。**未修,未開單** —— 見下面「已知延後」
-- [ ] F11-2 🔴 **A14:live 驗** —— 真開一個 run,睇到 step timeline + transcript + proposal + 批准後 resume
+- [x] F11-2 🔴 **A14:live 驗** —— 真開一個 run,睇到 step timeline + transcript + proposal + 批准後 resume。🟢🟢 **2026-08-17 全收,四樣齊**(見 `G-LIVE`):step timeline ✅ · transcript ✅(9 條) · proposal ✅(兩個 GUID) · **批准後 resume ✅**(`zzrf-resume-req-1`,approve → run `completed`,落 DB 對數)
 
 ---
 
@@ -178,7 +178,7 @@
 - [x] G4-k ✅ **Falsification ×7 真紅零誤傷**:①拆 push ⇒ **1 紅** ②`needsApproval` 改由 message 讀 ⇒ **10 紅** ③由 SDK 自己搵 key ⇒ **2 紅** ④rebuild schema(`{...parameters}`)⇒ **1 紅** ⑤拆 undecided 閘 ⇒ **1 紅** ⑥rejection 唔標 `is_error` ⇒ **1 紅** ⑦factory 繼續 fall back ⇒ **2 紅**。實作檔還原後 **36/36 綠**,`git diff --stat` 零殘留
 - [x] G4-l ⚠️ **falsification script 自己有個洞,捉返咗** —— jest 成功時把 summary 寫去 **stderr**,而 script 成功路只讀 stdout ⇒ **baseline 同 restored 兩行都係 `NO TEST LINE`**,即「還原乾淨」根本冇驗到。補跑一次真 jest + `git diff --stat` 先收
 - [x] G4-pre-1 ✅ **`ADR-0038` `Accepted`(Chris 2026-08-16,四條後果過目之後)** —— **D3** 唔打網絡要有 test 守住(唔可以靠註釋)· **D4** 要對真 SDK 型別 assert,唔可以自己砌 shape · **D5** OQ-7 Claude 半邊 target 收窄 · **D6** 三件未查證。🟢 **同 ADR-0037 唔同,本 ADR 冇任何一條 deferred** —— 嗰邊個 `E4` 係知情留低,而 `D6` 本身就係一個決定(「G4 第一步係查,唔係寫」)⇒ **R1 gate 過,G4 開得工**
-- [ ] G4-pre-2 **`npm i @anthropic-ai/sdk -w @uop/api`**(D1:落 `apps/api` 唔落 root,跟 `@openai/agents` 位置),然後 🔴 **第一件事係查 D6 三樣,唔係寫 adapter** —— ①`betaTool()` 收嘅參數形狀 vs `AgentToolRegistry` 今日出嘅嘢(**D1 成唔成立就睇呢個**;要改 registry 先接到 = D1 錯咗,要返轉頭講,唔係硬塞 —— ADR-0037 E2 立咗呢條尺)②transitive 撞唔撞 `@openai/agents`(尤其 **`zod`** / HTTP client,tool schema 就係靠 `zod`)③license
+- [x] G4-pre-2 ✅ **做咗**(`package.json` 有 `@anthropic-ai/sdk@^0.117.1` 落 `apps/api`;`claude-tool-runner.provider.ts` + spec 齊;D6 三樣嘅答案寫咗入 ADR-0038)—— ⚠️ **2026-08-17 補勾,一直做咗冇勾** **`npm i @anthropic-ai/sdk -w @uop/api`**(D1:落 `apps/api` 唔落 root,跟 `@openai/agents` 位置),然後 🔴 **第一件事係查 D6 三樣,唔係寫 adapter** —— ①`betaTool()` 收嘅參數形狀 vs `AgentToolRegistry` 今日出嘅嘢(**D1 成唔成立就睇呢個**;要改 registry 先接到 = D1 錯咗,要返轉頭講,唔係硬塞 —— ADR-0037 E2 立咗呢條尺)②transitive 撞唔撞 `@openai/agents`(尤其 **`zod`** / HTTP client,tool schema 就係靠 `zod`)③license
 - [ ] G4-pre-3 🔴 **`OQ-7` Claude 半邊唔再 block G4**(ADR-0038 D5)—— 但**真打 Anthropic 之前仍然要重新答**,唔可以引用 ADR-0037(E7 個禁令一個字冇郁)。**新 R21**:「裝咗個 SDK」被讀成「可以打 Anthropic」,而 D3 嗰條 test 係唯一防線
 - [x] G5 ✅ **兩半都做齊(`G5-A` expiry 2026-08-16 · `G5-B` BullMQ 2026-08-16)**
 - [x] G5-A ✅ **Run expiry(OQ-5)2026-08-16 落地** —— api **1289 → 1308 / 88 → 89** · web **414 → 415**(6 紅 = pre-existing 一個字冇變)· 兩邊 tsc 0 / lint 0 · **falsification ×9 真紅零誤傷**(內含一個反方向)
@@ -285,7 +285,7 @@
 - [x] G-CLOSE-d ✅ **Falsification ×3,其中一個係測 contract spec 自己嘅盲點** —— ①claude 側 `toolName` 改大寫 ⇒ **2 紅** ②**兩邊一齊**改大寫 ⇒ **1 紅**(🔴 **互相比較嗰條綠咗,hardcode 期望嗰條紅** ⇒ 兩種 assert **夾埋先有意義**;一條「兩邊一致」嘅 assert 對「兩邊一齊錯」係盲嘅 —— CH-023 tautology 教訓嘅正面應用)③拆走 claude 失敗路個 record ⇒ **2 紅**。還原後 `git diff --stat` 對兩個 provider **零輸出**兼**真跑過**
 - [x] G-CLOSE-e ✅ **`R11`–`R25` 十五條入咗 `RISK_REGISTER.md`** —— carry 咗最耐嗰筆。`plan §6` 只定義咗 `R11`–`R16`,其餘散落喺 ADR-0037 / 0038 / 0039 同封 infra 信 ⇒ **有九條 risk 由頭到尾冇一個地方會令佢浮上嚟**,同 `PAR-submit` **一模一樣嘅形狀**(住喺一份文件尾嘅 `- [ ]`)。🔴 **入冊嗰陣校正咗 `R20`**(兩個 SDK 各自 ship `zod`)—— 實測 `@anthropic-ai/sdk` 得**兩個** dependency 而 `zod` 係 **optional peerDependency**,workspace 解析到**一個** `zod@4.4.3` ⇒ 標 `🟢 Resolved` 兼**理由寫成「實測推翻咗原假設」**,唔係靜靜刪走
 - [x] G-CLOSE-f ✅ **收尾數字** —— api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0
-- [ ] G-CLOSE-g 🚧 **W46 淨低三條,全部同一個原因** —— `A1`(DEV 半邊)· `A14` · `B6`:**三條都係「要一個真環境」**,而真環境要 infra 開兩個 resource。封信已寫好(含 Redis)**但未發**,幾時發係 owner 決定
+- [ ] G-CLOSE-g 🚧 **W46 淨低兩條** —— ~~`A14`~~ 🟢 **2026-08-17 收咗**(Chris 開咗 Azure OpenAI resource);淨低 **`A1`(DEV 半邊)· `B6`**,而**呢兩條卡嘅係 Redis 唔係 Azure OpenAI** ⇒ 封信仲有用,但**佢而家淨係為 Redis 而存在**。🔴 **兩條都唔係「未開發」,係「冇環境驗」** —— code 兩邊都寫完兼有 test
 
 ---
 
