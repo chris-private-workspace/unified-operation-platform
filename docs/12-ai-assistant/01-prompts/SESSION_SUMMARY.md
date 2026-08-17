@@ -34,8 +34,13 @@ branch 兩邊都刪咗。**
 transcript(推翻 `ADR-0036 D6`)同 `approvedById`(邊個批准過)。
 🟢🟢 **`ADR-0040 D4` 係最重要嗰條**:`review-stats` / `kill-switch` 聚合 `decidedAt` / `status`,
 同 `hiddenAt` **正交** ⇒ **R13 rubber-stamp 監測結構上郁唔到**。
-⚠️ **兩件下手要知**:①**DEV 兩個測試 run 仍然喺度**,要**部署 #10** 先 hide 得到(`G1`/`G2` 未收)
-②`agent.boundary.spec.ts` 個 verb list **仍然冇 `deleteMany`**(BACKLOG `agent-boundary-gaps`)。
+🟢🟢 **部署 #10(`dev-df03563`)2026-08-17 做咗** —— W47 + CH-031 一次過上機(31 個 commit · 2 個 migration)。
+DEV 嗰兩個測試 run hide 走咗,`G1`/`G2` 收咗,**兩半都驗**:唔再喺列表出現,而 `GET /agent/runs/:id`
+**仍然 200 兼且 steps / proposals 全部仲喺度**(做咗 `DELETE` 就會 cascade 消失)。
+⚠️ **兩件下手要知**:①🔴 **`ADR-0040 D4` 喺 DEV 仍然未驗證** —— `review-stats` 返 `decided: 0`,
+但佢係 0 **唔係因為 hide**(DEV 冇人真決定過任何 proposal)⇒ 個數字證明唔到嘢,**D4 只有 unit test
++ falsification 撐住** ②`agent.boundary.spec.ts` 個 verb list **仍然冇 `deleteMany`**
+(BACKLOG `agent-boundary-gaps`)。
 
 🔴🔴 **本機 DB 同 `orca/…/ai-agent` worktree 共用,而佢開緊 W47**(branch
 `feat/w47-agent-registry`;DB 有 `20260817093556_w47_agent_profile`,`AgentRun` 已經有

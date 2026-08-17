@@ -514,6 +514,76 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-17 · 部署 #10(`dev-df03563`)— **W47 agent registry + CH-031 soft-hide 一次過上機**
+
+**點解要有呢次部署**:同日 merge 咗 **W47 `agent-registry`(PR #119/#120)** 同 **CH-031 / ADR-0040(PR #117/#118)**,兩單合共 **31 個 commit、2 個新 migration**;而兩邊都各有 acceptance **結構上要部署先收得到**(W47 `G1` · CH-031 `G1`/`G2`)。
+
+⚠️ **開工先問「DEV 上面係邊個版本」**(部署 #6 立嘅規矩):`az rest` 實測兩個 app 都係 `dev-45ad525`(部署 #9/#9b)⇒ 落後 31 個 commit,`git rev-list --count 45ad525..df03563` 對數。
+
+#### 🟢 一個 handoff 前提實測成立,一個要更正
+
+| 前提 | 實測 |
+|---|---|
+| 「要 Chris 自己 `az login`」 | 🟢 **唔使** —— `az account show` 返 `d2f094a3-…` / sub `30dac177…`,session 仲喺度,同腳本 hardcode 嗰個逐字對上 |
+| 「做完部署 W47 就全收」 | 🔴 **唔啱** —— `G8` 逐字要求「**兩個 profile 分得開**」(同一段 text · 同一個 model · 唯一變數係 prompt),而 DEV `/agent/profiles` 實測 **`[]`**,一個 profile 都未有 ⇒ **`G8` 唔係部署收得到嘅嘢**,要真開兩個 profile 各跑一次。`G1` 收得到 |
+
+#### 部署本身(七步同 #6 / #7 / #8 逐步一致)
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…`(部署 SP)· sub `rcitest` |
+| 1 `docker login`(params 嗰組,`--password-stdin`) | **`Login Succeeded`** |
+| 2 🔴 **真 pull** `node:20-slim` + `nginx:1.27-alpine`(由 Dockerfile 讀返,唔靠 doc 抄) | 兩個 `exit 0` |
+| 3 `docker build` × 2 | 兩個 **`exit 0`** ⇒ BUG-008 個 `RUN test -f dist/main.js` gate 過 |
+| 4 `docker push` × 2 | api `sha256:3d563966…` · web `sha256:be7d5b3c…` —— **同本地 manifest list digest 逐字對上** |
+| 5 params tag `dev-45ad525` → `dev-df03563`(**字串替換,唔 JSON round-trip**) | 2 處 · **`lengthDelta = 0`** · re-parse 仍然 **33** 個 parameter · 舊 tag 殘留 **0** |
+| 6 dry-run | api secrets **11** / env **30** · web 1 / 1 · **四個 sanity 全 `False`**;body 兩個 image 都係新 tag、舊 tag 殘留 0、**12 個 secret 全部 masked 成 `<len N>`** |
+| 7 `-Send` | 兩個 **`PATCH exit = 0`** |
+
+**PATCH 之後 `az rest` 對數**:兩個 app 都 `dev-df03563`;🟢 **web `customDomains` 仍然係 `rapo-uop-web-dev.rci-t.com`、`external: True`;api `external: False`** ⇒ infra 配嘅嘢結構上冇被掂(dry-run 四個 `False` 已預先證咗)。api revision **`--0000013` `RunningAtMaxScale`**,15 秒就起到。
+
+#### 驗證 —— 唔睇 revision status,睇「只有新 build 先出到」嘅嘢
+
+**Step 0**(四個 endpoint 真打):`/` **200** 561 B · `/api/auth/sso/status` **200** · `/api/me` **401**(唔係 502/504)· `/api/docs/api-json` **200 · 84,518 B**(部署 #8 嗰次 66,893 B)。
+
+**agent route 由 8 條變 13 條**(同一日部署前我自己 down 過一份 OpenAPI 做對照):新增 `/agent/runs/latest` · `/agent/profiles` · `/agent/profiles/{id}`(W47)· `/agent/runs/{id}/hide` · `/unhide`(CH-031)。
+
+🟢🟢 **兩個 migration 各自有獨立佐證,唔靠 migrate summary**:
+
+| Migration | 獨立 runtime 佐證 |
+|---|---|
+| `w47_agent_profile` | `GET /api/agent/profiles` → **200**(唔係 500)。🔴 **`200 唔係 500` 先係佐證** —— 表唔存在 Prisma 會掟 `PrismaClientValidationError` ⇒ 500。回應 `[]` 只係未有 row |
+| `ch031_agent_run_hidden_at` | `GET /api/agent/runs/latest?requestId=…` 個 run **帶 `hiddenAt` 鍵**;而 hide 之後真係寫得入去(見下) |
+| (兩者交集) | `GET /api/agent/runs` 每行有 **`profileId`** 鍵 |
+
+🟢 **負面命中(最強嗰個)**:`GET /api/agent/runs?requestId=<id>` **唔再返單一 run** —— 而家返 `{items,nextCursor}`,**top-level 冇 `id` 鍵**(舊 shape 先有)⇒ 舊路真係搬咗去 `/latest`,同時排除「舊 build」。
+
+**web 側**:bundle 由 `index-BS3gkJAb.js` 換成 **`index-FUwzprWp.js`(268,847 B**,部署 #8 嗰次 240,346 B)。新字串 `All profiles` / `All statuses` / `Could not save the profile` / `Filter by status` / `/agent/runs/latest` / `agent/profiles` / `/hide` **全部 PRESENT**;🟢 **舊 bundle `/assets/index-BS3gkJAb.js` → 404** ⇒ 排除 CDN 舊 cache。
+
+#### 🟢🟢 順手收埋 CH-031 `G1` / `G2` —— 而兩半都要驗,只驗一半證唔到 `ADR-0040 D3`
+
+DEV 嗰兩個測試 run(部署 #9/#9b 留低,當時只 abort 到)hide 走:
+
+```
+POST /api/agent/runs/cmswz56uk…/hide  -> 200  hiddenAt=2026-08-17 14:43:11
+POST /api/agent/runs/cmswylt7c…/hide  -> 200  hiddenAt=2026-08-17 14:43:11
+```
+
+| 半邊 | 實測 |
+|---|---|
+| 唔再喺工作流程出現 | `GET /agent/runs/latest?requestId=` → **空 body** · `GET /agent/runs` → **0 items** |
+| **攞住 id 仍然拎得返(`D3`)** | 兩個都 **200**,`status` 完好,而且 **`steps=5`/`proposals=1`** 同 **`steps=2`/`proposals=0`** |
+
+🔴 **第二行先係 ADR-0040 喺真環境嘅兌現** —— 如果當初做咗 `DELETE`,嗰啲 `AgentStep` / `AgentProposal` 會經 `onDelete: Cascade` 一齊消失。**佢哋仲喺度。**
+
+#### ⚠️ 一個驗唔到嘅位,唔可以當收
+
+`ADR-0040 D4`(hide 唔會郁 R13)**喺 DEV 未驗證**。`GET /api/agent/review-stats` 返 `decided: 0`,但**唔係因為 hide** —— DEV 由頭到尾冇人真決定過任何 proposal(唯一嗰個係 `abortRun` bulk-reject,而佢**刻意唔寫 `decidedAt`**)⇒ **hide 唔 hide 個數都係 0**,而且我冇「hide 之前」嘅讀數。**D4 目前只有 unit test + falsification 撐住。**
+
+順帶有用:`pending: 0` ⇒ terminal-only 閘冇留低孤兒 proposal。
+
+---
+
 ### 2026-08-17 · 部署 #9b(同一個 image `dev-45ad525`)— **配 Azure OpenAI ⇒ agent 喺 DEV 第一次真行到底**
 
 **冇重 build**,只係 env + secret 改動 ⇒ 同一個 image,新 revision `--0000012`。
