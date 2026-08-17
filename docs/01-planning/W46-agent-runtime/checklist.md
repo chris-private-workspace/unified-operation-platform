@@ -308,6 +308,15 @@
 - [x] G-LIVE-m 🔴 **交還 5433 撞正 `restart-stack` skill 自己一個缺陷,而佢令我白做一輪** —— SKILL 第 3 條 redis 嗰段一早寫住 `up -d --force-recreate <svc>`,但**交還 5433 嗰段個修法冇 `--force-recreate`**;跟咗佢 ⇒ compose 見 container config 同 compose file 一致(`PortBindings` 本身就係啱嘅)於是**只 `Starting`/`Started`**,而 runtime 側照樣冇 attach。💡 **順帶揾到一個比 `docker inspect` 更爽快嘅診斷:`docker port <c>` 返空** —— 佢**直接答「而家有冇」**,唔使自己判斷個 binding 有冇生效(`inspect` 話有 + `docker port` 話冇 = 決定性)。**已修入 skill**,兼標明咗「同一份 SOP 兩處講唔同嘢,下手嗰個多數會跟最貼題嗰段」
 - [x] G-LIVE-l ⚠️ **agent 主動標明咗一個唔完美嘅 match** —— Visio 嗰個提咗 `VISIO_PLAN2_DEPT`,reasoning 寫住「the catalogue offers a **departmental variant**; this is the closest exact Plan 2 match, **so it is proposed for human approval**」⇒ **佢冇扮完美 match**,呢個正正係 D 側想要嘅行為
 
+### `G-MERGE` —— 接返 `main`(2026-08-17,Chris 批准落地)
+
+- [x] G-MERGE-a 🔴 **開工先查到 branch **落後 `main` 17 個 commit**** —— W46 開工之後 `main` 行前咗(CH-030 · 部署 #8 · 三個 CI/lint 改動)。**merge 落 `main` 之前先喺 branch 度接返**,唔係一開 PR 就算
+- [x] G-MERGE-b ✅ **先 dry-run 睇會撞幾多**(`git merge-tree --write-tree --name-only`,**唔改 working tree**)—— 108 個檔入面 **106 個 auto-merge**,兩個 conflict(`CLAUDE.md` / `BACKLOG.md`)**都係我當日改過嗰兩份**
+- [x] G-MERGE-c 🔴 **Resolution 逐行做,冇用 `--ours`/`--theirs` 盲揀**(BACKLOG 維護規則 §7)。🔴 **兩個檔要用唔同做法,而分辨嘅根據係一個實測**:`git diff <merge-base> HEAD --stat` 顯示 branch 對 **`CLAUDE.md` 只改咗 1 行**、對 **`BACKLOG.md` 新增咗 4 行** ⇒ `CLAUDE.md` 可以攞 `main` 版做底再 Edit 加返 W46 段(**HEAD 側獨有嘅就只有嗰段**);而 `BACKLOG.md` **唔可以**,因為 `--theirs` 係覆蓋**成個檔**,會連 conflict 以外 auto-merge 咗嘅 4 行(W46 行 / `AGENT-TIER2` 行)一齊丟失
+- [x] G-MERGE-d 🟢🟢 **驗證用「同 `main` 對 diff」而唔係「睇個檔順唔順眼」** —— resolved 之後 `git diff origin/main --stat` = **`CLAUDE.md` 1 行改 + `BACKLOG.md` 4 行新增**,同 branch 側原本嘅差異**逐字一樣**。📌 **點解呢個係強驗證**:丟失咗 `main` 側嘅嘢會**多出 deletion**,丟失咗 branch 側嘅嘢會**少 insertion** —— 兩個方向都被同一條數蓋住
+- [x] G-MERGE-e 🟢🟢 **`main` 帶入嚟三件會改變「跑咗 test 即係驗過乜」嘅嘢** —— ①`31b5c7d` **修好咗嗰 6 條長期紅**(根因 = **Node 25 預設開 Web Storage,把 `globalThis.localStorage` 裝成空 `{}`**,同 jsdom 無關)②`371e3a5` 清 prettier + root lint 蓋埋 web ③`e3e61b8` root `test`/`build` 加埋 `-w @uop/web` ⇒ **web suite 第一次入 gate**(之前 CI 直接跑 root script,而 root script 只 `-w @uop/api` ⇒ **web 由頭到尾冇入過任何 gate**,呢個就係嗰 6 條可以紅足幾個星期冇人知嘅機制)
+- [x] G-MERGE-f ✅ **接返之後四個 gate 全部真跑** —— api **1362 / 92** · web **439 / 43 零紅**(433 + 修好嗰 6 = 439,逐個對得上)· root lint **exit 0** · root build **exit 0**。⚠️ **lint 嗰個先係真風險而佢過咗** —— branch 新增嗰批 web 檔(`agent-panel` / `ai-assist-card` / `agent-run-events` …)**從未經過** prettier gate
+
 ### `G-FIX` —— `approvedById` 漏寫(2026-08-17)
 
 - [x] G-FIX-a 🔴 **形狀:唔係「漏咗一行」,係「呢條路對『算唔算一個決定』冇立場」** —— `createLineItems` 個 catch 寫 `decidedAt` 但唔寫 `approvedById`,而**呢個組合喺本 codebase 自己嘅語彙入面唔存在**。三個先例:`abortRun` 同 run expiry **兩個都唔寫**(`review-stats.service.ts:136-140` / `ai-assist.service.ts:538` 都明文寫低理由)· `approveAssign` 被閘拒 **兩個都寫**

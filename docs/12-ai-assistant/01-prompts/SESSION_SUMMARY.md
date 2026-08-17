@@ -7,13 +7,23 @@
 
 ## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17)**
 
-**你多數喺 branch `feat/w46-agent-runtime`,而佢由頭到尾未 merge 落 `main`。**
+**你多數喺 branch `feat/w46-agent-runtime`。🟢 `main` 2026-08-17 已經 merge 咗入
+branch(17 個 commit),但 branch 仲未 merge 返落 `main`。**
 
-| | `main` | branch `feat/w46-agent-runtime` |
+| | `main` | branch `feat/w46-agent-runtime`(已接返 main) |
 |---|---|---|
-| test | api **1044 / 74** · web **377** | api **1355 / 92** · web **433**(+6 pre-existing 紅) |
+| test | api **1044 / 74** · web **383** | 🟢 api **1362 / 92** · web **439 / 43,零紅** |
 | ADR | 到 **0035** | 到 **0039**(0036 / 0037 / 0038 / 0039 **全部住喺 branch**) |
 | 有冇 agent | **冇** | 有(`src/agent` + `src/agent-approval` 兩個 module) |
+
+🟢🟢 **嗰 6 條長期紅冇咗** —— `main` 側 `31b5c7d` 修好咗,根因係 **Node 25 預設開 Web
+Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom / 同我哋嘅 code 都無關。
+⇒ **以後唔使再喺每份 closeout 數「嗰 6 條係舊嘅」。**
+
+⚠️ **`main` 亦把 root `test` / `build` / `lint` 三個 script 擴到蓋埋 `-w @uop/web`** ——
+即係話 **web suite 而家真係入咗 gate**(之前 root script 只 `-w @uop/api`,而 CI 直接跑
+root script ⇒ web 由頭到尾冇入過任何 gate,呢個就係嗰 6 條可以紅足幾個星期冇人知嘅機制)。
+merge 之後四個 gate 全部真跑過:**test / lint / build 三個 exit 0**。
 
 ⇒ **下面「`main` 嘅座標」嗰段仍然啱,但佢唔係你 working tree 嘅樣。**
 

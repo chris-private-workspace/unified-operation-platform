@@ -1783,3 +1783,64 @@ Visio 嗰個提咗 `VISIO_PLAN2_DEPT`,而 reasoning 自己寫住:
 - **`A1` DEV 半邊 · `B6`** —— 仍然卡封未發嘅信(**Redis 嗰半**)
 - **`.env` 個 `AZURE_OPENAI_API_VERSION` 仲係舊值** —— 今日靠 shell env 頂住,重起就冇
 - **`ANTHROPIC_API_KEY` 已填** ⇒ `R21` 由風險變成已發生,建議清走
+
+---
+
+## Day 22 — 2026-08-17(同日續:接返 `main`,準備落地)
+
+Chris 拍板 **先把 W46 落地,再開 Tier 2**。落地第一步唔係開 PR,係**接返 `main`**。
+
+### 🔴 branch 落後 `main` 17 個 commit,而冇人為此開過單
+
+W46 開工之後 `main` 行前咗:CH-030 · 部署 #8 · 三個 CI / lint 改動。
+**唔接返就開 PR**,等於叫 review 嗰個人喺一個過時嘅基準上面睇 108 個檔。
+
+### ✅ 先 dry-run,唔改 working tree
+
+`git merge-tree --write-tree --name-only origin/main feat/w46-agent-runtime`
+⇒ **108 個檔入面 106 個 auto-merge**,兩個 conflict:`CLAUDE.md` / `BACKLOG.md`
+—— **都係我當日改過嗰兩份**。
+
+### 🔴 兩個 conflict 要用**唔同**做法,而分辨嘅根據係一個實測唔係手感
+
+`git diff <merge-base> HEAD --stat` 一句就答咗:
+
+| 檔 | branch 側改咗幾多 | ⇒ 做法 |
+|---|---|---|
+| `CLAUDE.md` | **1 行**(就係 §0 Phase 格) | 攞 `main` 版做底,Edit 加返 W46 段 —— **HEAD 側獨有嘅就只有嗰段**,零丟失 |
+| `BACKLOG.md` | **新增 4 行** | 🔴 **唔可以**同樣做 —— `--theirs` 覆蓋**成個檔**,會連 conflict 以外 auto-merge 咗嘅 4 行(W46 行 / `AGENT-TIER2` 行)一齊丟失 ⇒ 逐行保留 branch 嘅 W46 行 + `main` 版 CH-029 行 |
+
+📌 **`--theirs` 唔係「揀一邊」咁簡單 —— 佢係「用一邊嘅成個檔」。** 兩者喺
+「conflict 以外仲有冇改動」呢一點上完全唔同,而 `git diff --stat` 就係分辨嗰句。
+
+### 🟢🟢 驗證用「同 `main` 對 diff」,唔係「睇個檔順唔順眼」
+
+resolved 之後 `git diff origin/main --stat` = **`CLAUDE.md` 1 行改 + `BACKLOG.md`
+4 行新增**,同 branch 側原本嘅差異**逐字一樣**。
+
+**點解呢個係強驗證**:丟失咗 `main` 側嘅嘢會**多出 deletion**,丟失咗 branch 側嘅嘢會
+**少 insertion** —— 兩個方向都被同一條數蓋住,唔使逐段肉眼對。
+
+### 🟢🟢 `main` 帶入嚟三件會改變「跑咗 test 即係驗過乜」嘅嘢
+
+| commit | 內容 |
+|---|---|
+| `31b5c7d` | **修好咗嗰 6 條長期紅** —— 根因係 **Node 25 預設開 Web Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom 無關、同我哋嘅 code 無關 |
+| `371e3a5` | 清 16 個 prettier error + **root lint 蓋埋 web** |
+| `e3e61b8` | **root `test` / `build` 加埋 `-w @uop/web`** |
+
+🔴 **第三件先係最重要嗰件**:之前 root script 只 `-w @uop/api`,而 CI 直接跑 root script
+⇒ **web suite 由頭到尾冇入過任何 gate**。**嗰 6 條可以紅足幾個星期冇人知,唔係因為冇人
+記得跑,係因為 gate 結構上見唔到佢。**
+
+### ✅ 接返之後四個 gate 全部真跑
+
+api **1362 / 92** · web **439 / 43 零紅**(433 + 修好嗰 6 = **439**,逐個對得上)
+· root lint **exit 0** · root build **exit 0**。
+
+⚠️ **lint 嗰個先係真風險,而佢過咗** —— branch 新增嗰批 web 檔(`agent-panel` /
+`ai-assist-card` / `agent-run-events` …)**從未經過** prettier gate,今日第一次入。
+
+### 🚧 下一步
+
+**開 PR → merge 落 `main` → 部署 DEV(⚠️ Redis 要先喺度)→ 收 `A1` DEV 半邊 + `B6`。**

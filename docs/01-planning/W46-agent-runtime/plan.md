@@ -220,7 +220,7 @@ model AgentProposal {
 - [x] **A9** ✅ `propose_line_items (A9 / R15)` 三條(靠名 / 唔存在 GUID / 存在但 inactive)
 - [x] **A10** ✅ `agent-approval.service.spec.ts` `approve` + `reject`
 - [x] **A11** ✅ `F7 — agent.run_started` + `F7 — agent.proposal_decided`,含 `🔴 A11 — passes no before/after at all`
-- [x] **A12** ✅ 每次交付都跑 —— 最後一次(2026-08-17)api **1355 / 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0
+- [x] **A12** ✅ 每次交付都跑 —— 🟢🟢 **最後一次係接返 `main` 之後(2026-08-17):api 1362 / 92 · web 439 / 43 **零紅** · root lint 0 · root build 0**。⚠️ **「6 條 pre-existing 紅」呢句由呢一刻起唔再適用** —— `main` 側 `31b5c7d` 修好咗,根因係 **Node 25 預設開 Web Storage 把 `globalThis.localStorage` 裝成空 `{}`**,同 jsdom 無關。而 `main` 同時把 root `test`/`build`/`lint` 擴到蓋 `-w @uop/web` ⇒ **web suite 而家真係入咗 gate**
 - [x] **A13** ✅ `F8-10` / `F11-1` + `G-UI`(light + dark 真 render,跑咗 `ui-design`)
 - [x] **A14** ✅ **2026-08-17 全收**(Chris 開咗 Azure OpenAI resource ⇒ 唔再等封 infra 信)—— 真跑咗四個 run:`failed`(api-version 太舊,**證咗 endpoint 通 + key 有效**)· `awaiting_approval` ×2 · `aborted`(pending proposal 自動 `rejected`)· **approve → `completed`**。🔴 **批准嗰半分兩次先收齊,而兩次都有價值**:①第一次撞 **409 `This request is complete…`** ⇒ **`F8-3` 卡上嗰句「Approving runs the platform's normal checks — they can still refuse」第一次真驗證**(閘喺 `RequestService.addLineItem`,唔喺 agent 側)②換一張 `OPEN` request 之後 run 真 resume 到 `completed`,而收貨標準係**落 DB 對數**:proposal `executed` + `approvedById` 有值 + 2 條 line item 逐字對返兩個 GUID。⚠️ **`A1` DEV 半邊同 `B6` 唔跟住收** —— 佢哋卡嘅係 **Redis**,唔係 Azure OpenAI
 
