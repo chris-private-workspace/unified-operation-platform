@@ -1,5 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
+// A single exported constant with no imports of its own — safe to pull into a
+// ts-node script without dragging the Nest graph along.
+import { AI_ASSIST_PRINCIPAL } from '../src/agent/agent-run-status';
 
 const prisma = new PrismaClient();
 
@@ -40,6 +43,74 @@ const OPCOS: { code: string; company: string; costCenter?: string }[] = [
   { code: 'RTW', company: 'RTW' },
   { code: 'RVN', company: 'RVN' },
 ];
+
+/**
+ * W47 `F1-4` — carry the model the environment has been running on into the
+ * registry that now owns it.
+ *
+ * 🔴 This is a ONE-WAY migration, not a default, and every condition below is
+ * load-bearing:
+ *
+ *   - **The principal must already exist.** `AgentPrincipal` is created lazily
+ *     by the first run, and its `runtime` column must be the runtime that
+ *     actually booted rather than a configured string (BUG-011). Seed has no
+ *     provider, so it must not invent that row. An environment that has never
+ *     run the agent therefore gets nothing here — and keeps behaving exactly as
+ *     it did before W47, because a fresh environment has never had a model
+ *     chosen for it either. The first run creates the principal, and
+ *     `resolveForRun` then refuses with a message naming what is missing.
+ *   - **It must have NO profile at all**, not merely no active one. Seed reruns
+ *     on every deploy; keying on "no active profile" would resurrect a profile
+ *     an admin deliberately switched off, which is the registry silently
+ *     overruling the person who owns it.
+ *   - **The model comes from wherever the runtime reads it today** —
+ *     `ConnectorConfig.agentModel` first, `AGENT_MODEL` second, matching
+ *     `resolveModel()` in both providers. Nothing is invented: no model
+ *     configured means no profile seeded, and the refusal stands.
+ *
+ * The profile is NAMED after the model. That is the honest name for what it is
+ * — "the profile that runs on this model" — where anything like "Default" would
+ * assert a status the registry deliberately does not have (see `resolveForRun`:
+ * one active profile is used, several is an error, none is an error). It is a
+ * starting point and an admin can rename it.
+ */
+async function seedAgentProfile() {
+  const principal = await prisma.agentPrincipal.findUnique({
+    where: { name: AI_ASSIST_PRINCIPAL },
+    select: { id: true },
+  });
+  if (!principal) {
+    console.log(
+      `Agent '${AI_ASSIST_PRINCIPAL}' has never run here — no profile seeded (it is created on first run).`,
+    );
+    return;
+  }
+
+  const existing = await prisma.agentProfile.count({
+    where: { principalId: principal.id },
+  });
+  if (existing > 0) {
+    console.log(`Agent '${AI_ASSIST_PRINCIPAL}' already has ${existing} profile(s) — left alone.`);
+    return;
+  }
+
+  const configured = await prisma.connectorConfig.findUnique({
+    where: { connector: 'agent' },
+    select: { agentModel: true },
+  });
+  const model = configured?.agentModel?.trim() || process.env.AGENT_MODEL?.trim();
+  if (!model) {
+    console.log(
+      'No agent model configured (ConnectorConfig.agentModel / AGENT_MODEL) — no profile seeded.',
+    );
+    return;
+  }
+
+  await prisma.agentProfile.create({
+    data: { principalId: principal.id, name: model, model, active: true },
+  });
+  console.log(`Seeded agent profile '${model}' for '${AI_ASSIST_PRINCIPAL}'.`);
+}
 
 async function main() {
   // ── OpCos ──
@@ -110,6 +181,8 @@ async function main() {
       'LOCAL_ADMIN_INITIAL_PASSWORD not set — skipping local admin seed.',
     );
   }
+
+  await seedAgentProfile();
 
   console.log(`Seeded ${OPCOS.length} OpCos + admin + RHK OPCO_IT user.`);
   // NOTE: SkuCatalog is NOT hardcoded — run POST /license/catalog/sync to seed

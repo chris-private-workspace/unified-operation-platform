@@ -675,8 +675,17 @@ model AgentRun {
   /// shows those as "(before W47)" rather than hiding them (OQ-D) — hiding would
   /// turn "how many runs predate the registry" into an unanswerable question,
   /// and that is exactly the number a new list is easiest to be wrong about.
+  ///
+  /// 🔴 `onDelete: Restrict` is deliberate and is the DB half of `F2-3` (no
+  /// DELETE endpoint). Prisma's default for an optional relation is SetNull,
+  /// which would mean a delete run straight against the database quietly turns
+  /// "this run used the 4.1-mini profile" into "unknown" for every historical
+  /// run at once — the exact answer F2-3 exists to protect, lost without an
+  /// error. Restrict makes the database refuse instead, so anyone who later
+  /// wants deletion has to decide what happens to the history first rather
+  /// than discovering it afterwards.
   profileId String?
-  profile   AgentProfile? @relation(fields: [profileId], references: [id])
+  profile   AgentProfile? @relation(fields: [profileId], references: [id], onDelete: Restrict)
 
   // The request an AI-Assist run is reasoning about. Carries a foreign key,
   // the same shape as OutboundFailure.requestId (F1-7, Chris 2026-08-15).
