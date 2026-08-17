@@ -44,7 +44,13 @@ export interface UpdateProfileInput {
   active?: boolean;
 }
 
-const PROFILE_SELECT = {
+/**
+ * Exported so `agent-profile.controller.spec.ts` can pin the wire shape against
+ * `AgentProfileDto`. Widening this select without widening the DTO makes the
+ * OpenAPI document describe a response the API does not actually send — the same
+ * gap BUG-011 fell through, mirrored.
+ */
+export const PROFILE_SELECT = {
   id: true,
   principalId: true,
   name: true,

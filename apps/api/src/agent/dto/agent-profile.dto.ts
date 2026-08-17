@@ -84,6 +84,11 @@ export class UpdateAgentProfileDto {
   active?: boolean;
 }
 
+/** The owning agent, as `list()` joins it — name only, never the runtime. */
+export class AgentProfilePrincipalDto {
+  @ApiProperty({ example: 'ai-assist' }) name!: string;
+}
+
 export class AgentProfileDto {
   @ApiProperty() id!: string;
   @ApiProperty() principalId!: string;
@@ -93,4 +98,19 @@ export class AgentProfileDto {
   @ApiProperty() active!: boolean;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
+
+  /**
+   * 🔴 Added because `agent-profile.controller.spec.ts` caught it missing, not
+   * because anyone noticed while writing the endpoint.
+   *
+   * `list()` joins the principal so the screen can say which agent a profile
+   * belongs to; `create` and `update` return the row without it. Optional here
+   * for that reason — and documented rather than left off, because a response
+   * field the contract never mentions is a field the frontend has to discover by
+   * reading the server's source. That is BUG-011 mirrored: there the controller
+   * dropped a field the read-model had; here it sent one the DTO never admitted
+   * to.
+   */
+  @ApiPropertyOptional({ type: AgentProfilePrincipalDto })
+  principal?: AgentProfilePrincipalDto;
 }
