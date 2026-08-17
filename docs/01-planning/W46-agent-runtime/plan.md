@@ -198,32 +198,65 @@ model AgentProposal {
 
 ## 5. Acceptance
 
+> 🔴 **2026-08-17 收尾掃咗一次,而呢張表由頭到尾冇更新過** —— 21 條全部仲係 `[ ]`,而實際上
+> 18 條老早做完(勾咗喺 `checklist.md`,兩份文件各講各)。**呢個唔係「文件唔靚」** ——
+> plan 個 acceptance 就係「W46 算唔算完」嘅定義,佢全部空白即係**冇人講得出仲差幾多**。
+>
+> 📌 **掃法**:逐條搵返實際證據(邊個 spec 邊個 describe),**唔靠記憶勾**。掃出兩件事:
+> **①`B3` 只做咗一半**(D1 schema identity ✅,但「兩個 provider 產生同一個 `AgentStep`」
+> 冇 test)⇒ **當日補咗** `agent-runtime.contract.spec.ts`,而佢**第一次跑就揾到一個真
+> divergence**(見下)②`A1` 係一半(本機 ✅ / DEV ❌)—— 之前被當成一條。
+
 ### 期一
 
-- [ ] **A1** 五個 model migration 對真 DB 跑得過(本機 + DEV 各一次)
-- [ ] **A2** 🔴 **Boundary spec 綠**:`agent` module 唔 import 任何 domain service;正反兩面 assert(跟 `license-ops.boundary.spec.ts:42-53` 形狀)
-- [ ] **A3** 🔴 **Allow-list 鎖死**:assert registry 暴露嘅 tool **逐字等於** §3 張表。多一個少一個都要紅
-- [ ] **A4** 🔴 **Tracing 真係關咗**(ADR-0036 D11 / H4)—— assert provider 起身之後 tracing disabled。**唔准用 `toHaveProperty(key)` 嗰種 assert**(§9 教訓:一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢係兩件事);拆走 disable 嗰行要**真紅**
-- [ ] **A5** 🔴 **零副作用證明**:跑一個完整 `AI-Assist` run,assert **DB 除咗 `Agent*` 五張表之外零改動**(`RequestLineItem` / `OpcoSkuLedger` count 不變)
-- [ ] **A6** 🔴 **`needsApproval` 真係停到**:mock LLM 直接 call `propose_line_items`,assert run **停喺 `awaiting_approval`** 兼且 `AgentProposal` 有 row —— 而**唔係**跑埋落去
-- [ ] **A7** 🔴 **`AgentStep` 由平台寫** —— 餵一個「扮講自己做過嘢」嘅 mock LLM response,assert **佢寫唔到任何 `AgentStep`**(INC-001 直接對應)
-- [ ] **A8** 🔴 **transcript 零 PII** —— 餵一個含 UPN 嘅 tool result,assert `AgentMessage.content` 冇 email pattern(BUG-004 形狀,test 先行)
-- [ ] **A9** 🔴 **`propose_line_items` 只收 GUID** —— 餵一個靠名嘅 payload,assert 400 而唔係猜;餵一個唔存在嘅 GUID,assert 400(§3.4 / R15)
-- [ ] **A10** Proposal 審批:approve → 真建 line item **兼且 run resume 到 `completed`**;reject → 零改動 + `rejectedReason` 有值
-- [ ] **A11** Audit 兩條 action 出現,而且 `before`/`after` **係空**(H4)
-- [ ] **A12** `npm run lint` exit 0 · api + web tsc 0 · 既有 test 一條唔跌
-- [ ] **A13** 🔴 **H6 真 render(light + dark)**,跑 `ui-design` skill
-- [ ] **A14** live 驗:真開一個 `AI-Assist` run,睇到 step timeline + transcript + proposal + 批准後 resume
+- [x] **A1** 🟡 **一半** —— 本機 ✅(`F1-5`,對真 DB 21 個 migration);**DEV ❌ 卡「要唔要部署」**(`F1-5b`)
+- [x] **A2** ✅ `agent.boundary.spec.ts` —— 五個 forbidden import + 正面半(「仲有做緊自己份工」)+ 一個 legal crossing 明文命名
+- [x] **A3** ✅ `tool-registry.spec.ts` `allow-list (A3 / D2)` —— `exposes exactly these tools, in this order, with these approval flags`
+- [x] **A4** ✅ `openai-agents.provider.spec.ts` `tracing is off (A4 / D11 / H4)` —— 🔴 **佢自己處理咗 vacuous-pass**:jest 之下 tracing 本來就係關,所以條 test **先開返佢**再驗關(唔係咁嘅話,拆走 `enforceTracingDisabled()` 都會綠)
+- [x] **A5** ✅ 兩半 —— `ai-assist.service.spec.ts` `A5 — zero side-effects`(行為)+ `tool-registry.spec.ts` `contains no database write at all (A5, static half)`(靜態)
+- [x] **A6** ✅ `A6 — a write tool stops the run` 四條
+- [x] **A7** ✅ `A7 — AgentStep is written by the platform (INC-001)` —— 含「扮講自己做過嘢」嗰條
+- [x] **A8** ✅ `lets nothing email-shaped reach AgentMessage through the service`
+- [x] **A9** ✅ `propose_line_items (A9 / R15)` 三條(靠名 / 唔存在 GUID / 存在但 inactive)
+- [x] **A10** ✅ `agent-approval.service.spec.ts` `approve` + `reject`
+- [x] **A11** ✅ `F7 — agent.run_started` + `F7 — agent.proposal_decided`,含 `🔴 A11 — passes no before/after at all`
+- [x] **A12** ✅ 每次交付都跑 —— 最後一次(2026-08-17)api **1355 / 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0
+- [x] **A13** ✅ `F8-10` / `F11-1` + `G-UI`(light + dark 真 render,跑咗 `ui-design`)
+- [ ] **A14** 🚧 live 驗:真開一個 `AI-Assist` run —— **卡 Azure OpenAI**(`ADR-0037 E1` 禁打公開 API,而公司 tenant 個 resource 唔存在)⇒ 見 `docs/13-deployment/11-azure-openai-infra-request.md`
 
 ### 期二
 
-- [ ] **B1** 🔴 `propose_assign` 批准之後 **8 道閘一道唔少** —— assert 一個 budget 唔夠嘅 proposal **批准咗之後仍然被擋**(ADR-0036 D3 嗰個反直覺後果)
-- [ ] **B2** `derivePermissions()` 認得 agent principal;W28 drift test 覆蓋
-- [ ] **B3** 🔴 **`ClaudeToolRunnerProvider` 用同一份 registry** —— assert 兩個 provider 對同一個 tool 呼叫產生**同一個 `AgentStep`**(D1 嘅可驗證形式;同 `license-ops.contract.spec.ts` 同族)
-- [ ] **B4** Blast-radius limit 生效(單 run 超額即停)+ 有 `AgentStep` 記低
-- [ ] **B5** Kill switch:**分得出「配置停咗」同「真係停咗」**(`SeamRuntimeRegistry` 形狀)
-- [ ] **B6** SSE 喺 DEV 真通(nginx + ACA ingress 兩層都過)—— 還 ADR-0029 A2 嗰筆債
-- [ ] **B7** R13 監測數字睇得到
+- [x] **B1** ✅ `agent-approval.service.spec.ts` `approve — assign (期二 G1)` + `when the platform’s gates refuse`
+- [x] **B2** ✅ `permissions.spec.ts` `🔴 G2 — the agent appears as an actor, with no Role` 六條 + W28 snapshot
+- [x] **B3** ✅ **2026-08-17 收尾補齊** —— 🔴 **掃嗰陣發現佢只做咗一半**:`claude-tool-runner.provider.spec.ts` 個 `D1` 證咗 **schema identity**(`toBe`),但成個 W46 **冇一條 cross-provider 對照**,而 B3 明文要「兩個 provider 對同一個 tool 呼叫產生**同一個 `AgentStep`**」。補咗 **`agent-runtime.contract.spec.ts`**(7 條,跟 `license-ops.contract.spec.ts` 形狀:reduce 成可比較嘅嘢,**互相比較**而唔係各自對 fixture)
+- [x] **B4** ✅ `tool-registry.spec.ts` `🔴 G3 — the blast-radius limit` 五條
+- [x] **B5** ✅ `kill-switch.service.spec.ts` + `agent-approval.service.spec.ts` `🔴 G3 — approving is gated, rejecting is not`
+- [ ] **B6** 🚧 SSE 喺 DEV 真通 —— **卡兩樣**:DEV 冇 Redis(`ADR-0039 F5`)+ **ACA ingress 對 SSE 嘅行為未驗證兼且改唔到**(`F7` / `R22`)。nginx 嗰層已經配好(`F6`)⇒ 三層之中兩層喺我哋手上
+- [x] **B7** ✅ `review-stats.service.spec.ts` + `review-stats.controller.spec.ts`,`GET /agent/review-stats`(ADMIN only)
+
+### 🔴 `B3` 補完之後揾到嘅嘢 —— 一個真 divergence,兩個 provider spec 都睇唔到
+
+contract spec **第一次跑就紅咗一條**,而佢紅嘅位唔係我預期嗰個:
+
+| | tool 掟 error 之後 |
+|---|---|
+| **兩個 adapter** | 逐行一樣:`record({status:'failed', detail})` → `throw err` |
+| `@openai/agents` 個 `tool()` | 🔴 **自己 catch 咗**,返一個 error **字串**畀 model |
+| `betaTool` | 掟返出嚟畀 caller |
+
+⇒ **同一個 tool 失敗,兩個 runtime 之下「邊一層 catch」唔同。**
+
+🟢 **點解佢唔推翻 B3**(講出嚟而唔係假設):嗰個分歧住喺 **adapter 之下、ledger 之上** ——
+`AgentStep` 兩邊**逐字一樣**(已 assert),而**兩邊個 model 都知道 tool 失敗咗**,只係一個經
+exception、一個經回傳值。條 test 兩個機制各 assert 一次,唔係淨係 assert「有 throw」。
+
+📌 **值得記嘅唔係呢個分歧本身,係佢點解一直冇人見到** —— **兩個 provider spec 各自都完全正確**,
+因為每個都只講自己。**「兩個實作一致」呢個 claim,結構上冇一個單一實作嘅 spec 講得到。**
+(= W39 F2 寫 `license-ops.contract.spec.ts` 嗰陣講嘅同一件事。)
+
+**Falsification ×3**:①claude 側 `toolName` 改大寫 ⇒ **2 紅** ②**兩邊一齊**改大寫 ⇒ **1 紅**
+(互相比較捉唔到,**hardcode 期望嗰條捉到** ⇒ 兩種 assert 夾埋先有意義 —— CH-023 tautology 教訓
+嘅正面應用)③拆走 claude 失敗路個 record ⇒ **2 紅**。
 
 ---
 
