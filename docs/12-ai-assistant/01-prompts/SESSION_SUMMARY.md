@@ -7,14 +7,20 @@
 
 ## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17)**
 
-**你多數喺 branch `feat/w46-agent-runtime`。🟢 `main` 2026-08-17 已經 merge 咗入
-branch(17 個 commit),但 branch 仲未 merge 返落 `main`。**
+**🟢🟢 W46 `agent-runtime` 2026-08-17 已經 merge 落 `main`(PR #114,tip `45ad525`)。**
+⚠️ 呢一段本身之前寫住「branch 仲未 merge 返落 `main`」+ 一張「`main` 有冇 agent = **冇**」嘅
+對照表 —— **兩樣而家都唔啱**,`main` 就係有 agent 嗰個。以下係 merge 之後嘅真相:
 
-| | `main` | branch `feat/w46-agent-runtime`(已接返 main) |
-|---|---|---|
-| test | api **1044 / 74** · web **383** | 🟢 api **1362 / 92** · web **439 / 43,零紅** |
-| ADR | 到 **0035** | 到 **0039**(0036 / 0037 / 0038 / 0039 **全部住喺 branch**) |
-| 有冇 agent | **冇** | 有(`src/agent` + `src/agent-approval` 兩個 module) |
+| | `main`(= 你 working tree) |
+|---|---|
+| test | api **1362 / 92 suites** · web **439 / 43 files,零紅** |
+| ADR | 到 **0039**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE) |
+| agent module | **有** —— `src/agent` + `src/agent-approval` |
+| root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` |
+
+🔴 **「已 merge」唔係睇 PR state 得出嘅** —— 十個 commit 逐個 `git merge-base --is-ancestor
+<sha> origin/main` 驗過(CLAUDE.md §9 先例:PR **#87** 顯示 `MERGED`,實際只入咗 6 個入面
+頭 2 個)。
 
 🟢🟢 **嗰 6 條長期紅冇咗** —— `main` 側 `31b5c7d` 修好咗,根因係 **Node 25 預設開 Web
 Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom / 同我哋嘅 code 都無關。
@@ -25,7 +31,8 @@ Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom / 同我�
 root script ⇒ web 由頭到尾冇入過任何 gate,呢個就係嗰 6 條可以紅足幾個星期冇人知嘅機制)。
 merge 之後四個 gate 全部真跑過:**test / lint / build 三個 exit 0**。
 
-⇒ **下面「`main` 嘅座標」嗰段仍然啱,但佢唔係你 working tree 嘅樣。**
+⇒ **`main` 同你 working tree 而家係同一件嘢** —— 呢度之前寫住「下面嗰段唔係你 working
+tree 嘅樣」,merge 之後唔再成立。
 
 **W46 `agent-runtime` 2026-08-17 收尾** —— 21 條 acceptance **19 條 ✅**,淨低兩條
 (`A1` DEV 半邊 · `B6` SSE 喺 DEV 真通),而**兩條都係卡 Redis,唔係卡 Azure OpenAI**。

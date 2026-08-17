@@ -209,7 +209,7 @@ model AgentProposal {
 
 ### 期一
 
-- [x] **A1** 🟡 **一半** —— 本機 ✅(`F1-5`,對真 DB 21 個 migration);**DEV ❌ 卡「要唔要部署」**(`F1-5b`)
+- [x] **A1** 🟢🟢 **全收(2026-08-17,部署 #9 `dev-45ad525`)** —— 本機 ✅(`F1-5`,對真 DB 21 個 migration);**DEV ✅** 三個 migration 真跑,container log 原文 `25 migrations found` → 逐個 `Applying migration 20260815030000_w46_agent_runtime` / `…_w46_agent_connector` / `…_w46_agent_run_actor` → `All migrations have been successfully applied.` + `Seeded 24 OpCos`。🔴 **唔止靠 migrate summary —— 三個 migration 各自有獨立嘅 runtime 佐證**(因為 `docker-entrypoint.sh` 令 migrate 失敗 NON-FATAL,而且 summary 講嘅係「跑咗」唔係「跑出咗嘢」):①`GET /agent/runs?requestId=…` **200** 兼讀得返 run row ⇒ `AgentRun` 表真存在 ②`GET /admin/integrations` 回應帶 `"column": "agentRuntime"` / `"agentModel"` ⇒ 第二個 migration 加嘅欄真讀得到 ③run 回應個 **`startedById` 有值** ⇒ 第三個 migration 真跑咗
 - [x] **A2** ✅ `agent.boundary.spec.ts` —— 五個 forbidden import + 正面半(「仲有做緊自己份工」)+ 一個 legal crossing 明文命名
 - [x] **A3** ✅ `tool-registry.spec.ts` `allow-list (A3 / D2)` —— `exposes exactly these tools, in this order, with these approval flags`
 - [x] **A4** ✅ `openai-agents.provider.spec.ts` `tracing is off (A4 / D11 / H4)` —— 🔴 **佢自己處理咗 vacuous-pass**:jest 之下 tracing 本來就係關,所以條 test **先開返佢**再驗關(唔係咁嘅話,拆走 `enforceTracingDisabled()` 都會綠)
@@ -231,7 +231,7 @@ model AgentProposal {
 - [x] **B3** ✅ **2026-08-17 收尾補齊** —— 🔴 **掃嗰陣發現佢只做咗一半**:`claude-tool-runner.provider.spec.ts` 個 `D1` 證咗 **schema identity**(`toBe`),但成個 W46 **冇一條 cross-provider 對照**,而 B3 明文要「兩個 provider 對同一個 tool 呼叫產生**同一個 `AgentStep`**」。補咗 **`agent-runtime.contract.spec.ts`**(7 條,跟 `license-ops.contract.spec.ts` 形狀:reduce 成可比較嘅嘢,**互相比較**而唔係各自對 fixture)
 - [x] **B4** ✅ `tool-registry.spec.ts` `🔴 G3 — the blast-radius limit` 五條
 - [x] **B5** ✅ `kill-switch.service.spec.ts` + `agent-approval.service.spec.ts` `🔴 G3 — approving is gated, rejecting is not`
-- [ ] **B6** 🚧 SSE 喺 DEV 真通 —— **卡兩樣**:DEV 冇 Redis(`ADR-0039 F5`)+ **ACA ingress 對 SSE 嘅行為未驗證兼且改唔到**(`F7` / `R22`)。nginx 嗰層已經配好(`F6`)⇒ 三層之中兩層喺我哋手上
+- [x] **B6** 🟢🟢 **收咗(2026-08-17,部署 #9)** —— 卡住嗰兩樣同日拆晒:**Redis 配咗**(`rediss://…:6380`,key percent-encode)⇒ `POST /agent/runs` 由結構上必然 503 變成真 **201** `{"runId":"cmswylt7c…","status":"running"}`;**ACA ingress 對 SSE 嘅行為亦驗咗**(呢個先係本條真正未知嗰半)—— `GET /agent/runs/{id}/events` → **HTTP 200** · `Content-Type: text/event-stream` · 真收到 `id: 1` + `data: {"runId":"…","type":"changed"}` ⇒ **三層(nginx `F6` / ACA ingress / api)全部通**。🔴 **誠實界線**:嗰個 run 最後 `status: failed`,因為 **DEV 側冇配 `AZURE_OPENAI_*`** ⇒ 本條驗到嘅係「**SSE 管道通、event 推得到 client**」,**唔係**「一個 run 由 `running` 行到 `completed` 全程 SSE 推送」。後者要配咗 Azure OpenAI 先驗得到,而佢唔係本條嘅定義
 - [x] **B7** ✅ `review-stats.service.spec.ts` + `review-stats.controller.spec.ts`,`GET /agent/review-stats`(ADMIN only)
 
 ### 🔴 `B3` 補完之後揾到嘅嘢 —— 一個真 divergence,兩個 provider spec 都睇唔到
