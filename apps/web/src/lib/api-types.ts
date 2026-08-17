@@ -931,6 +931,20 @@ export interface AgentRun {
    */
   profileId?: string | null;
   profile?: AgentRunProfileRef | null;
+  /**
+   * CH-031 / ADR-0040 — an admin took this run off the request card. NOT a
+   * delete: the steps, transcript and proposals below are all still here, which
+   * is why this arrives on a run at all.
+   *
+   * 🔴 Rewritten at the W47 merge, because the original sentence stopped being
+   * true: it said `GET /agent/runs?requestId=` filters these out, and W47 moved
+   * that path onto `GET /agent/runs/latest`. The filter lives there now, and the
+   * global list `GET /agent/runs` filters them out as well (ADR-0040's own
+   * Consequences: "T2-a 個 run list 直接 `hiddenAt: null`").
+   * `GET /agent/runs/{id}` still does NOT filter — that is ADR-0040 D3, and it
+   * is the whole difference between "hidden" and "gone".
+   */
+  hiddenAt?: string | null;
   steps: AgentStep[];
   messages: AgentMessage[];
   proposals: AgentProposal[];

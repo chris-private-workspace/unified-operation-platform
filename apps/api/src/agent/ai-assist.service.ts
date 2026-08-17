@@ -510,6 +510,10 @@ export class AiAssistService {
         status: true,
         startedAt: true,
         endedAt: true,
+        // CH-031 / ADR-0040 D3. Deliberately selected on the path that does NOT
+        // filter on it: the client has to be able to tell a hidden run apart
+        // from a visible one, and this is the endpoint that still returns it.
+        hiddenAt: true,
         startedById: true,
         /**
          * W47 F3-4 — what this run ran on.
@@ -587,6 +591,26 @@ export class AiAssistService {
 
     const rows = await this.prisma.agentRun.findMany({
       where: {
+        /**
+         * 🔴 CH-031 / ADR-0040 — added when W47 merged `main`, and it is the
+         * one line neither branch's tests could have asked for.
+         *
+         * CH-031 put `hiddenAt: null` on `findLatestForRequest` because that
+         * was the only list-shaped read that existed at the time. This endpoint
+         * did not exist on that branch, and `hiddenAt` did not exist on this
+         * one — so a textually clean merge yields a global list that shows
+         * every run an admin has just taken out of the workflow, with BOTH
+         * suites green. The defect lives between the two changes, which is
+         * where this project keeps finding them.
+         *
+         * ADR-0040 wrote the answer down before either side landed, in its own
+         * Consequences: "Tier 2 用得返:`T2-a` 個 run list 直接 `hiddenAt: null`".
+         *
+         * Unconditional, with no `includeHidden` escape hatch: `GET
+         * /agent/runs/:id` is deliberately the way back to a hidden run (D3),
+         * and a flag here would be a second answer to the same question.
+         */
+        hiddenAt: null,
         // 🔴 `is:` — a nullable relation. `AgentRun.requestId` is optional, and
         // a bare `request: { opcoId }` would silently drop every run that has no
         // request at all rather than including it. For a SCOPED user dropping
@@ -647,7 +671,24 @@ export class AiAssistService {
     assertOpcoScope(user, request.opcoId);
 
     const latest = await this.prisma.agentRun.findFirst({
-      where: { requestId },
+      /**
+       * 🔴 CH-031 / ADR-0040 D3 — this read filters on `hiddenAt`, and `getRun`
+       * deliberately does not.
+       *
+       * ⚠️ This said "the ONE read" until W47's global run list merged and
+       * became the second one. Same rule, other endpoint — the asymmetry below
+       * is between LISTS and `getRun`, not between this method and everything
+       * else.
+       *
+       * That asymmetry IS the decision. Hiding a run means "stop putting this
+       * in front of people doing the day job", not "this never happened": the
+       * card stops offering it here, while anyone holding the id can still open
+       * it, and every AgentStep / AgentMessage / AgentProposal underneath is
+       * untouched. A delete would have taken all three with it (their
+       * `onDelete: Cascade`), which is what ADR-0022 D1 refused on the
+       * identical shape.
+       */
+      where: { requestId, hiddenAt: null },
       orderBy: { startedAt: 'desc' },
       select: { id: true },
     });
@@ -694,6 +735,80 @@ export class AiAssistService {
 
     // Status + proposals both moved after the step — see `persistTurn`.
     await this.queue.publishChanged(runId);
+
+    return this.getRun(user, runId);
+  }
+
+  /**
+   * CH-031 / ADR-0040 — take a finished run out of the day-to-day workflow.
+   *
+   * 🔴 This is not a delete, and the whole change turns on that. Deleting the
+   * row cascades `AgentStep`, `AgentMessage` and `AgentProposal` away — the
+   * audit truth, the transcript ADR-0036 D6 keeps forever, and `approvedById`,
+   * i.e. who approved what. ADR-0022 D1 met the identical shape on
+   * `OpcoSkuLedger` and answered it the same way: same effect, one-sided cost.
+   *
+   * 🔴 Terminal-only (D6), and NOT for the reason it looks like. Hiding leaves
+   * `status` alone, so the kill switch still counts a hidden run as live and
+   * cannot report a false `settled`. What the gate stops is quieter: a hidden
+   * run holding a `pending` proposal would leave that proposal in the kill
+   * switch's `pendingProposals` and in the approval queue, waiting on a person
+   * who can no longer see it. So: stop it first, then hide it — the mirror of
+   * `abortRun`'s guard above.
+   */
+  async hideRun(user: AppUser, runId: string) {
+    const run = await this.getRun(user, runId);
+    if (NON_TERMINAL_RUN_STATUSES.includes(run.status as 'running')) {
+      throw new ConflictException(
+        `This run is still ${run.status}; stop it before hiding it`,
+      );
+    }
+    return this.setRunHidden(user, runId, new Date());
+  }
+
+  /**
+   * Put a hidden run back.
+   *
+   * 🔴 Added by ADR-0040 D2 rather than inherited from the change request, and
+   * the reason is the incident that started CH-031: once `hiddenAt` is set,
+   * nothing in the platform could clear it, and the DEV database sits behind a
+   * private endpoint. A one-way switch whose only undo is an infrastructure
+   * ticket is the same problem this change exists to fix.
+   *
+   * No status gate: a run can only have been hidden while terminal, and nothing
+   * moves a terminal run back.
+   */
+  async unhideRun(user: AppUser, runId: string) {
+    await this.getRun(user, runId);
+    return this.setRunHidden(user, runId, null);
+  }
+
+  private async setRunHidden(
+    user: AppUser,
+    runId: string,
+    hiddenAt: Date | null,
+  ) {
+    /**
+     * Audit inside the transaction, `startRun`'s reasoning rather than the
+     * approval path's: nothing irreversible happens here, so if the audit write
+     * fails the visibility change must go back with it. "Hidden but unrecorded"
+     * is the state ADR-0009 exists to prevent.
+     */
+    await this.prisma.$transaction(async (tx) => {
+      await tx.agentRun.update({ where: { id: runId }, data: { hiddenAt } });
+      await this.audit.log(tx, {
+        action: AUDIT_ACTIONS.AGENT_RUN_HIDDEN,
+        targetType: 'AgentRun',
+        targetId: runId,
+        // The human. `actorType` stays at its 'user' default for the reason
+        // AGENT_RUN_STARTED gives: a person really did this.
+        actorId: user.id,
+        // One action for both directions, told apart here — the reasoning
+        // AGENT_PROPOSAL_DECIDED states for approve/reject: splitting them
+        // makes "how often does this get hidden" two queries and a subtraction.
+        metadata: { hidden: hiddenAt !== null },
+      });
+    });
 
     return this.getRun(user, runId);
   }

@@ -152,4 +152,38 @@ export class AgentRunController {
   abort(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.aiAssist.abortRun(user, id);
   }
+
+  /**
+   * CH-031 / ADR-0040 — hide a finished run, or put it back.
+   *
+   * 🔴 `POST …/hide`, not `DELETE`, and the verb is doing real work here (D2).
+   * Nothing is deleted: the row stays, and so do every step, message and
+   * proposal under it. `DELETE` would describe an operation the platform
+   * deliberately refused to build, and a verb is the first thing an API says
+   * about what it does.
+   *
+   * 🔴 ADMIN only (D7) — narrower than this controller's class-level
+   * ADMIN + REGIONAL, and the first method-level override on it. REGIONAL
+   * decides proposals (plan OQ-2), but making a record disappear from other
+   * people's screens is a different kind of power, and it belongs at the level
+   * of the kill switch and the review stats.
+   */
+  @Post(':id/hide')
+  @HttpCode(200)
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Take a finished run out of the request card. Nothing is deleted — GET /agent/runs/{id} still returns it.',
+  })
+  hide(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.aiAssist.hideRun(user, id);
+  }
+
+  @Post(':id/unhide')
+  @HttpCode(200)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Put a hidden run back on the request card.' })
+  unhide(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.aiAssist.unhideRun(user, id);
+  }
 }

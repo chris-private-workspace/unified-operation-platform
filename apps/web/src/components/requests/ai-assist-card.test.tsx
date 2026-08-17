@@ -5,9 +5,11 @@ import { useAgentRun } from '@/hooks/queries';
 import {
   useAbortAgentRun,
   useDecideProposal,
+  useHideAgentRun,
   useStartAgentRun,
 } from '@/hooks/mutations';
-import type { AgentRun } from '@/lib/api-types';
+import { useCurrentUser } from '@/lib/auth/use-current-user';
+import type { AgentRun, Role } from '@/lib/api-types';
 
 /**
  * W46 F8 — the agent card.
@@ -30,14 +32,21 @@ vi.mock('@/hooks/agent-run-events', () => ({ useAgentRunEvents: vi.fn() }));
 vi.mock('@/hooks/mutations', () => ({
   useStartAgentRun: vi.fn(),
   useAbortAgentRun: vi.fn(),
+  useHideAgentRun: vi.fn(),
   useDecideProposal: vi.fn(),
 }));
+// CH-031 — the card asks who is looking before offering Hide (ADR-0040 D7).
+vi.mock('@/lib/auth/use-current-user', () => ({ useCurrentUser: vi.fn() }));
 
 const GUID = '11111111-2222-3333-4444-555555555555';
 
 const start = { mutate: vi.fn(), isPending: false, error: null };
 const abort = { mutate: vi.fn(), isPending: false, error: null };
+const hide = { mutate: vi.fn(), isPending: false, error: null };
 const decide = { mutate: vi.fn(), isPending: false, error: null };
+
+const asRole = (role: Role) =>
+  vi.mocked(useCurrentUser).mockReturnValue({ role } as never);
 
 const RUN = (over: Partial<AgentRun> = {}): AgentRun => ({
   id: 'run-1',
@@ -94,7 +103,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useStartAgentRun).mockReturnValue(start as never);
   vi.mocked(useAbortAgentRun).mockReturnValue(abort as never);
+  vi.mocked(useHideAgentRun).mockReturnValue(hide as never);
   vi.mocked(useDecideProposal).mockReturnValue(decide as never);
+  asRole('ADMIN');
 });
 
 describe('no run yet', () => {
@@ -271,5 +282,65 @@ describe('stopping a run', () => {
 
     expect(screen.queryByText('Approve')).toBeNull();
     expect(screen.queryByText(/normal checks/i)).toBeNull();
+  });
+});
+
+/**
+ * CH-031 / ADR-0040 — hiding a run.
+ *
+ * 🔴 Both gates are mirrored from the server rather than trusted, and both are
+ * asserted here for the same reason the Stop tests above assert their absence:
+ * a control whose only possible outcome is 409 or 403 is worse than no control.
+ */
+describe('CH-031 — hiding a finished run', () => {
+  it.each(['completed', 'failed', 'aborted', 'expired'] as const)(
+    'offers Hide to an admin once the run is %s',
+    (status) => {
+      showRun(RUN({ status, proposals: [] }));
+
+      fireEvent.click(screen.getByText('Hide'));
+      expect(hide.mutate).toHaveBeenCalledWith('run-1');
+    },
+  );
+
+  it.each(['running', 'awaiting_approval', 'approved'] as const)(
+    'offers no Hide while the run is still %s',
+    (status) => {
+      showRun(RUN({ status }));
+
+      // D6: hiding a run that still holds a pending proposal would leave that
+      // proposal in the approval queue with nobody able to see it.
+      expect(screen.queryByText('Hide')).toBeNull();
+    },
+  );
+
+  it.each(['REGIONAL', 'OPCO_IT'] as const)(
+    'offers no Hide to %s, who would be 403d',
+    (role) => {
+      asRole(role);
+      showRun(RUN({ status: 'completed', proposals: [] }));
+
+      expect(screen.queryByText('Hide')).toBeNull();
+    },
+  );
+
+  it('still offers Stop to a non-admin — hiding is the narrower power', () => {
+    asRole('REGIONAL');
+    showRun(RUN({ status: 'running' }));
+
+    // The two are deliberately not the same permission (D7): REGIONAL runs the
+    // agent and decides its proposals, and only ADMIN makes a record vanish.
+    expect(screen.getByText('Stop')).toBeTruthy();
+    expect(screen.queryByText('Hide')).toBeNull();
+  });
+
+  it('surfaces a failed hide instead of swallowing it', () => {
+    vi.mocked(useHideAgentRun).mockReturnValue({
+      ...hide,
+      error: new Error('This run is still running; stop it before hiding it'),
+    } as never);
+    showRun(RUN({ status: 'completed', proposals: [] }));
+
+    expect(screen.getByText(/stop it before hiding it/i)).toBeTruthy();
   });
 });

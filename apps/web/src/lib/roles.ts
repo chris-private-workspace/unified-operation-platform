@@ -107,3 +107,19 @@ export function canOverrideBudget(role: Role | undefined): boolean {
 export function canFullResetLedger(role: Role | undefined): boolean {
   return role === 'ADMIN';
 }
+
+/**
+ * Taking an agent run off the request card is ADMIN-only (CH-031 / ADR-0040
+ * D7), narrower than `canUseAgent` right above it.
+ *
+ * REGIONAL starts runs and decides proposals — that is the agent's day job, and
+ * plan OQ-2 settled it. Making a record vanish from other people's screens is a
+ * different kind of power, and it sits with the kill switch and the review
+ * stats rather than with using the thing.
+ *
+ * Separate predicate for the same reason as the two above: the backend 403 is
+ * the real authority, and this only decides whether the control is offered.
+ */
+export function canHideAgentRun(role: Role | undefined): boolean {
+  return role === 'ADMIN';
+}

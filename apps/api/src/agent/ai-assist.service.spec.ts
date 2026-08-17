@@ -1525,6 +1525,30 @@ describe('AiAssistService', () => {
     });
 
     /**
+     * 🔴 The merge-shaped defect, pinned — CH-031 / ADR-0040 × W47.
+     *
+     * ADR-0040 hid runs from the request card; W47 added a list that answers
+     * "what has this agent been doing" for the whole platform. NEITHER branch
+     * could have written this test, because on each of them one of the two
+     * things did not exist — so a textually clean merge shipped a global list
+     * that showed every hidden run, with both suites green.
+     *
+     * That makes this assertion the only place the rule is stated: hidden means
+     * hidden everywhere that is a LIST. `getRun` stays unfiltered on purpose
+     * (D3) — that asymmetry is the whole difference from a delete.
+     *
+     * Both callers are exercised because the clause is unconditional: a scoped
+     * user with filters is the shape most likely to be rewritten later.
+     */
+    it('never lists hidden runs, for any caller or filter', async () => {
+      await service.listRuns(admin);
+      expect(listArg().where.hiddenAt).toBeNull();
+
+      await service.listRuns(opcoIt, { status: 'running', profileId: 'p1' });
+      expect(listArg().where.hiddenAt).toBeNull();
+    });
+
+    /**
      * 🔴 F4-4 — `runState` may not reach the wire, and a LIST is the easiest
      * place for that to go wrong: nobody reads a list response, so an `include`
      * here would hand out the model's unscrubbed history for every run at once
@@ -1652,6 +1676,222 @@ describe('AiAssistService', () => {
       // Null rather than undefined: "no next page" is an answer the client can
       // read, not a missing field it has to guess the meaning of.
       expect(page.nextCursor).toBeNull();
+    });
+  });
+
+  /**
+   * CH-031 / ADR-0040 — hiding a run.
+   *
+   * The claim under all of these is one sentence: hiding changes what the card
+   * OFFERS and nothing else. Every assertion here is a different way of asking
+   * "and it really did not touch the record".
+   */
+  describe('CH-031 — hideRun / unhideRun', () => {
+    const finished = {
+      id: 'run-1',
+      requestId: 'req-1',
+      status: 'aborted',
+      hiddenAt: null,
+      steps: [],
+      messages: [],
+      proposals: [],
+      request: { opcoId: 'opco-a' },
+    };
+
+    /** The `data` handed to the last `agentRun.update`. */
+    const updateData = () =>
+      (
+        prisma.agentRun.update.mock.calls.at(-1)?.[0] as {
+          data: Record<string, unknown>;
+        }
+      ).data;
+
+    it('sets hiddenAt on a finished run', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(finished);
+
+      await service.hideRun(admin, 'run-1');
+
+      expect(updateData().hiddenAt).toBeInstanceOf(Date);
+    });
+
+    it('clears hiddenAt again', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        ...finished,
+        hiddenAt: new Date(),
+      });
+
+      await service.unhideRun(admin, 'run-1');
+
+      // `null`, not `undefined` — Prisma treats undefined as "leave alone", so
+      // the one-way switch ADR-0040 D2 exists to avoid would come back silently.
+      expect(updateData().hiddenAt).toBeNull();
+    });
+
+    /**
+     * 🔴 The gate, and it is worth saying what it is NOT for. Hiding leaves
+     * `status` alone, so the kill switch still counts a hidden run as live —
+     * there is no false `settled` to prevent. What this stops is a hidden run
+     * holding a `pending` proposal that stays in the approval queue while the
+     * person who would decide it can no longer see it.
+     */
+    it.each(['running', 'awaiting_approval', 'approved'])(
+      'refuses to hide a run that is still %s',
+      async (status) => {
+        prisma.agentRun.findUnique.mockResolvedValue({ ...finished, status });
+
+        await expect(service.hideRun(admin, 'run-1')).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+        expect(prisma.agentRun.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['completed', 'failed', 'aborted', 'expired', 'rejected'])(
+      'allows hiding a run that is %s',
+      async (status) => {
+        prisma.agentRun.findUnique.mockResolvedValue({ ...finished, status });
+
+        await expect(service.hideRun(admin, 'run-1')).resolves.toBeDefined();
+      },
+    );
+
+    it('refuses a run belonging to another OpCo', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        ...finished,
+        request: { opcoId: 'opco-b' },
+      });
+
+      await expect(service.hideRun(opcoIt, 'run-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.unhideRun(opcoIt, 'run-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.agentRun.update).not.toHaveBeenCalled();
+    });
+
+    it('404s on a run that is not there', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(null);
+
+      await expect(service.hideRun(admin, 'nope')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    /**
+     * 🔴🔴 The negative that carries the whole ADR. A delete would have taken
+     * the steps, the transcript and the proposals with it through their
+     * `onDelete: Cascade`. If this ever goes red, the change has quietly become
+     * the thing ADR-0040 refused to build.
+     */
+    it('writes to no table but AgentRun — no step, no message, no proposal', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(finished);
+
+      await service.hideRun(admin, 'run-1');
+
+      expect(prisma.agentStep.create).not.toHaveBeenCalled();
+      expect(prisma.agentMessage.createMany).not.toHaveBeenCalled();
+      expect(prisma.agentProposal.create).not.toHaveBeenCalled();
+      expect(prisma.agentProposal.updateMany).not.toHaveBeenCalled();
+      // And the one write it does make touches exactly one column.
+      expect(Object.keys(updateData())).toEqual(['hiddenAt']);
+    });
+
+    it('records who did it, inside the transaction', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(finished);
+
+      await service.hideRun(admin, 'run-1');
+
+      expect(audit.log).toHaveBeenCalledTimes(1);
+      const entry = audit.log.mock.calls[0][1] as {
+        action: string;
+        targetType: string;
+        targetId: string;
+        actorId: string;
+        metadata: { hidden: boolean };
+        before?: unknown;
+        after?: unknown;
+      };
+      // Hardcoded rather than read back off AUDIT_ACTIONS on both sides: the
+      // tautology CH-023 left behind (code and test drawing the value from the
+      // same place) passes no matter what the value becomes.
+      expect(entry.action).toBe('agent.run_hidden');
+      expect(entry.action).toBe(AUDIT_ACTIONS.AGENT_RUN_HIDDEN);
+      expect(entry.targetType).toBe('AgentRun');
+      expect(entry.targetId).toBe('run-1');
+      expect(entry.actorId).toBe(admin.id);
+      expect(entry.metadata.hidden).toBe(true);
+      // Event-only (D5) — the allow-list stays untouched because nothing
+      // reaches before/after.
+      expect(entry.before).toBeUndefined();
+      expect(entry.after).toBeUndefined();
+      // ADR-0009 D8.1: "hidden but unrecorded" must not be reachable.
+      expect(auditSawOpenTransaction).toBe(true);
+    });
+
+    it('records the other direction as the same action', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        ...finished,
+        hiddenAt: new Date(),
+      });
+
+      await service.unhideRun(admin, 'run-1');
+
+      const entry = audit.log.mock.calls[0][1] as {
+        action: string;
+        metadata: { hidden: boolean };
+      };
+      expect(entry.action).toBe('agent.run_hidden');
+      expect(entry.metadata.hidden).toBe(false);
+    });
+
+    /**
+     * 🔴 D3 — the asymmetry between the two read paths IS the decision, so both
+     * halves are pinned. Filtering both would make hiding a delete in all but
+     * name; filtering neither would make the feature do nothing.
+     */
+    it('drops a hidden run from the card, and keeps it reachable by id', async () => {
+      prisma.request.findUnique.mockResolvedValue({ opcoId: 'opco-a' });
+      prisma.agentRun.findFirst.mockResolvedValue(null);
+
+      const latest = await service.findLatestForRequest(admin, 'req-1');
+
+      expect(latest).toBeNull();
+      const where = (
+        prisma.agentRun.findFirst.mock.calls.at(-1)?.[0] as {
+          where: Record<string, unknown>;
+        }
+      ).where;
+      expect(where).toEqual({ requestId: 'req-1', hiddenAt: null });
+
+      // The other half: getRun does NOT filter, so the id still resolves.
+      prisma.agentRun.findUnique.mockResolvedValue({
+        ...finished,
+        hiddenAt: new Date(),
+      });
+      await expect(service.getRun(admin, 'run-1')).resolves.toMatchObject({
+        id: 'run-1',
+      });
+      expect(
+        (
+          prisma.agentRun.findUnique.mock.calls.at(-1)?.[0] as {
+            where: Record<string, unknown>;
+          }
+        ).where,
+      ).toEqual({ id: 'run-1' });
+    });
+
+    it('returns hiddenAt to the client, so it can tell the two apart', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(finished);
+
+      await service.getRun(admin, 'run-1');
+
+      const select = (
+        prisma.agentRun.findUnique.mock.calls.at(-1)?.[0] as {
+          select: Record<string, unknown>;
+        }
+      ).select;
+      expect(select.hiddenAt).toBe(true);
     });
   });
 });

@@ -11,13 +11,33 @@
 ⚠️ 呢一段之前收尾嗰句寫住「**`main` 同你 working tree 而家係同一件嘢**」——
 **W47 開工之後就唔再成立**。以下係今日嘅真相:
 
-| | `main`(`125ab50`) | working tree(`feat/w47-agent-registry`,tip `b309de0`,**13 個 commit**) |
+| | `main`(CH-031 之後) | 你 working tree(**W47 + `main` merge 咗落嚟**) |
 |---|---|---|
-| test | api **1362 / 92** · web **439 / 43** | api **1410 / 94 suites** · web **453 / 44 files** |
-| agent registry | **冇** —— 一個 agent,seed 出嚟嘅一行 `AgentPrincipal`,冇 CRUD / 冇 UI / 冇得揀 | **有** —— `AgentProfile` + `/agent` 管理頁 + **全域 run 列表** |
+| test | api **1381 / 92** · web **450 / 43,零紅**(W46 merge 嗰陣係 1362 / 439) | api **1430 / 94** · web **464 / 44**(對數 = W47 1410 + CH-031 19 + merge 新加 1) |
+| ADR | 到 **0040**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE · **0040 agent run soft-hide**) | 同左 —— **W47 零新 ADR** |
+| agent module | `src/agent` + `src/agent-approval`,**有 hide / unhide** | 同左 **+ `AgentProfile` registry · `/agent` 管理頁 · 全域 run 列表** |
 | `Textarea` primitive | 冇 | **有**(H6 STOP → Chris 批,`design-system.md §2`) |
-| ADR | 到 **0039** | 到 **0039** —— **W47 零新 ADR**(schema 改動喺已 approve 嘅 plan 範圍內) |
 | root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` | 同左 |
+
+**🟢🟢 CH-031 2026-08-17 亦已 merge(PR #117)—— agent run 而家移除得到,但唔係 `DELETE`。**
+加嘅係 **`POST /agent/runs/:id/hide` + `:id/unhide`**(ADMIN-only · terminal-only)+
+`AgentRun.hiddenAt`,`ADR-0040` Accepted。
+🔴 **要記住嘅係點解唔 delete**:`AgentStep` / `AgentMessage` / `AgentProposal` 三張表喺
+**migration SQL 層面**全部 `ON DELETE CASCADE`,而佢哋就係 audit 真相 ⇒ 刪 run 會帶走
+transcript(推翻 `ADR-0036 D6`)同 `approvedById`(邊個批准過)。
+🟢🟢 **`ADR-0040 D4` 係最重要嗰條**:`review-stats` / `kill-switch` 聚合 `decidedAt` / `status`,
+同 `hiddenAt` **正交** ⇒ **R13 rubber-stamp 監測結構上郁唔到**。
+⚠️ **兩件下手要知**:①**DEV 兩個測試 run 仍然喺度**,要**部署 #10** 先 hide 得到(`G1`/`G2` 未收)
+②`agent.boundary.spec.ts` 個 verb list **仍然冇 `deleteMany`**(BACKLOG `agent-boundary-gaps`)。
+
+🔴🔴 **本機 DB 同 `orca/…/ai-agent` worktree 共用,而佢開緊 W47**(branch
+`feat/w47-agent-registry`;DB 有 `20260817093556_w47_agent_profile`,`AgentRun` 已經有
+`profileId` 欄)⇒ **喺本機 DB 上面絕對唔可以 `prisma migrate dev`** —— 佢見到 drift 會提議
+**reset 成個 DB**,毀咗人哋啲嘢。一律用 **`prisma migrate deploy`**(只 apply pending,永遠唔 reset)。
+⚠️ **W47 merge 之後兩個 migration 都要喺本機 DB**:`20260817090000_ch031_agent_run_hidden_at`
+(CH-031)排喺 `20260817093556_w47_agent_profile`(W47)**之前**,但兩個都係獨立
+`ADD COLUMN`,**次序點都冇所謂** —— `deploy` 只 apply 未 apply 嗰啲,唔會因為「遲咗嚟嘅
+migration 排喺前面」而做任何嘢。
 
 🔴 **「已 merge」唔係睇 PR state 得出嘅** —— W46 十個 commit 逐個 `git merge-base
 --is-ancestor <sha> origin/main` 驗過(CLAUDE.md §9 先例:PR **#87** 顯示 `MERGED`,實際
@@ -59,7 +79,7 @@ enqueue)⇒ **DEV Redis 一早通咗**。
 ⚠️ **機制本身仍然成立,所以留住呢句做知識** —— 冇 Redis = agent **整個停**,同 Azure
 OpenAI 嗰種「少一條 live 驗」唔同級別;但**唔好再當佢係部署前要先解決嘅嘢**。
 
-### W47 `agent-registry` —— 掂 agent 之前要知嘅五件事
+### W47 `agent-registry` —— 掂 agent 之前要知嘅六件事
 
 1. **冇「default profile」呢個概念** —— 一個 active 就用佢;多過一個而冇指名 → **400 兼
    講明有幾多個**;零個 → 400,**唔准 fallback 落 env**。理由:一個畫面上睇唔到嘅 default,
@@ -79,6 +99,15 @@ OpenAI 嗰種「少一條 live 驗」唔同級別;但**唔好再當佢係部署�
 5. **`Textarea` 係新 primitive** —— 用之前讀 `design-system.md §2`;🔴 **`resize-y` 唔可以
    寫成 `resize`**(水平 resize 容許用戶由元件內部把自己拉闊過個 dialog = 打破成個 console
    唯一嗰條 layout 硬規矩,而冇任何一行 code 改動可以賴)。
+6. 🔴🔴 **全域列表 `GET /agent/runs` 過濾 `hiddenAt: null`,而呢一行係 merge 嗰刻先加。**
+   CH-031 把 filter 放咗喺 `findLatestForRequest`,因為嗰陣**得嗰一條 list-shaped read**;
+   W47 加全域列表嗰陣,`hiddenAt` 喺呢條 branch **未存在** ⇒ 兩邊 **auto-merge 得完全乾淨**,
+   而結果係 admin hide 咗嘅 run **照樣列出**,**兩邊 suite 全綠**。
+   📌 **`GET /agent/runs/:id` 仍然唔過濾(ADR-0040 D3)** —— 嗰個唔對稱就係「hidden」同
+   「gone」嘅**全部**分別,唔好順手「修」佢。
+
+⚠️ **merge 之後一定要 `prisma generate`** —— 唔跑就 7 個 api suite 直接開唔到身
+(`hiddenAt` 唔喺 generated type),而錯誤訊息指住 `ai-assist.service.ts` 唔指住 client。
 
 🚧 **W47 淨低三項,而三項係同一件事:一次 DEV 部署**(`F1-6` migration · `F7-2` 列表 ·
 `F7-3` 唔可以睇 revision status 當證據)⇒ merge → 部署 #10 → 驗。

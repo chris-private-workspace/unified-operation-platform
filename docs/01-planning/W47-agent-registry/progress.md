@@ -293,3 +293,60 @@ Dialog 截圖顯示面板半透明、45% scrim 完全唔見,`fullPage` 同 viewp
 | `F1-6` · `F7-2` · `F7-3` | ❌ | **一次 DEV 部署**(merge → 部署 #10 → 驗)。⚠️ **Redis 唔係阻塞**:W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201** ⇒ 一早通咗 |
 | `R28` 一半 | 🔴 未答 | `onDelete: Restrict` 擋到**刪**擋唔到**改** ⇒ `AgentRun.profileId` 答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」。要真答 = `AgentRun` 存 model snapshot = **schema 改動(H1),未開單** |
 | `F5-9` 兩件 | 🚧 唔喺本單 | header primary 掣位置(**`/audit` 一模一樣** ⇒ 既有樣式,唔單方面改)· dark 之下 `IconButton` 對比偏弱(既有 primitive) |
+
+---
+
+## Day 1(merge)— 2026-08-17 · `F8-6` merge `main` 落 branch
+
+開咗 PR #119 之後 GitHub 報 conflict —— `main` 喺 W47 開工之後多咗 **CH-031 / ADR-0040
+agent run soft-hide**,而佢直接掂 agent module。
+
+### 🔴🔴 今日最值錢嗰件:**conflict 唔係最危險嗰半,auto-merge 先係**
+
+5 個 text conflict 全部一眼睇得出點解(兩邊各自加一個 audit action / 各自加一個欄 /
+各自加一條 route)。而**真正嘅缺陷喺一個 merge 得完全乾淨嘅位**:
+
+| | CH-031 嗰邊 | W47 嗰邊 |
+|---|---|---|
+| `hiddenAt` | 加咗,filter 落 `findLatestForRequest` | **唔存在** |
+| 全域 run 列表 | **唔存在**(ADR-0040 Context ⑥ 明文寫住「平台冇全域 run 列表」) | 加咗 |
+
+⇒ merge 之後,admin 撳完 hide 嘅 run **照樣出現喺 `/agent` 全域列表**,而**兩邊 suite 全綠**
+—— 因為每一邊都**唔可能**寫呢條 test:佢要 assert 嘅兩樣嘢,喺每一條 branch 上面都只有一半
+存在。
+
+📌 **同 W46 `B3` 結構上係同一件事** —— 嗰次係「兩個 provider spec 各自都完全正確,因為每個
+都只講自己 ⇒ 『兩個實作一致』呢個 claim,冇一個單一實作嘅 spec 講得到」。今次係
+**兩條 branch**,而唔係兩個實作。
+
+🟢🟢 **而今次唔使自己判斷點做,因為 `ADR-0040` 早就寫低咗答案** —— 佢 Consequences 逐字:
+「Tier 2 用得返:`T2-a` 個 run list 直接 `hiddenAt: null`」,兼且喺 Alternatives 度用「`T2-a`
+會加 run list endpoint」做 reject Option D 嘅理由。**一份寫得夠遠嘅 ADR,可以幫你 resolve
+一個佢寫嗰陣未存在嘅 merge。**
+
+⇒ 加咗 `hiddenAt: null` 落 `listRuns` + 一條 test + **falsification(1 紅零誤傷**,還原後
+100/100 綠**)**,兼更正咗 `findLatestForRequest` 上面「this is the ONE read that filters on
+`hiddenAt`」嗰句 —— merge 之後佢係第二條,唔再係唯一。
+
+### ⚠️ `CLAUDE.md §0` 個 conflict 要特別講,因為佢逼出咗一個做法
+
+BACKLOG 硬規矩 7:**逐行 resolve,永遠唔好 `--ours` / `--theirs`**。但 §0 個 Phase 格
+**成格係一行**(幾千字),`git` 眼中就係「一行 vs 一行」,冇得逐行。
+
+做法:**保留我嗰行,再逐處手動施加 CH-031 兩個改動**(test 數字 + 用 CH-031 段落取代
+「平台今日冇任何路徑刪一個 agent run … 未開單」嗰句)—— 即係「逐行」嘅精神,唔係字面。
+🔴 **收貨標準用負面命中**:舊句**唔再喺檔案入面**,而 CH-031 兩段**在**。單靠正面命中
+證明唔到我冇 revert 咗嘢。
+
+### ⚠️ `prisma generate` —— merge 之後第一件事
+
+唔跑就 **7 個 api suite 直接開唔到身**,而錯誤訊息指住 `ai-assist.service.ts` 嗰幾行
+(`'hiddenAt' does not exist in type 'AgentRunWhereInput'`),**唔指住 client**。
+`restart-stack` skill 早就記低咗(「切 branch / pull 之後最常踩」),而 merge 係同一族。
+
+### 🟢 對數
+
+api **1430 / 94** · web **464 / 44** · lint 0 · build 0。
+**W47 1410 + CH-031 19 + merge 新加 1 = 1430** · **453 + 11 = 464** ⇒ **兩邊冇一條 test
+喺 merge 入面蒸發**。順帶:`permissions.spec.ts.snap` 個順序我 resolve 嗰陣係**猜**嘅
+(route 註冊次序決定),實測啱,唔使 `-u`。
