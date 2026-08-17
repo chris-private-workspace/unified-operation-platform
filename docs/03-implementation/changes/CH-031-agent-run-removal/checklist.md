@@ -1,7 +1,7 @@
 ---
 change_id: CH-031
 derived_from: spec.md §6
-status: in-progress      # 🟢 2026-08-17 ADR-0040 Accepted ⇒ 開工閘過咗
+status: in-progress      # 🟢 2026-08-17 S0–S5 全收(A2 + E3 都真驗咗);淨低 S6 部署 + live、S7 收尾
 ---
 
 # CH-031 — Implementation checklist
@@ -23,9 +23,11 @@ status: in-progress      # 🟢 2026-08-17 ADR-0040 Accepted ⇒ 開工閘過咗
 - [x] **S1-2** migration `20260817090000_ch031_agent_run_hidden_at` → 收 `A1`
   - 🔴 **R3 deviation**:**手寫**唔係 `prisma migrate dev` 生 —— 本機 5433 畀 `ai-doc-extraction-db` 佔住(停佢要 Chris 批),而 `migrate dev` 要 shadow DB。範本逐字跟 `20260728135856_w40_ticket_held_at`(同樣 nullable `DateTime`)。**代價**:未經 Prisma 生成 ⇒ S1-4 真跑之前,唔可以講佢同 schema 對得上
 - [x] **S1-3** SQL 實讀:`ALTER TABLE "AgentRun" ADD COLUMN     "hiddenAt" TIMESTAMP(3);` —— 一行、冇 `UNIQUE`、冇 index、冇 `NOT NULL` → 收 `A1`
-- [ ] **S1-4** 🚧 對真 Postgres 跑;既有 row `hiddenAt` 全 `NULL` → 收 `A2` 本機半
-  - 🔴 **卡住**:`ai-doc-extraction-db` 佔住 5433,**停佢要 Chris 批**,而且佢會自己返嚟搶 port(§9)⇒ 一氣呵成做完
-  - ⚠️ 起 stack 前先刪 `apps/api/*.tsbuildinfo` + `dist/`
+- [x] **S1-4** 對真 Postgres 跑咗(2026-08-17,Chris 批准停 `ai-doc-extraction-db`)→ 收 `A2` 本機半
+  - 🔴🔴 **開工即刻揾到一件事,而佢改變咗點做**:本機 DB **有一個唔喺本 branch 嘅 migration** —— `20260817093556_w47_agent_profile`(`AgentRun` 上面已經有 `profileId` 欄 + index)⇒ **另一個 worktree(`orca/…/ai-agent`)開緊 W47 兼且共用呢個本機 DB**。`prisma migrate status` 實讀:「The migration from the database are not found locally」。
+    ⇒ **絕對唔可以 `prisma migrate dev`**(佢見到 drift 會提議 reset 成個 DB,毀咗人哋啲嘢)。改用 **`prisma migrate deploy`**(設計上只 apply pending、永遠唔 reset)。
+  - **落 DB 對數(唔係睇 CLI 講)**:`information_schema` → `hiddenAt` · `timestamp without time zone` · **nullable YES** · 既有 **3 row / 0 non-null** · `pg_indexes` 見到 `AgentRun` 四個 index(pkey · status+startedAt · requestId · **profileId**),**`hiddenAt` 上面零 index 零 unique**
+  - ⚠️ **起 stack 撞返 §9 個 build-cache 假綠燈**:`verify.ps1` 90s 之後 3100 仍然 FREE 兼 leak watch 得 9(偏少)⇒ 用 SOP 個 discriminator `Test-Path dist\main.js` = **False** ⇒ 刪 `*.tsbuildinfo` + `dist/` 直接起,**10 秒起到**
 
 ## S2 — API
 
@@ -55,9 +57,16 @@ status: in-progress      # 🟢 2026-08-17 ADR-0040 Accepted ⇒ 開工閘過咗
 - [x] **S4-3** `variant="ghost"`,同隔籬 `Stop` 一樣。**核過成張 card 零 `variant="primary"`** → 收 `E4`
 - [x] **S4-4** 跑咗 `ui-design` skill:DS-1 ✅(個掣零 `className`,`button.tsx:14-15` ghost 全 token 零 hex)· DS-3 ✅ · DS-7/9/10 ✅ · DS-5/6/8/11/12 N/A · **DS-4 見 S4-5**
 - [x] **S4-5a** web UI test 5 組 14 條(4 個 terminal status 有掣 · 3 個 non-terminal 冇 · REGIONAL/OPCO_IT 冇 · **REGIONAL 有 Stop 冇 Hide** · error 顯示);falsification 拆走 role check ⇒ **2 紅 / 23 綠**,紅嗰兩條正正係 RBAC
-- [ ] **S4-5b** 🚧 **light + dark 真 render**,零橫向溢出 → 收 `E3`
-  - 🔴 **卡住**:同 S1-4 —— 要起 stack,要 5433
-  - ⚠️ 跑 full web suite 前**停 dev server**(§9)
+- [x] **S4-5b** **light + dark 真 render 做咗**(2026-08-17)→ 收 `E3`
+  - 用 **`apps/web/scripts/render-check.mjs`**(W46 `A13` committed 嗰個),唔係即興搵個 browser
+  - 🟢 **影咗兩組,前後對照就係 D6 個閘**:
+    - **before**(最新 run = `awaiting_approval`)⇒ 卡入面 `AI Assist` / **`Stop`**,**冇 `Hide`**
+    - **after**(真 API abort ⇒ `aborted`)⇒ `AI Assist` / **`Stopped`** badge / **`Hide`**,**冇 `Stop`**
+  - 🟢 **token swap 真發生**(唔係加 class,係撳個 toggle):`bg` `#f5f5f6` → `#08080a` · `fg` `#131317` → `#f3f3f5` · `card` `#ffffff` → `#141417` · `accent` `#E60027` → `#ff3355`
+  - 🟢 **`overflowsX: false` 兩個 theme**,`scrollWidth == clientWidth == 1440`
+  - 🟢 **真眼睇過兩張圖**(唔淨係睇 innerText —— CH-030 教訓「字喺唔喺度」同「佢喺邊」係兩件事):`Hide` 同 `Stopped` badge 並排、垂直對齊、dark 之下 `text-fg-muted` 喺深色卡上清晰
+  - 🔴 **H4**:兩組截圖含真 UPN(`chris.lai@rapo.com.hk`)⇒ **驗完即刪**,render script header 自己都咁要求
+  - ⚠️ **測試資料改動已還原**:abort 之前 SELECT 過每一個會寫嘅欄(§9 CH-030 教訓),還原後 `awaiting_approval` / `endedAt` NULL / **6 steps** 逐字對返;唯一 proposal 全程冇變(佢一早 `failed`,冇 pending);為登入而 seed 嘅 `admin@uop.local` 已刪(⚠️ seed 順帶 upsert 咗 24 OpCo + 2 個既有 user,值同原本一樣)
 
 ## S5 — Gate
 

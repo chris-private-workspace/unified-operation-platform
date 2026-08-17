@@ -270,45 +270,47 @@ apps/api/src/fulfilment/fulfilment.controller.ts:91  @Delete(':id/line-items/:li
 
 ### A — Schema / migration
 
-- [ ] **A1** `AgentRun.hiddenAt DateTime?` 落 schema;migration SQL **實讀**係一行 `ADD COLUMN`,**冇 `UNIQUE`、冇 index、冇 `NOT NULL`**(跟 ADR-0035 先例親自核 SQL,唔靠 Prisma 講)
-- [ ] **A2** migration 對**真 Postgres** 跑過(本機 + DEV 各一次);既有 run row `hiddenAt` 全部 `NULL`
+- [x] **A1** `AgentRun.hiddenAt DateTime?` 落 schema;migration SQL **實讀** = `ALTER TABLE "AgentRun" ADD COLUMN     "hiddenAt" TIMESTAMP(3);` —— 一行、**冇 `UNIQUE`、冇 index、冇 `NOT NULL`**
+- [x] **A2** 本機真 Postgres 跑咗(`prisma migrate deploy`,**唔用 `migrate dev`** —— 原因見 checklist S1-4);`information_schema` 對數:nullable **YES** · 既有 **3 row / 0 non-null** · `pg_indexes` 證 `hiddenAt` 上面**零 index 零 unique**。🚧 **DEV 半邊等部署 #10**
 
 ### B — API 行為
 
-- [ ] **B1** `POST /agent/runs/:id/hide` → 200,`hiddenAt` 由 `NULL` 變有值;`POST :id/unhide` → 200,變返 `NULL`
-- [ ] **B2** **terminal-only 閘**(ADR-0040 D6):對一個 `running` / `awaiting_approval` / `approved` 嘅 run 撳 hide → **409**,訊息講得出點解(對稱於 `abortRun:455-459`)
-- [ ] **B3** **`GET /agent/runs/:id` 對 hidden run 照樣 200**(D3 —— hidden ≠ 消失)
-- [ ] **B4** `GET /agent/runs?requestId=` **唔再返**個 hidden run;若嗰張 request 只得佢一個 ⇒ 返 `null`
-- [ ] **B5** OpCo scope:唔屬自己 OpCo 嘅 run,hide / unhide **都郁唔到**(行返 `getRun` 條路)
-- [ ] **B6** RBAC:**REGIONAL 撳 hide → 403**(D7 收窄);ADMIN → 200。⚠️ 兩條新 route 會郁 `permissions.spec.ts.snap`(§2.7),snapshot 要更新**兼且逐行睇過**
+- [x] **B1** `POST /agent/runs/:id/hide` → `hiddenAt` 由 `NULL` 變 `Date`;`:id/unhide` → 變返 **`null`**(唔係 `undefined` —— Prisma 當 `undefined` 係「唔好郁」,咁就會靜靜變返單向掣)
+- [x] **B2** **terminal-only 閘**(D6):`running` / `awaiting_approval` / `approved` 三個 status 逐個 → `ConflictException` **兼且 `agentRun.update` 完全冇被叫**;`completed` / `failed` / `aborted` / `expired` / `rejected` 五個 → 過
+- [x] **B3** **`GET /agent/runs/:id` 對 hidden run 照樣返** —— assert 個 `where` 係 `{ id }` 冇 `hiddenAt`
+- [x] **B4** `GET /agent/runs?requestId=` 個 `where` **逐字 = `{ requestId, hiddenAt: null }`**;冇其他 run ⇒ 返 `null`
+- [x] **B5** OpCo scope:hide / unhide **兩個都** `ForbiddenException` 兼 `update` 冇被叫;唔存在 → `NotFoundException`
+- [x] **B6** RBAC:唔靠 controller unit test,靠 **`permissions.spec.ts.snap` derive 出嚟嘅矩陣**(佢由 `@Roles` 真 derive)—— diff **`2 insertions, 0 deletions`,兩行都 `→ roles [ADMIN]`**;前端側 REGIONAL / OPCO_IT 見唔到個掣(有 test + falsification)
 
 ### C — 🔴 最重要嗰組:證明 R13 同 kill switch 冇被影響(ADR-0040 D4)
 
-- [ ] **C1** 一個 run 下面有 decided proposal,hide 佢前後 **`GET /agent/review-stats` 回應逐字一樣**(唔係「差唔多」)
-- [ ] **C2** hide 一個 terminal run **唔會**令 `kill-switch.settled` 由 `false` 變 `true`
-- [ ] **C3** **Falsification 真跑真紅**:喺 `review-stats.service.ts` 個 `where` 硬加一句 `hiddenAt: null` ⇒ C1 **必須紅**。⚠️ **紅完要還原**,而且要記低紅咗幾多條 / 有冇誤傷(§9 慣例)
-- [ ] **C4** `agent.boundary.spec.ts` 加 `writersOf('agentRun')` 之後,**故意喺第二個檔案加一句 `prisma.agentRun.update(...)` 要令佢真紅**(D8 —— 唔驗就唔知個新守衛係咪空轉)
+- [x] **C1** `review-stats` 兩個 query 個 `where` **永遠唔提 `hiddenAt`、唔提 `run`**。🔴 **刻意 assert query 唔 assert 數字** —— 數字可以啱得好彩,一個從來冇提過嗰個欄嘅 `where` **結構上濾唔到**。順帶用 `JSON.stringify(...).not.toContain('hidden')` 兜住 nested 寫法(BUG-011 教訓:`toHaveProperty(key)` 對 `undefined` 一樣 pass)
+- [x] **C2** `kill-switch` 嗰條**本身就係 exact-match `toHaveBeenCalledWith`** ⇒ 加 `hiddenAt` 落去佢自己會紅。**冇重複寫一條**,補咗註釋標明佢而家兼任 D4 守衛(寫多一條係重複,唔係嚴謹)
+- [x] **C3** **Falsification 真跑真紅零誤傷**:`review-stats` `where` 加 `run: { hiddenAt: null }` ⇒ **1 紅 / 13 綠**,紅嗰條 = `never filters on whether the run was hidden (ADR-0040 D4)`。已還原(`git diff` 證 `review-stats.service.ts` 零 diff)
+- [x] **C4** `agent.boundary.spec.ts` 加咗 `writersOf('agentRun')`;喺 `kill-switch.service.ts` 加一個**真** `agentRun.update` writer(唔用註釋 —— 個 check 係文字比對,註釋會假紅)⇒ **1 紅 / 16 綠**。已還原(零 diff)
+- [x] **C5** 🆕 額外一條:hide **只寫 `AgentRun` 一張表**(`agentStep` / `agentMessage` / `agentProposal` 四個 writer 全部 `not.toHaveBeenCalled`)**兼且只寫一個欄**(`Object.keys(updateData())` 逐字 `['hiddenAt']`)—— 呢條就係「佢冇變成 delete」嘅結構證明
+- [x] **C6** 🆕 第三個 falsification:拆走 `findLatestForRequest` 個 `hiddenAt: null`(即本單核心功能)⇒ **1 紅 / 78 綠**
 
 ### D — Audit
 
-- [ ] **D1** hide / unhide 各寫一條 `AuditLog`,action `agent.run_hidden`,`targetType: 'AgentRun'`,`before`/`after` **空**
-- [ ] **D2** `/admin/audit` 篩得到佢(同 `AGENT_KILL_SWITCH_SET` 一樣行得通)
-- [ ] **D3** audit 寫入同主操作**同一個 `$transaction`**(ADR-0009 D8.1 先例;⚠️ 注意 ADR-0011 D6 係刻意相反嘅**例外**,本單唔屬嗰種)
+- [x] **D1** hide / unhide 各寫一條,action **hardcode assert `'agent.run_hidden'`** 兼 assert `=== AUDIT_ACTIONS.AGENT_RUN_HIDDEN`(兩條夾埋先有意義 —— 淨係後者係 CH-023 嗰種 tautology,code 同 test 由同一個地方攞值);`targetType: 'AgentRun'` · `actorId` = 撳嘅人 · `metadata.hidden` 分開兩個方向 · `before`/`after` **`toBeUndefined`**
+- [x] **D2** 唔使改 `/admin/audit` —— 佢照 `action` / `targetType` / `targetId` 篩,而 **`'AgentRun'` 一早喺 `AuditTargetType`**(`audit-fields.ts:200`)⇒ 加一條 action 就夠,零 allow-list 改動
+- [x] **D3** audit 同主操作**同一個 `$transaction`** —— 用既有 `auditSawOpenTransaction` flag 驗(佢分得出「transaction 開住嗰陣寫」同「閂咗之後寫」,單純 assert `audit.log` 被叫過係捉唔到嘅)
 
 ### E — 前端(H6)
 
-- [ ] **E1** `ai-assist-card.tsx` 有 hide 入口,**ADMIN 先見到**(對齊 D7)
-- [ ] **E2** hidden 之後張卡消失 / 變空態,**唔會留低一個壞掉嘅 loading**
-- [ ] **E3** **light + dark 真 render**,零橫向溢出,token 兩個 theme 真 swap(唔 eyeball)
-- [ ] **E4** 一個 view **一個** primary action —— ⚠️ 張卡已經有 Approve / Reject / Stop,**hide 一定唔可以做 primary**
+- [x] **E1** `Hide` 掣,**ADMIN 先見到**(新 `canHideAgentRun`);REGIONAL / OPCO_IT 見唔到,而 **REGIONAL 仍然見到 `Stop`** —— 呢條係關鍵,佢證兩個權限真係分開咗
+- [x] **E2** hide 成功 ⇒ invalidate ⇒ 服務端濾走 ⇒ 卡返 EmptyState;hide 失敗會出喺既有 error div(有 test)
+- [x] **E3** **light + dark 真 render 做咗**(`render-check.mjs`)—— token 真 swap(`#f5f5f6`→`#08080a` · accent `#E60027`→`#ff3355`)· **`overflowsX: false` 兩個 theme** · **前後對照證咗 D6 個閘**(before 有 `Stop` 冇 `Hide`,after 有 `Stopped`+`Hide` 冇 `Stop`)· **真眼睇過兩張圖**唔淨係睇 innerText
+- [x] **E4** `variant="ghost"`;核過成張 card **零 `variant="primary"`**
 
 ### F — Gate
 
-- [ ] **F1** root `npm test` exit 0(api + web 兩個 workspace,**零紅**;基線 api 1362/92 · web 439/43)
-- [ ] **F2** root `npm run build` + tsc 兩邊 0 + lint 0
-- [ ] **F3** `ADR-0040` 由 `Proposed` → **`Accepted`**,`docs/adr/README.md` 同步
+- [x] **F1** root `npm test` **exit 0** —— api **1381 / 92**(基線 1362)· web **450 / 43**(基線 439),兩邊零紅
+- [x] **F2** root `npm run build` **exit 0** · root `npm run lint` **exit 0** · api `tsc --noEmit` **exit 0**
+- [x] **F3** `ADR-0040` **`Accepted`**(Chris 2026-08-17),`docs/adr/README.md` 同步
 
-### G — Live
+### G — Live(🚧 等部署 #10)
 
 - [ ] **G1** DEV 兩個測試 run **真係唔再喺 request detail 出現**,而 `GET /agent/runs/:id` **仍然攞得返**(兩邊都要驗 —— 只驗一邊證唔到 D3)
 - [ ] **G2** 收貨標準係**落 DB / 落 API 對數,唔係睇 HTTP 200**(§9 `A14` 先例)
