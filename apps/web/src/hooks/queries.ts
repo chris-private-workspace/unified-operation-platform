@@ -5,8 +5,10 @@ import type {
   AdminOpco,
   AdminUser,
   AgentKillSwitchStatus,
+  AgentProfile,
   AgentReviewStats,
   AgentRun,
+  AgentRunPage,
   AuditFilters,
   AuditPage,
   ConnectorStatus,
@@ -27,6 +29,10 @@ import type {
 } from '@/lib/api-types';
 import { getLocalProfile } from '@/lib/auth/local-profile';
 import { auditQueryString } from '@/lib/audit';
+import {
+  agentRunsQueryString,
+  type AgentRunFilters,
+} from '@/lib/agent-registry';
 
 // A 403 (OPCO_IT hitting a tenant-admin surface) is authoritative — never retry
 // it; still retry transient failures a couple of times.
@@ -345,5 +351,39 @@ export function useAgentRun(requestId: string | undefined) {
       // run" and returns a paged summary rather than one full run.
       apiGet<AgentRun | null>(`/agent/runs/latest?requestId=${requestId}`),
     enabled: Boolean(requestId),
+  });
+}
+
+/**
+ * W47 F5 — every agent profile, retired ones included.
+ *
+ * `includeInactive=true` because this is the screen that MANAGES them: a retired
+ * profile that vanishes from the only page that could bring it back is a profile
+ * nobody can un-retire. The run list beside it still shows retired profiles by
+ * name, since historical runs point at them.
+ */
+export function useAgentProfiles() {
+  return useQuery({
+    queryKey: ['agent', 'profiles'],
+    queryFn: () =>
+      apiGet<AgentProfile[]>('/agent/profiles?includeInactive=true'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * W47 F5 — the global run list, cursor-paged.
+ *
+ * ⚠️ The filters are part of the query key, so each combination caches
+ * separately — including `cursor`. That is what makes paging back and forth
+ * instant rather than refetching, and it is the same convention `useAuditLog`
+ * uses for its offset.
+ */
+export function useAgentRuns(filters: AgentRunFilters) {
+  return useQuery({
+    queryKey: ['agent', 'runs', 'all', filters],
+    queryFn: () =>
+      apiGet<AgentRunPage>(`/agent/runs${agentRunsQueryString(filters)}`),
+    retry: retryUnless403,
   });
 }

@@ -15,6 +15,7 @@ import { Drift } from '@/pages/drift';
 import { Assets } from '@/pages/assets';
 import { Audit } from '@/pages/audit';
 import { OutboundFailures } from '@/pages/outbound-failures';
+import { Agent } from '@/pages/agent';
 import { NEW_REQUEST_ENABLED } from '@/lib/features';
 
 // One route per screen (design-system.md §3.2). FE-1 → Overview + SKU Catalog;
@@ -58,6 +59,10 @@ export const router = createBrowserRouter([
       // W31 F4 — outbound delivery failure queue (ADR-0011). ADMIN + REGIONAL
       // at the backend; sidebar-gated by canRepairOutbound.
       { path: 'outbound-failures', element: <OutboundFailures /> },
+      // W47 F5 — the agent registry (Tier 2 `T2-a`, plan OQ-B: its own route
+      // rather than a Settings tab, because the run list does not fit a tab).
+      // ADMIN-only at the backend; sidebar-gated by canManageAgentProfiles.
+      { path: 'agent', element: <Agent /> },
       { path: 'settings', element: <Settings /> },
     ],
   },

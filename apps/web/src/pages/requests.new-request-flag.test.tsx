@@ -31,6 +31,10 @@ vi.mock('@/hooks/queries', () => ({
   useTenantSkus: vi.fn(),
   useTenantSkuStats: vi.fn(),
   useRequest: vi.fn(),
+  // W47 — the agent registry screen, pulled in by the router for the same
+  // reason as the rest of this list. Declared, never rendered here.
+  useAgentProfiles: vi.fn(),
+  useAgentRuns: vi.fn(),
 }));
 
 /**
@@ -40,7 +44,20 @@ vi.mock('@/hooks/queries', () => ({
  * the app. Loading it for the button assertion too pushed that test past the
  * 5s timeout under a full parallel run — it passed in isolation, which is the
  * worst way for a test to be too slow.
+ *
+ * 🔴 W47 — that happened AGAIN, and the second time says something the first
+ * did not: this cost is not a one-off, it grows with the app. Adding `/agent`
+ * to the router was enough to push the two `loadRouter` tests over 5s under a
+ * parallel run (1.5s in isolation), because every screen the router names is
+ * imported before the route table can be read.
+ *
+ * So the two loader tests carry an explicit timeout rather than relying on the
+ * default. Splitting the loaders bought margin once; a per-test budget is what
+ * stops the NEXT screen from doing this a third time — and the failure mode
+ * being avoided is the expensive one: green in isolation, red in CI, blamed on
+ * whichever change happened to be last.
  */
+const ROUTER_LOAD_TIMEOUT_MS = 20_000;
 function setFlag(enabled: boolean) {
   vi.resetModules();
   vi.doMock('@/lib/features', () => ({ NEW_REQUEST_ENABLED: enabled }));
@@ -85,7 +102,7 @@ describe('New request — parked (flag off)', () => {
     // `replace` keeps the parked URL out of history, so Back does not bounce
     // the operator straight into another redirect.
     expect(route.element.props.replace).toBe(true);
-  });
+  }, ROUTER_LOAD_TIMEOUT_MS);
 });
 
 describe('New request — restored (flag on)', () => {
@@ -103,5 +120,5 @@ describe('New request — restored (flag on)', () => {
     // Named rather than compared by identity: `resetModules` means the imported
     // NewRequest here would be a different module instance than the router's.
     expect(route.element.type.name).toBe('NewRequest');
-  });
+  }, ROUTER_LOAD_TIMEOUT_MS);
 });

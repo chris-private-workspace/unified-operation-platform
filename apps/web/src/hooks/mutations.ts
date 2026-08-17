@@ -4,6 +4,7 @@ import type {
   AddLineItemBody,
   AdminUser,
   AgentKillSwitchStatus,
+  AgentProfile,
   AgentRun,
   AllocationResetBody,
   AllocationResetResult,
@@ -192,6 +193,47 @@ export function useAbortAgentRun(requestId: string) {
       apiPost<AgentRun>(`/agent/runs/${runId}/abort`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: agentRunKey(requestId) });
+    },
+  });
+}
+
+/* ── W47 F5 — the agent registry ─────────────────────────────
+ *
+ * Both invalidate the profile list AND the global run list. The second one is
+ * not defensive tidying: the run list renders `profile.name`, so renaming a
+ * profile without it leaves the table showing a name that no longer exists
+ * anywhere — the sort of small lie that makes somebody doubt the whole screen.
+ */
+
+const agentProfilesKey = ['agent', 'profiles'];
+
+export interface AgentProfileBody {
+  name?: string;
+  model?: string;
+  /** Omit to leave the built-in instructions in place. ⚠️ Audited before/after. */
+  prompt?: string | null;
+  active?: boolean;
+}
+
+export function useCreateAgentProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AgentProfileBody) =>
+      apiPost<AgentProfile>('/agent/profiles', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentProfilesKey });
+    },
+  });
+}
+
+export function useUpdateAgentProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: AgentProfileBody }) =>
+      apiPatch<AgentProfile>(`/agent/profiles/${vars.id}`, vars.body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentProfilesKey });
+      qc.invalidateQueries({ queryKey: ['agent', 'runs', 'all'] });
     },
   });
 }
