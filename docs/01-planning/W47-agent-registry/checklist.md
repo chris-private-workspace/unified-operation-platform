@@ -1,6 +1,6 @@
 # W47 — Agent Registry · Checklist
 
-> 由 `plan.md` derive。**plan `status: draft` ⇒ 未 approve 之前唔勾任何實作項**(PROCESS R1)。
+> 由 `plan.md` derive。🟢 **plan `status: active`(Chris 2026-08-17 approve,四條 OQ 全答)**。
 > 每項做完即勾 + 寫 `progress.md` Day-N(R2)。
 
 ## `F0` — 開工前(唔使 approve 都做得)
@@ -8,7 +8,7 @@
 - [x] F0-1 掃 phase 號 —— `git fetch --all` + 掃晒所有 remote branch(PROCESS §2.1,有兩個 W36 撞過嘅實例)⇒ 最大 **W46**,揀 **W47**
 - [x] F0-2 由 `origin/main` 開 `feat/w47-agent-registry`(`125ab50`,已含部署 #9 / #9b)
 - [x] F0-3 確認 W46 前置真收 —— `A1`(container log `25 migrations found` → 三個 W46 migration 逐個 applied)· `B6`(`POST /agent/runs` **201** + SSE **200** `text/event-stream`)· DEV OpenAPI 三個 agent path 都喺
-- [ ] F0-4 🟡 **等 owner 答 `OQ-A` / `OQ-B` / `OQ-C` / `OQ-D`** + plan `draft → active`
+- [x] F0-4 🟢 **四條 OQ 2026-08-17 全部答齊,plan `draft → active`** —— `OQ-A` ADMIN only · `OQ-B` 獨立 route `/agent` · `OQ-C` 改 prompt 入 audit · `OQ-D` 舊 run 顯示「(W47 之前)」唔隱藏
 
 ## `F1` — `AgentProfile` model + migration(H1)
 

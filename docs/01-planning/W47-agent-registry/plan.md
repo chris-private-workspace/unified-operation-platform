@@ -4,7 +4,7 @@ name: "Agent Registry — 多 profile + 揀 agent + run 列表(Tier 2 第一塊)
 sprint_week: W47
 start_date: 2026-08-17
 end_date: 2026-08-19          # planned, may slip with changelog log
-status: draft                 # draft | active | closed
+status: active                # draft | active | closed
 spec_refs:
   - docs/02-architecture/agent-tier2-scope.md §3 G1 / §4 T2-a / §5.4
   - docs/adr/0036-*.md(D1 / D4 / D0)
@@ -15,7 +15,7 @@ prior_phase: W46-agent-runtime
 
 > **Plan version**:1.0(initial)
 > **Owner**:Chris Lai
-> **Approved by**:_(等 approve;approve 之前唔寫 code —— PROCESS R1)_
+> **Approved by**:**Chris Lai(2026-08-17)** —— 四條 OQ 全部照建議拍板,plan `draft → active`
 > **決策來源**:`docs/02-architecture/agent-tier2-scope.md`(scope approved 2026-08-17)
 
 ---
@@ -179,14 +179,14 @@ model AgentProfile {
 
 ---
 
-## 7. Open Questions(要 owner 答,答案改設計)
+## 7. Open Questions —— 🟢 **四條 2026-08-17 全部答齊(Chris)**
 
-| # | 問題 | 影響 | 暫定 |
+| # | 問題 | **決定** | 影響 |
 |---|---|---|---|
-| **OQ-A** | 邊個可以**建立 / 改** profile?ADMIN only 定 REGIONAL 都得? | F2 權限 + W28 drift test | **ADMIN only**(收窄易、放寬難) |
-| **OQ-B** | 管理 UI 係**獨立 route** 定擴 `Settings › AI agent` tab? | F5 形狀 + nav | **獨立 route `/agent`** |
-| **OQ-C** | 改 `prompt` 要唔要入 audit? | `R1` 嘅第一道 mitigation | **要**(跟 ADR-0013 `ConnectorConfig` 先例) |
-| **OQ-D** | 舊 run(`profileId = null`)喺列表點顯示? | F5 | 顯示「(W47 之前)」,**唔隱藏** |
+| **OQ-A** | 邊個可以**建立 / 改** profile? | 🟢 **ADMIN only** | F2 `@Roles(ADMIN)` + W28 drift test 要認得。**收窄易、放寬難**,所以由窄嗰邊開始 |
+| **OQ-B** | 管理 UI 獨立 route 定擴 Settings tab? | 🟢 **獨立 route `/agent`** | `R-A` 要嘅係「一系列頁面」,而 run 列表塞唔落一個 tab。⚠️ 新 nav entry ⇒ H6 要跑 `ui-design` |
+| **OQ-C** | 改 `prompt` 要唔要入 audit? | 🟢 **要** | `R1` 第一道 mitigation,跟 ADR-0013 `ConnectorConfig` 先例。⚠️ **`audit-fields.ts` 個 whitelist 要記得加**(BACKLOG 有一條既有 gap 就係漏咗加欄) |
+| **OQ-D** | 舊 run(`profileId = null`)點顯示? | 🟢 顯示「(W47 之前)」,**唔隱藏** | 隱藏就會令「W47 之前有幾多 run」變成一個答唔到嘅問題,而佢正正係新列表最容易被信錯嗰個數 |
 
 ---
 

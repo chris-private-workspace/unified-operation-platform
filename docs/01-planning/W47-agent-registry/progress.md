@@ -66,10 +66,17 @@ Chris 2026-08-17 揀 **B**。點解值得寫落 progress:`AgentPrincipal` **自�
 code** ⇒ 最壞情況係 agent 亂噏,**做唔到未授權嘅嘢** ③plan 明文標記呢個係唯一一個
 咁樣嘅位,唔好將來靜靜多幾個。
 
-### 🚧 等 approve —— 四條 OQ
+### 🟢 四條 OQ 同日答齊,plan `draft → active`
 
-`OQ-A` 邊個可以改 profile(暫定 ADMIN only)· `OQ-B` 獨立 route 定 Settings tab
-(建議獨立)· `OQ-C` 改 prompt 入唔入 audit(建議入)· `OQ-D` 舊 run 點顯示
-(建議顯示「(W47 之前)」唔隱藏)。
+| | 決定 | 一句理由 |
+|---|---|---|
+| `OQ-A` | **ADMIN only** | 收窄易、放寬難 ⇒ 由窄嗰邊開始 |
+| `OQ-B` | **獨立 route `/agent`** | `R-A` 要嘅係「一系列頁面」,而 run 列表塞唔落一個 tab |
+| `OQ-C` | 改 prompt **入 audit** | `R1` 第一道 mitigation,跟 ADR-0013 `ConnectorConfig` 先例 |
+| `OQ-D` | 舊 run **顯示唔隱藏** | 隱藏會令「W47 之前有幾多 run」變成答唔到嘅問題,而佢正正係新列表最易被信錯嗰個數 |
 
-**plan `status: draft` ⇒ 一行 code 都未寫**(PROCESS R1)。
+⚠️ **`OQ-C` 有一個容易漏嘅連帶動作**:`audit-fields.ts` 個 whitelist 要記得加新欄 ——
+BACKLOG 有一條既有 gap 就係嗰個 whitelist 漏咗 `licenseOpsProvider` / `ticketUpdateProvider`
+等,結果係「改咗 seam provider 唔會出現喺 audit `before`/`after`」。**同一個坑唔好再踩。**
+
+⇒ **開工。**
