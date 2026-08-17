@@ -13,10 +13,27 @@
 
 | | `main`(= 你 working tree) |
 |---|---|
-| test | api **1362 / 92 suites** · web **439 / 43 files,零紅** |
-| ADR | 到 **0039**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE) |
+| test | api **1381 / 92 suites** · web **450 / 43 files,零紅**(CH-031 之後;W46 merge 嗰陣係 1362 / 439) |
+| ADR | 到 **0040**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE · **0040 agent run soft-hide**) |
 | agent module | **有** —— `src/agent` + `src/agent-approval` |
 | root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` |
+| tip | `d9be623`(PR #117 merge commit) |
+
+**🟢🟢 CH-031 2026-08-17 亦已 merge(PR #117)—— agent run 而家移除得到,但唔係 `DELETE`。**
+加嘅係 **`POST /agent/runs/:id/hide` + `:id/unhide`**(ADMIN-only · terminal-only)+
+`AgentRun.hiddenAt`,`ADR-0040` Accepted。
+🔴 **要記住嘅係點解唔 delete**:`AgentStep` / `AgentMessage` / `AgentProposal` 三張表喺
+**migration SQL 層面**全部 `ON DELETE CASCADE`,而佢哋就係 audit 真相 ⇒ 刪 run 會帶走
+transcript(推翻 `ADR-0036 D6`)同 `approvedById`(邊個批准過)。
+🟢🟢 **`ADR-0040 D4` 係最重要嗰條**:`review-stats` / `kill-switch` 聚合 `decidedAt` / `status`,
+同 `hiddenAt` **正交** ⇒ **R13 rubber-stamp 監測結構上郁唔到**。
+⚠️ **兩件下手要知**:①**DEV 兩個測試 run 仍然喺度**,要**部署 #10** 先 hide 得到(`G1`/`G2` 未收)
+②`agent.boundary.spec.ts` 個 verb list **仍然冇 `deleteMany`**(BACKLOG `agent-boundary-gaps`)。
+
+🔴🔴 **本機 DB 同 `orca/…/ai-agent` worktree 共用,而佢開緊 W47**(branch
+`feat/w47-agent-registry`;DB 有 `20260817093556_w47_agent_profile`,`AgentRun` 已經有
+`profileId` 欄)⇒ **喺本機 DB 上面絕對唔可以 `prisma migrate dev`** —— 佢見到 drift 會提議
+**reset 成個 DB**,毀咗人哋啲嘢。一律用 **`prisma migrate deploy`**(只 apply pending,永遠唔 reset)。
 
 🔴 **「已 merge」唔係睇 PR state 得出嘅** —— 十個 commit 逐個 `git merge-base --is-ancestor
 <sha> origin/main` 驗過(CLAUDE.md §9 先例:PR **#87** 顯示 `MERGED`,實際只入咗 6 個入面
