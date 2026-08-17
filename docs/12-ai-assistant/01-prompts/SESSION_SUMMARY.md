@@ -7,17 +7,24 @@
 
 ## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17 · W47 收尾後)**
 
-**🟢 W47 `agent-registry`(Tier 2 `T2-a`)code 側做晒,但 🔴 仲喺 branch —— `main` 上面冇。**
-⚠️ 呢一段之前收尾嗰句寫住「**`main` 同你 working tree 而家係同一件嘢**」——
-**W47 開工之後就唔再成立**。以下係今日嘅真相:
+**🟢🟢 W47 `agent-registry`(Tier 2 `T2-a`)2026-08-17 已經 merge 落 `main`(PR #119),
+branch 兩邊都刪咗。**
+⚠️ 呢一段一日之內錯過兩次,所以兩句都寫低:先寫「`main` 同你 working tree 係同一件嘢」
+(W47 一開工就唔啱),後寫「W47 仲喺 branch,`main` 上面冇」(merge 咗就唔啱)。
+🔴 **「已 merge」係逐個驗出嚟嘅**:17 個 commit 全部 `git merge-base --is-ancestor` = `IN`,
+兼且 `origin/main..branch` **未入數 = 0**。
 
-| | `main`(CH-031 之後) | 你 working tree(**W47 + `main` merge 咗落嚟**) |
-|---|---|---|
-| test | api **1381 / 92** · web **450 / 43,零紅**(W46 merge 嗰陣係 1362 / 439) | api **1430 / 94** · web **464 / 44**(對數 = W47 1410 + CH-031 19 + merge 新加 1) |
-| ADR | 到 **0040**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE · **0040 agent run soft-hide**) | 同左 —— **W47 零新 ADR** |
-| agent module | `src/agent` + `src/agent-approval`,**有 hide / unhide** | 同左 **+ `AgentProfile` registry · `/agent` 管理頁 · 全域 run 列表** |
-| `Textarea` primitive | 冇 | **有**(H6 STOP → Chris 批,`design-system.md §2`) |
-| root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` | 同左 |
+| | `main`(W47 merge 之後) |
+|---|---|
+| test | api **1430 / 94 suites** · web **464 / 44 files,零紅**(對數 = W47 1410 + CH-031 19 + merge 新加 1) |
+| ADR | 到 **0040**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE · **0040 agent run soft-hide**)—— **W47 自己零新 ADR** |
+| agent module | `src/agent` + `src/agent-approval` · **hide / unhide**(CH-031)· **`AgentProfile` registry** · `/agent` 管理頁 · **全域 run 列表**(W47) |
+| `Textarea` primitive | **有**(H6 STOP → Chris 批,`design-system.md §2`) |
+| root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` |
+
+⚠️ **呢個 worktree checkout 唔到 `main`** —— 佢畀 `C:/ai-develop/unified-operation-platform`
+嗰個 worktree 佔住(`fatal: 'main' is already used by worktree at …`)。開工用
+`git checkout -b <new> origin/main`,唔好嘥時間試 `git checkout main`。
 
 **🟢🟢 CH-031 2026-08-17 亦已 merge(PR #117)—— agent run 而家移除得到,但唔係 `DELETE`。**
 加嘅係 **`POST /agent/runs/:id/hide` + `:id/unhide`**(ADMIN-only · terminal-only)+
@@ -110,7 +117,7 @@ OpenAI 嗰種「少一條 live 驗」唔同級別;但**唔好再當佢係部署�
 (`hiddenAt` 唔喺 generated type),而錯誤訊息指住 `ai-assist.service.ts` 唔指住 client。
 
 🚧 **W47 淨低三項,而三項係同一件事:一次 DEV 部署**(`F1-6` migration · `F7-2` 列表 ·
-`F7-3` 唔可以睇 revision status 當證據)⇒ merge → 部署 #10 → 驗。
+`F7-3` 唔可以睇 revision status 當證據)⇒ ~~merge~~ ✅ 做咗(PR #119) → 部署 #10 → 驗。
 🔴 **`R28` 一半未答(H1,未開單)**:`Restrict` 擋到**刪**擋唔到**改**,而 profile 係
 mutable ⇒ 今日答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」;要真答就要
 `AgentRun` 存 model snapshot。
