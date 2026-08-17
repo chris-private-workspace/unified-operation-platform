@@ -310,10 +310,11 @@ apps/api/src/fulfilment/fulfilment.controller.ts:91  @Delete(':id/line-items/:li
 - [x] **F2** root `npm run build` **exit 0** · root `npm run lint` **exit 0** · api `tsc --noEmit` **exit 0**
 - [x] **F3** `ADR-0040` **`Accepted`**(Chris 2026-08-17),`docs/adr/README.md` 同步
 
-### G — Live(🚧 等部署 #10)
+### G — Live(🟢 部署 #10 · 2026-08-17 收咗)
 
-- [ ] **G1** DEV 兩個測試 run **真係唔再喺 request detail 出現**,而 `GET /agent/runs/:id` **仍然攞得返**(兩邊都要驗 —— 只驗一邊證唔到 D3)
-- [ ] **G2** 收貨標準係**落 DB / 落 API 對數,唔係睇 HTTP 200**(§9 `A14` 先例)
+- [x] **G1** DEV 嗰兩個測試 run(部署 #9/#9b 留低)hide 走 —— **兩半都驗咗**:①唔再出現 `GET /agent/runs/latest?requestId=` **空 body** · `GET /agent/runs` **0 items** ②**攞住 id 仍然拎得返** 兩個都 **200**、`status` 完好
+- [x] **G2** 收貨標準守住 —— 唔係睇 HTTP 200,係睇**回應入面啲嘢**:兩個 run 分別 **`steps=5` / `proposals=1`** 同 **`steps=2` / `proposals=0`**。🔴 **呢個先係 ADR-0040 喺真環境嘅兌現** —— 如果做咗 `DELETE`,嗰啲 `AgentStep` / `AgentProposal` 會經 `onDelete: Cascade` 一齊消失;**佢哋仲喺度**
+- [ ] **G3** 🚧 🔴 **`D4` 喺 DEV 未驗證,唔可以當收** —— `GET /api/agent/review-stats` 返 `decided: 0`,但**唔係因為 hide**:DEV 由頭到尾冇人真決定過任何 proposal(唯一嗰個係 `abortRun` bulk-reject,**刻意唔寫 `decidedAt`**)⇒ hide 唔 hide 個數都係 0,而且冇「hide 之前」讀數。**D4 目前只有 unit test + falsification 撐住。** 順帶有用:`pending: 0` ⇒ terminal-only 閘冇留低孤兒 proposal
 
 ---
 

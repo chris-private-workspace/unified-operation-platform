@@ -17,7 +17,7 @@
 - [x] F1-3 ✅ migration 生成 + 對本機真 DB 跑(Chris 2026-08-17 批准停 `ai-doc-extraction-db`)。**SQL 純 additive,零 DROP**;落 DB 對過真結構(8 個欄 · `prompt` nullable · `AgentRun.profileId` nullable)。🔴 **生成之後揾到一個同 `F2-3` 打交嘅位**:Prisma 對 optional relation 預設 `ON DELETE SET NULL` ⇒ 一個直接落 DB 嘅 delete 會把「呢個 run 用邊個 profile 跑」**一次過**變成 unknown,冇任何錯誤 —— 而 `F2-3` 存在嘅理由正正係保住嗰個答案。改成 **`onDelete: Restrict`**,兩個 fkey 落 DB 實測都係 `RESTRICT`
 - [x] F1-4 ✅ **唔係 plan 寫嗰個「default profile」,因為佢落唔到手** —— `AgentPrincipal` 係第一次 run 先 lazy 建,而 `runtime` 欄明文只准係 provider 實際 boot 嗰個(BUG-011)⇒ seed 冇 provider,唔可以捏造嗰行。改成**一次性遷移**:principal 已存在 **兼且** 零 profile 先做,model 由 `ConnectorConfig.agentModel → AGENT_MODEL`(同兩個 provider `resolveModel()` 同源),冇配置就唔種。用 **model 做 profile 名**(叫「Default」會宣稱一個 registry 刻意冇嘅地位)。實測種咗 `gpt-5.6-luna`,第二次跑 `left alone`
 - [x] F1-5 ✅ **G2 嘅 test** —— `profileId = null` 嘅舊 run 讀得返(`profileId` / `profile` 兩個都係 `null` 而唔係爆);順帶釘住 **run 回應永遠唔 select `prompt`**(8000 字,屬 registry 畫面)
-- [ ] F1-6 DEV migration(部署之後)
+- [x] F1-6 ✅ **DEV migration(部署 #10 · 2026-08-17)** —— 佐證唔靠 migrate summary(entrypoint 令佢失敗 NON-FATAL):`GET /api/agent/profiles` → **200 唔係 500**(表唔存在 Prisma 會掟 `PrismaClientValidationError`)· `GET /api/agent/runs` 每行有 **`profileId`** 鍵 ⇒ 收 `G1`
 
 ## `F2` — Profile CRUD
 
@@ -80,8 +80,9 @@
 - [x] F7-1a ✅ **四條拒絕路 live 驗,而且全部具名唔係 generic**:①兩個 active 冇指名 → `This agent has 2 active profiles — say which one to run on`(= `F3-2` 個 R3 偏離嘅重點:**fail loud + 講得出有幾多個**)②唔存在 → 400 ③熄咗嗰個 → `The profile 'power-bi-only' is switched off…`。🔴 **四次 refuse 之後 run 數仍然係 3(開工前個數)** ⇒ `F3-3` 個核心(refuse 唔可以留低 row,否則 OQ-3 永久封死嗰張 request)真驗到
 - [x] F7-1b ✅ **`F4` live**:5 個 run newest-first(兩新帶 profile 名 · 三舊 `Before W47`)· 按 `profileId` 篩 → 1 個 · cursor 分頁 page2 **冇重複 page1 尾行**(`skip: 1` 生效)
 - [x] F7-1c 🟢🟢 **`OQ-C` / `R26` 第一道防線 live 驗**:`agent.profile_update` 個 `before.prompt` **616 字元** → `after.prompt` **61 字元**,而 `before`/`after` **兩邊都淨係得 `prompt` 一個 key**(`auditDiff` 真係只記變咗嗰樣,唔係成份 row)。⚠️ 再送一次**同一個值** ⇒ audit 由 1 變 1,**冇新 row**(`F2-6` 個決定:no-op edit 唔可以塞爆 `R26` 靠嗰條 query)
-- [ ] F7-2 DEV:migration + 列表
-- [ ] F7-3 ⚠️ **唔可以睇 revision status 當證據** —— entrypoint 令 migrate 失敗 NON-FATAL
+- [x] F7-2 ✅ **DEV migration + 列表**(部署 #10):列表返 `{items,nextCursor}` 分頁 shape,每行有 `profileId`。🔴 **負面命中(最強嗰個)**:`GET /agent/runs?requestId=<id>` **唔再返單一 run**,top-level 冇 `id` 鍵 ⇒ 舊路真係搬咗去 `/latest`。⚠️ **但呢條收唔到 `G8`** —— DEV `/agent/profiles` 實測 **`[]`**,而 `G8` 要求嘅係開兩個只有 prompt 唔同嘅 profile 各跑一次再比對,**部署唔會幫你開 profile**
+- [x] F7-3 ✅ **守住咗** —— 全程冇用 revision status 做證據(entrypoint 令 migrate 失敗 NON-FATAL)。用嘅係「只有新 build 先出到」嘅嘢:agent route **8 → 13** 條 · OpenAPI **66,893 → 84,518 B** · web bundle 換名兼**舊 bundle 404**(排除 CDN cache)· 上面兩條 `200 唔係 500` 嘅推理
+- [ ] F7-4 🚧 **`G8` DEV 半邊仍然未做** —— 要開兩個 profile(同 model、唔同 prompt)各跑一次,比對提幾多個 SKU。**成本唔係零**:兩次真 model call + 喺 DEV 留低兩個新 run row(而部署 #10 啱啱先 hide 走舊嗰兩個)⇒ **要 Chris 話事**
 
 ## `F8` — 收尾
 

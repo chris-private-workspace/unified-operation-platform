@@ -1,7 +1,7 @@
 ---
 change_id: CH-031
 derived_from: spec.md §6
-status: in-progress      # 🟢 2026-08-17 S0–S5 + S7 全收,PR #117 merged;🚧 淨低 S6 部署 #10 + DEV live
+status: in-progress      # 🟢 2026-08-17 部署 #10 之後 G1/G2 收咗;🚧 淨低 S6-4(D4 喺 DEV 未驗證)
 ---
 
 # CH-031 — Implementation checklist
@@ -81,9 +81,10 @@ status: in-progress      # 🟢 2026-08-17 S0–S5 + S7 全收,PR #117 merged;�
 
 ## S6 — 部署 + live
 
-- [ ] **S6-1** 🚧 部署 #10 上 DEV(migration 會跟住跑)→ 收 `A2` DEV 半
-- [ ] **S6-2** 🚧 DEV 兩個測試 run hide 走;驗 **request detail 唔再見到** **兼且** `GET /agent/runs/:id` **仍然 200** → 收 `G1`
-- [ ] **S6-3** 🚧 落 DB / 落 API 對數,唔係睇 HTTP 200 → 收 `G2`
+- [x] **S6-1** ✅ **部署 #10(`dev-df03563`)2026-08-17 做咗** —— 同 W47 一次過上機(31 個 commit · 2 個 migration)。`hiddenAt` migration 佐證:run 回應帶 `hiddenAt` 鍵,而且 hide 真係寫得入去 → 收 `A2` DEV 半
+- [x] **S6-2** ✅ 兩個測試 run hide 走(**兩個都 200**),兩半都驗:`/agent/runs/latest` 空 · `/agent/runs` 0 items · `GET /agent/runs/:id` 仍然 **200** → 收 `G1`
+- [x] **S6-3** ✅ 唔係睇 HTTP 200,係睇回應內容:**`steps=5`/`proposals=1`** 同 **`steps=2`/`proposals=0`** 全部仲喺度 → 收 `G2`
+- [ ] **S6-4** 🚧 **`D4` 喺 DEV 未驗證** —— DEV 冇任何 `decidedAt != null` 嘅 proposal,所以 review-stats 無論如何都係 0,呢個數字**證明唔到嘢**。要真驗就要喺 DEV 造一個人手決定過嘅 proposal,先量 hide 前後。**未做,亦未開單**
 
 ## S7 — 收尾
 

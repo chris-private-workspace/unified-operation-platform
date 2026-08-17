@@ -145,16 +145,18 @@ model AgentProfile {
 
 | # | Criterion | Target | Block? | **狀態** | **實測證據(`F8-1` 掃 · 2026-08-17)** |
 |---|---|---|---|---|---|
-| G1 | migration 對真 DB | 本機 + DEV 都 applied | **Yes** | 🟡 **半收** | 本機 ✅ `F1-3` —— 落 DB 對過**真結構**(8 個欄 · `prompt` nullable · `AgentRun.profileId` nullable · 兩個 fkey 實測 `RESTRICT`)。**DEV ❌ 未跑**(`F1-6`) |
+| G1 | migration 對真 DB | 本機 + DEV 都 applied | **Yes** | ✅ **全收** | 本機 ✅ `F1-3` —— 落 DB 對過**真結構**(8 個欄 · `prompt` nullable · `AgentRun.profileId` nullable · 兩個 fkey 實測 `RESTRICT`)。**DEV ✅ `F1-6`(部署 #10 · 2026-08-17)** —— 佐證唔靠 migrate summary(entrypoint 令佢失敗 NON-FATAL):`GET /api/agent/profiles` → **200 唔係 500**(表唔存在 Prisma 會掟 `PrismaClientValidationError`)+ `GET /api/agent/runs` 每行有 **`profileId`** 鍵 |
 | G2 | **舊 run 冇 profile 仍然讀得到** | `GET /agent/runs/:id` 200 | **Yes** | ✅ | test `reads a run started before the registry existed` —— `profileId` / `profile` 兩個都係 `null` **而唔係爆**;**live** `F5-4` / `F7-1b`:本機 3 個 W46 run 喺新列表**三個都顯示**「Before W47」。➕ 順帶有一條更強嘅:`resumes on a profile that has since been retired`(停用一個 profile **唔會**令 in-flight run 死) |
 | G3 | `agent.boundary.spec.ts` 仍然全綠 | 零 forbidden import | **Yes** | ✅ | `F6-4` —— 兼且**多咗一條**:兩個 adapter 唔准 import `ConnectorConfigService`(`F3-7`) |
 | G4 | `runState` 冇經新 endpoint 洩出 | 0 | **Yes** | ✅ | `F4-4` controller spec。**列表係最易漏嗰個位,因為冇人會讀一個列表回應** |
 | G5 | falsification 每道新閘一次 | 真紅零誤傷 | **Yes** | ✅ | **五次**(`F6-5`):①cross-principal guard ②profile model ③profile prompt ④banned import ⑤list scope filter,每次還原後真跑。⚠️ 第 ② 條 **33 紅 = 太粗** —— 紅嘅原因係 503 唔係揀錯 model,即係話佢**證唔到**佢想證嗰樣 |
 | G6 | H6 light + dark | 兩個都 render 過 | **Yes** | ✅ | `F5-7` 用 W46 committed 嗰個 `render-check.mjs`(唔再靠 session 有咩瀏覽器工具):token **真 swap**(`#f5f5f6`→`#08080a` · accent `#E60027`→`#ff3355`)· `scrollWidth = clientWidth = 1440`(零橫向溢出)· `ui-design` 12 條逐條答(`F5-6`) |
 | G7 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ | 🔴 **要重跑先算數**:`F6-1` 記嘅 web **449** 係 stale —— Textarea(`65ebbb0`)喺 `F6` gate **之後**先入。2026-08-17 重跑三個:api **1410 / 94 suites** · web **453 / 44 files** · lint **exit 0** · build **exit 0** |
-| G8 | live 驗(本機 + DEV) | 兩個 profile 分得開 | **Yes** | 🟡 **半收** | 本機 ✅ `F7-1` —— 而「分得開」唔係「兩行唔同名」:**同一段 text · 同一個 model · 唯一變數係 prompt** ⇒ 一個提 2 個 SKU、一個提 1 個。**DEV ❌**(`F7-2`) |
+| G8 | live 驗(本機 + DEV) | 兩個 profile 分得開 | **Yes** | 🟡 **仍然半收** | 本機 ✅ `F7-1` —— 而「分得開」唔係「兩行唔同名」:**同一段 text · 同一個 model · 唯一變數係 prompt** ⇒ 一個提 2 個 SKU、一個提 1 個。**DEV ❌ 仍然未做**(`F7-2`)。🔴 **2026-08-17 更正一個 handoff 前提**:當時寫住「做完部署 W47 就全收」,**唔啱** —— 部署 #10 之後 DEV `/agent/profiles` 實測 **`[]`**,即係話 `G8` 要求嗰件事(開兩個只有 prompt 唔同嘅 profile,各跑一次,比對提幾多個 SKU)**根本唔係部署做得到嘅** ⇒ 佢係一個**獨立 live 測試**,而且成本唔係零(兩次真 model call + 喺 DEV 留低兩個新 run row) |
 
 ### 🔴 掃出嚟嘅結論(`F8-1`)
+
+🔴 **2026-08-17 部署 #10 之後更正:下面呢句只啱一半。** `G1` 確實係「缺一次 DEV 部署」,部署完就收咗。**但 `G8` 唔係** —— 部署完之後 DEV `/agent/profiles` 仍然係 `[]`,因為 `G8` 要求嘅係**開兩個 profile 各跑一次再比對**,而部署唔會幫你開 profile。⇒ **`F8-1` 嗰次掃把兩條當成同一個阻塞,係一個誤判**;而佢之所以睇落合理,係因為兩條當時都寫住「DEV ❌」,而**「DEV ❌」冇講到係差部署定係差一次操作**。以下原文保留。
 
 **8 條入面 6 條全收,2 條半收 —— 而兩條半收(`G1` / `G8`)缺嘅係同一件事:一次 DEV 部署。**
 兩條都係 `Block closeout: Yes` ⇒ **本 phase 今日 closeable 唔到**,而唔 closeable 嘅理由
