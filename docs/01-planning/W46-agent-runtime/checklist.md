@@ -286,3 +286,29 @@
 - [x] G-CLOSE-e ✅ **`R11`–`R25` 十五條入咗 `RISK_REGISTER.md`** —— carry 咗最耐嗰筆。`plan §6` 只定義咗 `R11`–`R16`,其餘散落喺 ADR-0037 / 0038 / 0039 同封 infra 信 ⇒ **有九條 risk 由頭到尾冇一個地方會令佢浮上嚟**,同 `PAR-submit` **一模一樣嘅形狀**(住喺一份文件尾嘅 `- [ ]`)。🔴 **入冊嗰陣校正咗 `R20`**(兩個 SDK 各自 ship `zod`)—— 實測 `@anthropic-ai/sdk` 得**兩個** dependency 而 `zod` 係 **optional peerDependency**,workspace 解析到**一個** `zod@4.4.3` ⇒ 標 `🟢 Resolved` 兼**理由寫成「實測推翻咗原假設」**,唔係靜靜刪走
 - [x] G-CLOSE-f ✅ **收尾數字** —— api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0
 - [ ] G-CLOSE-g 🚧 **W46 淨低三條,全部同一個原因** —— `A1`(DEV 半邊)· `A14` · `B6`:**三條都係「要一個真環境」**,而真環境要 infra 開兩個 resource。封信已寫好(含 Redis)**但未發**,幾時發係 owner 決定
+
+---
+
+## `G-LIVE` —— Azure OpenAI 真接線 + 第一次真跑 agent(2026-08-17,同日續)
+
+> 🔴 **`G-CLOSE-g` 寫住「三條都要一個真環境」,而其中一條當日就唔使等 infra 咗** ——
+> Chris 開咗一個 Azure OpenAI resource,`A14` 由「卡 infra」變成「跑得」。
+
+- [x] G-LIVE-a ✅ **Azure 接線落地**(`1281c47`)—— `openai-agents.provider.ts` 新 `buildAzureClient(config)`,`buildAgent` 每次叫 `setDefaultOpenAIClient(...)`。🔴 **`AZURE_OPENAI_ENDPOINT` / `_API_KEY` / `_API_VERSION` 三個缺一就 503,冇 default** ⇒ **`E1`(唔准打公共 OpenAI API)由「冇人設 key」變成一道真閘**:之前 E1 靠「冇人填 `OPENAI_API_KEY`」成立,而家係**填咗都唔會用**
+- [x] G-LIVE-b 🔴 **H1 觸發過一次,STOP 咗** —— 原定跟 ADR-0037 `B4` 把 endpoint 放 `ConnectorConfig`,但一 Read 就發現 `connectors.ts` 個 editable 集合**係 Prisma 欄**⇒ 加欄 = migration = H1。改行 **env**,三個理由 log 咗(①endpoint 同 key 同源,分兩處存反而易錯 ②env 改完唔使重 build web image,同 ADR-0028 `ENTRA_*` 同族 ③`ConnectorConfig` 係 runtime 可改,而呢三個係部署事實)
+- [x] G-LIVE-c 🔴 **`AZURE_OPENAI_API_VERSION` 刻意冇 default,而佢第一次跑就證明咗自己** —— Run 1 `failed`,Azure 原文:`… only for api-version 2025-03-01-preview and later`。⚠️ **一個 default 喺呢度會變成一個靜靜過時嘅數字**;冇 default ⇒ 錯就即刻大聲。🟢 **順帶證咗 endpoint 通 + key 有效**(打得到先有得嫌 version 舊)
+- [x] G-LIVE-d ✅ **Run 2 / Run 3 真跑到 `awaiting_approval`** —— Run 2:`start → get_request → search_catalog → propose_line_items`,items 空(fixture 冇提 licence),而 agent **主動講明**兼認得張單已 `COMPLETED`。Run 3:`search_catalog ×3`、**9 條 transcript**、提兩個 SKU,**兩個 GUID 落 DB 逐字對得返**(`Microsoft_365_E5_(no_Teams)` / `VISIOCLIENT`),reasoning **主動指名另外兩個變體兼叫人覆核**
+- [x] G-LIVE-e ✅ **abort 真行到** —— run `aborted`,佢個 pending proposal **自動 `rejected`**(`The run was stopped`)⇒ `abortRun` 嗰段 bulk reject **第一次有真數據**
+- [x] G-LIVE-f 🟢🟢 **approve → 409 `This request is complete…`,零副作用** —— **`F8-3` 卡上嗰句「Approving runs the platform's normal checks — they can still refuse」第一次真驗證**:個閘唔喺 agent 側,係 `RequestService.addLineItem` 本身,而佢照拒
+- [x] G-LIVE-g 🔴🔴 **而個 409 順帶揭到一個真缺陷 —— `agent-approval.service.ts` 四個決定 writer,得佢一個冇寫 `approvedById`** —— 修咗(見下)
+- [x] G-LIVE-h ✅ **UI render** —— light/dark **token 真 swap**、零橫向溢出、`STEP_LABEL` 生效(`Read the request` / `Searched the catalogue`)
+- [ ] G-LIVE-i 🚧 **`A14` 最後三分一仍然未驗:批准之後 run 真係 resume** —— 唔再卡 infra,卡**要一張非 `COMPLETED` 嘅 request**(今次張 fixture 剛好係 `COMPLETED`,而佢正正就係 `G-LIVE-f` 嗰個 409 嘅原因)⇒ **同一件事一次過證咗閘、擋咗 resume**
+
+### `G-FIX` —— `approvedById` 漏寫(2026-08-17)
+
+- [x] G-FIX-a 🔴 **形狀:唔係「漏咗一行」,係「呢條路對『算唔算一個決定』冇立場」** —— `createLineItems` 個 catch 寫 `decidedAt` 但唔寫 `approvedById`,而**呢個組合喺本 codebase 自己嘅語彙入面唔存在**。三個先例:`abortRun` 同 run expiry **兩個都唔寫**(`review-stats.service.ts:136-140` / `ai-assist.service.ts:538` 都明文寫低理由)· `approveAssign` 被閘拒 **兩個都寫**
+- [x] G-FIX-b 🔴 **分界線係「有冇人撳過 approve」,唔係「HTTP 成唔成功」** —— 按呢條線 `createLineItems` 個 catch 屬**有人撳過**(佢只喺 `approve` 收咗個決定之後先跑得到)⇒ 補 `approvedById`,`decidedAt` 保留
+- [x] G-FIX-c 🔴 **後果係一個 risk metric 喺令人安心方向出錯** —— G7 人口 = `decidedAt != null` 而 `isApproval` **把 `failed` 當批准**(`review-stats.service.ts:120`)⇒ 呢條 row **入到 aggregate**,但 `byReviewer` 把佢掉入 `approverId: null` 個 bucket ⇒ **撳咗 approve 嗰個人少咗一次批准**。而 `R13` 自己嘅規矩就係「review metric 唔可以喺令人安心嗰個方向錯」
+- [x] G-FIX-d ⚠️ **順手校正咗一句會誤導下一個人嘅 test 註釋** —— 原文「The proposal is marked `failed`, and **nobody decided anything**」係講 **audit row**,但佢會被讀成「呢條路唔算決定」。改成講清楚兩份記錄答唔同問題:audit 記「**發生咗咩**」(冇嘢發生 ⇒ 冇 row),`approvedById`/`decidedAt` 記「**邊個撳咗**」(有人撳咗 ⇒ 寫)
+- [x] G-FIX-e ✅ **新 test + falsification** —— `records WHO approved even though the domain path then threw`(**兩個欄一齊 assert**,因為佢哋淨係一齊出現先有意思)。拆走 `approvedById: approver.id` ⇒ **1 紅 / 29 綠,零誤傷**,紅嗰條正正係新 test(`Received: undefined`)
+- [x] G-FIX-f ✅ **api 1361 → 1362 / 92 suites 全綠** · tsc 0(`--incremental false`,唔想留低 `tsbuildinfo` 觸發嗰個假綠燈)· lint 0

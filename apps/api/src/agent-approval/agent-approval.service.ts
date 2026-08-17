@@ -374,9 +374,29 @@ export class AgentApprovalService {
         created.push(line.id);
       }
     } catch (err) {
+      /**
+       * 🔴 `approvedById` is written even though this path THREW, because the
+       * line that decides it is "did a person press approve", not "did the
+       * platform then succeed". They did: nothing reaches this method until
+       * `approve` has accepted their decision.
+       *
+       * The contrast is `abortRun` and run expiry, which write NEITHER column
+       * (`ai-assist.service.ts`) — nobody pressed anything on those paths.
+       * `decidedAt` without `approvedById` is the one combination belonging to
+       * neither case, and it was what this block wrote: the row enters G7's
+       * population (`decidedAt != null`) and is then handed to no reviewer, so
+       * the aggregate counts the approval while the per-reviewer table drops
+       * it. R13's rule is that a review metric must never be wrong in the
+       * reassuring direction, and an approval that no longer belongs to anyone
+       * is exactly that direction.
+       */
       await this.prisma.agentProposal.update({
         where: { id: proposal.id },
-        data: { status: 'failed', decidedAt: new Date() },
+        data: {
+          status: 'failed',
+          approvedById: approver.id,
+          decidedAt: new Date(),
+        },
       });
       this.logger.error(
         `Proposal ${proposal.id} failed after creating ${created.length} of ${resolved.length} line items`,

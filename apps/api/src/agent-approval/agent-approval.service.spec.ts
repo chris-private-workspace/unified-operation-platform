@@ -210,6 +210,34 @@ describe('AgentApprovalService', () => {
       expect(aiAssist.resumeRun).not.toHaveBeenCalled();
     });
 
+    /**
+     * 🔴 G7 counts `failed` as an approval (`review-stats.service.ts`), and its
+     * population is `decidedAt != null`. So a row written here WITHOUT an
+     * approver enters the aggregate and lands in the per-reviewer table's
+     * `null` bucket — the reviewer who pressed approve gets one approval fewer
+     * than they made. That is the reassuring direction, the one R13 says a
+     * review metric must never be wrong in.
+     *
+     * Asserted as a pair on purpose: `decidedAt` alone is what the platform's
+     * own tidy-up paths (`abortRun`, run expiry) deliberately never write, so
+     * the two columns only mean "a person decided this" together.
+     */
+    it('records WHO approved even though the domain path then threw', async () => {
+      requests.addLineItem.mockRejectedValue(
+        new ConflictException('This request is complete'),
+      );
+
+      await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      const { data } = prisma.agentProposal.update.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.approvedById).toBe('u-admin');
+      expect(data.decidedAt).toBeInstanceOf(Date);
+    });
+
     it('refuses a kind it cannot carry out', async () => {
       // 'assign' used to be this example. 期二 G1 made it real, so the test
       // moved to a kind nothing mints — the claim is about the default, not
@@ -531,8 +559,13 @@ describe('AgentApprovalService', () => {
       await expect(service.approve('p1', approver)).rejects.toBeInstanceOf(
         ConflictException,
       );
-      // The proposal is marked `failed`, and nobody decided anything — an
-      // audit row here would claim a decision that did not happen.
+      // No audit row, because an audit row states what HAPPENED — and nothing
+      // did: no line item was created and the run did not resume.
+      //
+      // ⚠️ Which is NOT the same as "nobody decided". The proposal still
+      // carries `approvedById` + `decidedAt`, because a person did press
+      // approve. The two records answer different questions, and this is the
+      // one path where they legitimately disagree.
       expect(audit.log).not.toHaveBeenCalled();
     });
   });

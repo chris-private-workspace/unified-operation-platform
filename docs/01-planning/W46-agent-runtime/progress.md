@@ -1635,3 +1635,108 @@ api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩�
 
 `A1`(DEV 半邊)· `A14` · `B6` —— **三條都係「要一個真環境」**,而真環境要 infra 開兩個
 resource。封信已經寫好(含 Redis,2026-08-17 併入)但**未發**,而幾時發係 owner 決定。
+
+---
+
+## Day 21 — 2026-08-17(同日續:Azure 真接線 · 第一次真跑 agent · 一個修正)
+
+🔴 **上面 Day 20 收尾嗰句「三條都要一個真環境」,當日就冧咗一半** —— Chris 開咗一個 Azure
+OpenAI resource,`A14` 由「卡 infra」變成「跑得」。**封信仍然未發**(Redis 嗰半仍然要),
+但 `A14` 唔再等佢。
+
+### 🔴 H1 觸發過一次,而佢令設計好咗
+
+原定跟 `ADR-0037 B4` 把 endpoint 放 `ConnectorConfig`。一 Read `connectors.ts` 就見到:
+個 editable 集合**係 Prisma 欄** ⇒ 加欄 = migration = **H1** ⇒ STOP。
+
+改行 **env**,三個理由:①endpoint 同 key 同源,分兩處存反而易錯 ②env 改完唔使重 build web
+image(同 ADR-0028 個 `ENTRA_*` **同族**)③`ConnectorConfig` 係 **runtime 可改**嘅嘢,而呢三個
+係**部署事實**。偏離已 log。
+
+### 🟢🟢 `E1` 由一個假設變成一道真閘
+
+之前 `E1`(唔准打公共 OpenAI API)**靠「冇人填 `OPENAI_API_KEY`」成立** —— 即係話佢係一個
+慣例,唔係一個機制。而家 `buildAzureClient` 每次 `buildAgent` 都 `setDefaultOpenAIClient(...)`,
+而三個 `AZURE_OPENAI_*` **缺一就 503、冇 default** ⇒ **填咗 `OPENAI_API_KEY` 都唔會用到佢**。
+
+`connectors.ts` 個 label 因此改成 `(unused — E1 forbids the public API)` 而**唔移走個 key**
+—— R9 嗰個理由:一個突然消失嘅配置欄,對住緊佢嘅人嚟講係「壞咗」唔係「唔再需要」。
+
+### 🔴 `AZURE_OPENAI_API_VERSION` 刻意冇 default,而佢第一次跑就證明咗自己
+
+**Run 1 `failed`**,Azure 原文:`… only for api-version 2025-03-01-preview and later`。
+
+一個 default 喺呢個位會變成**一個靜靜過時嘅數字** —— 而佢過時嗰日,錯誤訊息會指向 model
+或者 request 形狀,唔會指向嗰個 default。冇 default ⇒ 錯就即刻大聲、即刻指啱位。
+
+🟢 **順帶**:呢個失敗**證咗 endpoint 通兼 key 有效** —— 打得入去先有得佢嫌 version 舊。
+
+### ✅ 第一次真跑,四件事有真數據
+
+| | |
+|---|---|
+| **Run 2** | `start → get_request → search_catalog → propose_line_items`,items 空(fixture 冇提 licence)。agent **主動講明**,兼認得張單已 `COMPLETED` |
+| **abort** | run `aborted`,佢個 pending proposal **自動 `rejected`**(`The run was stopped`)⇒ `abortRun` 嗰段 bulk reject 第一次有真數據 |
+| **Run 3** | `search_catalog ×3`、**9 條 transcript**、兩個 GUID **落 DB 逐字對得返**(`Microsoft_365_E5_(no_Teams)` / `VISIOCLIENT`);reasoning **主動指名另外兩個變體兼叫人覆核** |
+| **UI** | light/dark **token 真 swap**、零橫向溢出、`STEP_LABEL` 生效 |
+
+### 🟢🟢 approve → 409,而呢個 409 就係 `F8-3` 嗰句卡片文案第一次被驗證
+
+撳落去返 **409 `This request is complete…`**,零副作用。
+
+F8 張卡寫住「**Approving runs the platform's normal checks — they can still refuse**」——
+今日之前佢係一句**宣稱**。而家證咗:個閘唔喺 agent 側,係 `RequestService.addLineItem` 本身,
+**而佢照拒**。⇒ `A14` 三分二收,最後三分一(批准後 resume)**驗唔到,因為佢被同一道閘擋住**。
+
+📌 **同一件事一次過證咗一樣嘢又擋住另一樣** —— 要驗 resume,下次要一張**非 `COMPLETED`** 嘅
+request。呢個唔再係 infra 問題,係 fixture 問題。
+
+### 🔴🔴 而個 409 順帶揭到一個真缺陷,而佢嘅形狀唔係「漏咗一行」
+
+`agent-approval.service.ts` 四個「決定」writer,**得 `createLineItems` 個 catch 冇寫
+`approvedById`**。第一眼睇落係漏,查落去先發現**佢係兩邊都唔企**:
+
+| 路徑 | 有人撳過 approve? | `decidedAt` | `approvedById` |
+|---|---|---|---|
+| `abortRun` 批量 reject | ❌ | 唔寫 | 唔寫 |
+| run expiry | ❌ | 唔寫(`ai-assist.service.ts:538` 明文) | 唔寫 |
+| `approveAssign` 被閘拒 | ✅ | 寫 | **寫** |
+| **`createLineItems` throw** | ✅ | **寫** | **❌** |
+
+🔴 **`decidedAt` 冇 `approvedById` 呢個組合,喺呢個 codebase 自己嘅語彙入面唔存在** ——
+`review-stats.service.ts:136-140` 明文講「`abortRun` sets **neither**」,即係話「唔算決定」
+嘅表達方式係**兩個都唔寫**。寫一個唔寫另一個,係一個冇人定義過嘅第三種狀態。
+
+**點解係 bug 唔係品味**:G7 人口 = `decidedAt != null`,而 `isApproval` **把 `failed` 當批准**
+(`review-stats.service.ts:120`,理由寫得好清楚:「Counting `failed` as a rejection would make
+a reviewer look more sceptical the more often the platform had to save them」)⇒ 呢條 row
+**入到 aggregate**,但 `byReviewer` 把佢掉入 `approverId: null` 個 bucket ⇒ **撳咗 approve
+嗰個人,少咗一次批准**。而 `R13` 自己嘅規矩就係:**review metric 唔可以喺令人安心嗰個方向錯**。
+
+### 🔴 分界線係「有冇人撳過」,唔係「HTTP 成唔成功」
+
+一度以為應該反方向修(刪 `decidedAt`,同 `abortRun` 睇齊)。**推翻佢嘅係先例本身**:
+`abortRun` 同 expiry 兩條路**冇人撳過任何嘢**,係平台自己執手尾;而 `createLineItems` 只喺
+`approve` **收咗一個人嘅決定之後**先跑得到。⇒ 佢屬「有人撳過」嗰邊,補 `approvedById`。
+
+⚠️ **順手校正咗一句會誤導下一個人嘅 test 註釋** —— 原文「The proposal is marked `failed`,
+and **nobody decided anything**」係講 **audit row**,但佢會被讀成「呢條路唔算決定」。改成
+講清楚兩份記錄答**唔同問題**:audit 記「**發生咗咩**」(冇嘢發生 ⇒ 冇 row),
+`approvedById`/`decidedAt` 記「**邊個撳咗**」(有人撳咗 ⇒ 寫)。**呢一路上佢哋合法地唔同意。**
+
+### ✅ Falsification 真跑
+
+新 test 兩個欄**一齊 assert**(佢哋淨係一齊出現先有意思)。拆走 `approvedById: approver.id`
+⇒ **1 紅 / 29 綠,零誤傷**,紅嗰條正正係新 test(`Received: undefined`)。
+
+api **1361 → 1362 / 92** · tsc **0** · lint **0**。
+
+📌 tsc 特意用 `--incremental false` —— 唔想為咗一次 type-check 留低一個 `tsbuildinfo`,
+然後喺下次起 stack 嗰陣變成 §9 嗰個假綠燈。
+
+### 🚧 留低咗嘅
+
+- **`A14` 最後三分一** —— 要一張非 `COMPLETED` 嘅 request,唔再卡 infra
+- **`A1` DEV 半邊 · `B6`** —— 仍然卡封未發嘅信(**Redis 嗰半**)
+- **`.env` 個 `AZURE_OPENAI_API_VERSION` 仲係舊值** —— 今日靠 shell env 頂住,重起就冇
+- **`ANTHROPIC_API_KEY` 已填** ⇒ `R21` 由風險變成已發生,建議清走
