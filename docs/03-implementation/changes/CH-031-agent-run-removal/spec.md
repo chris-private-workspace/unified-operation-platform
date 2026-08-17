@@ -1,11 +1,12 @@
 ---
 change_id: CH-031
 title: "移除一個 agent run —— 由 DEV 兩個測試殘留引出,但真正要決定嘅係 agent 側嘅刪除語意"
-status: proposed        # 🔴 未 approve。§4 四個選項要 Chris 揀一個,揀完先知使唔使 ADR
+status: approved        # 🟢 2026-08-17 Chris 揀咗 §4 選項 B(soft-hide)⇒ scope 定咗,acceptance 見 §6
 created: 2026-08-17
-target_completion: TBD  # 估算見 §7,按選項由 0.25 日到 1.5 日不等
-affects_components: [apps/api/agent, apps/api/agent-approval, apps/api/prisma, apps/web]
+target_completion: TBD  # 估 1–1.5 日(§7 選項 B)
+affects_components: [apps/api/agent, apps/api/prisma, apps/api/audit, apps/web]
 spec_refs:
+  - **ADR-0040**(決策 SSOT · **Proposed** —— agent run soft-hide,本單直接落地嗰份)
   - **ADR-0036 D6**(保留策略:`AgentMessage` **永久保留** + ADMIN-only · Chris 2026-08-15 拍板)
   - **ADR-0022 D1**(ledger row **絕不 delete** —— 本單結構上同族嘅先例,見 §3.3)
   - ADR-0009 D7 連帶義務 ③ / D8.3(`AuditLog` retention 刻意唔做)· BACKLOG `audit-retention`
@@ -16,10 +17,13 @@ spec_refs:
 
 # CH-031 — 移除一個 agent run
 
-> **Spec version**:0.1(**proposed**,未 approve)
-> **Owner**:Chris Lai · **提出**:Chris Lai(2026-08-17,「開單處理 `DELETE /agent/runs/:id`」)
+> **Spec version**:1.0(**approved** 2026-08-17)
+> **Owner**:Chris Lai · **提出**:Chris Lai(2026-08-17,「開單處理 `DELETE /agent/runs/:id`」)· **Approved by**:**Chris Lai**(2026-08-17,揀 §4 選項 **B**)
+> **決策 SSOT**:**`ADR-0040`**(🟡 **Proposed** —— 見下面「開工前提」)
 > **分類**:**Change**(改現有 feature 嘅生命週期語意;唔係新 feature,唔係 bug —— 今日冇 DELETE 係 W46 從來冇 scope 過,唔係壞咗)
-> 🔴 **觸發 H1** —— 見 **§3**。**H1 未解決之前唔可以落 code。**
+> 🔴 **觸發 H1**(改 Prisma schema · additive)—— 見 **§3**。
+>
+> 🔴🔴 **開工前提**:`ADR-0040` 而家仲係 **`Proposed`**。**佢一日未 `Accepted`,一日唔可以落 code**(CLAUDE.md §5.1 H1 required behavior ④)。Chris 揀咗選項 B = 批咗**方向**,`ADR-0040` 要批嘅係**八條 D 嘅具體形狀**,入面有兩條**唔喺選項 B 原文入面、係我加嘅**(`D2` 個 `unhide` · `D7` RBAC 收窄做 ADMIN-only)—— 見 §4.2。
 
 ---
 
@@ -217,22 +221,36 @@ apps/api/src/fulfilment/fulfilment.controller.ts:91  @Delete(':id/line-items/:li
 - ❌ 個問題**冇解決**,Tier 2 `T2-a` 出咗 run list 之後會即刻返嚟兼且變大
 - ❌ 「連到 DEV DB」本身要開一條路,而嗰條路自己有 H4 味道
 
-### 4.1 我建議 **B**,理由一句
+### 4.1 🟢 **Chris 2026-08-17 揀咗 B(soft-hide)**
 
-**因為 §3.3 個對照表** —— 平台上一次撞到「想 UI 唔見到,但 hard delete 會帶走 audit」呢個一模一樣嘅形狀,答案係 **row 保留 + 讀層隱藏**,而個理由(「同樣效果,單邊代價」)喺本單**逐字成立**。
+原建議理由(保留原文):**因為 §3.3 個對照表** —— 平台上一次撞到「想 UI 唔見到,但 hard delete 會帶走 audit」呢個一模一樣嘅形狀,答案係 **row 保留 + 讀層隱藏**,而個理由(「同樣效果,單邊代價」)喺本單**逐字成立**。
 
-⚠️ **但我要 flag 一個對我自己建議嘅反對意見**:選項 B 為咗一個「兩張 detail 頁見到 aborted 卡」嘅問題,加一個 schema 欄 + 一個 endpoint + 前端。**如果 Chris 覺得呢個需求唔值,選項 D 係完全企得住嘅答案**,而且佢誠實。
+⚠️ **當時 flag 咗嘅反對意見亦保留**:選項 B 為咗一個「兩張 detail 頁見到 aborted 卡」嘅問題,加一個 schema 欄 + endpoint + 前端。選項 D 係完全企得住嘅答案。**Chris 知情之下仍然揀 B** ⇒ 買嘅唔係今日,係 Tier 2 `T2-a`(見 ADR-0040 Alternatives Option D)。
+
+### 4.2 🔴 兩條「唔喺選項 B 原文入面」嘅嘢 —— 我加嘅,要 Chris 喺 ADR 批(R3)
+
+選項 B 個描述係「`hiddenAt` + `POST :id/hide` + 讀層隱藏 + `review-stats`/`kill-switch` 唔改」。`ADR-0040` 八條 D 入面**有兩條超出咗**,我唔會靜靜加:
+
+| ADR-0040 | 加咗乜 | 點解 |
+|---|---|---|
+| **`D2` 個 `POST :id/unhide`** | 多一條 route | `hiddenAt` 落咗之後**平台側冇路改得返**(DEV PG private endpoint —— **正正就係本單一開始嗰個困境**)。一個「改錯咗要開 infra 單先救得返」嘅操作,同佢想解決嘅問題同源。成本 = 一個 route + 一句 `update` |
+| **`D7` RBAC 收窄做 ADMIN-only** | method-level `@Roles(Role.ADMIN)` override | controller class-level 係 `ADMIN, REGIONAL`。REGIONAL 批得 proposal(plan OQ-2),但「令一個紀錄喺工作流程消失」係另一種權力,跟 `kill-switch` / `review-stats` 兩個 ADMIN-only controller 級別。⚠️ 呢個係本 controller **第一個** method-level override |
+
+另外 **`D8`**(順手加 `writersOf('agentRun')`)嚴格講亦係加嘅,但佢**唔係 scope creep**:本單自己新增咗一個 `agentRun` writer,而嗰張表今日**冇** writer 約束(§2.8)⇒ 釘住佢係本改動製造嘅風險,唔係順手做無關嘢(§1.3)。`deleteMany` verb 嗰半**唔喺本單**,已登 BACKLOG `agent-boundary-gaps`。
 
 ---
 
 ## 5. Scope
 
-### In
-- `AgentRun` 移除 / 隱藏語意(按選揀嘅選項)
-- 對應 endpoint + RBAC + OpCo scope
-- `review-stats` / `kill-switch` **不受影響**嘅證明(test)
-- 前端:`ai-assist-card.tsx` 唔再顯示被移除嘅 run(若選項要求)
-- 清走 DEV 嗰兩個測試 run
+### In(選項 B 定咗之後)
+- `AgentRun.hiddenAt DateTime?` + additive migration
+- `POST /agent/runs/:id/hide` + `POST /agent/runs/:id/unhide`(ADMIN-only · terminal-only · OpCo scope)
+- `findLatestForRequest` 加 `hiddenAt: null`;**`getRun` 明文唔過濾**
+- `AuditLog` 新 action `agent.run_hidden`(event-only)
+- `review-stats` / `kill-switch` **不受影響**嘅證明(falsification test)
+- 前端:`ai-assist-card.tsx` 加 hide 入口 + hidden 狀態(H6 light + dark)
+- `agent.boundary.spec.ts` 加 `writersOf('agentRun')`
+- 清走(hide 走)DEV 嗰兩個測試 run
 
 ### Out(明文)
 - **`audit-retention` 政策**(BACKLOG 候選 · ADR-0009 D8.3)—— 本單**唔可以**順手定 retention,佢同 `agent-tier2-scope.md` **OQ-4**(「對話要唔要 persist?留幾耐?」)撞
@@ -247,27 +265,66 @@ apps/api/src/fulfilment/fulfilment.controller.ts:91  @Delete(':id/line-items/:li
 
 ## 6. Acceptance
 
-> 🔴 **刻意留空。** §4 未揀,acceptance 寫出嚟就係假嘅。
-> 📌 **呢個係跟 W46 個教訓做** —— 嗰次 21 條 acceptance 由頭到尾冇更新過,而「plan 個 acceptance 就係『呢單算唔算完』嘅定義」。寧願空住兼講明點解,好過填一堆之後冇人對得返嘅嘢。
+> 🟢 **選項 B 揀咗(2026-08-17)⇒ 填得。** 每條寫**點驗**,唔係寫「做咗」。
+> 📌 **形式跟 W46 個教訓**:acceptance 就係「呢單算唔算完」嘅定義。收尾要**逐條搵返實際證據(邊個 spec 邊個 `describe`)唔靠記憶勾**。
 
-選項揀定之後,acceptance 至少要覆蓋:
+### A — Schema / migration
 
-- [ ] 對應 endpoint 存在 + RBAC 入咗 `permissions.spec.ts.snap`(**加任何 route 都會郁呢個 snapshot**,§2.7)
-- [ ] OpCo scope:唔屬自己 OpCo 嘅 run,郁唔到
-- [ ] **`review-stats` 數字喺操作前後逐字一樣**(falsification:拆走保護要真紅)
-- [ ] **`kill-switch.settled` 唔會因為呢個操作變 `true`**
-- [ ] `AuditLog` 有冇新 action(要決定 —— 今日得三條 agent action)
-- [ ] light + dark render(若掂前端 ⇒ H6)
-- [ ] DEV 兩個測試 run 真係清到 / 隱藏到,**落 DB 或落 API 對數,唔係睇 HTTP 200**
+- [ ] **A1** `AgentRun.hiddenAt DateTime?` 落 schema;migration SQL **實讀**係一行 `ADD COLUMN`,**冇 `UNIQUE`、冇 index、冇 `NOT NULL`**(跟 ADR-0035 先例親自核 SQL,唔靠 Prisma 講)
+- [ ] **A2** migration 對**真 Postgres** 跑過(本機 + DEV 各一次);既有 run row `hiddenAt` 全部 `NULL`
+
+### B — API 行為
+
+- [ ] **B1** `POST /agent/runs/:id/hide` → 200,`hiddenAt` 由 `NULL` 變有值;`POST :id/unhide` → 200,變返 `NULL`
+- [ ] **B2** **terminal-only 閘**(ADR-0040 D6):對一個 `running` / `awaiting_approval` / `approved` 嘅 run 撳 hide → **409**,訊息講得出點解(對稱於 `abortRun:455-459`)
+- [ ] **B3** **`GET /agent/runs/:id` 對 hidden run 照樣 200**(D3 —— hidden ≠ 消失)
+- [ ] **B4** `GET /agent/runs?requestId=` **唔再返**個 hidden run;若嗰張 request 只得佢一個 ⇒ 返 `null`
+- [ ] **B5** OpCo scope:唔屬自己 OpCo 嘅 run,hide / unhide **都郁唔到**(行返 `getRun` 條路)
+- [ ] **B6** RBAC:**REGIONAL 撳 hide → 403**(D7 收窄);ADMIN → 200。⚠️ 兩條新 route 會郁 `permissions.spec.ts.snap`(§2.7),snapshot 要更新**兼且逐行睇過**
+
+### C — 🔴 最重要嗰組:證明 R13 同 kill switch 冇被影響(ADR-0040 D4)
+
+- [ ] **C1** 一個 run 下面有 decided proposal,hide 佢前後 **`GET /agent/review-stats` 回應逐字一樣**(唔係「差唔多」)
+- [ ] **C2** hide 一個 terminal run **唔會**令 `kill-switch.settled` 由 `false` 變 `true`
+- [ ] **C3** **Falsification 真跑真紅**:喺 `review-stats.service.ts` 個 `where` 硬加一句 `hiddenAt: null` ⇒ C1 **必須紅**。⚠️ **紅完要還原**,而且要記低紅咗幾多條 / 有冇誤傷(§9 慣例)
+- [ ] **C4** `agent.boundary.spec.ts` 加 `writersOf('agentRun')` 之後,**故意喺第二個檔案加一句 `prisma.agentRun.update(...)` 要令佢真紅**(D8 —— 唔驗就唔知個新守衛係咪空轉)
+
+### D — Audit
+
+- [ ] **D1** hide / unhide 各寫一條 `AuditLog`,action `agent.run_hidden`,`targetType: 'AgentRun'`,`before`/`after` **空**
+- [ ] **D2** `/admin/audit` 篩得到佢(同 `AGENT_KILL_SWITCH_SET` 一樣行得通)
+- [ ] **D3** audit 寫入同主操作**同一個 `$transaction`**(ADR-0009 D8.1 先例;⚠️ 注意 ADR-0011 D6 係刻意相反嘅**例外**,本單唔屬嗰種)
+
+### E — 前端(H6)
+
+- [ ] **E1** `ai-assist-card.tsx` 有 hide 入口,**ADMIN 先見到**(對齊 D7)
+- [ ] **E2** hidden 之後張卡消失 / 變空態,**唔會留低一個壞掉嘅 loading**
+- [ ] **E3** **light + dark 真 render**,零橫向溢出,token 兩個 theme 真 swap(唔 eyeball)
+- [ ] **E4** 一個 view **一個** primary action —— ⚠️ 張卡已經有 Approve / Reject / Stop,**hide 一定唔可以做 primary**
+
+### F — Gate
+
+- [ ] **F1** root `npm test` exit 0(api + web 兩個 workspace,**零紅**;基線 api 1362/92 · web 439/43)
+- [ ] **F2** root `npm run build` + tsc 兩邊 0 + lint 0
+- [ ] **F3** `ADR-0040` 由 `Proposed` → **`Accepted`**,`docs/adr/README.md` 同步
+
+### G — Live
+
+- [ ] **G1** DEV 兩個測試 run **真係唔再喺 request detail 出現**,而 `GET /agent/runs/:id` **仍然攞得返**(兩邊都要驗 —— 只驗一邊證唔到 D3)
+- [ ] **G2** 收貨標準係**落 DB / 落 API 對數,唔係睇 HTTP 200**(§9 `A14` 先例)
 
 ---
 
 ## 7. 估算
 
+🟢 **揀咗 B ⇒ 估 1–1.5 日**(schema + migration + api + web + test)。**ADR 寫咗 = `ADR-0040`,狀態 `Proposed`。**
+
+原四個選項嘅估算保留做記錄:
+
 | 選項 | 估算 | 要唔要 ADR |
 |---|---|---|
 | A | 0.5 日 + ADR | **要** |
-| B | 1–1.5 日(schema + migration + api + web + test) | 建議要(短) |
+| **B** ✅ | **1–1.5 日** | 寫咗(`ADR-0040`) |
 | C | 0.75 日 + ADR | **要** |
 | D | 0.25 日(或零) | 唔使 |
 
@@ -275,12 +332,13 @@ apps/api/src/fulfilment/fulfilment.controller.ts:91  @Delete(':id/line-items/:li
 
 ## 8. Open questions(要 Chris 答)
 
-| # | 問題 | 點解要而家答 |
+| # | 問題 | 狀態 |
 |---|---|---|
-| **OQ-1** | **§4 揀邊個?** | 決定咗先寫得 acceptance |
-| **OQ-2** | 移除 / 隱藏一個 run,要唔要寫 `AuditLog`? | 今日得三條 agent action(`audit-fields.ts:156,168,181`)。一個「令嘢消失」嘅操作**冇 audit** 好難講得通,但加就要動 `audit-fields.ts` 白名單 |
-| **OQ-3** | 用邊個 HTTP verb? | 若揀 B,我建議 **`POST :id/hide` 唔用 `DELETE`** —— verb 應該講真相,而嗰個操作唔係刪。若揀 A/C 就係 `DELETE` |
-| **OQ-4** | 要唔要順手修 §2.8 兩個 boundary 缺口? | 揀 A/C 我認為**必須**;揀 B/D 可以登候選 |
+| **OQ-1** | §4 揀邊個? | 🟢 **答咗(2026-08-17)= B(soft-hide)**,Chris 揀 |
+| **OQ-2** | 隱藏一個 run 要唔要寫 `AuditLog`? | 🟢 **答咗 = 要**(`ADR-0040 D5`)。**論據唔係我發明** —— `audit-fields.ts:172-180` 講 `AGENT_KILL_SWITCH_SET` 嗰段逐字適用:「an admin control that … **leaves no record of who changed it** — which is the thing ADR-0009 exists to prevent」。順帶查證咗 `'AgentRun'` **一早喺 `AuditTargetType`**(`:200`)⇒ 只加一條 action,**唔動 target type、唔動 allow-list**(即係唔觸發 H4 嗰種「加一行係一個 privacy 決定」) |
+| **OQ-3** | 用邊個 HTTP verb? | 🟢 **答咗 = `POST :id/hide`**(`ADR-0040 D2`),**唔用 `DELETE`** —— verb 應該講真相。➕ 加咗 `POST :id/unhide`(§4.2) |
+| **OQ-4** | 要唔要順手修 §2.8 兩個 boundary 缺口? | 🟡 **一半**:`writersOf('agentRun')` **做**(`ADR-0040 D8` —— 本單自己新增 writer);`deleteMany` verb 嗰半**唔做**,已登 BACKLOG `agent-boundary-gaps` |
+| **OQ-5** 🆕 | **`ADR-0040` 八條 D 批唔批?** | 🔴 **未答 —— 呢個就係開工閘**。尤其 §4.2 兩條(`unhide` · ADMIN-only)係我加嘅,唔喺選項 B 原文 |
 
 ---
 
