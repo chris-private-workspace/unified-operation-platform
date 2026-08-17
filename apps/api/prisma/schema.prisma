@@ -27,36 +27,36 @@ datasource db {
 // passwordHash. email is the shared login identifier. authProvider disambiguates.
 
 enum Role {
-  ADMIN    // platform admin
+  ADMIN // platform admin
   REGIONAL // Regional IT — sees all OpCos
-  OPCO_IT  // OpCo IT — scoped to own OpCo (future self-service)
+  OPCO_IT // OpCo IT — scoped to own OpCo (future self-service)
 }
 
 model AppUser {
-  id              String         @id @default(cuid())
-  entraOid        String?        @unique // Entra object id (SSO users; null for local accounts)
-  email           String         @unique // login identifier for both providers
-  displayName     String
-  passwordHash    String? // argon2id hash (local accounts; null for SSO) — NEVER serialised
-  authProvider    String         @default("entra") // 'entra' | 'local'
+  id                  String               @id @default(cuid())
+  entraOid            String?              @unique // Entra object id (SSO users; null for local accounts)
+  email               String               @unique // login identifier for both providers
+  displayName         String
+  passwordHash        String? // argon2id hash (local accounts; null for SSO) — NEVER serialised
+  authProvider        String               @default("entra") // 'entra' | 'local'
   // Password lifecycle (ADR-0006 / AUTH-4c-A). Local accounts only.
-  mustChangePassword Boolean     @default(false) // force-change-on-first-login (set on admin create/reset)
-  failedLoginCount   Int         @default(0) // consecutive failed local logins → lockout
-  lockedUntil        DateTime? // local login locked until this time (null = not locked)
-  passwordChangedAt  DateTime? // last local password change (audit)
-  role            Role           @default(REGIONAL)
-  opcoScopeId     String? // set for OPCO_IT; null = all (REGIONAL / ADMIN)
-  opcoScope       Opco?          @relation(fields: [opcoScopeId], references: [id])
-  active          Boolean        @default(true)
-  lastLoginAt     DateTime? // ops visibility
-  createdAt       DateTime       @default(now())
-  handledRequests Request[] // requests this operator is handling
-  events          RequestEvent[]
-  refreshTokens   RefreshToken[] // AUTH-4c-B rotating refresh sessions (local accounts)
+  mustChangePassword  Boolean              @default(false) // force-change-on-first-login (set on admin create/reset)
+  failedLoginCount    Int                  @default(0) // consecutive failed local logins → lockout
+  lockedUntil         DateTime? // local login locked until this time (null = not locked)
+  passwordChangedAt   DateTime? // last local password change (audit)
+  role                Role                 @default(REGIONAL)
+  opcoScopeId         String? // set for OPCO_IT; null = all (REGIONAL / ADMIN)
+  opcoScope           Opco?                @relation(fields: [opcoScopeId], references: [id])
+  active              Boolean              @default(true)
+  lastLoginAt         DateTime? // ops visibility
+  createdAt           DateTime             @default(now())
+  handledRequests     Request[] // requests this operator is handling
+  events              RequestEvent[]
+  refreshTokens       RefreshToken[] // AUTH-4c-B rotating refresh sessions (local accounts)
   passwordResetTokens PasswordResetToken[] // AUTH-4c-C self-service reset (local accounts)
-  ledgerAdjustments LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
-  auditLogs       AuditLog[] // platform audit trail entries this operator caused (ADR-0009)
-  agentRuns       AgentRun[] // AI-Assist runs started under this operator's OpCo scope (ADR-0036)
+  ledgerAdjustments   LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
+  auditLogs           AuditLog[] // platform audit trail entries this operator caused (ADR-0009)
+  agentRuns           AgentRun[] // AI-Assist runs started under this operator's OpCo scope (ADR-0036)
 }
 
 // ── RefreshToken (AUTH-4c-B / ADR-0006 §7) — rotating refresh session for the
@@ -146,14 +146,14 @@ model SkuCatalog {
 // assignedQuantity  = actually assigned baseline → THIS reconciles vs tenant total (M365 + D365, ADR-0008 D5)
 
 model OpcoSkuLedger {
-  id                String     @id @default(cuid())
+  id                String             @id @default(cuid())
   opcoId            String
-  opco              Opco       @relation(fields: [opcoId], references: [id])
+  opco              Opco               @relation(fields: [opcoId], references: [id])
   skuCatalogId      String
-  sku               SkuCatalog @relation(fields: [skuCatalogId], references: [id])
-  allocatedQuantity Int        @default(0) // budget / owned (OpCo-managed)
-  assignedQuantity  Int        @default(0) // baseline assigned (+1 on assign, OR manual correction — ADR-0007)
-  updatedAt         DateTime   @updatedAt
+  sku               SkuCatalog         @relation(fields: [skuCatalogId], references: [id])
+  allocatedQuantity Int                @default(0) // budget / owned (OpCo-managed)
+  assignedQuantity  Int                @default(0) // baseline assigned (+1 on assign, OR manual correction — ADR-0007)
+  updatedAt         DateTime           @updatedAt
   adjustments       LedgerAdjustment[] // hand-edit audit trail (ADR-0007 / W23-A)
 
   @@unique([opcoId, skuCatalogId])
@@ -234,24 +234,24 @@ enum RequestStatus {
 }
 
 model Request {
-  id                String            @id @default(cuid())
-  serviceNowSysId   String?           @unique // parent REQ (sc_request) sysId — two-level (ADR-0008); per-line RITM lives on RequestLineItem
+  id                String        @id @default(cuid())
+  serviceNowSysId   String?       @unique // parent REQ (sc_request) sysId — two-level (ADR-0008); per-line RITM lives on RequestLineItem
   serviceNowNumber  String? // e.g. REQ0012345 (parent REQ)
   serviceNowStatus  String? // mirrored for display, not owned
   rawRequestText    String? // free-text remark → source for human / future-AI interpretation
-  origin            String            @default("onboarding-intake") // 'onboarding-intake' (W03/n8n) | 'platform-created' (Phase 乙 outbound) — ADR-0008 D6
+  origin            String        @default("onboarding-intake") // 'onboarding-intake' (W03/n8n) | 'platform-created' (Phase 乙 outbound) — ADR-0008 D6
   requesterEmail    String? // who filed the ticket (may differ from the new user)
   targetUpn         String // the new user being onboarded
   targetDisplayName String?
   opcoId            String
-  opco              Opco              @relation(fields: [opcoId], references: [id])
-  status            RequestStatus     @default(OPEN)
+  opco              Opco          @relation(fields: [opcoId], references: [id])
+  status            RequestStatus @default(OPEN)
   handledById       String? // Regional operator owning this request
-  handledBy         AppUser?          @relation(fields: [handledById], references: [id])
+  handledBy         AppUser?      @relation(fields: [handledById], references: [id])
 
   // Phase 1 (n8n) linkage — assign is GATED on azureSyncedAt
-  accountCreatedAt  DateTime?
-  azureSyncedAt     DateTime?
+  accountCreatedAt DateTime?
+  azureSyncedAt    DateTime?
 
   // ── ADR-0025 D4: gate ② — the SERVICENOW half of "is this person real yet" ──
   //
@@ -287,13 +287,13 @@ model Request {
   // on every row raised before ADR-0035 and on every failed submission.
   serviceNowLicenceReqNumber String?
 
-  lineItems         RequestLineItem[]
-  events            RequestEvent[]
-  outboundFailures  OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
-  agentRuns         AgentRun[] // ADR-0036 — AI-Assist runs reasoning about this request
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  closedAt          DateTime?
+  lineItems        RequestLineItem[]
+  events           RequestEvent[]
+  outboundFailures OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
+  agentRuns        AgentRun[] // ADR-0036 — AI-Assist runs reasoning about this request
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  closedAt         DateTime?
 
   @@index([opcoId, status])
 }
@@ -304,24 +304,24 @@ model Request {
 // (E3 available → assign now; Copilot → still in procurement).
 
 enum LineItemStage {
-  REQUESTED       // interpreted from the request
-  QUOTING         // procurement: getting vendor quote
-  OPCO_APPROVED   // procurement: OpCo approved the spend
+  REQUESTED // interpreted from the request
+  QUOTING // procurement: getting vendor quote
+  OPCO_APPROVED // procurement: OpCo approved the spend
   AWAITING_VENDOR // procurement: PO sent, waiting for provisioning
-  READY           // procured OR already available — ready to assign (may wait for sync)
-  ASSIGNED        // license assigned in M365
+  READY // procured OR already available — ready to assign (may wait for sync)
+  ASSIGNED // license assigned in M365
   CANCELLED
 }
 
 model RequestLineItem {
-  id                  String         @id @default(cuid())
+  id                  String        @id @default(cuid())
   requestId           String
-  request             Request        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  request             Request       @relation(fields: [requestId], references: [id], onDelete: Cascade)
   skuCatalogId        String
-  sku                 SkuCatalog     @relation(fields: [skuCatalogId], references: [id])
-  quantity            Int            @default(1)
-  procurementRequired Boolean        @default(false) // set at triage: false = short path, true = procurement path
-  stage               LineItemStage  @default(REQUESTED)
+  sku                 SkuCatalog    @relation(fields: [skuCatalogId], references: [id])
+  quantity            Int           @default(1)
+  procurementRequired Boolean       @default(false) // set at triage: false = short path, true = procurement path
+  stage               LineItemStage @default(REQUESTED)
 
   // ServiceNow sc_req_item (RITM) — two-level linkage (ADR-0008 D6 / CONTRACT §4).
   // Request.serviceNow* = parent REQ (sc_request); these = THIS line's RITM.
@@ -336,8 +336,8 @@ model RequestLineItem {
   // The platform's own REQ deliberately has nowhere on `Request` to live: giving
   // it one would mean two candidate idempotency keys for the same row.
   // Nullable: legacy rows + user-facing intake without a per-line RITM.
-  serviceNowSysId     String?
-  serviceNowNumber    String?
+  serviceNowSysId  String?
+  serviceNowNumber String?
 
   // TRACEABILITY ONLY (ADR-0025 D1) — the Windows Domain Account sc_task that
   // n8n workflow 1001 handled for this line, handed over at intake.
@@ -353,31 +353,31 @@ model RequestLineItem {
   // Kept rather than dropped: a nullable column costs nothing, a drop migration
   // against a deployed UAT does not, and knowing which task n8n handled is
   // genuinely useful when reconciling an onboarding by hand.
-  serviceNowTaskSysId String?
+  serviceNowTaskSysId  String?
   serviceNowTaskNumber String?
 
   // procurement references (recorded during manual stage tracking)
-  quoteRef            String? // vendor quotation reference
-  poRef               String? // purchase order reference
+  quoteRef String? // vendor quotation reference
+  poRef    String? // purchase order reference
 
   // W40 / ADR-0017 D3 — when the platform last told ServiceNow this line's RITM
   // is on hold (budget gate blocked it, "procurement in progress"). Set only on
   // the transition, never on every blocked attempt: an operator can retry a
   // blocked assign as often as they like, and each retry must not PATCH a real
   // customer ticket again.
-  ticketHeldAt        DateTime?
+  ticketHeldAt DateTime?
 
   // stage timestamps (procurement path)
-  quotedAt            DateTime?
-  opcoApprovedAt      DateTime?
-  vendorOrderedAt     DateTime?
-  readyAt             DateTime?
-  assignedAt          DateTime?
+  quotedAt        DateTime?
+  opcoApprovedAt  DateTime?
+  vendorOrderedAt DateTime?
+  readyAt         DateTime?
+  assignedAt      DateTime?
 
-  note                String?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
-  events              RequestEvent[]
+  note      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  events    RequestEvent[]
 
   @@index([requestId])
   @@index([stage])
@@ -592,15 +592,66 @@ model ConnectorConfig {
 // derivePermissions() keeps reporting it as an ordinary user: silent privilege
 // escalation with a matrix that says nothing is wrong.
 model AgentPrincipal {
-  id String @id @default(cuid())
+  id        String         @id @default(cuid())
   // The capability, not the model behind it ('ai-assist'). Which LLM answers is
   // runtime config (ConnectorConfig, ADR-0013 Model C); baking it in here would
   // make "who did this" change on every model upgrade.
-  name      String     @unique
+  name      String         @unique
   runtime   String // 'openai-agents' | 'claude-tool-runner'
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  runs      AgentRun[]
+  profiles  AgentProfile[]
+}
+
+/// 🔴 W47 F1 / Tier 2 `OQ-1` — 「多個 agent」係**同一套能力、唔同 model / prompt**.
+///
+/// Why a second model rather than columns on AgentPrincipal: the comment above
+/// says `name` is the capability, NOT the model, because audit attribution must
+/// not change every time a model is upgraded. This table keeps both facts and
+/// lets them move independently — "who did this" is the principal, "what ran"
+/// is the profile. An upgrade adds a profile; the principal never moves.
+///
+/// 🔴 It also dissolves a question that Option A would have forced: "is a model
+/// upgrade a NEW agent or an EDIT to the existing one?" Both answers cost
+/// something (editing loses what old runs actually ran on; creating grows the
+/// agent list on every upgrade). Here it is neither — it is a new profile.
+model AgentProfile {
+  id          String         @id @default(cuid())
+  principalId String
+  principal   AgentPrincipal @relation(fields: [principalId], references: [id])
+
+  /// Human-facing, e.g. 'ai-assist (gpt-4o)'. Unique PER PRINCIPAL rather than
+  /// globally: two principals may each want a profile called 'default', and
+  /// making that collide would be an accident of naming, not a real conflict.
+  name String
+
+  /// The Azure DEPLOYMENT name, not a model family — ADR-0037 E3 settled that
+  /// `AGENT_MODEL` under Azure is a deployment name, so what is stored here is
+  /// a deployment fact.
+  model String
+
+  /// null = use the default prompt that lives in code.
+  ///
+  /// 🔴 W47 R1 — this is the ONE column in this phase that hands behaviour to
+  /// runtime configuration. Editing it changes how the agent reasons, and that
+  /// change appears in no code review. Three defences, in order:
+  ///   1. every edit is audited (OQ-C, following ADR-0013's ConnectorConfig)
+  ///   2. the tool allow-list stays in CODE (ADR-0036 D1) — so the worst case
+  ///      is an agent that talks nonsense, never one that does something it was
+  ///      not permitted to do
+  ///   3. this comment, so the next person adding a runtime-editable behaviour
+  ///      column has to decide to do it rather than drift into it
+  prompt String?
+
+  /// Deactivated, never deleted. Historical runs point here to say what they
+  /// ran on, and that answer must survive someone tidying up the list.
   active    Boolean    @default(true)
   createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   runs      AgentRun[]
+
+  @@unique([principalId, name])
 }
 
 model AgentRun {
@@ -615,7 +666,17 @@ model AgentRun {
   // state — and no scope reads as every scope, which is the fail-open shape
   // ADR-0036 D0 exists to keep out of the agent path.
   startedById String
-  startedBy   AppUser        @relation(fields: [startedById], references: [id])
+  startedBy   AppUser @relation(fields: [startedById], references: [id])
+
+  /// Which profile this run actually used (W47 F3).
+  ///
+  /// 🔴 Nullable, and it stays nullable: runs started before W47 had no profile,
+  /// and back-filling one would assert a fact that never happened. The screen
+  /// shows those as "(before W47)" rather than hiding them (OQ-D) — hiding would
+  /// turn "how many runs predate the registry" into an unanswerable question,
+  /// and that is exactly the number a new list is easiest to be wrong about.
+  profileId String?
+  profile   AgentProfile? @relation(fields: [profileId], references: [id])
 
   // The request an AI-Assist run is reasoning about. Carries a foreign key,
   // the same shape as OutboundFailure.requestId (F1-7, Chris 2026-08-15).
@@ -623,7 +684,7 @@ model AgentRun {
   // pointing at Request without a key is a difference that holds only as long
   // as someone remembers it, so it was settled rather than written down.
   requestId String?
-  request   Request?       @relation(fields: [requestId], references: [id])
+  request   Request? @relation(fields: [requestId], references: [id])
 
   // running | awaiting_approval | approved | rejected | completed | failed |
   // aborted | expired
@@ -657,6 +718,9 @@ model AgentRun {
 
   @@index([status, startedAt])
   @@index([requestId])
+  // W47 F4 — the run list filters by profile, and without this that filter is a
+  // sequential scan that only shows up once there are enough runs to matter.
+  @@index([profileId])
 }
 
 // 🟢 The action ledger — written by the PLATFORM, around a tool actually

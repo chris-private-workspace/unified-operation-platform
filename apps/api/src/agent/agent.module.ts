@@ -13,9 +13,11 @@ import { AgentRunWorker } from './agent-run.worker';
 import { AgentRunExpiryService } from './run-expiry.service';
 import { AgentKillSwitchService } from './kill-switch.service';
 import { AgentReviewStatsService } from './review-stats.service';
+import { AgentProfileService } from './agent-profile.service';
 import { AgentRunController } from './agent-run.controller';
 import { AgentKillSwitchController } from './kill-switch.controller';
 import { AgentReviewStatsController } from './review-stats.controller';
+import { AgentProfileController } from './agent-profile.controller';
 
 /**
  * W46 / ADR-0036 — the agent module.
@@ -91,11 +93,23 @@ import { AgentReviewStatsController } from './review-stats.controller';
     // decides nothing, which is why it is not exported (nothing else should be
     // acting on these numbers — a person should).
     AgentReviewStatsService,
+    /**
+     * W47 F2 — the registry. Not exported: nothing outside this module should be
+     * minting or editing profiles, and the one caller that needs to RESOLVE one
+     * (`AiAssistService`) lives here.
+     *
+     * 🔴 It manages which model / prompt a run uses — never what the agent may
+     * DO. The tool allow-list stays a single list in code (D1) and a run's
+     * visibility stays the starter's OpCo scope; Tier 2 `OQ-1` / `OQ-2` settled
+     * both, and this provider is where that settlement is easiest to erode.
+     */
+    AgentProfileService,
   ],
   controllers: [
     AgentRunController,
     AgentKillSwitchController,
     AgentReviewStatsController,
+    AgentProfileController,
   ],
   exports: [
     AgentToolRegistry,

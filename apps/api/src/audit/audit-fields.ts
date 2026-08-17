@@ -179,6 +179,25 @@ export const AUDIT_ACTIONS = {
    * exists to prevent. Recorded in the W46 changelog (R3) for a decision.
    */
   AGENT_KILL_SWITCH_SET: 'agent.kill_switch_set',
+  /**
+   * W47 `OQ-C` — an admin created an agent profile (a model + prompt combination
+   * the agent can be run under).
+   *
+   * Split from UPDATE for the reason OPCO_CREATE is split from OPCO_UPDATE: a
+   * creation has no `before`, so folding them would make every profile's first
+   * row a special case in whatever query reads them.
+   */
+  AGENT_PROFILE_CREATE: 'agent.profile_create',
+  /**
+   * W47 `R1` — an admin changed a profile, and this is the first mitigation of
+   * the one column in W47 that hands BEHAVIOUR to runtime configuration.
+   *
+   * 🔴 Deactivation comes through here too rather than getting its own action.
+   * `active` is in the whitelist, so "who turned this profile off" is already a
+   * one-query answer; a separate action would only split the history of a single
+   * profile across two filters.
+   */
+  AGENT_PROFILE_UPDATE: 'agent.profile_update',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -199,7 +218,8 @@ export type AuditTargetType =
   | 'SyncSweep'
   | 'AgentRun'
   | 'AgentProposal'
-  | 'AgentPrincipal';
+  | 'AgentPrincipal'
+  | 'AgentProfile';
 
 /**
  * Per-target allow-list. Only these keys can reach `before` / `after`.
@@ -352,6 +372,31 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
      * wider than the write it covers is how the next widening gets argued for.
      */
     AgentPrincipal: ['active'],
+    /**
+     * 🔴 W47 `R1` / `OQ-C` — the second agent target that is NOT event-only, and
+     * `prompt` is the reason it exists.
+     *
+     * `prompt` is the one column in W47 that hands behaviour to runtime
+     * configuration: editing it changes how the agent reasons, and that change
+     * appears in no code review. An audit row saying only "somebody edited this
+     * profile" would leave "changed to what?" unanswerable — which is the exact
+     * failure `AgentPrincipal`'s entry above was written to avoid for `active`.
+     *
+     * 🔴 Why this does NOT reopen the transcript decision (`AgentRun: []`).
+     * That entry excludes free text of "unpredictable shape and large volume" —
+     * and both halves are about text a MODEL produced. A prompt is written by a
+     * person, through a DTO that caps its length, and is configuration rather
+     * than content. It is the same kind of value as ConnectorConfig's
+     * `n8nOutboundWebhookUrl` above, which is likewise free text and likewise
+     * whitelisted because it IS the audited change.
+     *
+     * ⚠️ What that costs, stated rather than assumed: a prompt an admin writes
+     * could contain anything they type, PII included. The mitigation is that
+     * audit reads are ADMIN-only (Decision 7's standing price), and the
+     * alternative — a behaviour change with no record of what it changed to — is
+     * worse for the risk this column was flagged under.
+     */
+    AgentProfile: ['name', 'model', 'prompt', 'active'],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */

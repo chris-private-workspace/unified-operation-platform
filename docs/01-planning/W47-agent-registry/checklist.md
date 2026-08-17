@@ -12,8 +12,8 @@
 
 ## `F1` — `AgentProfile` model + migration(H1)
 
-- [ ] F1-1 `AgentProfile` model(`principalId` / `name` / `model` / `prompt?` / `active`,`@@unique([principalId, name])`)
-- [ ] F1-2 `AgentRun.profileId String?` —— **nullable**,理由喺 `R2`
+- [x] F1-1 ✅ `AgentProfile` model(`principalId` / `name` / `model` / `prompt?` / `active`,`@@unique([principalId, name])`)—— 三段 `///` 註釋寫低咗**點解係另一個 model 唔係加欄**,同埋 `prompt` 個 `R1` 三道防線
+- [x] F1-2 ✅ `AgentRun.profileId String?` + `@@index([profileId])` —— **nullable 而且會長期 nullable**:W47 之前開嘅 run 冇 profile,追溯 back-fill 就係聲稱一件冇發生過嘅事
 - [ ] F1-3 migration 生成 + **對本機真 DB 跑**(⚠️ 5433 要 Chris 批准停 `ai-doc-extraction-db`)
 - [ ] F1-4 seed:現有 `ai-assist` principal 掛一個 default profile
 - [ ] F1-5 🔴 **G2 嘅 test**:`profileId = null` 嘅舊 run,`GET /agent/runs/:id` 唔可以 500
@@ -21,12 +21,12 @@
 
 ## `F2` — Profile CRUD
 
-- [ ] F2-1 `AgentProfileService`(list / create / update / deactivate)
-- [ ] F2-2 `GET/POST/PATCH /agent/profiles`,`@Roles` 跟 `OQ-A`
-- [ ] F2-3 **唔提供硬刪** —— 只 `active=false`(`R3`)
-- [ ] F2-4 名重複 → 409 · `model` 空 → 400
-- [ ] F2-5 `permissions.spec.ts` drift test 認得新 endpoint(W28 機制)
-- [ ] F2-6 🔴 改 `prompt` 入 audit(`OQ-C`;跟 ADR-0013 `ConnectorConfig` 先例)—— `R1` 第一道 mitigation
+- [x] F2-1 ✅ `AgentProfileService`(list / create / update / **`resolveForRun`**)
+- [x] F2-2 ✅ `GET/POST/PATCH /agent/profiles`,**`@Roles(ADMIN)`**(`OQ-A`)
+- [x] F2-3 ✅ **冇 DELETE** —— 只 `active=false`(`R3`:歷史 run 指住佢講「當時用咩跑」,呢個答案要捱得住有人執嗰張列表)
+- [x] F2-4 ✅ 名重複 → **409**(narrow 咗 `P2002`,**其餘錯誤原封 rethrow** —— 把任意失敗報成「個名撞咗」係講大話,INC-001 就係呢個代價)· DTO `@IsNotEmpty` + `@MaxLength`
+- [x] F2-5 🟢🟢 **drift test 真係捉到我** —— 加完 controller 跑 full suite,`permissions.spec.ts` 兩條即刻紅:「discovers every controller」同 snapshot。**呢個係第三次一個 agent write surface 被矩陣捉到而唔係被 review 捉到**。已加入鎖定矩陣(帶理由,唔係淨係加個名)+ 更新 snapshot,實測三條路由全部 `roles [ADMIN]`
+- [x] F2-6 🔴 ✅ 改 `prompt` **入 audit `before`/`after`** —— `AUDIT_ACTIONS` 加 `AGENT_PROFILE_CREATE` / `_UPDATE`,`AuditTargetType` 加 `AgentProfile`,whitelist `['name','model','prompt','active']`。🔴 **whitelist 註釋明文講咗點解唔算重開 transcript 嗰個決定**(model 生成 vs 人寫嘅配置)。⚠️ **no-op PATCH 唔寫 audit**(`auditDiff`)—— 否則 `R1` 靠嗰條 query 會被冇改過嘢嘅 edit 塞爆
 - [ ] F2-7 controller spec(BUG-011 教訓:bug 住喺兩層之間)
 
 ## `F3` — 啟動 run 揀 profile

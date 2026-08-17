@@ -195,6 +195,8 @@ model AgentProfile {
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-17 | Initial plan | Tier 2 `T2-a`,scope report approved | Chris Lai |
+| 2026-08-17 | 🔴 **`F3-2` 偏離:冇「default profile」呢個概念** | 原文寫「唔送 = 用該 principal 嘅 **default**」。落手嗰陣發現 default 只可以係**一個畫面上睇唔到嘅欄**,或者一條隱含規則(「最舊嗰個」)—— 兩者都令**加第二個 profile 之後乜都冇變**,直到有日有人問點解 run 仲跑緊舊 model。**一個睇唔到嘅 default,就係將來用錯 model 都冇人發現嗰個位。** 改成 fail-loud:**一個 active ⇒ 用佢**(今日單 profile 世界照行,`ai-assist-card` 唔使改)· **多過一個而冇送 ⇒ 400 兼講明有幾多個** · **零個 ⇒ 400**(唔准 fallback 落 env,否則一個關咗嘅 registry 睇落似正常)。⚠️ 連帶:`F5` 要包 profile 選擇器,否則多 profile 之下 request detail 張卡會 400 | AI(實作決定,已 log) |
+| 2026-08-17 | `prompt` 入 audit `before`/`after`(唔止 event-only) | `OQ-C` 只講「入 audit」,冇講入到咩程度。揀咗記 before/after,理由:`R1` 要答嘅係「**改成咩**」唔止「有人改過」。🔴 **點解唔算重開 transcript 嗰個決定**(`AgentRun: []`):嗰條排除嘅係「free text of **unpredictable shape and large volume**」,而兩半講嘅都係 **model 生成**嘅文字;prompt 係**人寫嘅配置**,經 DTO 封長度(`MAX_PROMPT_LENGTH = 8000`),同 `ConnectorConfig` 嗰堆自由文本欄同族 | AI(實作決定,已 log) |
 
 ---
 
