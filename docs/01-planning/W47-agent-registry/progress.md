@@ -290,7 +290,7 @@ Dialog 截圖顯示面板半透明、45% scrim 完全唔見,`fullPage` 同 viewp
 
 | 項 | 狀態 | 缺咩 |
 |---|---|---|
-| `F1-6` · `F7-2` · `F7-3` | ❌ | **一次 DEV 部署**(merge → 部署 #10 → 驗)。⚠️ **Redis 唔係阻塞**:W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201** ⇒ 一早通咗 |
+| `F1-6` · `F7-2` · `F7-3` | ❌ | **一次 DEV 部署**(~~merge~~ ✅ 2026-08-17 做咗(PR #119) → 部署 #10 → 驗)。⚠️ **Redis 唔係阻塞**:W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201** ⇒ 一早通咗 |
 | `R28` 一半 | 🔴 未答 | `onDelete: Restrict` 擋到**刪**擋唔到**改** ⇒ `AgentRun.profileId` 答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」。要真答 = `AgentRun` 存 model snapshot = **schema 改動(H1),未開單** |
 | `F5-9` 兩件 | 🚧 唔喺本單 | header primary 掣位置(**`/audit` 一模一樣** ⇒ 既有樣式,唔單方面改)· dark 之下 `IconButton` 對比偏弱(既有 primitive) |
 

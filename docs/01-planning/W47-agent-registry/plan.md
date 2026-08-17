@@ -163,7 +163,7 @@ model AgentProfile {
 - ⚠️ **Redis 唔係阻塞** —— W46 `B6` 喺 DEV 實測過 `POST /agent/runs` **201**(冇 Redis 佢會直接
   503,ADR-0039 F1),即 DEV 側 Redis 一早通咗。呢句要寫低,因為 `CLAUDE.md §0` 仲留住
   「部署 DEV 之前 Redis 要喺度」嗰句警告,佢**對 W46 嗰刻啱,對今日唔再係未解決事項**。
-- ⇒ 缺嘅係 **merge → 部署 #10 → 驗**,三步。
+- ⇒ 缺嘅係 **~~merge~~ ✅ 2026-08-17 做咗(PR #119) → 部署 #10 → 驗**,三步。
 
 **兩條 acceptance 掃出嚟嘅額外發現(唔喺原表)**:
 
