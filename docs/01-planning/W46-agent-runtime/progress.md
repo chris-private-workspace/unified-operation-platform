@@ -1553,3 +1553,85 @@ nginx **住喺 web container**(`apps/web/nginx.conf.template`)⇒ 自己改得�
 - **`running` run 死咗仍然冇人執** —— G5-A 刻意留低嘅缺口,而本日**令佢更容易發生**
   (run 而家真係喺背景跑)。要 heartbeat 唔係門檻
 - **R11–R24 仍然未入 `RISK_REGISTER.md`**
+
+---
+
+## Day 20 — 2026-08-17(W46 收尾:掃 acceptance · 補 `B3` · 清 risk 債)
+
+冇新功能。三件收尾工作,而其中一件揾到嘢。
+
+### 🔴 `plan.md` 個 acceptance 表由頭到尾冇更新過
+
+21 條全部仲係 `[ ]`,而實際上 **18 條老早做完** —— 勾咗喺 `checklist.md`,兩份文件各講各。
+
+**呢個唔係「文件唔靚」。** plan 個 acceptance 就係「W46 算唔算完」嘅定義,佢全部空白即係
+**冇人講得出仲差幾多**。而收尾嘅第一個問題正正就係嗰條。
+
+📌 **掃法**:逐條搵返實際證據(邊個 spec、邊個 `describe`),**唔靠記憶勾**。掃出兩件:
+
+| | |
+|---|---|
+| **A1** | 係**一半**(本機 ✅ / DEV ❌),之前被當成一條 |
+| 🔴 **B3** | **只做咗一半** —— 見下 |
+
+### 🔴🔴 `B3` 只做咗一半,而缺嗰半正正係佢個重點
+
+`claude-tool-runner.provider.spec.ts` 個 `D1` 證咗 **schema identity**(`toBe`,同一個 object
+reference 交去 `betaTool`)。但 B3 原文要嘅係:
+
+> assert 兩個 provider 對同一個 tool 呼叫產生**同一個 `AgentStep`**(同
+> `license-ops.contract.spec.ts` 同族)
+
+⇒ **成個 W46 冇一條 cross-provider 對照。** 補咗 `agent-runtime.contract.spec.ts`(7 條)。
+
+🔴 **點解 schema identity 唔頂得住呢個 claim**:佢證嘅係「兩個 adapter 收同一份嘢」,唔係
+「兩個 adapter 做同一件事」。而 `AgentStep` 係 **audit truth**(D4)—— 佢一旦因為一個配置字串
+而有兩個意思,建喺佢上面嘅每一個查證都係喺讀兩種語言當一種。
+
+### 🔴 補完之後,佢第一次跑就紅咗一條,而紅嘅位唔係我預期嗰個
+
+| | tool 掟 error 之後 |
+|---|---|
+| **兩個 adapter** | 逐行一樣:`record({status:'failed', detail})` → `throw err` |
+| `@openai/agents` 個 `tool()` | 🔴 **自己 catch 咗**,返一個 error **字串**畀 model |
+| `betaTool` | 掟返出嚟畀 caller |
+
+🟢 **點解佢唔推翻 B3(講出嚟而唔係假設)**:嗰個分歧住喺 **adapter 之下、ledger 之上** ——
+`AgentStep` 兩邊**逐字一樣**(已 assert),而**兩邊個 model 都知道 tool 失敗咗**,只係一個經
+exception 一個經回傳值。條 test 兩個機制**各 assert 一次**,唔係淨係 assert「有 throw」——
+只 assert `threw === null` 會 pin 住個 swallow 而 pin 唔住「有嘢生還」,而後者先係重點。
+
+跟 `license-ops.contract.spec.ts` 先例:**pin 佢,唔抹走佢**(嗰邊為 W39 OQ-1 個 replay 分歧
+做過同一件事)。
+
+📌 **值得記嘅唔係呢個分歧,係佢點解一直冇人見到** —— **兩個 provider spec 各自都完全正確**,
+因為每個都只講自己。**「兩個實作一致」呢個 claim,結構上冇一個單一實作嘅 spec 講得到。**
+
+### ✅ Falsification ×3,其中一個係測 contract spec 自己嘅盲點
+
+①claude 側 `toolName` 改大寫 ⇒ **2 紅**
+②**兩邊一齊**改大寫 ⇒ **1 紅** —— 🔴 **互相比較嗰條綠咗,hardcode 期望嗰條紅** ⇒ 兩種 assert
+**夾埋先有意義**(CH-023 tautology 教訓嘅正面應用:一條「兩邊一致」嘅 assert,對「兩邊一齊錯」
+係盲嘅)
+③拆走 claude 失敗路個 record ⇒ **2 紅**
+
+還原之後 `git diff --stat` 對兩個 provider **零輸出**,兼且**真跑過**(api 1355 / 92 全綠)。
+
+### ✅ `R11`–`R25` 十五條入咗 `RISK_REGISTER.md`
+
+carry 咗最耐嗰筆。`plan §6` 只定義咗 `R11`–`R16`,其餘散落喺 ADR-0037 / 0038 / 0039 同封
+infra 信 —— **即係話有九條 risk 由頭到尾冇一個地方會令佢浮上嚟**,同 `PAR-submit` 一模一樣嘅
+形狀(住喺一份文件尾嘅 `- [ ]`)。
+
+🔴 **入冊嗰陣校正咗一條**:`R20`(兩個 SDK 各自 ship `zod` ⇒ 版本撞)—— 實測
+`@anthropic-ai/sdk` 得**兩個** dependency 而 **`zod` 係 optional peerDependency**,workspace
+解析到**一個** `zod@4.4.3` ⇒ **標 `🟢 Resolved`,理由寫成「實測推翻咗原假設」**,唔係靜靜刪走。
+
+### 收尾數字
+
+api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0。
+
+### 🚧 W46 淨低三條,全部同一個原因
+
+`A1`(DEV 半邊)· `A14` · `B6` —— **三條都係「要一個真環境」**,而真環境要 infra 開兩個
+resource。封信已經寫好(含 Redis,2026-08-17 併入)但**未發**,而幾時發係 owner 決定。

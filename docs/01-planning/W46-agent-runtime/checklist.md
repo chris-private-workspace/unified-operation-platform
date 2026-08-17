@@ -274,3 +274,15 @@
 | ~~G2-j~~ | ~~UI / render 未做~~ | 🟢 **2026-08-16 三個一次過收晒**(Chris 批准停 `ai-doc-extraction-db`)—— 見 `G-UI` | ✅ |
 | R11–R19 | 未入 `RISK_REGISTER.md`(🆕 R17–R19 由 ADR-0037 新增) | living doc,ADR / plan 已記 | 期一收尾 |
 | — | 🆕 **既有 gap(唔喺 W46 範圍)**:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏咗 `licenseOpsProvider` / `ticketUpdateProvider` / `acsSenderAddress` 等 ⇒ 改 seam provider 唔會出現喺 audit `before`/`after` | W39 / W40 / CH-011 三批欄都中 | 開一張 CH |
+
+---
+
+## `G-CLOSE` —— W46 收尾(2026-08-17)
+
+- [x] G-CLOSE-a 🔴 **`plan.md` 個 acceptance 表由頭到尾冇更新過** —— 21 條全部 `[ ]` 而實際 18 條老早做完(勾咗喺本檔,**兩份文件各講各**)。**唔係「文件唔靚」** ⇒ plan 個 acceptance 就係「W46 算唔算完」嘅定義,佢全部空白即係**冇人講得出仲差幾多**。掃法 = 逐條搵返實際證據(邊個 spec 邊個 `describe`),**唔靠記憶勾**
+- [x] G-CLOSE-b 🔴🔴 **掃出 `B3` 只做咗一半,而缺嗰半正正係佢個重點** —— claude spec 個 `D1` 證咗 **schema identity**(`toBe`),但 B3 原文要嘅係「**兩個 provider 對同一個 tool 呼叫產生同一個 `AgentStep`**」⇒ **成個 W46 冇一條 cross-provider 對照**。補咗 `agent-runtime.contract.spec.ts`(7 條,跟 `license-ops.contract.spec.ts` 形狀:**互相比較**而唔係各自對 fixture)。🔴 **點解 schema identity 頂唔住呢個 claim**:佢證嘅係「兩個 adapter **收**同一份嘢」,唔係「兩個 adapter **做**同一件事」,而 `AgentStep` 係 **audit truth**(D4)—— 佢一旦因為一個配置字串而有兩個意思,建喺佢上面嘅每一個查證都係喺**讀兩種語言當一種**
+- [x] G-CLOSE-c 🔴 **contract spec 第一次跑就紅咗一條,而紅嘅位唔係我預期嗰個** —— 兩個 adapter 掟 error 之後**逐行一樣**(`record failed` → `throw`),但 **`@openai/agents` 個 `tool()` 自己 catch 咗**返一個 error 字串畀 model,而 `betaTool` 掟返出嚟。🟢 **點解唔推翻 B3(講出嚟唔係假設)**:分歧住喺 **adapter 之下、ledger 之上** —— `AgentStep` 兩邊逐字一樣,而兩邊個 model 都知道 tool 失敗咗,只係一個經 exception 一個經回傳值;條 test **兩個機制各 assert 一次**(只 assert `threw === null` 會 pin 住個 swallow 而 pin 唔住「有嘢生還」)。跟 `license-ops.contract.spec.ts` 先例 **pin 佢唔抹走佢**。📌 **值得記嘅唔係呢個分歧,係佢點解一直冇人見到** —— **兩個 provider spec 各自都完全正確,因為每個都只講自己**;「兩個實作一致」呢個 claim,**結構上冇一個單一實作嘅 spec 講得到**
+- [x] G-CLOSE-d ✅ **Falsification ×3,其中一個係測 contract spec 自己嘅盲點** —— ①claude 側 `toolName` 改大寫 ⇒ **2 紅** ②**兩邊一齊**改大寫 ⇒ **1 紅**(🔴 **互相比較嗰條綠咗,hardcode 期望嗰條紅** ⇒ 兩種 assert **夾埋先有意義**;一條「兩邊一致」嘅 assert 對「兩邊一齊錯」係盲嘅 —— CH-023 tautology 教訓嘅正面應用)③拆走 claude 失敗路個 record ⇒ **2 紅**。還原後 `git diff --stat` 對兩個 provider **零輸出**兼**真跑過**
+- [x] G-CLOSE-e ✅ **`R11`–`R25` 十五條入咗 `RISK_REGISTER.md`** —— carry 咗最耐嗰筆。`plan §6` 只定義咗 `R11`–`R16`,其餘散落喺 ADR-0037 / 0038 / 0039 同封 infra 信 ⇒ **有九條 risk 由頭到尾冇一個地方會令佢浮上嚟**,同 `PAR-submit` **一模一樣嘅形狀**(住喺一份文件尾嘅 `- [ ]`)。🔴 **入冊嗰陣校正咗 `R20`**(兩個 SDK 各自 ship `zod`)—— 實測 `@anthropic-ai/sdk` 得**兩個** dependency 而 `zod` 係 **optional peerDependency**,workspace 解析到**一個** `zod@4.4.3` ⇒ 標 `🟢 Resolved` 兼**理由寫成「實測推翻咗原假設」**,唔係靜靜刪走
+- [x] G-CLOSE-f ✅ **收尾數字** —— api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0
+- [ ] G-CLOSE-g 🚧 **W46 淨低三條,全部同一個原因** —— `A1`(DEV 半邊)· `A14` · `B6`:**三條都係「要一個真環境」**,而真環境要 infra 開兩個 resource。封信已寫好(含 Redis)**但未發**,幾時發係 owner 決定
