@@ -14,9 +14,9 @@
 
 - [x] F1-1 ✅ `AgentProfile` model(`principalId` / `name` / `model` / `prompt?` / `active`,`@@unique([principalId, name])`)—— 三段 `///` 註釋寫低咗**點解係另一個 model 唔係加欄**,同埋 `prompt` 個 `R1` 三道防線
 - [x] F1-2 ✅ `AgentRun.profileId String?` + `@@index([profileId])` —— **nullable 而且會長期 nullable**:W47 之前開嘅 run 冇 profile,追溯 back-fill 就係聲稱一件冇發生過嘅事
-- [ ] F1-3 migration 生成 + **對本機真 DB 跑**(⚠️ 5433 要 Chris 批准停 `ai-doc-extraction-db`)
-- [ ] F1-4 seed:現有 `ai-assist` principal 掛一個 default profile
-- [ ] F1-5 🔴 **G2 嘅 test**:`profileId = null` 嘅舊 run,`GET /agent/runs/:id` 唔可以 500
+- [x] F1-3 ✅ migration 生成 + 對本機真 DB 跑(Chris 2026-08-17 批准停 `ai-doc-extraction-db`)。**SQL 純 additive,零 DROP**;落 DB 對過真結構(8 個欄 · `prompt` nullable · `AgentRun.profileId` nullable)。🔴 **生成之後揾到一個同 `F2-3` 打交嘅位**:Prisma 對 optional relation 預設 `ON DELETE SET NULL` ⇒ 一個直接落 DB 嘅 delete 會把「呢個 run 用邊個 profile 跑」**一次過**變成 unknown,冇任何錯誤 —— 而 `F2-3` 存在嘅理由正正係保住嗰個答案。改成 **`onDelete: Restrict`**,兩個 fkey 落 DB 實測都係 `RESTRICT`
+- [x] F1-4 ✅ **唔係 plan 寫嗰個「default profile」,因為佢落唔到手** —— `AgentPrincipal` 係第一次 run 先 lazy 建,而 `runtime` 欄明文只准係 provider 實際 boot 嗰個(BUG-011)⇒ seed 冇 provider,唔可以捏造嗰行。改成**一次性遷移**:principal 已存在 **兼且** 零 profile 先做,model 由 `ConnectorConfig.agentModel → AGENT_MODEL`(同兩個 provider `resolveModel()` 同源),冇配置就唔種。用 **model 做 profile 名**(叫「Default」會宣稱一個 registry 刻意冇嘅地位)。實測種咗 `gpt-5.6-luna`,第二次跑 `left alone`
+- [x] F1-5 ✅ **G2 嘅 test** —— `profileId = null` 嘅舊 run 讀得返(`profileId` / `profile` 兩個都係 `null` 而唔係爆);順帶釘住 **run 回應永遠唔 select `prompt`**(8000 字,屬 registry 畫面)
 - [ ] F1-6 DEV migration(部署之後)
 
 ## `F2` — Profile CRUD
@@ -27,25 +27,27 @@
 - [x] F2-4 ✅ 名重複 → **409**(narrow 咗 `P2002`,**其餘錯誤原封 rethrow** —— 把任意失敗報成「個名撞咗」係講大話,INC-001 就係呢個代價)· DTO `@IsNotEmpty` + `@MaxLength`
 - [x] F2-5 🟢🟢 **drift test 真係捉到我** —— 加完 controller 跑 full suite,`permissions.spec.ts` 兩條即刻紅:「discovers every controller」同 snapshot。**呢個係第三次一個 agent write surface 被矩陣捉到而唔係被 review 捉到**。已加入鎖定矩陣(帶理由,唔係淨係加個名)+ 更新 snapshot,實測三條路由全部 `roles [ADMIN]`
 - [x] F2-6 🔴 ✅ 改 `prompt` **入 audit `before`/`after`** —— `AUDIT_ACTIONS` 加 `AGENT_PROFILE_CREATE` / `_UPDATE`,`AuditTargetType` 加 `AgentProfile`,whitelist `['name','model','prompt','active']`。🔴 **whitelist 註釋明文講咗點解唔算重開 transcript 嗰個決定**(model 生成 vs 人寫嘅配置)。⚠️ **no-op PATCH 唔寫 audit**(`auditDiff`)—— 否則 `R1` 靠嗰條 query 會被冇改過嘢嘅 edit 塞爆
-- [ ] F2-7 controller spec(BUG-011 教訓:bug 住喺兩層之間)
+- [x] F2-7 ✅ controller spec —— **第一次跑就揾到一個真缺口**:`list()` join 咗 `principal: { name }` 送落去,而 `AgentProfileDto` 由頭到尾冇宣告過佢 ⇒ 照 OpenAPI 寫嘅前端會以為冇呢個欄。**同 BUG-011 同一條縫,方向相反**(嗰次係 controller 漏送 read-model 有嘅欄)。兩邊 key 都 typed(`keyof typeof PROFILE_SELECT` vs `keyof AgentProfileDto`)⇒ 任何一邊加欄都 compile 唔到。順帶釘住 query string → boolean 嘅轉換(service 結構上見唔到字串)
 
 ## `F3` — 啟動 run 揀 profile
 
-- [ ] F3-1 `StartAgentRunDto` 加 `profileId?`
-- [ ] F3-2 唔送 → 用該 principal 嘅 default profile
-- [ ] F3-3 🔴 inactive / 唔存在 / 屬另一個 principal → **400,唔准靜靜 fallback**
-- [ ] F3-4 `AgentRun.profileId` 寫低 + `GET /agent/runs/:id` 出得返
-- [ ] F3-5 🔴 `buildAzureClient` 個 model 由 profile 嚟 —— ⚠️ **三個 `AZURE_OPENAI_*` 缺一即 503 呢個行為唔准鬆**(ADR-0037 `E1` 靠佢)
-- [ ] F3-6 falsification:拆走 F3-3 個 guard ⇒ 應該紅
+- [x] F3-1 ✅ `StartAgentRunDto` 加 `profileId?`(controller spec 釘住佢真係傳到落去 —— 掉咗個值嘅版本會照樣開得成 run、成功、有紀錄,**只係跑咗一個冇人揀嘅 model**,冇一個畫面睇得出)
+- [x] F3-2 ✅ 唔送 → `resolveForRun`(**冇 default 概念**,見 §8 changelog 第 2 條)
+- [x] F3-3 ✅ inactive / 唔存在 / 屬另一個 principal → **400**。🔴 **refusal 一定要喺 row 建之前**:OQ-3 只准一張 request 有一個非 terminal run,refusal 留低一行 `running` 就會**永久封死**嗰張 request —— 即 期二 `G5-A` 嗰個形狀第三次由另一道門入嚟。已有一條 test 專門 assert 「refuse 咗冇建 row」
+- [x] F3-4 ✅ `AgentRun.profileId` 寫低 + `GET /agent/runs/:id` 出 `profileId` / `profile{id,name,model}`(**冇 `prompt`**)
+- [x] F3-5 ✅ model 由 profile 經 **`AgentSetup.model`(required)** 落 adapter,兩個 adapter 唔再自己 `resolveModel()`。⚠️ **三個 `AZURE_OPENAI_*` 缺一即 503 一個字冇改**(`buildAzureClient` 冇郁)。🔴 **順帶清走兩個 adapter 個 `ConnectorConfigService`** —— 留住一個「攞得到 config」嘅 adapter,隨時攞返嚟用,到時畫面講一個 model、run 用另一個,冇一處紅。⚠️ **保留一條相容路 `modelForLegacyRun`**:部署嗰刻卡喺 `awaiting_approval` 嘅 run 冇 profile,喺嗰度 refuse 就係再造一次 `G5-A`
+- [x] F3-6 ✅ falsification ×4 真跑真紅:①拆 cross-principal guard → 1 紅 ②profile model 唔用 → 33 紅(**太粗,紅嘅原因係 503 唔係揀錯 model**)③profile prompt 唔用 → **1 紅零誤傷** ④加返 banned import → 1 紅。全部還原後真跑過
+- [x] F3-7 🔴 **兩條我自己寫嘅 test 係假嘅** —— 「assert adapter 冇 call `connectorConfig.resolve`」,但 adapter 而家連收都唔收嗰個 service ⇒ **一條對住唔存在嘅協作者嘅 assert,結構上冇可能紅**。改咗去 `agent.boundary.spec.ts` 用 import ban;而**嗰條 ban 第一版又即刻紅咗** —— 紅喺兩個 adapter 解釋自己點解唔再用佢嗰段註釋度。**一條「檔案寫低自己守規矩就會犯規」嘅 ban,唔係喺度執行佢講嗰條規矩**。收窄到 import 本身
 
 ## `F4` — 全域 run 列表
 
-- [ ] F4-1 `GET /agent/runs?status=&profileId=&since=&limit=&cursor=`
-- [ ] F4-2 🔴 OpCo scope 照舊由**啟動者**帶入(`OQ-2` 個答案喺呢度第一次有實際後果)
-- [ ] F4-3 cursor 分頁(**唔可以 `take` 一個大數扮分頁** —— `R5`)
-- [ ] F4-4 🔴 `runState` **唔出 wire**(W46 個 `select` 就係唯一嗰道閘)
-- [ ] F4-5 每個篩選 param 各一條 test
-- [ ] F4-6 falsification:拆走 scope filter ⇒ 應該紅
+- [x] F4-1 ✅ `GET /agent/runs?status=&profileId=&since=&limit=&cursor=`。⚠️ **呢條路本來係「一張 request 最近嗰個 run」,搬咗去 `/agent/runs/latest`** —— 另一條路係同一個 URL 睇有冇 `requestId` 分流,即一條 endpoint 兩個 response shape,OpenAPI 描述唔到。得一個 caller,一齊搬。**`@Get('latest')` 一定要宣告喺 `@Get(':id')` 之前**
+- [x] F4-2 🔴 ✅ **但同 plan 寫嗰句唔同,而 plan 嗰句係錯嘅**(見 §8 changelog 第 3 條)—— 可見性跟 `getRun`(run 嗰張 request 嘅 OpCo),唔跟啟動者。⚠️ 亦揾到 `request: { is: … }` **只可以喺有 scope 嗰陣加**:Prisma 對 nullable relation 落任何 filter(即使空)都會要求 relation 存在 ⇒ 無條件加就會靜靜令 ADMIN 睇唔到冇 request 嘅 run
+- [x] F4-3 ✅ cursor + `skip: 1` + `take: limit + 1` 探下一頁;limit 上限 **DTO 同 service 各夾一次**。⚠️ orderBy 要有 **`id` tiebreak** —— 兩個 run 可以同一毫秒開,order 唔穩定就會喺頁邊界跳行或者重複,而佢淨係喺有負載嗰陣出現、永遠 reproduce 唔到
+- [x] F4-4 ✅ `runState` 唔出 wire —— 列表係最易漏嘅位,因為**冇人會讀一個列表回應**
+- [x] F4-5 ✅ 每個 param 一條;另加「冇送嘅 filter 唔可以以 `undefined` 形式留喺 where」(對 Prisma 一樣,對讀嘅人唔一樣,而 `profileId: undefined` 距離 `profileId: null` 只差一次 refactor,而後者意思完全唔同)
+- [x] F4-6 ✅ falsification:拆走 scope filter → **1 紅零誤傷**,還原後真跑
+- [x] F4-7 🟢🟢 **W28 drift test 第四次捉到我** —— 新 route `GET /agent/runs/latest` 令鎖定矩陣紅。確認佢繼承 class-level `@Roles` 之後更新,diff **一行、零其他改動**
 
 ## `F5` — 管理 UI(H6)
 

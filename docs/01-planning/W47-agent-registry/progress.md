@@ -80,3 +80,67 @@ BACKLOG 有一條既有 gap 就係嗰個 whitelist 漏咗 `licenseOpsProvider` /
 等,結果係「改咗 seam provider 唔會出現喺 audit `before`/`after`」。**同一個坑唔好再踩。**
 
 ⇒ **開工。**
+
+---
+
+## Day 1 — 2026-08-17(`F1` · `F2` · `F3` · `F4`)
+
+| Commit | 範圍 | Checklist |
+|---|---|---|
+| `23813ae` | schema + registry CRUD + audit | `F1-1` `F1-2` `F2-1`–`F2-6` |
+| `add4751` | migration + seed 遷移 | `F1-3` `F1-4` |
+| `97edfdf` | controller spec | `F2-7` |
+| `4a835fe` | 揀 profile 開 run | `F3-1`–`F3-7` `F1-5` |
+| `35e2de7` | 全域 run 列表 | `F4-1`–`F4-7` |
+
+**數字**:api **1362 → 1410 / 92 → 94 suites** · web 439(零改動)· tsc 0 · lint 0 · build 0。
+**Falsification 五次真跑真紅**,每次都還原後真跑一次。
+
+### 🔴 今日最值得記嘅四件事(都唔係「功能做完咗」)
+
+**① 一個 migration 出咗一句冇人要求過嘅 SQL,而佢會靜靜噬走 `F2-3` 個決定。**
+`F2-3` 刻意**唔提供 DELETE**,理由係「歷史 run 指住 profile 講當時用咩跑」。但 Prisma 對
+optional relation **預設 `ON DELETE SET NULL`** ⇒ 一個直接落 DB 嘅 delete 會把嗰個答案
+**一次過**變成 unknown,冇任何錯誤。改成 `onDelete: Restrict`,DB 自己企硬。
+📌 **形狀**:一個決定喺 API 層守住咗,而**同一個決定喺 DB 層預設係反方向嘅** —— 而
+migration SQL 唔逐行讀就見唔到。
+
+**② `F1-4` 落唔到手,而點解落唔到手先係重點。**
+plan 寫「seed 建一個 default profile」,但 `AgentPrincipal` 係 lazy 建,佢個 `runtime` 欄
+**明文只准係 provider 實際 boot 嗰個(BUG-011)**。seed 冇 provider ⇒ **seed 建嗰行一定係
+捏造**。⇒ 改成一次性遷移,而且條件係「零 **profile**」唔係「零 **active** profile」——
+seed 每次部署都跑,用後者會令一個 admin 刻意熄咗嘅 profile 翻生。
+
+**③ 我寫咗兩條結構上冇可能紅嘅 test,而佢哋睇落完全合理。**
+「assert adapter 冇 call `connectorConfig.resolve`」—— 但同一個 commit 入面我啱啱先拆走咗
+adapter 嗰個 dependency,即係話**個 mock 根本冇駁落去任何嘢**。一條對住唔存在嘅協作者嘅
+assert,永遠綠。
+改咗去 `agent.boundary.spec.ts` 做 import ban 之後,**嗰條 ban 第一版又即刻紅** —— 紅喺
+兩個 adapter **解釋自己點解唔再用佢**嗰段註釋度。
+📌 **兩件事夾埋係同一課**:`CLAUDE.md §9` 已經有「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到
+嘢,係兩件事」,今日係第二種變體 —— **一條 assert 可以連「有嘢畀佢捉」呢個前提都冇**。
+唯一分辨方法一樣:**拆走實作睇佢紅唔紅**。
+
+**④ 一個 falsification 紅咗 33 條,而佢係一個差嘅 falsification。**
+拆走「用 profile 個 model」⇒ 33 紅。睇落好勁,但**紅嘅原因係 503(冇 model 可用)唔係
+「揀錯 model」** —— 佢證明唔到我想證嗰樣嘢。改成「拆走 profile 個 **prompt**」⇒
+**1 紅零誤傷**,嗰條先真係釘住行為。
+📌 **紅得多 ≠ 釘得準。** 一個 falsification 要答嘅係「邊條 test 守住呢個行為」,唔係
+「拆咗會唔會爆」。
+
+### ⚠️ 兩個 plan 講錯咗嘅位(已入 §8 changelog)
+
+- **`F4-2`「scope 由啟動者帶入」係錯嘅** —— 嗰句講緊 `OQ-2`(agent 行緊嗰陣睇到咩),
+  攞嚟做可見性就會同 `getRun` 打交,出現**列表見唔到、撳落去又開到**。
+- **`F3-2`「用 default profile」冇 default 可言**(Day 0 已 log)。
+
+### 🟢🟢 W28 drift test 第四次捉到我
+
+新 route `GET /agent/runs/latest` 令鎖定矩陣紅。⚠️ 呢次同前三次唔同:**佢唔係一個新
+write surface,只係一條 read route 搬咗位** —— 但矩陣一樣捉到,而 diff 得**一行**。
+
+### 🚧 卡住 / 未做
+
+- `F5` UI · `F6` gate · `F7` live —— 未開始
+- `F1-6` DEV migration(等部署)
+- `F8-3` 六條 risk 仲未入 `RISK_REGISTER.md`

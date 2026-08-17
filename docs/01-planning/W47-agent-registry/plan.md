@@ -198,6 +198,9 @@ model AgentProfile {
 | 2026-08-17 | 🔴 **`F3-2` 偏離:冇「default profile」呢個概念** | 原文寫「唔送 = 用該 principal 嘅 **default**」。落手嗰陣發現 default 只可以係**一個畫面上睇唔到嘅欄**,或者一條隱含規則(「最舊嗰個」)—— 兩者都令**加第二個 profile 之後乜都冇變**,直到有日有人問點解 run 仲跑緊舊 model。**一個睇唔到嘅 default,就係將來用錯 model 都冇人發現嗰個位。** 改成 fail-loud:**一個 active ⇒ 用佢**(今日單 profile 世界照行,`ai-assist-card` 唔使改)· **多過一個而冇送 ⇒ 400 兼講明有幾多個** · **零個 ⇒ 400**(唔准 fallback 落 env,否則一個關咗嘅 registry 睇落似正常)。⚠️ 連帶:`F5` 要包 profile 選擇器,否則多 profile 之下 request detail 張卡會 400 | AI(實作決定,已 log) |
 | 2026-08-17 | `prompt` 入 audit `before`/`after`(唔止 event-only) | `OQ-C` 只講「入 audit」,冇講入到咩程度。揀咗記 before/after,理由:`R1` 要答嘅係「**改成咩**」唔止「有人改過」。🔴 **點解唔算重開 transcript 嗰個決定**(`AgentRun: []`):嗰條排除嘅係「free text of **unpredictable shape and large volume**」,而兩半講嘅都係 **model 生成**嘅文字;prompt 係**人寫嘅配置**,經 DTO 封長度(`MAX_PROMPT_LENGTH = 8000`),同 `ConnectorConfig` 嗰堆自由文本欄同族 | AI(實作決定,已 log) |
 
+| 2026-08-17 | 🔴 **`F1-4` 偏離:seed 唔建 principal,只做一次性遷移** | 原文寫「seed 建一個 default profile 掛落現有 `ai-assist` principal」,而佢**落唔到手**:`AgentPrincipal` 係第一次 run 先 lazy 建,佢個 `runtime` 欄明文只准係 **provider 實際 boot 嗰個**(BUG-011 就係為咗呢句而修),而 seed 冇 provider ⇒ seed 建嗰行一定係捏造。改成:**principal 已存在兼且零 profile** 先種一個,model 由 `ConnectorConfig.agentModel → AGENT_MODEL`(同兩個 provider `resolveModel()` 同源),冇配置就唔種。⚠️ 條件係「零 **profile**」唔係「零 **active** profile」—— seed 每次部署都跑,用後者會令一個 admin 刻意熄咗嘅 profile 翻生。未跑過 agent 嘅環境咩都唔種,維持 W47 之前行為(嗰種環境本來就未有人揀過 model) | AI(實作決定,已 log) |
+| 2026-08-17 | 🔴 **`F4-2` 偏離:列表可見性跟 `getRun`,唔跟啟動者** | plan 寫「OpCo scope 照舊由**啟動者**帶入」。嗰句講緊 `OQ-2`(agent **行緊嗰陣**睇到咩,受啟動者封頂),攞嚟做**邊個睇到呢個 run** 就會同 `getRun` 打交 —— `getRun` 按 run 嗰張 request 嘅 OpCo,即一個 `OPCO_IT` 開得到同事喺同一張 request 上開嘅 run ⇒ 用啟動者過濾就會出現**列表見唔到、撳落去又開到**。反方向仲差:REGIONAL 係 unscoped,按啟動者過濾即係「人人見晒佢啲 run」或者「人人都見唔到」,兩個都唔啱。⇒ 列表 = `getRun` 同一條規則寫成 query(`request: { is: scopeWhere(user) }`) | AI(實作決定,已 log) |
+
 ---
 
 **Lifecycle reminder**:呢份 plan locked after status=active。重大 deviation 入第 8 節
