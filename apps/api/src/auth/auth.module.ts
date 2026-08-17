@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
+import { AgentModule } from '../agent/agent.module';
 import { FulfilmentModule } from '../fulfilment/fulfilment.module';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
@@ -34,6 +35,18 @@ import { PermissionsController } from './permissions.controller';
      * and fulfilment imports only integration. Verified before wiring, not after.
      */
     FulfilmentModule,
+    /**
+     * W46 G2 / ADR-0036 D7 — for AgentToolRegistry, so PermissionsController can
+     * report the agent as an actor rather than leaving the matrix silent about
+     * it. Direction is auth → agent, and it does not cycle: AgentModule imports
+     * only IntegrationModule, which imports only ConfigModule. Checked, in the
+     * same spirit as the FulfilmentModule note above.
+     *
+     * 🔴 What this buys auth is a read-only view of what tools EXIST. It does not
+     * put auth on the agent's execution path, and the boundary spec still owns
+     * the direction that matters — nothing under src/agent reaches the domain.
+     */
+    AgentModule,
   ],
   controllers: [
     MeController,

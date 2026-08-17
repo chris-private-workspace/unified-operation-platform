@@ -56,6 +56,7 @@ model AppUser {
   passwordResetTokens PasswordResetToken[] // AUTH-4c-C self-service reset (local accounts)
   ledgerAdjustments LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
   auditLogs       AuditLog[] // platform audit trail entries this operator caused (ADR-0009)
+  agentRuns       AgentRun[] // AI-Assist runs started under this operator's OpCo scope (ADR-0036)
 }
 
 // ── RefreshToken (AUTH-4c-B / ADR-0006 §7) — rotating refresh session for the
@@ -289,6 +290,7 @@ model Request {
   lineItems         RequestLineItem[]
   events            RequestEvent[]
   outboundFailures  OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
+  agentRuns         AgentRun[] // ADR-0036 — AI-Assist runs reasoning about this request
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   closedAt          DateTime?
@@ -437,7 +439,7 @@ model AuditLog {
   id         String   @id @default(cuid())
   actorId    String? // AppUser id; null = system / cron / m2m
   actor      AppUser? @relation(fields: [actorId], references: [id])
-  actorType  String   @default("user") // 'user' | 'system' | 'm2m'
+  actorType  String   @default("user") // 'user' | 'system' | 'm2m' | 'agent' (ADR-0036 D7)
   action     String // 'user.role_change' | 'opco.update' | … (AUDIT_ACTIONS)
   targetType String // 'AppUser' | 'Opco' | 'SkuCatalog' | …
   targetId   String
@@ -558,6 +560,185 @@ model ConnectorConfig {
   // rejection is the only feedback an operator ever gets.
   defaultOnboardingSkuId String? // DEFAULT_ONBOARDING_SKU_ID override
 
+  // W46 / ADR-0036 D10 — the agent runtime seam. Non-secret only: both API keys
+  // (OPENAI_API_KEY / ANTHROPIC_API_KEY) stay in env forever, same rule as every
+  // credential above.
+  //
+  // 🔴 agentModel has NO default in code. Which model an agent runs on is a cost,
+  // capability and data-processing decision (plan OQ-1 / OQ-7), and a hard-coded
+  // fallback would make that decision silently on somebody's behalf — so an
+  // unset value fails loudly instead.
+  agentRuntime String? // AGENT_RUNTIME override ('openai-agents' | 'claude-tool-runner')
+  agentModel   String? // AGENT_MODEL override
+
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
+}
+
+// ── AI agent runtime (W46 / ADR-0036) ────────────────────────
+//
+// D0 — an agent is a new EXECUTOR, not a new decision-maker. Every real
+// side-effect still runs the platform's existing path (an approved assign keeps
+// all eight gates). Nothing an agent can reach writes outside these five tables.
+//
+// The split between AgentStep and AgentMessage IS the decision (D4), not
+// bookkeeping: one is what the platform DID, the other is what the agent SAID,
+// and they carry different authority. INC-001 is this project's own proof of
+// why — an Edit that was fabricated as success and never applied is
+// indistinguishable from a real one if the only record is the narrator's.
+
+// D7 — deliberately NOT an AppUser row with a Role. Role has three values, and
+// giving an agent any of them grants that role's FULL power while
+// derivePermissions() keeps reporting it as an ordinary user: silent privilege
+// escalation with a matrix that says nothing is wrong.
+model AgentPrincipal {
+  id String @id @default(cuid())
+  // The capability, not the model behind it ('ai-assist'). Which LLM answers is
+  // runtime config (ConnectorConfig, ADR-0013 Model C); baking it in here would
+  // make "who did this" change on every model upgrade.
+  name      String     @unique
+  runtime   String // 'openai-agents' | 'claude-tool-runner'
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  runs      AgentRun[]
+}
+
+model AgentRun {
+  id          String         @id @default(cuid())
+  principalId String
+  principal   AgentPrincipal @relation(fields: [principalId], references: [id])
+
+  // 🔴 The human whose OpCo scope every tool call in this run is bound to
+  // (F1-6, Chris 2026-08-15). Required, and a relation, for one reason: an
+  // approval can land overnight, and the run resuming then can only recover
+  // that scope from this row. Nullable would make "no scope" a reachable
+  // state — and no scope reads as every scope, which is the fail-open shape
+  // ADR-0036 D0 exists to keep out of the agent path.
+  startedById String
+  startedBy   AppUser        @relation(fields: [startedById], references: [id])
+
+  // The request an AI-Assist run is reasoning about. Carries a foreign key,
+  // the same shape as OutboundFailure.requestId (F1-7, Chris 2026-08-15).
+  // plan §4 specified the column plus @@index and no relation; one table
+  // pointing at Request without a key is a difference that holds only as long
+  // as someone remembers it, so it was settled rather than written down.
+  requestId String?
+  request   Request?       @relation(fields: [requestId], references: [id])
+
+  // running | awaiting_approval | approved | rejected | completed | failed |
+  // aborted | expired
+  //
+  // 🔴 `expired` (期二 G5 / plan OQ-5) is NOT a flavour of `aborted`. `aborted`
+  // means the platform cleared this up on someone's instruction; `expired`
+  // means nobody decided in time. G7's population (`decidedAt != null`) is
+  // built on that distinction — merging them would blend "nobody reviewed
+  // this" into "the platform stopped it", and the first is precisely what R13
+  // measures. Adding a value costs no migration, which is ADR-0031 D1's
+  // String-not-enum decision paying off.
+  // String rather than a Prisma enum for ADR-0031 D1's reason: an enum mints a
+  // second list to keep in step with this one.
+  status String
+
+  // 🔴 The SDK's resumable run state, stored ONLY so an approved proposal can
+  // resume the SAME run (D3) — the agent then sees the outcome and keeps
+  // reasoning, instead of the platform executing something behind its back.
+  //
+  // It is NOT the audit truth; AgentStep and AgentProposal are. R16: this is an
+  // SDK-internal shape, so an upgrade can make an old awaiting_approval run
+  // un-resumable. That must fail loudly — never quietly report success.
+  runState Json?
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  steps     AgentStep[]
+  messages  AgentMessage[]
+  proposals AgentProposal[]
+
+  @@index([status, startedAt])
+  @@index([requestId])
+}
+
+// 🟢 The action ledger — written by the PLATFORM, around a tool actually
+// running. This is the audit truth.
+//
+// Shape deliberately copied from AssignStep (assign-step.ts), including the
+// rule that `skipped` is NOT a flavour of `ok`: "we did not need to do this"
+// and "we did this and it worked" are different facts, and collapsing them is
+// how a step nobody ran ends up reading as a step that succeeded. Reusing the
+// shape also means AssignResultDialog's way of reading it carries straight over
+// (ADR-0029: the keys are the contract).
+model AgentStep {
+  id    String   @id @default(cuid())
+  runId String
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  key       String // tool name | 'gate' | 'proposal'
+  status    String // ok | failed | skipped
+  detail    String? // 🔴 scrubPii() before it lands — same rule as AssignStep.detail
+  retryable Boolean? // only meaningful on `failed`
+  whoFixes  String? // only meaningful on `failed` — see ASSIGN_STEP_OWNERS
+  createdAt DateTime @default(now())
+
+  @@index([runId, createdAt])
+}
+
+// ⚠️ The transcript — what the agent SAID (thinking / dialogue / tool intent).
+// LOW authority BY DESIGN: an agent claiming "I did X" is a narrative, not
+// evidence (INC-001). Never read this table to establish what happened; read
+// AgentStep. It is here to understand, debug, assign responsibility and improve
+// prompts — all of which need the claim, none of which need it to be trusted.
+//
+// 🔴 content is scrubPii()'d before it lands (D6). Retention is FOREVER and
+// read access is ADMIN-only (Chris 2026-08-15) — and "forever" is exactly what
+// promotes that scrub from a good habit into the only line of defence. It also
+// makes the retention debt recorded at AuditLog above come due for real: this
+// table is far larger than that one.
+model AgentMessage {
+  id    String   @id @default(cuid())
+  runId String
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  role      String // user | assistant | thinking | tool_call | tool_result
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([runId, createdAt])
+}
+
+// The things a human has to press. A write tool never executes on its own: the
+// SDK pauses on needsApproval, and the PLATFORM turns each pending interruption
+// into one of these rows (D3). approvedById / rejectedReason live here rather
+// than in the SDK's own approval state because "who approved what" is the only
+// reason Tier 1 exists, and an in-memory object has no actor, no time, no audit
+// and never appears on an admin screen.
+//
+// 🔴 Approving is not bypassing. An approved propose_assign still runs
+// AssignService's eight gates and can still be refused by budget. That is
+// correct — approval answers "should we do this", not "skip the checks" — and
+// counter-intuitive enough that the UI has to say so (W46 F8).
+model AgentProposal {
+  id    String   @id @default(cuid())
+  runId String
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  kind String // 'line_items' | 'assign'
+
+  // The SDK-side interruption this row stands for. Resuming approves them one
+  // by one (D3 step 4), so the mapping has to survive the round-trip through
+  // the platform's own approval UI.
+  interruptionRef String?
+
+  // 🔴 skuId GUIDs only, never SKU names (plan §3.4 / R15). The catalogue
+  // carries two E5 variants, so "the E5 one" is not an identifier — and an LLM
+  // is exactly the kind of caller that will produce one anyway.
+  payload Json
+
+  status         String    @default("pending") // pending | approved | rejected | executed | failed
+  approvedById   String? // AppUser id — same shape as OutboundFailure.resolvedById
+  rejectedReason String?
+  decidedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([status, createdAt])
 }

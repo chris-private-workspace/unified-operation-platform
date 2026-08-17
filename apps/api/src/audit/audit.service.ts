@@ -28,7 +28,29 @@ export interface AuditEntryInput {
   targetId: string;
   /** null for system / cron / m2m callers. */
   actorId?: string | null;
-  actorType?: 'user' | 'system' | 'm2m';
+  /**
+   * `'agent'` added by ADR-0036 D7 — an agent must never be attributable to an
+   * AppUser + Role, because `derivePermissions` would then keep reporting it as
+   * an ordinary operator.
+   *
+   * 🔴 TWO things a caller has to know before reaching for it:
+   *
+   * 1. **Nothing emits it yet, on purpose.** In Tier 1 every audited event has
+   *    a real human behind it — a person starts a run, a person decides a
+   *    proposal — so both W46 events carry `actorType: 'user'` and the human's
+   *    id. Writing `'agent'` on a human's action would be less accurate, not
+   *    more.
+   * 2. **An agent-actored row cannot name WHICH agent.** `AuditLog.actorId` is
+   *    a foreign key to `AppUser` (`schema.prisma:440-441`), so an
+   *    `AgentPrincipal` id cannot go in it — such a row would have to carry
+   *    `actorId: null`, exactly like `system` / `m2m`. That is survivable while
+   *    one principal exists and is a hole the moment there are two.
+   *
+   * ⇒ Before anything emits `'agent'` (Tier 2, or 期二 G1), "which agent" needs
+   * somewhere to live. Written here rather than in a plan, because this is the
+   * line the next person will be looking at when they need it.
+   */
+  actorType?: 'user' | 'system' | 'm2m' | 'agent';
   /** Raw entities — this service whitelists them, callers must not pre-filter. */
   before?: unknown;
   after?: unknown;

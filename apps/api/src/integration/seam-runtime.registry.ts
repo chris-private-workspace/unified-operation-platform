@@ -47,4 +47,28 @@ export class SeamRuntimeRegistry {
   isUsingN8n(seam: ConnectorKey): boolean | undefined {
     return this.usingN8n.get(seam);
   }
+
+  /**
+   * W46 / ADR-0036 — the same observation for a seam whose choice is not a
+   * yes/no.
+   *
+   * A SECOND map rather than a rewrite of the boolean one above. The three n8n
+   * seams genuinely are binary ("did this process route through a third party"),
+   * and collapsing them into a string would turn a question the Integrations
+   * panel asks directly into one it has to parse. The agent seam picks between
+   * two runtimes, neither of which is "the one that was always there", so a
+   * boolean has no honest reading here.
+   *
+   * Same contract as above and for the same reason: `undefined` means this
+   * seam's factory has not run in this process, not that it chose the default.
+   */
+  private readonly choice = new Map<ConnectorKey, string>();
+
+  recordChoice(seam: ConnectorKey, choice: string): void {
+    this.choice.set(seam, choice);
+  }
+
+  choiceOf(seam: ConnectorKey): string | undefined {
+    return this.choice.get(seam);
+  }
 }

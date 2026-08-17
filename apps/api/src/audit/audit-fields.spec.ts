@@ -111,6 +111,38 @@ describe('audit field whitelist (H4 boundary)', () => {
     }
   });
 
+  /**
+   * W46 A11 / ADR-0036 D5 — the agent tables are EVENT-ONLY.
+   *
+   * 🔴 Asserted by feeding a fat, realistic row rather than by reading the
+   * whitelist back: `expect(AUDIT_FIELD_WHITELIST.AgentRun).toEqual([])` would
+   * agree with whatever the file says, which is the one thing a boundary test
+   * must not do. This drives the actual filter.
+   *
+   * The transcript is the reason. It is free text of unpredictable shape and
+   * large volume — exactly the escape hatch `metadata`'s key restriction exists
+   * to prevent (see this module's header) — so it lives in `AgentMessage` under
+   * its own ADMIN-only read, never here.
+   */
+  it.each(['AgentRun', 'AgentProposal'] as const)(
+    'stores nothing at all for %s, however fat the object handed to it',
+    (target) => {
+      const fat = {
+        id: 'run_1',
+        status: 'awaiting_approval',
+        runState: '{"huge":"opaque SDK blob"}',
+        requestId: 'req_1',
+        // The two that would hurt: a transcript, and a payload written by a
+        // language model.
+        content: 'Assign the E5 to jerry.wong@rapo.com.hk',
+        payload: { items: [{ skuId: 'guid', quantity: 1 }] },
+        startedById: 'usr_1',
+      };
+
+      expect(pickAuditFields(target, fat)).toBeUndefined();
+    },
+  );
+
   it('returns undefined instead of an empty object', () => {
     expect(pickAuditFields('AppUser', {})).toBeUndefined();
     expect(pickAuditFields('AppUser', null)).toBeUndefined();

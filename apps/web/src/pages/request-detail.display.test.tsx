@@ -49,6 +49,13 @@ vi.mock('@/hooks/mutations', () => ({
   useRemoveLineItem: vi.fn(),
 }));
 vi.mock('@/lib/auth/use-current-user', () => ({ useCurrentUser: vi.fn() }));
+// W46 F8 — stubbed with a marker, not with null: these files are about
+// the request, not the agent, so they should not have to satisfy the
+// card's own data needs — but the ROLE GATING around it is a
+// request-detail concern, and a marker keeps that assertable.
+vi.mock('@/components/requests/ai-assist-card', () => ({
+  AiAssistCard: () => <div data-testid="ai-assist-card" />,
+}));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({ id: 'r1' }),
@@ -215,7 +222,11 @@ describe('CH-030 F4 — the right column leads with real history', () => {
     show();
 
     const history = screen.getByText('Operational history');
-    const ai = screen.getByText('AI Assist');
+    // W46 F8 replaced the "Coming soon" card with the real one, so the anchor
+    // moved from its title text to the stub's marker. The CLAIM is unchanged —
+    // history leads the column — which is why this test was updated rather than
+    // deleted along with the placeholder it originally described.
+    const ai = screen.getByTestId('ai-assist-card');
     // DOM order, not styling: asserting on the rendered position is what makes
     // this a real check rather than a restatement of the JSX.
     expect(
@@ -228,5 +239,25 @@ describe('CH-030 F4 — the right column leads with real history', () => {
     expect(
       ai.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeFalsy();
+  });
+});
+
+describe('W46 F8 — who sees the agent card', () => {
+  it.each(['ADMIN', 'REGIONAL'] as const)('shows it to %s', (role) => {
+    vi.mocked(useCurrentUser).mockReturnValue({ role } as never);
+    show();
+
+    expect(screen.queryByTestId('ai-assist-card')).toBeTruthy();
+  });
+
+  it('hides it from OPCO_IT rather than showing a card that can only 403', () => {
+    // Every /agent route is @Roles(ADMIN, REGIONAL). The server guard is the
+    // real one — this only stops offering a button that cannot work. 🔴 Stated
+    // that way round on purpose: a hidden card is not a permission, and reading
+    // it as one is how the next change ships an endpoint with no @Roles.
+    vi.mocked(useCurrentUser).mockReturnValue({ role: 'OPCO_IT' } as never);
+    show();
+
+    expect(screen.queryByTestId('ai-assist-card')).toBeNull();
   });
 });

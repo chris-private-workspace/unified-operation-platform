@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Bot,
   Building2,
   Cable,
   LogOut,
@@ -27,6 +28,7 @@ import { UsersPanel } from '@/components/settings/users-panel';
 import { OpcosPanel } from '@/components/settings/opcos-panel';
 import { PermissionsPanel } from '@/components/settings/permissions-panel';
 import { IntegrationsPanel } from '@/components/settings/integrations-panel';
+import { AgentPanel } from '@/components/settings/agent-panel';
 import { ServiceNowImportPanel } from '@/components/settings/servicenow-import';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
@@ -37,6 +39,12 @@ const TABS: { value: string; label: string; Icon: LucideIcon }[] = [
   { value: 'opcos', label: 'OpCos', Icon: Building2 },
   { value: 'permissions', label: 'Permissions', Icon: ShieldCheck },
   { value: 'integrations', label: 'Integrations', Icon: Cable },
+  // 期二 G3 + G7 — the agent's switch and the numbers R13 is watched with.
+  // Its own tab rather than a section under Integrations: that tab is about
+  // vendor WIRING (which runtime, which model), and these two are about
+  // OPERATION — whether the capability runs at all, and whether the human gate
+  // in front of it is still being used.
+  { value: 'agent', label: 'AI agent', Icon: Bot },
 ];
 
 const THEMES: readonly Theme[] = ['light', 'dark'];
@@ -235,6 +243,8 @@ export function Settings() {
         {tab === 'opcos' && <OpcosPanel />}
 
         {tab === 'permissions' && <PermissionsPanel />}
+
+        {tab === 'agent' && <AgentPanel />}
 
         {tab === 'integrations' && (
           <>

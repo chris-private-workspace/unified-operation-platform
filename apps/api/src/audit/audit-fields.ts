@@ -143,6 +143,42 @@ export const AUDIT_ACTIONS = {
    * exists to answer.
    */
   INTAKE_FROM_SERVICENOW: 'request.imported_from_servicenow',
+  /**
+   * W46 / ADR-0036 D5 — a person set an AI-Assist run going.
+   *
+   * The run's own record (steps, transcript, proposals) lives in the `Agent*`
+   * tables, and D5 explains why it cannot come here: a transcript is free text
+   * of unpredictable shape and large volume, so admitting it would turn the
+   * whitelist into a formality. This row carries no content at all — it exists
+   * so "who set an agent loose on this request, and when" is answerable from
+   * the same place as every other privileged action, without a join.
+   */
+  AGENT_RUN_STARTED: 'agent.run_started',
+  /**
+   * W46 / ADR-0036 D3 — a person approved or rejected an agent proposal.
+   *
+   * Its own action rather than a flavour of run_started, for the reason
+   * ASSIGN_BUDGET_OVERRIDE is its own action: **R13** is that approvals
+   * degenerate into rubber-stamping, and that can only be watched if
+   * `/admin/audit` can filter every decision in ONE query. Approve and reject
+   * share the action and are told apart by `metadata.reason` — splitting them
+   * would make "how often does this person just say yes" two queries and a
+   * subtraction, which is how nobody runs it.
+   */
+  AGENT_PROPOSAL_DECIDED: 'agent.proposal_decided',
+  /**
+   * 期二 G3 — an admin switched the AI-Assist agent off, or back on.
+   *
+   * ⚠️ **A deliberate deviation from ADR-0036 D5's wording**, flagged rather
+   * than slipped in: D5 says `AuditLog` takes "two new actions" for W46. Its
+   * SUBJECT, though, is the transcript — free text of unpredictable shape and
+   * large volume, which would turn the whitelist into a formality. This row is
+   * a boolean and an actor. It is the shape the whitelist was built for, and
+   * the alternative is an admin control that changes what the platform will do
+   * and leaves no record of who changed it — which is the thing ADR-0009
+   * exists to prevent. Recorded in the W46 changelog (R3) for a decision.
+   */
+  AGENT_KILL_SWITCH_SET: 'agent.kill_switch_set',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -160,7 +196,10 @@ export type AuditTargetType =
   | 'ConnectorConfig'
   | 'RequestLineItem'
   | 'Request'
-  | 'SyncSweep';
+  | 'SyncSweep'
+  | 'AgentRun'
+  | 'AgentProposal'
+  | 'AgentPrincipal';
 
 /**
  * Per-target allow-list. Only these keys can reach `before` / `after`.
@@ -237,6 +276,10 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
       'n8nOutboundWebhookUrl',
       // W42 / ADR-0020 — a skuId GUID, non-secret and system-owned.
       'defaultOnboardingSkuId',
+      // W46 / ADR-0036 — non-secret, and worth attributing: which runtime and
+      // which model an agent runs on is a cost and data-processing decision.
+      'agentRuntime',
+      'agentModel',
     ],
     /**
      * W36 / ADR-0016 — event-only, following the OutboundFailure precedent.
@@ -272,6 +315,43 @@ export const AUDIT_FIELD_WHITELIST: Record<AuditTargetType, readonly string[]> =
     // silently, so forgetting it here would make the round under-report for
     // ever with nothing to show anything was lost.
     SyncSweep: ['scanned', 'opened', 'snOpened'],
+    /**
+     * 🔴 W46 / ADR-0036 D5 — EMPTY, and this is the one entry where empty is
+     * the whole decision rather than a side effect of one.
+     *
+     * An agent run's content is a transcript: free text, unpredictable
+     * structure, large. `audit-fields.ts:14-15` says `metadata` is
+     * key-restricted because left free-form it becomes an escape hatch around
+     * the whitelist — a transcript is that escape hatch with a different name.
+     * So the transcript lives in `AgentMessage` under its own ADMIN-only read,
+     * and this row stays an EVENT (same as OutboundFailure / RequestLineItem /
+     * Request above).
+     *
+     * ⚠️ Note what that costs: `AgentRun.requestId` reaches a `targetUpn` two
+     * joins away. Deliberate, and the same trade the Request entry already
+     * makes — reachable to someone who can already read the request, never
+     * copied into a table with different permissions.
+     */
+    AgentRun: [],
+    /**
+     * Event-only for the same reason as AgentRun. `payload` is a language
+     * model's output — the least predictable structure in the system — so it
+     * is precisely what an allow-list exists to keep out. What R13 monitoring
+     * needs (who, when, approved or rejected) is the row itself plus
+     * `metadata.reason`.
+     */
+    AgentProposal: [],
+    /**
+     * 期二 G3 — the ONE agent target that is not event-only, and the reason is
+     * the reason `AppUser` carries email and displayName: `active` IS the
+     * audited change. An entry saying "somebody set the kill switch" without
+     * saying which way cannot answer the only question anyone will ask of it.
+     *
+     * 🔴 One key, and it stays one. `name` and `runtime` are not audited here
+     * because nothing on this path changes them, and a whitelist entry that is
+     * wider than the write it covers is how the next widening gets argued for.
+     */
+    AgentPrincipal: ['active'],
   };
 
 /** Restricted `metadata` keys — everything else is dropped. */

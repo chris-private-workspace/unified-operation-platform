@@ -1,0 +1,1846 @@
+# W46 — AI Agent Runtime · Progress
+
+> **Status**: `active`(2026-08-15)
+>
+> 🚧 文件同 code 都住喺 branch,**未 merge 落 `main`**(Chris 2026-08-15)。
+
+## Day 0 — 2026-08-15(planning,零 code)
+
+### 起因
+
+Chris 要求把 AI agent 引入平台,四項前提同日拍板:**Tier 1**(有 action 權)· 第一個落點 = **`AI-Assist`** · **OpenAI Agents SDK 首選兼要支援 Claude** · **transcript 永久保留 + ADMIN 可讀**。
+
+### 一個改寫
+
+初稿把 target 當成 **Codex SDK**(coding agent,冇 custom tool)⇒ 被逼揀 MCP 做**唯一**接縫。Chris 更正:係 **OpenAI Agents SDK**。個更正令三件事變咗:接縫由 MCP 變 `AgentToolRegistry`(兩邊都食 JSON Schema)· HITL 由「跑完再另外執行」變原生 `needsApproval` pause/resume · 新增 D11 tracing 三重關。
+
+### 最重要嗰個發現
+
+平台**唔使由零起 harness**。過去 40 個 W/CH 已經砌好同一批 primitive —— `AssignStep` shape、audit allow-list、`scrubPii`、boundary spec、`SeamRuntimeRegistry`、`OutboundFailure`、`derivePermissions` —— 只係 actor 一直假設係人。⇒ 本 phase 係「把 actor 由人擴闊到 agent」,唔係「起一套新嘢」。
+
+### Commits
+
+- `c758c60` — `docs(agent): ADR-0036 + W46 pre-doc —— agent 接縫定喺 tool registry,harness 留喺平台`
+- `7a58d75` — `docs(agent): ADR-0036 Accepted · W46 approved · 六條 OQ 一併批`
+
+---
+
+## Day 1 — 2026-08-15(F1 + F2)
+
+### 做咗
+
+**F1** —— 五個 model 落 `schema.prisma`,零改動落任何既有表(`AuditLog.actorType` 加 `'agent'` 只係一個 String 值,冇 DDL)。
+
+**F2** —— `AgentToolRegistry`:一份 JSON Schema + 一份 impl,4 個 read tool + `propose_line_items`。33 條 test。
+
+api **1077 / 75 suites** 全綠(基線 1044 / 74,**零跌**)· tsc 0 · lint 0。
+
+### 🔴 Falsification ×4 —— 全部真紅零誤傷
+
+§9 記低過嗰句「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事」,所以逐個拆走實作跑一次:
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | `needsApproval: true` → `false` | 1 failed / 32 passed —— 紅嗰條 = A3 allow-list |
+| b | GUID 格式檢查 | 1 / 32 —— 紅嗰條 = 「refuses a SKU named by part number」 |
+| c | `scrubPii(row.targetUpn)` | 1 / 32 —— 紅嗰條 = 「redacts the target address」 |
+| d | 「冇人批准」由 throw 改成靜靜返成功 | 1 / 32 —— 紅嗰條 = 「refuses to run at all」 |
+
+**四次都係 1 紅 32 綠** ⇒ 每條 assert 捉住嘅係佢自己嗰件事,唔係一個大網。
+
+### 🔴 F2 寫嗰陣揭到一個 ADR 從來冇決定過嘅嘢 —— OQ-7
+
+寫 `get_request` 個 return 嗰刻先諗清楚:**`rawRequestText` 一定要原文出去**(parse 佢就係 AI-Assist 本身,scrub 咗就係交白卷),而 `targetUpn` 同樣。ADR-0036 對 PII 嘅三道防線 —— D6 transcript scrub、D11 tracing 關、D5 唔入 `AuditLog` —— **全部係關於「落庫 / 送去 trace backend」**。
+
+**冇一道係關於 inference 本身。** 而 inference 就係把嗰段文字送去第三方 model provider。
+
+⇒ 呢個唔係本檔嘅 bug,係 **ADR 一個缺口**。已加做 `plan.md` **OQ-7**,標成 **F5 之前嘅硬 gate**。
+
+📌 值得記住嘅形狀:**D11 防到「順手開住嘅 tracing」,防唔到「這個功能的正常運作」。** 一個 opt-in 嘅洩漏面比一個 default-on 嘅更難見到,因為佢冇 default 可以罵。
+
+### 三個「跟咗 plan 但要標明」嘅位
+
+1. **`AgentRun` 冇 `startedById`** —— plan §4 冇寫,F1 跟咗 plan。但 F2 個 `AgentToolContext` 要一個 `AppUser` 攞 OpCo scope,而家由 caller 傳。🔴 **一個隔夜先批准嘅 run 重開之後,嗰個人只可能由 row 攞返** ⇒ F5 之前要決定。
+2. **`AgentRun.requestId` 有 index 冇 FK** —— plan §4 逐字咁寫(連 `@@index` 都寫咗,唔似漏)。但 `OutboundFailure.requestId` **係有** FK 嘅 ⇒ 兩者唔一致。冇擅自加,已喺 schema comment 寫明。
+3. **`search_catalog` 多回咗 `displayName` / `skuPartNumber` / `seatModel`** —— plan §3.1 寫「`skuId` GUID + `businessAlias` + `category`」。淨係得呢三樣,agent **冇嘢可以拎去 match**「give them E5」⇒ 佢一定會幻覺。真正嘅防線唔係「唔畀佢見到名」,係 `propose_line_items` **只收 GUID 兼驗存在性**(F2-5)。
+
+### 兩個設計判斷(ADR / plan 冇指定)
+
+**① `propose_line_items` 嘅 `execute` 係唯讀嘅。**
+
+D3 / plan §3.2 個順序係:人批准 → **平台**行返 line item 建立路徑 → resume run → SDK 先至 call `execute`。⇒ 到執行嚟到 `execute` 嗰陣,嘢**已經做咗**,再建就係建第二次。所以佢做嘅係「讀返個結果交畀 agent 繼續推理」。
+
+順帶得到一個第二層防禦:如果 `needsApproval` 幾時失效(SDK bug / 壞 adapter / 新 provider),呢個 tool 搵唔到已批准嘅 proposal 就 **throw**。兩條路都係「乜都冇建到」,但一條係靜,一條係大聲。
+
+**② registry 一個 DB 寫入都冇 —— 連 `AgentProposal` 都唔寫。**
+
+D4 講 proposal 由平台寫。如果 tool 自己寫,就係 **agent 自己記錄自己嘅證據** —— INC-001 嗰個形狀。test 用靜態 source 檢查鎖死(`.create(` / `.update(` / `$transaction` … 一律唔准出現)。
+
+### Blockers / 未收
+
+- 🔴 **A1(migration 對真 DB)未做** —— 本機 `uop-postgres` 冇跑(5433 畀 `ai-doc-extraction-db` 佔住,**停佢要 Chris 批**);DEV 要部署。**兩邊都未**。
+- 🔴 **OQ-7(inference 側 PII)= F5 硬 gate**
+- ⚠️ **OQ-1(model 選型)= F3 硬 gate** —— plan §7 標咗 🟡 approved as **deferred**,唔係已答
+
+### Commits
+
+- `329f223` — `feat(agent): W46 F1+F2 —— 五個 Agent* model + tool registry(allow-list 企喺平台側)`
+- `6fd171d` — `docs(agent): W46 checklist + progress + OQ-7(inference 側 PII,ADR-0036 冇答過)`
+
+---
+
+## Day 2 — 2026-08-15(F3 + F4)
+
+### 做咗
+
+**F3** —— seam ⑤:`AgentRuntimeProvider` 抽象 + `OpenAiAgentsProvider` + exported factory,形狀逐條跟 `licenseOpsProviderFactory` 先例。
+**F4** —— tracing 三重關(env + code + test)。
+
+api **1099 / 77 suites** 全綠(F2 後 1077 / 75,**零跌**)· tsc 0 · lint 0 · **falsification ×4 真紅零誤傷**。
+
+**H2** —— `@openai/agents@0.16.0` 裝咗(+11 個 transitive,含 `openai@7`、peer `zod@4`)。ADR-0036 已批 ⇒ 唔係新決定。
+
+### 🔴🔴 F4 最重要嗰個發現:對住錯嗰個開關寫 assert,係一條永遠綠嘅 test
+
+SDK 有**兩個唔同嘅 tracing 開關**,而佢哋唔會互相反映:
+
+| | 係乜 | 陷阱 |
+|---|---|---|
+| `config.tracing.disabled` | 一個**只讀 env 嘅 getter**,`TraceProvider` constructor 讀一次做初值 | 🔴 **`NODE_ENV === 'test'` 時佢永遠返 `true`** |
+| `setTracingDisabled()` | 寫 `TraceProvider` 嘅 live flag,`createTrace()` 真係讀佢(關咗返 `NoopTrace`) | 要 assert 就要 assert 佢 |
+
+⇒ **如果條 test 寫 `expect(tracing.disabled).toBe(true)`,佢喺 Jest 之下永遠綠 —— 連 provider 入面 `enforceTracingDisabled()` 整行刪咗都綠。**
+
+所以條 test 寫成三段:**先 `setTracingDisabled(false)` → assert `createTrace().traceId !== 'no-op'`(證明真係開到,唔係空轉)→ 起 provider → assert `=== 'no-op'`**。中間嗰句唔係 setup,佢係 test 一半。
+
+📌 **形狀**:呢個係 §9 記低過嗰句「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢係兩件事」嘅**最貴一次** —— 因為呢條 test 就係 **R14(SDK 升級令 tracing 靜靜開返)唯一會紅嘅嘢**。佢空轉 = D11 三重關實際上得兩關,而冇人會發現。
+
+### 🔴 第二個 SDK 事實:`needsApproval: true` 會被包成 `async () => true`
+
+`tool()` 內部把 boolean 包成 function(`STATIC_FUNCTION_TOOL_APPROVAL_POLICIES` 記住邊啲係靜態)。
+
+⇒ **`expect(sdkTool.needsApproval).toBe(true)` 一定 fail**,而「修正」成 `toBeDefined()` 就變成**乜都捉唔到**(`false` 一樣 pass)。要驗就要**call 個 policy**:`await expect(policy()).resolves.toBe(true)`。
+
+呢兩件事(tracing 開關、approval 包裝)有同一個形狀:**SDK 內部把一個值轉換咗,而最自然嗰句 assert 啱啱好落喺轉換之前或者之後嘅錯邊。**
+
+### 三個 F3 設計判斷(ADR / plan 冇指定)
+
+**① `claude-tool-runner` 配咗但未實作 ⇒ fall back,唔 throw。**
+throw 嘅代價係一個 config typo 令**成個平台起唔到身**;而 fall back 之所以可以接受,**係因為 `recordChoice` 記低 EFFECTIVE runtime** ⇒ panel 講得出「配置咗 X、跑緊 Y」。呢個正正係 BUG-011 個 registry 存在嘅理由 —— 冇佢,fall back 就係一個靜靜嘅替換。
+
+**② `resume()` 要求每個 interruption 都有決定,一個都唔可以留低。**
+留低一個未決定嘅,佢執唔執行就變成由 runtime 行為決定,而唔係由人決定 —— 正正係 D2 要防嗰件事。
+
+**③ `RunState` 讀唔返 → 503,唔會重開一個新 run(R16)。**
+最誘人嗰個「補救」係由同一個 input 重跑一次。但人批准嘅係**嗰一個** tool call;新 run 會自己推導一批新嘅,然後喺一個從來冇畀過嘅批准下面執行。
+
+### OQ-1:冇代 Chris 答,但令佢唔再 block code
+
+`agentModel` **冇 code default**,由 `ConnectorConfig`(DB-then-env)解析,未配就 **503**。
+
+⇒ 寫 code 唔再需要嗰個答案 —— 但**真跑一個 run 需要**,所以 **OQ-1 仍然 block F5**。理由寫喺 code 度:揀邊個 model 同時決定咗幾錢、做唔做得到、**同埋邊個第三方收到一個真人嘅 request 原文**(= OQ-7),一個 fallback 常數就係幫人做咗呢三個決定再收埋佢。
+
+### 順帶改到既有檔(加一個 connector 嘅必然後果)
+
+- `connectors.ts` —— `CONNECTORS` / `PROBEABLE` / `CONNECTOR_CONFIG` 各加 `agent`。**唔 probeable**(跟 `email` 先例:打一次 model 要錢,而且**一定要送啲嘢**,而「送咩」正正係 OQ-7 未答嗰件事)
+- `ConnectorConfig` +`agentRuntime` +`agentModel` + migration + audit whitelist
+- `seam-runtime.registry.ts` —— 新增 `recordChoice`/`choiceOf`(既有 boolean API **一個字唔改**)。⚠️ 用第二個 map 而唔係改第一個:三個 n8n seam 真係二元(「有冇經第三方」),agent seam 揀兩個 runtime 而**兩個都唔係「一直以嚟嗰個」**,boolean 冇誠實讀法
+- `integration-status.service.ts` —— agent row。🔴 `state` 判斷用 **model** 唔用 runtime 或者 API key:runtime 永遠解析得到(factory 會 fall back),key 係 secret 呢個 service 睇唔到,**只有 model 缺席會真係令一個 run 跑唔到**
+
+### ⚠️ 順帶睇到一個**既有** gap(冇改,只記低)
+
+`audit-fields.ts` 個 `ConnectorConfig` whitelist **冇** `licenseOpsProvider` / `n8nLicenseBaseUrl` / `ticketUpdateProvider` / `n8nTicketWebhookUrl` / `acsSenderAddress` —— 即係 W39 / W40 / CH-011 三批欄改咗都**唔會出現喺 audit `before`/`after`**。唔喺本單範圍(§1.3),但值得開一張單。
+
+### Blockers / 未收
+
+- 🔴 **兩個 migration 都未對真 DB 跑**(`w46_agent_runtime` 五張表 · `w46_agent_connector` 兩個欄)
+- 🔴 **OQ-7(inference 側 PII)= F5 硬 gate**
+- 🔴 **OQ-1 仍然未答** —— 唔再 block code,但 block F5
+
+### Commits
+
+- `b668f98` — `feat(agent): W46 F3+F4 —— seam ⑤ provider + OpenAI adapter + tracing 三重關`
+
+---
+
+## Day 3 — 2026-08-15(四條 gate 一次過解封 · A1 本機收 · ADR-0037)
+
+### 開場個核對,推翻咗接手文件嘅前提
+
+接手文件寫住「F5 之前有**兩條硬 gate**:OQ-1 同 OQ-7」。讀 plan 嘅時候對唔上:
+
+- §2.1 **F10** 寫住「Test:LLM **一律 mock**」,而 **A6 / A7 / A8** 每條都明文講 mock LLM
+- ⇒ **F5 / F6 / F9 嘅 code + test 結構上唔需要一個真 model**。OQ-1 真正 block 嘅係 **A14 live 驗**
+- 而 **OQ-7 就真係 gate F5** —— 但唔係因為「要先決定可唔可以送」,係因為佢其中一個候選答案(**送之前先 scrub**)會**改 F5 嘅 code shape**
+
+🔴 **兩條嘢喺 checklist 入面一直並排寫住「F5 之前(硬 gate)」,睇落一模一樣,但性質完全唔同**:一條係 config 值,一條係設計輸入。**分清楚之後,四條 gate 入面有三條當日就唔再係 gate。**
+
+📌 呢個同 §9 記低過嗰句同族:**一個標籤(「硬 gate」)可以蓋住兩件唔同嘅嘢,而個標籤唔會話你聽。**
+
+### Chris 四項拍板
+
+| # | 決定 |
+|---|---|
+| **OQ-7** | **Azure OpenAI(公司 tenant)** —— 否決 ZDR / 公共 API 標準條款 / 先 scrub |
+| **F1-6 + F1-7** | **兩個一齊做**:加 `startedById`、補 `requestId` FK |
+| **OQ-1** | **押後到 F11 live 驗** |
+| **A1** | **批准停 `ai-doc-extraction-db`** |
+
+### 🟢 A1 本機側收咗(掛咗兩日)
+
+三個 migration 對真 `uop-postgres` 由 `migrate deploy` 跑。**跑之前** `migrate status` = **22 / 24 applied,零 drift**。
+
+🔴 **證據刻意唔用 `migrate deploy` 個 summary** —— 佢係一個 summary-level 綠燈,而 §9 記低過嗰族(「PR 顯示 MERGED ≠ commit 入齊」「revision Healthy ≠ DB 通」)講嘅就係佢證明唔到下面每一件。改為直接 query catalog:
+
+- 五張 `Agent*` 表齊
+- `AgentRun.startedById` = `NOT NULL`
+- **三條 FK**:`principalId` → `AgentPrincipal` · `requestId` → `Request` (`SET NULL`) · `startedById` → `AppUser` (`RESTRICT`)
+- `ConnectorConfig` 有 `agentModel` + `agentRuntime`
+- `_prisma_migrations` 三條 `finished = t`
+
+之後 api **1099 / 77 suites 全綠(零跌)** · tsc **0** · lint **0**。用完即時還原 `ai-doc-extraction-db`,並且**真 TCP 驗過佢攞返個 port**(§9 記低過「還原會靜靜失敗」)。
+
+### 兩個 schema 決定,同一個理由
+
+**`startedById` = required + FK + `ON DELETE RESTRICT`。**
+
+nullable 睇落安全啲,但佢令「**攞唔返 scope**」變成一個到得到嘅狀態 —— 而**冇 scope 讀落就係全部 scope**。呢個正正係 ADR-0036 D0 想 keep out of the agent path 嗰個 fail-open 形狀。`RESTRICT` 再令 dangling row 結構上唔存在。
+
+**`requestId` FK = `ON DELETE SET NULL`**,同 `OutboundFailure.requestId` 逐字同一形狀。個唔一致由「寫低咗」升級成「解決咗」。
+
+⚠️ Prisma 出咗個 `not possible if the table is not empty` warning —— **成立但無害**:張表喺同一條 deploy 鏈上面前兩個 migration 先至建出嚟,零 row。DEV 側同理。
+
+### 🔴 ADR-0037 —— 而佢改咗 OQ-1 個問題本身
+
+寫之前**對已裝 package 實查**(ADR-0036 初稿就係因為假設咗 SDK 做唔到乜而要整份改寫):
+
+| 事實 | 出處 |
+|---|---|
+| `setDefaultOpenAIClient(client)` 存在 ⇒ 換得走底層 client | `@openai/agents-openai/dist/defaults.d.ts:11` |
+| `openai@7` 自己 ship `AzureOpenAI extends OpenAI` | `openai/azure.d.ts:34` |
+| 🔴 設咗 `deployment` **會改寫 base URL**,而且 non-deployment endpoint 之後用唔到 | `openai/azure.d.ts:19-20` |
+| 有 `azureADTokenProvider` ⇒ 用得 Entra,唔一定要 static key | `openai/azure.d.ts:54` |
+| 🔴 SDK 有個 `DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"` | `defaults.d.ts:3` |
+
+**兩個後果值得單獨講:**
+
+**① `agentModel` 語意變咗。** Azure 之下佢收嘅係 **deployment 名**唔係 model 名,而兩者可以完全唔同字。⇒ **OQ-1 由「揀邊個 model」變成「infra 開邊個 deployment、叫咩名」** —— 一個要**外部團隊做嘢**嘅問題。W46 由此有咗第一個外部依賴,而本項目 infra 依賴 **B1 / B4 / B7 / B8 / B9 五次每次都要等**。
+
+**② 最容易誤讀嗰句,寫咗做 E5**:trace exporter 打嘅係 **OpenAI backend**,同你把 inference 指去邊個 endpoint **完全無關**。⇒「我哋轉咗去 Azure」**唔等於**「PII 唔會出去」。D11 三重關喺呢個 ADR 之後**唔係冇咁重要,係更加係唯一防線** —— 因為身邊多咗一句聽落好安心嘅話。**呢個係本 ADR 自己製造嘅風險(R18)。**
+
+🔴 **ADR 寫成 `Proposed` 唔係 `Accepted`**:Chris 答嘅係「用邊個 provider」,而上面三個後果(E3 語意 / E4 auth 兩條路 / E5 tracing)**佢未見過**。批一個佢冇見過後果嘅決定,正正係本項目一路想避開嗰件事。
+
+### ⚠️ 兩個 doc 從來冇記過嘅環境事實
+
+1. **本 worktree 冇 `apps/api/.env`** —— `Test-Path` = `False`。主 worktree(`C:/ai-develop/unified-operation-platform`)先至有。**冇建佢**(§4.4 絕不 touch `.env*`);`docker-compose.yml` 本身就有本機 DB 憑證(`uop`/`uop`/`platform`,已 commit,唔係 secret)⇒ 根本唔使掂另一個 worktree。
+2. **`git worktree list` = 兩個 worktree**,另一條 checkout 咗 `chore/web-lint-prettier`。⇒ **兩邊共用同一個 `uop-postgres`**,今日跑 migration 之後,嗰條 branch 會見到「DB 有佢 folder 入面冇嘅三個 migration」。冇害(migration 純加嘢),但**唔知就會當成 drift 事故**。
+
+### Blockers / 未收
+
+- 🚧 **A1 DEV 側未做** —— 卡「要唔要部署」。⚠️ DEV entrypoint 令 migrate 失敗 NON-FATAL ⇒ 部署後**唔可以睇 revision status**,要照今日咁 query catalog
+- 🚧 **ADR-0037 待批**(唔 block F5,block 嘅係真接 Azure)—— ✅ **同日 Day 6 收工前 `Accepted`,`E4` 除外**
+- 🚧 **OQ-1** —— 押後到 F11,但佢而家係一個 infra 問題
+- 🚧 **R11–R19 未入 `RISK_REGISTER.md`**(R17–R19 由 ADR-0037 新增)
+- 🚧 一個**既有** gap 未開單:`audit-fields.ts` 個 `ConnectorConfig` whitelist 漏欄
+
+---
+
+## Day 4 — 2026-08-15(F5 — `AI-Assist` run)
+
+### 做咗
+
+`AiAssistService.startRun()` + `toTranscript()` 純函數 + seam 新增一個 tool 觀察點。
+
+api **1135 / 79 suites**(Day 3 後 1099 / 77,**零跌**,+36 條 +2 個 suite)· tsc **0** · lint **0**。
+
+### 🔴 最重要嗰個結構決定:`AgentStep` 得兩個來源,兩個都唔係 agent 講嘅嘢
+
+A7 要求「餵一個扮講自己做過嘢嘅 mock,assert 佢寫唔到任何 `AgentStep`」。要做到呢件事,首先要答一條 plan 冇答嘅問題:**tool 級嘅 step 究竟由邊度嚟?**
+
+唯一誠實嘅來源係**平台自己嗰個 `execute` 真係跑咗**,而嗰個位喺 adapter 入面。所以 seam 加咗一個 `AgentSetup.onToolExecuted`:
+
+- adapter 喺 `entry.execute()` **前後**報告(`ok` / `failed`),🔴 **`ok` 喺 resolve 之後先報** —— 「就快跑」同「跑咗」係兩件事,而 action ledger 只記後者
+- 佢**被通知,唔做決定**:observer 自己 throw 會被 adapter 食咗。倒轉接就會變成「action ledger 有冇得寫」決定咗 agent 嘅行為 —— 一個住錯位置嘅決定
+- ⇒ `AgentStep` 得兩個來源:平台生命週期事件(`start` / `proposal` / `run` failed)+ 呢個 observer。**冇任何一條由 transcript 推導。**
+
+實測:mock 講「I have created the line items and assigned the licences」⇒ `AgentStep` 只有 `['start']`,句嘢落咗 `AgentMessage`,role `assistant`。
+
+### 🔴 Falsification ×5 —— 而第二次揭到一條缺口,即刻補咗
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | awaiting 分支改寫 `completed` | **1 紅 / 19 綠** —— 紅嘅係 assert **DB 寫入**嗰條(返回值冇變)⇒ 證明條 test 唔係只驗返回值 |
+| b | `toTranscript` 個 `scrubPii` | **8 紅** —— 全部喺 `transcript.spec.ts` |
+| c | `onToolExecuted` 唔接線 | **2 紅** —— 兩條 tool 觀察 test |
+| d | 非終態清單抌走 `approved` | **1 紅** |
+| e | 加一句 `prisma.requestLineItem.create` | **2 紅** —— A5 runtime 半 + static 半,兩邊都捉到 |
+
+🔴 **(b) 嗰次唔止係「紅咗」,佢揭咗一件事:`ai-assist.service.spec.ts` 一條都冇紅。**
+
+即係「PII 入唔到 `AgentMessage`」呢個 claim,一路只喺**純函數嗰層**被 assert,喺 **service 嗰層係假設**。而 service 先係真正寫落 DB 嗰個。⇒ 呢個正正係本項目 §9 記低過嗰族:
+
+> **每一層 test 都喺自己嗰層邊緣停低,而 bug 就住喺兩層之間**(`apiPatch` 個 `detail`、BUG-011 個 `IntegrationController.list()`)。
+
+補咗一條 service 層 test(餵含 UPN 嘅 provider item → assert `agentMessage.createMany` 收到嘅 `content` 冇 email pattern),再拆多次同一行 ⇒ **1 紅 / 20 綠**,條縫真係守到。
+
+📌 **值得記住嘅係方法唔係結論**:falsification 唔止告訴你「條 test 有冇用」,佢**同時**畫得出「邊層冇 test」—— 因為紅邊度就係覆蓋喺邊度。呢個用法之前四日冇用過。
+
+### 兩個「plan 冇講、要自己揀」嘅位
+
+**① `TranscriptRole` 多咗一個 `unknown`(plan §4 得五個)。**
+SDK protocol 自己就有一個 `unknown` item type ⇒ 認唔到嘅 item 係一件**預期會發生**嘅事。兩個唔誠實嘅處理法:drop 咗(蝕 transcript)· 當成 `assistant`(等於話個 model 講咗一句冇人讀過嘅嘢)。記低「我認唔到」同 `skipped` 唔係 `ok` 嘅一種,係同一個分別。
+
+**② `kindOf()` 認唔到嘅 write tool ⇒ throw,兼且把 run 標 `failed`。**
+default 一個 `kind` 就係造一行**人會批但唔知自己批緊乜**嘅 proposal。而 `failed` 嗰半係後來先補:淨係 throw 會令 run 永遠停喺 `running`,而 `running` 對每個畫面同每個後續 guard 嚟講都讀成「仲做緊」。
+
+### ⚠️ 一個 plan 字面上嘅偏離(F5-2)
+
+plan 寫「**讀** `rawRequestText`」。實作**唔係**由 service 讀完餵畀 agent,而係 agent 自己經 `get_request` 讀 —— service 只 select 佢嚟驗「係咪空」。
+
+咁做嘅兩個好處:scope 檢查**只有一條路**(tool 側 `assertOpcoScope`,唔會有第二個實作漂走)· service 唔使揸住段 PII。空原文喺開 run **之前**就拒絕,因為 AI-Assist 全部輸入就係嗰段字,空嘅話個 model call 唯一可能輸出係一個估。
+
+### Blockers / 未收
+
+- 🚧 **F6(proposal 審批 endpoint + resume)** —— F5 寫低咗 `AgentProposal` 同 `runState`,但**冇人撳得到**
+- 🚧 F7 audit · F8 前端 · F9 boundary spec · F11 render + live
+- 🚧 ADR-0037 待批 · OQ-1(deployment 名)· A1 DEV 側 · R11–R19 未入 RISK_REGISTER —— ⚠️ **ADR-0037 同日 Day 6 收工前 `Accepted`(`E4` 除外),呢行係 Day 4 當刻嘅狀態**
+
+---
+
+## Day 5 — 2026-08-15(F6 — proposal 審批 + resume)
+
+### 起點係一個 H1
+
+寫 F5 收尾嗰陣先睇清楚:**審批一個 proposal 要同時掂兩邊** —— 行返既有 line item 建立路(domain)同 `runtime.resume()`(agent)。而 ADR-0036 **D0 禁止 `agent` module import 任何 domain service**,F9 仲要用 boundary spec 鎖死佢。
+
+⇒ 個審批 endpoint **結構上住唔到落 `agent`**,而佢住喺邊係 module 邊界決定(§5.1 H1 明文列咗)。停低問,**Chris 揀咗新開一個薄 module**。
+
+`AgentApprovalModule` import `AgentModule` + `FulfilmentModule`。否決咗兩個:
+
+| 放邊 | 點解唔得 |
+|---|---|
+| `agent` | 要 import domain service = **軟化 D0**,而 D0 係 ADR-0017 第五次應用,ADR-0036 明文「一個字都唔軟化」 |
+| `fulfilment` | 方向合法(domain 識得 agent,agent 唔識 domain),但令「licence 履行」孭上「agent run 幾時 resume」呢個同佢無關嘅職責,而佢已經係最大嗰個 module |
+
+🟢 **新 module 自己零 gate** —— 所有本來就有嘅檢查仍然喺 `RequestService.addLineItem` 入面跑。佢只做次序同翻譯。
+
+### 🔴 兩個人,兩種權 —— 呢個係本日最重要嗰個分辨
+
+- **批准人**(ADMIN / REGIONAL)= domain write 嘅 actor。佢負責件事發生。
+- **開 run 嗰個人** = agent 嘅**讀** scope(`resumeRun` 由 `startedBy` 攞)。
+
+撈埋一齊嘅後果好具體:批准人多數係 unscoped,所以用佢做 resume 嘅 scope,就等於**一個批准靜靜擴闊咗 agent 中途睇到嘅嘢**,而**冇任何嘢會報告** —— 每個 tool 都仍然喺度做佢被叫做嘅事。⇒ 呢個就係 `startedById` 要 required + FK 嘅實際兌現(F1-6)。
+
+### 次序係契約唔係排版
+
+`pre-resolve 全部 SKU → addLineItem × N → 標 executed → resume`。
+
+**標記一定要喺 resume 之前**:`propose_line_items.execute` 搵唔到 `executed` proposal 就 throw(D2 第二層)⇒ 掉轉次序會令個 tool **拒絕啱啱做完嗰件事**。
+
+**pre-resolve** 亦唔係整齊而已 —— proposal 可以隔夜先批,而 GUID 喺提議嗰刻驗過**唔夠**:SKU 中間可以變 inactive。
+
+### 🔴 Falsification ×3,而第二個嘅錯誤訊息自己就係證據
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | 標 `executed` 搬去 resume 之後 | **1 紅 / 13 綠** |
+| b | SKU 解析改成 lazy(喺 loop 入面逐個) | **1 紅** —— 而 jest 印出 **`Received number of calls: 1`** ⇒ **第一條 line item 真係會建咗**先至撞第二個 SKU。呢個唔係「條 test 紅咗」,係**條 test 直接演示咗佢防緊嗰個半截寫入** |
+| c | 拆走「payload `requestId` 對唔對得上 run」 | **1 紅** |
+
+### 🔴🔴 而全套跑嗰陣,W28 個權限矩陣 drift test 捉到我
+
+`permissions.spec.ts` snapshot 紅,內容係:
+
+```
++ "AgentApprovalController"
++ "POST /agent/proposals/:id/approve → roles [ADMIN,REGIONAL]"
++ "POST /agent/proposals/:id/reject  → roles [ADMIN,REGIONAL]"
+```
+
+三行全部**正確**(= OQ-2 拍板嗰個),所以係預期改動,加咗入清單 + 更新 snapshot(實測**淨係加 2 行**,零其他改動)。
+
+📌 **但值得記住嘅唔係「要更新 snapshot」,係呢件事印證咗 ADR-0036 否決 Option A 嗰個理由。** 當時寫嘅係:agent 喺 process 內直接 call domain service **唔會出現喺 `permissions.ts` 個 derive 矩陣**,W28 drift test 睇唔到佢。⇒ **W46 第一個寫入面一出現,呢條 test 當日就捉到**,唔係靠 review。一個當時只係論據嘅嘢,今日變成實測。
+
+### 未收
+
+- 🚧 **F7 audit**(`agent.run_started` / `agent.proposal_decided`)· **F8 前端**(而家後端通晒但**冇畫面撳**)· **F11 render + live**
+
+---
+
+## Day 6 — 2026-08-15(F9 — boundary spec)
+
+### 點解喺 F6 之後即刻做,而唔係排到最後
+
+F6 加咗一個**合法**跨界 module。而一有咗合法跨界,**非法嗰個就變得易 argue**(「approval 都得,點解 agent 唔得?」)。⇒ 條線喺邊,要喺同一日寫成一個會紅嘅嘢,唔係留到期一收尾。
+
+`agent.boundary.spec.ts`,14 條:
+
+- **五個禁 import**(`fulfilment` / `license` / `opco` / `graph` / seam ②),每個帶**點解禁**,唔淨係「禁」
+- **正半**:registry 仍然有 `PrismaService` + `assertOpcoScope` + `scrubPii`;module 仍然 import `IntegrationModule` ⇒ 條 test **唔會因為 agent module 被掏空而變綠**(W38 加「still talks to GraphService directly」就係為咗同一件事)
+- **唯一合法跨界寫喺同一個檔**:`agent-approval` import 兩邊,而且**只准經 `requests.addLineItem`**,唔准自己打 `prisma.requestLineItem`
+
+### 🔴 F9-2 —— A7 嘅結構版本
+
+A7 證嘅係:**呢一個**講大話嘅 model 冇寫到 `AgentStep`。
+F9-2 證嘅係:**codebase 入面冇第二個地方寫得到**。
+
+分別喺於後者下個月有人加新 tool 嗰陣**仍然成立**。實作係掃全個 `src/`,assert:
+
+| 表 | writer |
+|---|---|
+| `AgentStep` | `agent/ai-assist.service.ts` **一個** |
+| `AgentMessage` | 同上 —— scrub 得一道門 |
+| `AgentProposal` | 剛好兩個(service 建 pending · orchestrator 記人嘅決定),**兩個都唔係 tool** |
+
+### ⚠️ 第一次跑,五個禁令全部各中一個 offender —— 而 offender 係佢自己
+
+五個 needle 以**字串字面值**住喺條 spec 入面。⇒ **一條 source-scanning test 住喺自己嘅搜尋範圍入面。** 已排除 `.spec.ts` 並喺檔內寫低點解(claim 講嘅係**會 ship 嗰啲**)。
+
+📌 呢個同 §9 記低過嗰句「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢係兩件事」係同族嘅**反面**:今次條 assert 唔係太鬆,係**太準,準到捉埋自己**。兩種都要真跑先知。
+
+### Falsification ×2 真紅零誤傷
+
+①`tool-registry.ts` 加一個 `../fulfilment/` import ⇒ 1 紅 ②`agent-approval.service.ts` 加一句 `agentStep.create` ⇒ 1 紅。
+
+api **1171 / 81**(F6 後 1157 / 80)· tsc 0 · lint 0。
+
+### 收尾:ADR-0037 `Accepted`,但 `E4` 明文未答
+
+Chris 問「**所以 OQ-7 要批什麼?**」—— 呢條問題本身就係 `Proposed` 起咗作用:佢已經答咗 OQ-7,所以**要批嘅唔係 OQ-7,係「呢份 ADR 連埋佢列出嘅後果就係決定」**。
+
+拆返清楚之後,入面只有**一件真係未答**(`E4` auth 揀 Entra token 定 API key),其餘四條(E3 / E5 / E6 / E7)係**要佢睇過先算數**嘅後果。逐條過目之後,Chris **同日 Accept,並指明 `E4` 維持 deferred**。
+
+🔴 **`E4` 同 `OQ-1` 合併做一個問題** —— 兩者都取決於「infra 點開個 Azure OpenAI resource」,分開問就會問兩次,而中間隔住嘅係本項目最貴嗰種等待(B1/B4/B7/B8/B9 五次先例)。⇒ **落一個 infra request,一次過要齊:resource · deployment 名 · E4 兩條路邊條做得到。**
+
+📌 **形狀**:`Accepted` **唔等於「每一條都答咗」**。`plan.md §7` 為 OQ-1/OQ-5 標過同一件事(「approved as deferred」),而嗰格自己就寫住「一格寫住 approved 而下手當咗成格都答晒」係本項目撞過嘅事 —— 所以呢次喺 **ADR 頂部、index、plan、checklist 四個地方**都寫明 E4 未答,唔靠一個地方。
+---
+
+## Day 7 — 2026-08-16(F7 — audit)
+
+### 做咗
+
+兩條 action(`agent.run_started` / `agent.proposal_decided`)· 兩個 event-only target(`AgentRun` / `AgentProposal`,whitelist 都係 `[]`)· `actorType` union 加 `'agent'`。
+
+api **1171 → 1184 / 81**(零跌)· tsc 0 · lint 0 · **falsification ×2 真紅零誤傷**。
+
+### 🔴 查證到一個 ADR-0036 D7 冇講嘅約束
+
+D7 要求 `AuditLog.actorType` 加一個 `'agent'`。做嘅時候先發現:
+
+> **`AuditLog.actorId` 係 FK → `AppUser`**(`schema.prisma:440-441`)
+
+⇒ 一行 `actorType: 'agent'` 嘅 row **講唔出係邊個 agent** —— `AgentPrincipal` 個 id 塞唔入去,只可以 `actorId: null`,同 `system` / `m2m` 一模一樣。**一個 principal 之下捱得住,兩個就係一個窿。**
+
+而且今日**冇任何地方 emit `'agent'`**,呢個亦係啱嘅:Tier 1 之下每個被審計嘅事件背後都真係有個人(人開 run、人批 proposal),寫 `'agent'` 係**更唔準確**唔係更準確。
+
+⇒ 兩件事都寫咗喺 `AuditEntryInput.actorType` 個 docblock,**唔寫喺 plan** —— 因為下手真係要用嗰陣,佢望住嘅係嗰行 code。
+
+### 兩個 audit 位置刻意唔同,而個分別係規則唔係漂移
+
+| | 位置 | 點解 |
+|---|---|---|
+| `agent.run_started` | **transaction 入面** | 前面冇任何不可逆嘅嘢(冇 model call、冇 line item)⇒ 一齊 rollback 零成本。ADR-0009 **D8.1**:「done but unrecorded」差過「not done」 |
+| `agent.proposal_decided` | **transaction 外面,決定之後** | 嗰陣 line item **已經真係建咗** ⇒ 為咗一個 audit 打思噎而 rollback 個決定,會留低「line item 存在但 proposal 仲係 pending」,再批一次就建兩次。`outbound-retry.service.ts:398-401` 同一句 |
+
+⇒ **同一條規則,喺兩個唔同前提下得出兩個答案**:睇 audit 之前有冇一件不可逆嘅事發生過。
+
+### 🔴 Falsification ×2,而第二個先係重點
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| a | `AgentRun` whitelist 由 `[]` 改成 `['status','runState']` | **1 紅** |
+| b | 把 `audit.log` 搬出 transaction 外 | **1 紅** |
+
+**(b) 證明咗條 test 唔係 `toHaveBeenCalled()` 嗰種** —— 搬咗出去佢一樣會被 call,`expect(audit.log).toHaveBeenCalled()` 會照綠。條 test 用一個 flag 記住「被 call 嗰刻 transaction 開唔開住」,而嗰個 flag 就係佢同一條空 assert 嘅全部分別。
+
+📌 同族:**A11 亦刻意唔寫 `expect(WHITELIST.AgentRun).toEqual([])`** —— 嗰種寫法只會同份檔自己講嘅嘢一致。改為餵一個**肥** row(含 transcript 同 model payload)入 `pickAuditFields`,驗佢真係乜都唔剩。
+
+### ⚠️ F7 令 A5 講嘅嘢變咗,所以 A5 改咗講法
+
+一個 run 而家會喺五張 `Agent*` 表以外寫**一行**:`agent.run_started`。呢個係 D5 明文要求嘅,但 **A5 原本嗰句「零改動」由嗰刻起就唔再係真** ⇒ 加咗一條 test 講**準確**嗰句:`Agent*` 以外**剛好一行,而且就係佢**。
+
+（一條 assert 唔更新就會變成描述緊一個已經唔存在嘅系統 —— 同 §9 講「文件過時令下個 session 用錯前提」同族,只係呢次過時嘅係 test。）
+
+---
+
+---
+
+## Day 8 — 2026-08-16(F8 — 前端)
+
+### 開工先發現後端仲差一層
+
+F5 / F6 做咗 service 同審批 endpoint,但 **`AgentModule` 一個 controller 都冇** —— 即係前端**根本冇嘢可以打**。補 `AgentRunController`:開 run / 攞最近一個 run / 攞一個 run / 中止。
+
+**`@Roles(ADMIN, REGIONAL)`,同審批一樣。** plan / ADR 都冇指定邊個可以**開** run。理由寫低咗:一個 run 要錢兼且製造工作畀批准人;而 tool 本身喺任何闊度都安全(佢哋行**開 run 嗰個人**嘅 OpCo scope,一個 OPCO_IT 開嘅 run 結構上只睇到自己個 OpCo)⇒ **日後放寬係一行,收窄係 regression。**
+
+### 🔴🔴 一個「短啲嗰個寫法」差啲開咗個窿
+
+`getRun` 第一版用 `include` 攞 relation。`include` 會連**每個 scalar** 一齊回傳 —— 包括 **`runState`**。
+
+而 `runState` 係 SDK 嘅序列化 state,**入面有 model 嘅對話歷史,逐字,未 scrub 過**。D6 scrub 嘅係「落 `AgentMessage` 嗰條路」,`runState` 係另一條路、為另一個目的(resume,R16)寫嘅。
+
+⇒ **一個 `include` 就等於由 API 把平台小心遮住嗰份 transcript 嘅原本交返出去** —— 冇 error、冇 log、冇嘢會紅。
+
+改用明文 `select`,理由寫喺 service 同 DTO 兩邊(DTO 個 header 寫住「任何令 `runState` 出現喺回應嘅改動,就係靜靜拆咗 D6」)。
+
+📌 **形狀**:呢個同 §9 一路撞緊嗰族一樣 —— **預設值 / 最順手嗰個寫法本身就係唔安全,而且冇嘢會話你聽**。分別係今次係我自己嘅 `include`,唔係 vendor 嘅 default。
+
+### 畫面點解係咁排
+
+D4 要求 transcript 同 action ledger 唔可以撈埋。落到畫面就係三件事:
+
+1. **steps 排喺前**,標題 `What ran` —— 佢係證據
+2. **transcript 預設摺埋**,開咗之後第一句係「**唔係任何嘢發生過嘅證據**」
+3. proposal 塊嘢**貼住 approve 掣**寫住 **`Approving runs the platform's normal checks — they can still refuse.`**(F8-3 / D3 嗰個反直覺後果)
+
+🔴 **A7 嗰個 mock 直接搬咗上畫面做 test fixture**:transcript 入面擺一句 `I have created the line items already`,然後 assert **佢預設唔喺畫面上**。同一句嘢,F5 用嚟證「佢寫唔到 `AgentStep`」,F8 用嚟證「佢唔會喺人望落去第一眼就同證據並排」。
+
+### Falsification ×2 真紅零誤傷
+
+①transcript 預設改成打開 ⇒ 1 紅 ②拆走 F8-3 嗰句 ⇒ 1 紅。
+
+### ⚠️ 5 個既有 test 檔要加 stub,而 stub 點寫有分別
+
+新卡自己叫 `useAgentRun`,而 5 個 `request-detail.*.test.tsx` 都用明文 object mock `@/hooks/queries` ⇒ 全部即刻紅(45 條)。
+
+加咗一個 stub mock,**渲染一個 marker 唔係 `() => null`** —— 因為:
+
+- CH-030 F4 嗰條「Operational history 排喺 AI Assist 之前」嘅 DOM 次序 test **仲要驗得到**(佢原本靠 `getByText('AI Assist')`,而嗰個 anchor 隨住 placeholder 消失)⇒ **改 anchor,唔改 claim**
+- **role gating 係 request-detail 嘅責任唔係卡嘅責任**,所以嗰三條 test(ADMIN/REGIONAL 見到、OPCO_IT 見唔到)要留喺嗰邊
+
+🔴 而嗰條 OPCO_IT test 特登喺註釋寫死一句:**hidden card 唔係一個權限** —— server guard 先係真嗰個,呢度只係唔遞一個一定 403 嘅掣。唔咁寫,下一個改動好容易 ship 一個冇 `@Roles` 嘅 endpoint。
+
+### DS 自檢(H6)
+
+DS-1 ✅ · DS-2 ✅ · DS-3 ✅(**零新 primary**)· DS-5 ✅ · DS-6 ✅ · DS-7 ✅ · DS-8 ✅ · DS-9 ✅ · DS-10 ✅ · DS-11 N/A(prototype 冇 agent 卡,純組合既有 primitive)· DS-12 N/A。
+
+🚧 **DS-4(light + dark 真 render)未做** —— 全部行 token 所以**結構上**應該 swap,但 §9 一路嘅規矩就係「未 render 過就唔可以講佢掂」⇒ 留喺 **A13 / F11-1**。
+
+### 數字
+
+web **377 → 392 passed**(+15)· **6 條紅 = 完全就係已知 pre-existing 嗰 6 條,零新增** · web tsc 0 · web lint 0
+api **1184 / 81** 全綠零跌 · api tsc 0 · api lint 0
+🔴 W28 權限矩陣 drift test **第二次**捉到新 controller(4 條 route,全部 `[ADMIN,REGIONAL]`),snapshot 實測只加 4 行。
+
+---
+
+## Day 9 — 2026-08-16(A13 / F11-1 — light + dark 真 render)
+
+### 開工第一件事係確認工具,唔係寫 code
+
+`SESSION_SUMMARY.md:119` 有一條硬規矩:**前端驗證睇你今次 session 有冇 browser tool,唔可以當佢一定喺度;真係冇就照寫「未 render 驗」,唔可以用「token 兩邊都有定義」冒充。**
+
+本 session **冇**(兩次獨立確認:deferred tool 清單 + 兩次 `ToolSearch`)。而查返歷史,本項目由 CH-002 到 CH-030,**每一次** light+dark render 都係靠當日 session 啱啱有 Playwright MCP —— CH-016 驗到、**W43 驗唔到就照寫「未 render 驗」**。repo 入面**一個可以照跑嘅 render 腳本都冇**。
+
+⇒ 停低問 Chris。**佢揀咗第三條路:`playwright` 落 `apps/web` devDependency。**
+
+🔴 **點解呢個係方向改變唔係順手做嘅嘢**:W41 checklist 明文記住「repo 冇 playwright dep」—— 即係話**歷來每個 session 都刻意冇加**。H2 §5.2 寫住 dev dependency 屬例外可自行加,但「一個 acceptance criterion 應唔應該靠彩數」係 owner 嘅決定,唔係我嘅。
+
+🟢 **`npx playwright install chromium` 真落載到**(191.8 MiB + 114.5 MiB)—— **公司 proxy 冇封 `cdn.playwright.dev`**。⚠️ **值得記住嘅係呢個結論同 RISK R1 相反**(Prisma engine CDN 被封)⇒ **唔可以由「R1 封咗」推論「其他 CDN 都封」**,呢個係 §9 一路撞緊嗰族(由一個相關但唔對位嘅觀察推去更強嘅結論)嘅預防針。
+
+### 起 stack
+
+Chris 批准停 `ai-doc-extraction-db` 借 5433。`uop-postgres` + `uop-redis` 起返,**真 TCP 驗**(5433 / 6379 都 `True`,唔睇 health flag)。`prisma migrate status` = **25 migrations,up to date**(F1-5 嗰次已經落咗)。
+
+⚠️ **本 worktree 冇 `.env`**(佢住喺主 worktree)⇒ 造咗一個**本機 render 專用**嘅:DB URL 抄自 repo 自己 commit 咗嘅 `docker-compose.yml`,其餘 vendor 值**全部 placeholder**(Graph / SN / ACS / Entra / OpenAI 一律打唔通),`AUTH_DEV_BYPASS=true` 免得掂到 Chris 個 break-glass 密碼。**主 worktree 個 `.env` 由頭到尾冇讀過、冇抄過。**
+
+🔴 **順帶撞到一個唔明顯嘅位**:`main.ts` 個 port default 係 **3000**,而 §9 講嘅 3100 一直係由 `.env` 嘅 `PORT` 嚟。新造個 `.env` 冇 `PORT` ⇒ api 起咗喺 3000,而 **vite proxy 寫死 target 3100** ⇒ 畫面會攞唔到數,但 api 本身 200。補返 `PORT=3100`。
+
+### Fixture(純 INSERT,零現有 row 被改)
+
+一個 `awaiting_approval` run,掛喺 W45 嗰張 local render fixture request 上。**三種 step status 齊**(ok / failed / skipped)· **六個 transcript role 齊 —— 連 `unknown` 嗰個**(佢係平台喺 SDK 畀個唔認得嘅 role 嗰陣自己鑄嘅,冇 fixture 會自然生出佢)· 一個 pending proposal 帶兩個 skuId。
+
+📌 CH-030 嗰個教訓(改測試資料之前 SELECT 一次你將會寫嘅每個欄)今次唔使用 —— **因為一個欄都冇寫過落既有 row**。
+
+### 🟢 順帶攞到 F8-0b 個真證據
+
+打 `GET /agent/runs?requestId=…` → **200**,payload 入面 **`runState` 出現次數 = 0**。即係 Day 8 嗰個 `include` → `select` 修正**喺 wire 上真係守住咗**,唔淨係 code review 睇落啱。端到端(browser → vite proxy → api → DB)亦通。
+
+### Render — 四個狀態 × 兩個 theme = 八張
+
+①預設(proposal + steps + 摺埋嘅 transcript)②transcript 展開 ③reject 對話框 ④未開 run 嘅 empty state。
+
+**結果**:
+
+- **幾何兩個 theme 逐個相等**(728 / 1108 / 239 / 334 px)⇒ **零 layout drift**
+- **兩個 theme 都零橫向溢出**(`scrollWidth === clientWidth === 1440`)
+- **token 真 swap**:`--bg` `#f5f5f6`↔`#08080a` · `--card` `#ffffff`↔`#141417` · `--accent` `#E60027`↔`#ff3355` · **`--purple` `#6d28d9`↔`#a982f0`**(最後嗰個就係 DS-8 個 AI tone,而佢係本卡唯一新用嘅 semantic 色)
+- 八張逐張肉眼睇過:step 三個 icon 各自帶啱色(綠 check / 紅 alert / 灰 minus)· skuId + 時間戳 mono · `WHAT RAN` / `TRANSCRIPT` / 六個 role label 全部 micro uppercase · D4 嗰句 caveat 喺展開之後第一行 · reject 掣係 `bg-danger-soft`+`text-danger`(**唔係** disabled —— disabled 係 `opacity-.55`,實測係 full opacity)
+
+### 三個過程上嘅坑,兩個係我自己整出嚟
+
+1. **git-bash 食咗個 URL path**:`--url /requests/…` 被 MSYS 轉成 `C:/Program Files/Git/requests/…`。改用 PowerShell 跑。
+2. **`fullPage: true` 冇用** —— 頁面 main region 有自己嘅 scroll container,所以 document 本身唔滾,`fullPage` 永遠只得一個 viewport。⇒ 改**影卡本身**(`locator.screenshot()`)。順帶:element 高過 viewport 會影到一半黑,viewport 要開夠高。
+3. **`networkidle` 唔等於 React Query 已 settle** —— empty state 嗰張第一次影到個 `Loading…`。改成 `waitForSelector('text=No run yet')`。**同族**:等一個「網絡靜咗」嘅信號,去斷定一個「UI 已經到位」嘅結論。
+
+### 🔴 render 揭到一個潛在缺口(唔係今日嘅 bug)
+
+我 fixture 起初作咗個 `propose_assign` 做 step key,而畫面**直接印咗個 raw snake_case key 出嚟**。
+
+查證之後:**係我 fixture 錯,唔係 code 錯** —— 平台今日寫得出嘅 key 一共九個(`start`/`abort`/`run`/`proposal` + registry 五個 tool 名),而 `STEP_LABEL` **九個全部有**。fixture 改成真 key 就正常。
+
+**但個缺口係真嘅**:`AgentStep.key` 型別係 `string`,`STEP_LABEL[step.key] ?? step.key` 冇任何嘢釘住兩者對應 ⇒ 邊日有人喺 `tool-registry.ts` 加個 tool 而冇掂 `ai-assist-card.tsx`,操作員畫面就出 raw key。
+
+🔴 **而最值得記住嗰半係隔籬**:`MESSAGE_LABEL` 係 `Record<AgentMessage['role'], string>` ⇒ **TypeScript 幫佢守住,漏一個 role 就唔 compile**。兩個 map 喺 code 入面**上下相鄰、寫法睇落一模一樣**,一個有型別保護一個冇 —— 而分別唔係寫法,係**上游嗰個型別係 union 定係 `string`**。
+
+**未修,已開項**(F11-1b):兩條修法(跨 package parity test / unknown key render 成一望而知係 unknown)都唔係順手做嘅嘢,要 Chris 揀。**Target = 期二 G1 之前** —— G1 就係加 `propose_assign`,即係第一個真會踩中佢嘅改動。
+
+### DS 自檢(H6)—— 今次 12 條全部有答案
+
+DS-1 ✅(8 個色 class 逐個對返 `tailwind.config.ts`,全部 CSS var alias,零 hex)· DS-2 ✅(px 值逐個查過係 house idiom:`text-[11.5px]` 119 處 / 31 檔、`gap-[7px]` 16 處…;唯一獨有嘅 `pl-[22px]` 而 22 本身喺 spacing scale 上)· DS-3 ✅ 零新 primary · **DS-4 ✅ 兩個都真 render** · DS-5 ✅ · DS-6 ✅ · DS-7 ✅ · DS-8 ✅ · DS-9 ✅ · DS-10 ✅ · **DS-11 ✅**(prototype 冇 agent 卡,但整張卡純由既有 primitive 砌:Card / Badge / Button / Dialog / Input / EmptyState)· DS-12 N/A。
+
+### H4
+
+八張截圖**只影卡本身**,而卡入面個 target 係 `[redacted]`(scrub 過)⇒ **零真 UPN**(`Select-String` 實測 0 命中)。中途影過嘅全頁截圖帶住真 UPN,**已刪**。`git status --untracked-files=all` 實測 repo 零剩餘 artifact。
+
+### 數字
+
+api **1184 / 81** 全綠零跌 · web **392 passed**,**6 條紅逐條核對過就係已知嗰兩個檔**(`reset-password` 1 + `local-profile` 5),零新增。
+
+---
+
+### 同日:草擬 infra request(`docs/13-deployment/11-azure-openai-infra-request.md`)
+
+**格式唔係自己諗,係抄返 W44 附錄 C 個兩層分法**(`W44 plan.md:333`):上面內部記錄,下面一個 `📤` code block 放**真正發出去嗰段英文全文**。原文理由:
+
+> infra team 唔需要嗰啲 —— 佢哋需要嘅係「**壞咗乜 + 要你做乜**」。刪走內部細節唔係簡化,係**移走會分散注意嘅嘢**。
+
+五條問題:**`Q0`** 治理 · **`Q1`** auth(= `E4`)· **`Q2`** deployment(= `OQ-1`)· **`Q3`** abuse monitoring · **`Q4`** ACA outbound。
+
+### 🔴🔴 草擬過程查到一個唔喺任何 W46 文件入面嘅障礙,而佢改變咗成件事嘅形狀
+
+`05-rci-par-process.md:4` 寫住「**開資源前必經 PAR**」,而**同一份 PAR Section 1 `:54` 明文申報咗**:
+
+> `AKS / Blob / **Azure OpenAI** / Event Grid | ✅ **暫無**(…AI 屬未來 tier)`
+
+⇒ **開一個 Azure OpenAI resource,同我哋自己寫落治理文件嗰句直接相反**,而 PAR 簽核鏈(`:20`)包括 **Security Manager / GM CISO IT / CDO** —— 佢哋 endorse 嘅就係一個資料流向態勢,而本次改動加嘅正正就係一條新資料流。
+
+加埋兩件事:**①嗰份 PAR 由頭到尾未提交**(Section 1 仍有 `🔲 待 Chris`)**②`09-dev-as-built.md:125` 一早寫低「DEV 環境要唔要走 PAR,要問」,由 08-04 到今日從來冇問過。**
+
+📌 **而 `05:30` 自己嗰句填表原則,反方向一樣成立** —— 佢寫「填 private access 而實際 public,等於向治理機構描述咗一個唔存在嘅態勢」;**申報「Azure OpenAI 暫無」然後靜靜開一個,係同一個錯誤嘅鏡像。**
+
+⇒ 所以本份**唔係一張 ticket,係一個要先揀路嘅嘢**。**冇列第三條「當一般資源請求發」** —— `W44 plan.md:309`:**留住一個死路選項唔係保留彈性,係引人揀錯。**
+
+🟢 **Chris 同日揀咗 B(治理同技術同一封,`Q0` 第一條)。**
+
+而 B 個賣點(「若要行 PAR,啲技術答案唔會白寫」)**唔可以齋講**,所以補咗一張逐格對照表落文件:
+
+| 問題 | 填入 PAR Section 1 邊度 |
+|---|---|
+| `Q1` auth | User Access / Authentication |
+| `Q2` model / deployment | **就係把 `05:54` 嗰行 `Azure OpenAI ✅ 暫無` 改成實際值** —— 即整件事嘅治理核心 |
+| `Q3` abuse monitoring | Security requirements(`05:88`)—— 🔴 **Security Manager endorse 嘅就係呢格** |
+| `Q4` outbound | Communication protocol 表加一行 `uop-api → Azure OpenAI · HTTPS · 443` |
+
+⚠️ **最後嗰行值得記住,因為佢同 `05:64` 剛好相反** —— 嗰條 `uop-api → Key Vault` 被**劃走並註明唔好填**(連線根本唔存在,填咗會令防火牆開一條唔需要嘅通道);而呢條係**會真係存在所以一定要填**。**同一條原則兩個方向:PAR 上面嘅資料流表要同實況逐條對得上,多一條少一條都係向治理機構描述一個唔存在嘅態勢。**
+
+### 🔴 第二個查證改咗請求點寫
+
+`ADR-0028:35` 記低咗 **「Application ID URI」三輪往返都攞唔到** —— infra 分別答咗「web portal 網址」「OAuth authorization endpoint」「Application ID」,而 `W44 progress.md:605` 個結論係:**三次嘅解讀都合理,值得懷疑嘅唔係對方,係嗰條問題本身。**
+
+**而 `deployment` 完全同一族** —— 對 infra 嚟講呢個字預設係 **ARM deployment**,唔係「model deployment」。⇒ 發出去嗰段字**自己先解釋個詞**(「唔係 ARM deployment、唔一定等於 model 名、開嗰個人自己揀」)兼要求**逐字 copy 唔好重打**,唔靠對方估。
+
+同族嘅仲有 **Q2 問法**:問「**有咩開得到**」唔係「請開 X」—— 沿用 `W44 checklist.md:247`(「問係咩,唔係叫佢設定」),因為我哋證唔到邊個 model 喺公司 tenant 開得到。
+
+### ⚠️ 一件我自己答唔到,所以寫成問題唔寫成結論
+
+**`Q3`(abuse monitoring / prompt 保留)我係由記憶寫嘅,repo 入面冇任何嘢證實得到。**
+
+但佢唔係可有可無 —— **`ADR-0037 E1` 成個論據就係「收件人變咗,同 Graph / M365 同一個信任面」,而呢句只喺冇第三方人手覆核嘅前提下成立。** 如果 Azure OpenAI 預設會保留 prompt 兼有人手覆核,咁個論據就要收窄(而 Graph / M365 唔會有人睇我哋啲資料)。
+
+⇒ 寫成「請確認,唔好當我哋講得啱」。**唔可以因為 ADR 已經 `Accepted` 就當呢條唔使問** —— `09-dev-as-built.md:224`:**一個未實測嘅答覆,同一個未問嘅問題,喺風險上係同一樣嘢。**
+
+### 順帶查實嘅四件環境事實(寫落請求,慳一個往返)
+
+| 事實 | 點查 | 影響 |
+|---|---|---|
+| `aca-rapo-uop-api-dev` **今日冇 managed identity** | `aca-dev.json` grep `identity` = **0** | `Q1` Option A 要**先開**佢 |
+| 我哋個 SP 喺 `RG-RAPO-UOP-DEV` **只有 Contributor** | `09-dev-as-built.md` · B4 史 | role assignment **無論如何都要 infra 做**(Contributor 冇 `roleAssignments/write`) |
+| `openai-agents.provider.ts` **零 Azure 接線** | grep:只有 `resolveModel()` | `E2` 未寫,**係我哋嘅工作唔係 infra 嘅** |
+| `aca-dev.json` **零個 `AGENT_*` / `OPENAI_*` env** | grep = **0** | 部署 template 要加,同上 |
+
+## Day 10 — 2026-08-16(F10-1 + F10-2 — falsification sweep)
+
+### Baseline
+
+`--testPathPattern "src[\\/]agent"` = **7 suites / 138 tests** 全綠。⚠️ 順帶一個坑:第一次用 `"agent"` 做 pattern **match 咗成個 suite(81 個)** —— 因為 **repo 目錄本身就叫 `ai-agent`**,每條路徑都含 `agent`。
+
+### 掃法
+
+只掃**未做過 falsification 嗰批**(之前做咗嘅見 checklist `F10-2e`)。**四道閘,結果 2 綠 2 紅 —— 而兩個綠就係兩個洞。**
+
+### 🔴🔴 洞 ① —— `getRun` 個 `runState` 排除,零測試覆蓋
+
+把 `runState: true` 加返落 `select` ⇒ **142 條全綠**。
+
+即係話 Day 8 嗰個「差啲開咗個窿」嘅修正,**由改完嗰刻起就冇任何嘢守住** —— A13 喺 wire 上驗過一次,但**一次 live 觀察唔係一道 regression 閘**。
+
+⚠️ **而佢結構上唔可能靠 assert 回傳值捉到**:Prisma 係 mock,回傳咩由 test 自己講。⇒ **只有「服務傳咗咩 argument 畀 Prisma」先載得住呢個事實** —— **道閘就係 query shape 本身**。
+
+新增 4 條 test。**兩次 falsification 證咗兩條 assert 唔係重複**:
+
+| falsification | 紅嗰條 | |
+|---|---|---|
+| `runState: true` 加返落 `select` | `never selects runState` | 2 紅 140 綠 |
+| `select` → `include` | `uses select rather than include` | 2 紅 140 綠 |
+
+**兩次紅嘅係唔同一對。** 我喺 test 註釋寫咗「呢兩條唔係重複」,而家嗰句係證出嚟唔係聲稱。
+
+### 🔴🔴 洞 ② —— SKU 存在性嘅兩條 test,一直靠錯嘅理由綠
+
+拆走 `Unknown or inactive skuId` 個 throw ⇒ **142 全綠**。而條 test **明明就喺度**,名仲要叫 `refuses a GUID that is not in the catalogue (hallucinated id)`。
+
+**點解**:再落兩道閘,`propose_line_items` 因為冇 approved proposal 而再拒絕一次,**而佢掟嘅係同一個 `BadRequestException`**;`agentProposal.findFirst` 又係一個裸 `jest.fn()` 返 `undefined` ⇒ **每個 case 都一路行到嗰度先掟**。
+
+⇒ 兩條改成 assert **訊息**(hardcode,唔由被測 code 推導)**+** `agentProposal.findFirst` 冇被 call 過(即證佢喺**上一道**閘就停咗)。**單靠訊息唔夠 —— 兩道閘掉轉次序佢一樣綠。** 修完再 falsify:**2 紅 140 綠**。
+
+📌 **格式檢查同存在性檢查係兩件事,而只有一件有守**:`F2-9②` 驗咗 GUID **格式**,但**幻覺出嚟嘅 GUID 格式完全合法** —— 真正攔住佢嘅係存在性,而嗰道正正就係冇守嗰道。
+
+### ✅ 兩道證實有守
+
+`kindOf()` 拆走 throw 改成一律返 `'line_items'` ⇒ **1 紅** · step detail 拆走 `scrubPii` ⇒ **2 紅**。兩次零誤傷。
+
+### 📌 方法論 —— 第四次撞同一族,今次係最貴嗰個版本
+
+`CLAUDE.md §9` 早就記低:**一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事;唯一分辨方法係拆走實作睇佢紅唔紅。**
+
+洞 ② 就係佢本人 —— test 名啱、位置啱、assert 睇落合理,**而佢由頭到尾釘住緊另一道閘**。
+
+⚠️ **可操作嘅一句**:`toBeInstanceOf(SomeException)` 喺一條**有多道閘、而每道都掟同一個 exception type** 嘅路徑上,基本上等於冇 assert 過。分辨方法只有兩個:**assert 訊息**,或者 **assert「下一道閘冇被行到」**。
+
+### 數字
+
+api **1184 → 1188 / 81**(零跌)· tsc 0 · lint 0。實作檔**全部還原乾淨** —— `git diff --stat` 只有兩個 spec 檔,**零 production code 改動**(falsification sweep 應有嘅收尾形狀)。**W46 falsification 累計 ×18,全部真紅零誤傷。**
+
+### 🚧 sweep 刻意冇掃嗰兩道
+
+`agent-run.controller.ts` / `agent-approval.controller.ts` **兩個都冇 spec 檔**。今次個 `runState` test 落咗喺 **service 層**(query shape 嘅正確位置),**但 controller ↔ DTO 嗰條縫仍然冇嘢守** —— 而 **BUG-011 個教訓逐字就係呢條縫**。已開項 `F10-2e`,target 期二 `G1` 之前。
+
+---
+
+### 同日補埋 F10-2e —— 兩個 controller spec
+
+`agent-run.controller.spec.ts`(8 條)+ `agent-approval.controller.spec.ts`(4 條)。api **1188 → 1199 / 81 → 83**。
+
+釘住三類**只有 controller 層見得到**嘅嘢:①`@Roles` 喺 class 上 = `[ADMIN, REGIONAL]`(W28 snapshot 話你知矩陣**變咗**,呢條話你知佢**應該係咩**)②參數點拆(`dto.requestId` 唔係成個 dto · **`approve(id, user)` 個 user 唔係 optional context —— 佢就係 `approvedById` 同 audit actor**)③argument 次序(`getRun(user, id)` 掉轉一樣 type-check,兩個都係 string)。
+
+### 🔴🔴 而我第一版嗰條 query-key test 自己就係假嘅,俾 falsification 當場捉到
+
+v1 寫 `controller.latest('req-1', user)` 然後 assert service 收到 `'req-1'`,**註釋仲寫住佢守住個 query key**。把 `@Query('requestId')` 改做 `@Query('request_id')` ⇒ **152 條全綠**。
+
+**原因**:直接 call 個 method **完全繞過 Nest 嘅參數綁定** —— `@Query()` 個 key 係 runtime metadata,由頭到尾冇參與過 ⇒ **條 test 結構上睇唔到佢聲稱守住嗰件事**。
+
+改成讀 `__routeArguments__` route metadata。同一個 falsification ⇒ **1 紅 152 綠**。
+
+📌 **同一日第二次同一族**(F10-2b SKU 嗰個係第一次),而**兩次都係同一個形狀:註釋寫住佢守住乜,同佢實際釘住乜,係兩件事。** 上午嗰次係別人寫嘅 test,下午呢次係我自己啱啱寫嘅 —— **知道咗個模式,唔代表寫嗰刻唔會再中。**
+
+### 🔴 順帶查證到一個容易讀反嘅事實
+
+`AgentRunDto` header 寫住「`runState` 喺呢度每個 shape 都缺席,而**呢個係規矩唔係遺漏**」。講法啱,但 **DTO 喺呢個 app 係文件唔係過濾器**:全 `src/` **零個 `ClassSerializerInterceptor`**(實測 grep),`@ApiOkResponse` 只影響 OpenAPI 頁。
+
+⇒ **controller 原封交返 service 嗰個 object**,⇒ **唯一嗰道閘就係 service 個 `select`**(F10-2a 釘住嗰個)。條 test 用 identity(`toBe`)釘住呢個 pass-through,**就係為咗唔畀人把 DTO 個註釋讀成第二道防線 —— 得一道。**
+
+### 數字(收工)
+
+api **1199 / 83** 全綠 · tsc 0 · lint 0(⚠️ 一個 prettier error 修咗先過)· **實作檔全部還原乾淨,零 production code 改動**。**W46 falsification 累計 ×21,全部真紅零誤傷。**
+
+---
+
+### 同日再收 F11-1b —— 喺 `G1` 之前,而順序係重點
+
+`G1` 加 `propose_assign`,**即係第一個會踩中呢個缺口嘅改動** ⇒ 先補咗佢先開 `G1`,唔係反過來。
+
+**揀咗 parity test,唔係改 render 行為。** §13:「兩種實作都 reasonable → 揀更接近既有 pattern 嗰個」,而 source-scanning test 正正就係 `agent.boundary.spec.ts` 個 idiom。另一條路(unknown key render 成一望而知)會令一個**今日結構上唔存在**嘅狀態,永久霸住畫面一個位置。
+
+`ai-assist-step-labels.test.ts`(4 條)讀 API 個 `tool-registry.ts` 對返 `STEP_LABEL`。**兩個方向都驗**:缺 label(會出 raw key)· 多咗一個冇嘢 emit 得到嘅 label(**佢係一個「有呢一步」嘅聲稱,亦即係呢個 map 漂成小說嘅路徑**)。另加一條**驗個 registry 搵唔搵得到** —— 檔案改咗路徑或者 regex 失效,`registryToolNames()` 會返 `[]` 而**下面每條都會空轉通過**。
+
+**Falsification**:抽走 `get_ledger` ⇒ **1 紅 3 綠**,而錯誤訊息直接點名嗰個 tool —— 將來踩中嘅人唔會係讀緊呢個檔嗰個,所以訊息比 assert 更重要。
+
+⚠️ **順帶要處理一個 lint 訊號,而佢講得啱**:由 component 檔 export 一個 constant 會破 fast refresh(`react-refresh/only-export-components`)⇒ `STEP_LABEL` 搬咗去 `ai-assist-labels.ts`。**呢個係我自己個改動整出嚟嘅,所以係我要清**(§1.3)。
+
+web **392 → 396 passed**(6 紅 = 已知 pre-existing,數目一個字冇變)· tsc 0 · **lint 0**。
+
+---
+
+## Day 11 — 2026-08-16(期二 `G1` — agent 第一次有 action 權)
+
+### 開工前確認 R12 / H1 已被覆蓋
+
+`tool-registry.ts` 頂明文寫住「**加一行 = 擴權 = 要 ADR(R12)**」。而 **`propose_assign` 由 ADR-0036 §3.2 + plan §2.2/§3.2 一開始就列咗** ⇒ 佢係 ADR 計劃咗嘅 tool,唔係新塞一行入 allow-list。
+
+🟢 **boundary spec 一條 ban 都唔使鬆。** 禁令針對 `src/agent/`,而 crossing 一直住喺 `agent-approval` —— F9-3 早就命名咗佢做「唯一合法跨界」。⇒ **今次係用返嗰個許可,唔係擴闊佢**,而呢個分別要講清楚,因為 F9-3 自己寫過:**有咗一個合法跨界之後,非法嗰個會變得易 argue。**
+
+### 四個 ADR 冇指定、屬本單嘅決定(R3)
+
+| # | 決定 | 點解 |
+|---|---|---|
+| ① | **agent 路徑冇 budget override** | schema 冇呢個欄,call 只有三個 argument。ADR-0016 D3 話佢 ADMIN-only 兼**要寫低理由** —— 而**畀 model 作嗰句理由、再叫人批准佢冇寫過嘅字,就係最壞嗰種 rubber-stamp**。要 override 就喺 request 畫面自己做 |
+| ② | gate 拒絕 ⇒ proposal 標 **`failed`** 唔係 `executed` | `executed` 正正就係 `propose_assign.execute` 搵嗰個 ⇒ 標錯就等於**同個 model 報告一件冇發生過嘅成功** |
+| ③ | 拒絕之後**仍然 resume**,但 `approved: false` + 真原因 | 「**人拒絕**」同「**平台拒絕**」係兩件唔同嘅事,合埋就係喺 transcript 度講錯發生咗乜 |
+| ④ | 只有 ADR-0029 `blocked` body 當拒絕 | 403 / DB error 原封 rethrow。報做「平台拒絕」就係對發生咗乜嘅虛假陳述(INC-001) |
+
+### 🔴🔴 同一個改動入面連中三次「自己個註釋觸發自己條 test」
+
+boundary spec grep `budgetOverrideReason` / `usageLocation`,而我喺 **`agent-approval.service.ts` 同 `tool-registry.ts` 兩處嘅解釋性註釋**都寫咗嗰兩個字 —— 一次寫,兩次改。
+
+**CH-029 犯過一模一樣嘅**(「一個解釋規矩嘅註釋觸發咗嗰條規矩」)⇒ 沿用當時做法:**改註釋,唔鬆 test**,兼喺註釋度寫明「呢個名刻意唔喺呢度出現,因為條 test grep 佢」。
+
+### 🔴🔴 而 falsification 揭到 boundary grep 單獨唔夠
+
+把 model 自己嘅 `reasoning` **用位置參數**傳做第四個 argument —— 即係真正嘅壞版本,冇人會特登寫個參數名落去。
+
+**boundary 條 grep 完全睇唔到**(個名一次都冇出現)。紅嘅係 approval spec 嗰條 **arity assert**(`toHaveBeenCalledWith` 三個 argument)。
+
+⇒ **一條睇個名,一條睇個 call 嘅形狀 —— 兩條唔係重複。** 已寫入 boundary spec 註釋,唔係留喺 progress 度等人搵。
+
+### Falsification ×2 真紅零誤傷,加一個拆唔落嘅
+
+①blocked 都標 `executed` ⇒ **1 紅** ②位置參數偷渡 override ⇒ **1 紅**。
+
+⚠️ **③(拆走「只有 `blocked` 先算拒絕」)拆唔落 —— 佢一拆就唔 compile。** TS narrowing 令你冇檢查過就砌唔到嗰句 refusal 訊息(`body` 可能 undefined)。**呢個係比一條紅 test 更強嘅保證**,但佢唔會出現喺任何 test 報告入面,所以照實記低。
+
+### 兩條舊 test 紅得啱
+
+`refuses a pause on a write tool it cannot classify` 本來攞 `propose_assign` 做「分類唔到」嘅例子 —— 而家佢分類到喇,所以**條 test 一定要紅**:佢個主題係「分類唔到嘅情況」,而個例子唔再係。改用一個刻意唔喺任何 roadmap 上嘅名。
+
+`does not expose propose_assign yet (G1, 期二)` —— **佢本來就係為咗有一日要被人特登刪先存在。**
+
+### 數字
+
+api **1199 → 1212 / 83** 全綠 · tsc 0 · lint 0(⚠️ 兩個 prettier error `--fix` 咗先過)。新 test 13 條:registry 4 · approval 7 · boundary 2。
+
+---
+
+### 未收
+- 🚧 **infra request 寫好晒,路已揀(B),但未發出** —— 發嗰步要 Chris 做
+- 🚧 **F11-2 / A14** live 驗 —— 卡 **ADR-0037 `E4`**(auth)同 **OQ-1**(deployment 名),**同一個 infra request,未出**
+- 🚧 **期二剩 `G2`–`G7`**:`G4` 開工前要**重新答 OQ-7**(ADR-0037 E7:Claude 唔喺公司信任面,唔可以引用本 ADR 當已答)· `G5` 開工前要答 **OQ-5**
+- ~~🚧 `propose_assign` 嘅前端未做~~ 🟢 **同日收尾就做咗**(見下)—— **本段一度過時,2026-08-16 `G2` 開工前更正**。呢個正正就係 §9 講嗰種「一過時就令下個 session 用錯前提開始」
+- 🚧 **A1 DEV 側** · **R11–R19 未入 `RISK_REGISTER`** · 一張要開嘅單(`audit-fields.ts` 個 `ConnectorConfig` whitelist 由 W39 起漏欄)
+
+### 🔴 收尾修咗一個 `G1` 自己製造嘅安全問題
+
+F8 張卡個 `ProposalSummary` 只讀 `payload.items` ⇒ 一個 `assign` proposal 會 render 成 **`Nothing proposed.`**,而隔籬就係一粒**會派真 licence** 嘅 Approve 掣。
+
+**一個人可以批准一件畫面拒絕描述嘅事 —— 呢個比冇呢個功能更差。**
+
+已改:按 `kind` 出標題 · 認得 `lineItemId` · **讀唔到嘅 payload 明文寫「cannot be displayed — do not approve it」**,而唔係一句聽落好無害嘅 `Nothing proposed.`。
+
+---
+
+## Day 12 — 2026-08-16(期二 `G2` — agent 入返權限矩陣)
+
+**做咗**:`derivePermissions()` 認得 `AgentPrincipal`(ADR-0036 **D7**),W28 個 drift test 覆蓋埋。
+
+### 點解呢件事係一個安全問題,唔係一個報表功能
+
+D7 警告嗰件事唔係「agent 攞得太多權」。係**佢條寫入路徑會變成成個平台唯一一條矩陣描述唔到嘅路** —— 而**一份對某個 actor 沉默嘅矩陣,同一份報告「呢個 actor 乜都掂唔到」嘅矩陣,讀落一模一樣**。
+
+`/admin/permissions` 之前答嘅係「邊個 role 撳得邊個 endpoint」。Agent 嘅 reach **根本唔係 endpoint** —— 佢 in-process 撳 tool ⇒ 一個 ADMIN 由頭睇到尾,會好合理咁以為 `POST /agent/proposals/:id/approve` 嗰行就係 agent 故事嘅全部。
+
+### 形狀:一份 list,唔係兩份
+
+Agent 嗰半由 **`AgentToolRegistry` derive**,同人嗰半由 `@Roles` derive 係**同一個道理**(ADR-0009 D8.5):讀返 runtime 真正跑嗰個 object,唔係第二份手 keep 嘅表。兩個 caller 都行同一條路 —— endpoint inject 個 registry,test 就 `new AgentToolRegistry(...)`(constructor 只砌 descriptor,`prisma` 喺 `execute` 入面 capture,呢度一次都冇 call)。
+
+`PermissionEntry` 加 `actor`,`AccessKind` 加 `agent-read` / `agent-propose`。**冇開第二個 array、冇開第二個 endpoint** —— 開咗就係重新造返 W28 一開始要杜絕嗰個分裂:一個唔碌落去嘅讀者,會得出同以前一模一樣嘅錯誤結論。
+
+三個刻意嘅決定:
+- **`agentTools` 冇 default value** —— 畀 `= []` 就等於容許一個「望落齊全、實際靜靜少咗成個 actor」嘅矩陣,即係 D7 想擋嗰個失敗模式,當成便利重新引入一次。required ⇒ **compiler 喺兩個 call site 都會問**。
+- **`roles: []` 係一個事實唔係一個窿。** Agent 一個 Role 都冇(D7 就係為咗唔好畀),寫個入去就正正係嗰種靜靜擴權。真正嘅分別擺喺 `access`。
+- **刻意唔喺 row 度聲稱 OpCo scope。** 每個 tool 都真係行 `assertOpcoScope`,但個 descriptor 冇呢個資料,填就係手寫一個 drift 得嘅 claim。**一份 audit 文件最壞嘅唔係唔齊,係聲稱一個冇人驗過嘅控制。**
+
+### 🔴 改個 `describe` 名,一樣繞得過 snapshot 保護
+
+我改咗頂層 `describe` 個名(佢唔再淨係講 `@Roles`)⇒ jest **當佢係一個新 snapshot 直接寫落去**,舊嗰個標 obsolete。**嗰一刻 drift 保護係被繞過咗嘅**,而個 test 報告寫住 `1 snapshot written` + 一個綠剔。
+
+條 test 自己個註釋寫住「Do NOT run `jest -u` reflexively」—— 而**我根本冇跑 `-u`**。⇒ **繞過方法唔止一個。**
+
+補做:寫咗段 script 把新舊兩個 key 逐行對 ⇒ **64 → 70 行,`ADDED` 6 / `REMOVED` 0,共有行順序完全不變**。呢個係我特登設計個 sort(route 先、agent block 後)想攞到嘅性質,而家係**驗過**唔係假設。
+
+### 🔴🔴 Falsification 揭到我自己兩條 test 係空轉
+
+拆走個 derive loop ⇒ **3 條紅,2 條照綠**。嗰兩條就係 `for (const row of agentRows)` —— **空 list 滿足你對佢成員作出嘅任何 claim**,而佢哋偏偏就係「agent 冇 Role」嗰兩條。
+
+同 `agent.boundary.spec.ts` 用 `expect(agentFiles.length).toBeGreaterThan(5)` 守住嘅係**同一個洞**,而嗰段註釋仲寫住「an empty list would make the file a row of green nothing」—— **睇過、明白、然後隔幾日自己再犯一次**。
+
+補一條獨立 `has agent rows at all` + 兩個 `length > 0` guard ⇒ 同一個 falsification 由 **3 紅變 6 紅**。
+
+### Falsification ×5,真紅零誤傷
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| ① | 個 derive loop | **6 紅** |
+| ② | agent row 靜靜畀個 `Role.REGIONAL` | **2 紅**(D7 條 + snapshot) |
+| ③ | `AgentApprovalController` 加 `OPCO_IT` | **2 紅** |
+| ④ | `schema.prisma` 個 `AgentPrincipal` 加 `role Role` | **1 紅,其餘全部照綠** |
+| ⑤ | 前端拆走 agent 段文案 | **1 紅** |
+
+**④ 先係最值得記嗰個。** 佢證明咗嗰條 schema test 唔係順手加 —— derive 出嚟嗰啲 row 個 `roles: []` 係 **hardcode** 嘅,所以 `AgentPrincipal` 加咗 role 之後,**佢哋一個都唔會察覺**,而矩陣會由「啱」靜靜變成「報少咗」。呢個就係 D7 講嗰個失敗模式本身,只不過發生喺 D7 落地之後。
+
+### 前端
+
+`Access matrix`(舊名 `Role & endpoint matrix` **而家會錯**,因為表入面有行既唔係 role 亦唔係 endpoint)。
+
+- 兩個新 badge 用返既有 **`purple`**(DS-8 AI 色)—— **刻意唔用 `warn`**:「要人批」正正就係令 propose tool **安全**嗰件事,tint 成風險等於對住一行設計正常運作嘅嘢大叫。
+- endpoint 同 tool **分開數** —— 夾埋數出嚟嗰個「N endpoints」對邊半邊都唔真。
+- 冇 tool 嘅部署,成段文案 + 個 clause **消失**,唔會出現「plus 0 agent tools」。
+
+🔴 **web test 第一版自己係假嘅,而佢自己撞紅先揭穿**:`getByText('Agent proposal')` 撞「found multiple elements」,因為我新加嗰段解釋文案入面都有呢隻字 ⇒ **一個 page-wide match 可以淨係靠嗰段「描述緊嗰行」嘅文案綠,而唔係靠嗰行本身**。改成 `rowFor(path)` + `within(row)`。同 Day 10 嗰族一模一樣:**綠嘅理由,同條 test 聲稱嘅理由,唔同。**
+
+### 數字
+
+api **1212 → 1218 / 83** 全綠 · web **398 → 403**(6 紅 = pre-existing `local-profile` ×5 + `reset-password` ×1,**數目一個字冇變**)· 兩邊 tsc 0 / lint 0(⚠️ 四個 prettier error `--fix` 咗先過)。
+
+### 未收
+- 🚧 **`G2-j` H6 真 render** —— 卡本機 stack(`ai-doc-extraction-db` 揸住 5433,停佢要 Chris 批)。**唔係「低風險所以唔使做」**:用到嘅 primitive 兩個 theme 都有證據,但 **CH-030 嘅教訓就係四層 test 全綠都捉唔到「佢喺邊」**,而呢版新增咗個明顯長過舊值嘅 guard cell。**期二 render 一次過做。**
+- 🚧 期二剩 `G3`–`G7`(`G4` / `G5` 有硬 gate,見上)
+
+---
+
+## Day 13 — 2026-08-16(期二 `G3` — blast-radius limit + kill switch)
+
+**做咗**:兩件事,而佢哋唔係同一件 —— 一個限制 agent **做幾多**,一個令人**即刻閂得到佢**。
+
+### Blast radius:限制嘅係成本同負載,唔係破壞
+
+**先講清楚佢唔係乜。** Tier 1 agent 寫唔到嘢(D3),所以一個冇上限嘅 run 嘅 blast radius 係**每個 turn 一個 model call、每個 tool 一個 DB read** —— 錢同負載,唔係損害。叫佢做安全限制就係講大咗;安全嗰半係「根本冇嘢可以限制」,而嗰半屬於審批那道閘。
+
+`MAX_AUTONOMOUS_TOOL_CALLS = 25`,閘企喺 **registry** 唔喺 adapter。D1 明文寫住「adapter 要決定嘢嘅時候,個決定應該搬返入 registry」—— 而 **G4 個第二個 adapter 就係靠呢點先唔使重寫一次**。每個 tool 喺**出生嗰刻**被 wrap,唔係六個 `execute` 各自 check:下個月加嘅 tool 係**因為佢喺邊度宣告**而被 cap,唔係因為作者記得。
+
+🔴 **Counter 讀 `AgentStep`,唔記喺 memory。** Run 隔夜批准之後喺**另一個 process** resume,而 registry 揸住 per-run counter 就係一個冇人清嘅 map。⚠️ **代價照講**:step 寫唔入就會令 counter 唔郁 ⇒ **fail-OPEN**。接受嘅理由唔係「唔緊要」,係「action ledger 寫唔到」本身係大過「agent 講多咗嘢」嘅警號,而 `onToolExecuted` **結構上唔准 fail 一個 tool call**(provider 明文 swallow 佢個 throw)⇒ **另一種接法根本冇得揀**。
+
+🔴 **`propose_*` 豁免,而佢係最似 bug 嘅設計。** 佢已經俾**一個人**封住,比一個 counter 強一個量級。連佢都 cap 就會出現:平台做完真嘢、把 proposal marked `executed`,然後個 counter 拒絕咗負責報告結果嗰個 tool —— **一個由 limit 自己製造出嚟嘅失敗**。所以有一條 test 專門講佢。
+
+🔴 **R3 deviation:plan B4 寫「超額即停」,實作係「超額即拒」。** 個 cap 令 run **做唔到嘢**,但唔會由平台終止佢。**刻意冇扮成停** —— 冇 budget 嘅 run 淨係喺度講,而講幾耐由 SDK `MAX_TURNS` 封頂(**第二層,明文標住,唔係 gate**,D2)。加一個「殺 run」動作會連埋一個**人可能仲想批**嘅 pending proposal 一齊掟走,而嗰個係人嘅嘢唔係 agent 嘅嘢。
+
+### Kill switch:原本得一道 check,而缺嗰兩道入面有一道係最重要嗰道
+
+`AgentPrincipal.active` **一直存在**(plan §4 一開始就有),`startRun` **一直有 check**。缺嘅係 `resumeRun` 同 —— 🔴 —— **`approve`**。
+
+第三道就係會**派真 licence** 嗰條(G1)。一個寫住「off」而 approve 仍然推得到 assignment 落去嘅 switch,**係喺令人安心嗰個意義上 off、喺唯一有所謂嗰個意義上 on**。而佢最易漏,正正因為批准感覺似「人嘅動作」唔似「agent 嘅動作」—— 但被批准嗰樣嘢係 agent 嘅提議,而個掣講嘅就係平台而家肯唔肯為呢啲嘢行動。
+
+🔴 **攔 approve,唔攔 reject。** 停 agent 係要佢唔好再**引起**嘢,唔係要人執唔到手尾。攔埋 reject 會令每個 pending proposal 困到有人開返個掣 —— **反而令人唔敢撳呢個掣**,而一個唔敢撳嘅 kill switch 等於冇。
+
+**否決咗開第二個 `ConnectorConfig.agentEnabled`**(佢會白送 audit + UI + env fallback):**兩個地方閂得到 agent 就係兩個「佢開唔開住」嘅答案**,而呢個項目喺 BUG-005 / BUG-011 已經用兩個 session 學過呢個形狀。加上 D7 令 principal 本身就係 actor ⇒ **停 actor 語意最準**,順帶零 migration。
+
+### 🔴 `settled` 係第二個事實,唔係 `!enabled`
+
+呢個就係 B5 要求嘅「配置停咗 vs 真係停咗」,而佢**唔係一個顯示問題**:
+
+閂咗掣**唔會**清走已經 park 咗嘅 run。佢哋變成 inert —— 然後**開返掣嗰刻全部翻生**,包括可能揸住一個會派真 licence 嘅 proposal。所以 status 同時報 `enabled` / `liveRuns` / `pendingProposals` / `settled`,而 `settled` 要三個條件齊。
+
+**同 `SeamRuntimeRegistry` 係同一個形狀換咗另一對**:嗰邊係「存落去嘅設定 ≠ 個 process 真係 boot 咗乜」,呢邊係「個掣 ≠ 仲有幾多嘢喺半空」。
+
+🔴 **冇 principal row = `enabled: true`。**「未用過」唔係「閂咗」;倒轉 default 會令一個全新部署報告話 agent 停咗,而事實係下一個撳掣嘅人就會開一個 run。⚠️ 但 `set()` **建得到 row**,所以未用過都閂得到 —— 一個要用過先閂得到嘅 kill switch,喺最應該用嘅時刻最冇用。
+
+### 🔴 R3 deviation:`AuditLog` 加咗第三條 action(要 Chris 過目)
+
+ADR-0036 **D5 明文寫住「只收兩條新 action」**,而我加咗 `agent.kill_switch_set`。
+
+**論據**:D5 個**主題**係 transcript —— 自由文本 + 不可預測結構 + 大量,入咗就等於拆咗 ADR-0009 D5 個 whitelist。而呢一行係**一個 boolean 加一個 actor**,正正就係 whitelist 為咗覆蓋而存在嗰種形狀。**唔加嘅代價**:一個**改變平台會唔會行動**嘅 admin 控制,冇任何記錄講邊個改過 —— 直接違背 ADR-0009 存在嘅理由。
+
+新 target type `AgentPrincipal`,whitelist **只得 `['active']` 一個 key**。`name` / `runtime` 唔審計,因為呢條路唔改佢哋 —— **一個闊過佢覆蓋嘅寫入嘅 whitelist,就係下次擴闊嘅論據**。
+
+### W28 drift test 第二次捉到新 agent write surface
+
+`AgentKillSwitchController` 一加,`discovers every controller in src` 即刻紅 —— **唔係靠 review**。同 F6 嗰次一樣,而嗰次就係「ADR-0036 否決 Option A 嘅理由由論據變成實測」。snapshot **睇過先更新**:只加兩行,兩行都 `[ADMIN]`。
+
+ADMIN-only 比 run / approval 兩個 surface 窄,係本單決定:**嗰兩個決定一張單點算,呢個決定個能力存唔存在。**
+
+### Falsification ×7,真紅零誤傷
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| ① | 個 cap | **2 紅** |
+| ② | `propose_*` 嘅豁免 | **1 紅** |
+| ③ | counter 唔篩 `status: 'ok'` | **1 紅** |
+| ④ | `approve` 個 gate | **2 紅** |
+| ⑤ | 反方向:`reject` 加返 gate | **1 紅** |
+| ⑥ | `settled = !enabled` | **1 紅** |
+| ⑦ | 冇 row 當 disabled | **1 紅** |
+
+⑤ 值得單獨講:佢係**反方向嘅 falsification** —— 唔係「拆走一道閘」,係「加多一道」。個唔對稱睇落似漏咗,所以要有嘢釘住佢係設計。
+
+### 一條刻意冇寫嘅 test
+
+**冇加 boundary static test。** Behavioural test 已經 assert 咗「拆走 gate 會點」,而 static test 只 assert「嗰行字喺唔喺度」⇒ **今次真係重複**。
+
+G1 嗰次唔重複,係因為**存在一個 grep 睇唔到嘅壞版本**(位置參數偷渡)。⇒ **兩者嘅分別唔係「一條睇名一條睇行為」,係「有冇一個 grep 睇唔到嘅壞版本」。**
+
+### 數字
+
+api **1218 → 1243 / 83 → 85** 全綠 · tsc 0 / lint 0(⚠️ 兩個 prettier error `--fix` 咗先過)· **web 一個字冇改**。
+
+### 未收
+- 🚧 **`G3-n` kill switch UI**(狀態 + 開關掣)—— **enforcement 全部做齊,缺嘅係方便**;ADMIN 而家打 `PATCH /api/agent/kill-switch` 開關得到(CH-026 `G-7` 先例)。⚠️ 排喺 render 嗰批,係因為**唔想出一個「寫好但冇 render 驗過」嘅安全控制**
+- 🚧 **`G2-j`** H6 真 render —— 仍然卡 5433
+- 🚧 期二剩 `G4`–`G7`(`G4` 要重新答 **OQ-7** · `G5` 要答 **OQ-5**)
+
+---
+
+## Day 14 — 2026-08-16(期二 `G7` — R13 監測)
+
+**做咗**:`GET /agent/review-stats?days=30`(ADMIN only)—— 批准率、審核速度、**同埋逐個 reviewer**。
+
+### R13 唔係「agent 提議錯嘢」
+
+**係「批准嗰個人唔再讀」。**
+
+ADR-0036 D3 擺一個人喺每個寫入前面,而**嗰個就係 Tier 1 成個安全論據**。一個冇人真係做嘅審批步驟,會把個論據變成形式 —— 而**每個畫面照樣印住一個人名喺個決定側邊**。
+
+⇒ **系統一啲都唔會睇落唔同。** 所以呢件事只能靠數字,靠唔到留意。
+
+### 讀 `AgentProposal` 唔讀 `AuditLog`
+
+`audit-fields.ts` 一早把 audit 側整成一條 query(`AGENT_PROPOSAL_DECIDED` 一條 action 覆蓋 approve + reject,靠 `metadata.reason` 分開)。但由一條 **free-text reason 嘅前綴**推個批准率,係一個**改一次文案就靜靜變錯**嘅 metric。
+
+`status` / `decidedAt` / `approvedById` 三個欄係結構化嘅 ⇒ 讀佢哋。
+
+### 🔴🔴 人口定義,同佢排除嘅嘢
+
+**`decidedAt != null` = 一個人決定過。** 呢個唔係約定,係查得到嘅事實:`decidedAt` 全 `src/` 只有四個寫入點,**四個都喺 approval orchestrator**。
+
+而佢**排除**嘅嘢先係重點:`abortRun` 把一個 run 嘅 pending proposal **批量 reject**,兩個決定欄都唔寫 —— **平台執手尾,唔係有人話唔得**。
+
+計咗佢哋做 rejection 會把批准率**推低** ⇒ **一個乜都批嘅人,會因為愈多 run 被停而睇落愈嚴謹。**
+
+⚠️ **一個 risk metric 喺「令人安心」嗰個方向出錯,衰過冇 metric。**
+
+### 🔴 `failed` 計做批准
+
+G1 之下,批准人講咗 yes 而八道閘之一拒絕咗,個 proposal 標 `failed`。**R13 問嘅係個人仲讀唔讀,而佢講咗 yes。**
+
+當成 rejection 會令一個 reviewer **愈係要平台救佢就睇落愈有懷疑精神** —— 啱啱相反,而且會喺**出事嗰刻**顯示成一條改善緊嘅趨勢。
+
+### 🔴 兩個指標唔對稱,而個 DTO 明文寫低咗點讀
+
+- **`fastDecisions` 係證據。** 幾秒就決定咗 = 冇讀過。呢個結論唔使任何假設。
+- **`medianSecondsToDecide` 唔係。** 個鐘由 proposal **建立**嗰刻行,唔係由人**望到**嗰刻 ⇒ 一個長 median 可以係「審得仔細」,亦可以係「冇人喺度」,**由呢度分唔到**。
+
+**一個把慢 median 當勤力嚟展示嘅 dashboard,就係自己作嗰個令人安心嘅解讀。** 所以個 DTO 個 docblock 明文分開講兩者。
+
+(median 唔係 mean:一單隔夜批准 = 14 個鐘,足以把十單 5 秒嘅平均值拉過任何有用嘅門檻。)
+
+### 🔴 per-reviewer —— aggregate 答唔到嗰半
+
+一隊人整體 70%,**可以入面有一個 100% 兼平均四秒**,而 aggregate 就係嗰個藏住佢嘅數字。**一個講唔出佢講緊邊個嘅 metric,冇人 act 得到。**
+
+⚠️ **R3**:plan B7 只寫「批准率 / 平均審核秒數」兩個 aggregate 數,per-reviewer 係本單加嘅。
+
+🔴 **H4 —— 只攞 `displayName`,冇 email。** 攞名係因為 cuid 冇人 act 得到,而**一個冇人 act 得到嘅 metric 等於冇做**;只攞名係因為 email 對呢條問題**一個字都冇加**。endpoint ADMIN only,同 `/admin/audit` 一樣理由(ADR-0009 D7)。條 test 用 `Object.keys().sort()` 釘死成個 row 得八個欄。
+
+### 🔴🔴 Falsification 揭到我一條 test 靠對稱嘅 fixture 綠
+
+`averages the two middle values on an even count` 原本用 **10 / 20 / 30 / 40** —— 而嗰組數嘅 **mean 同 median 都係 25**。
+
+⇒ **把實作由 median 換成 mean,佢照綠。** 佢 assert 緊個**數字**,唔係嗰個**統計量**。
+
+改成 10 / 20 / 30 / **200**(median 25 / mean 65)⇒ 同一個 falsification 由 **1 紅變 2 紅**。
+
+📌 同 Day 12 嗰個「空 list 滿足任何 claim」係同一族:**條 test 睇落 assert 緊一件事,實際上 assert 緊一個啱啱好兩邊都成立嘅巧合。**
+
+### 🔴 寫咗一條 boundary static test,寫完拆咗
+
+想 assert「全 `src/` 只有 approval orchestrator 寫 `decidedAt`」—— 但個 grep **分唔開 write 同 Prisma `select` / `where`**(`decidedAt: true` 係 select、`decidedAt: { not: null }` 係我自己個 where)⇒ **兩個 false positive,而兩個都係啱嘅 code**。
+
+改成一條 **behavioural** test 釘住真正嘅風險位(`abortRun` 個 `updateMany` 冇 `decidedAt` / `approvedById`),而「冇第二個地方寫」嗰半 —— **既有嘅 `writersOf('agentProposal')` 已經覆蓋咗**(只有兩個 writer,而其中一個就係 orchestrator)。
+
+📌 **同 Day 13 嗰條規矩一致,但今次係反方向用**:Day 13 唔加 static test 係因為 behavioural 已經夠;今次唔加係因為 **static 根本講唔準嗰個 claim**。
+
+### Falsification ×7,真紅零誤傷
+
+| # | 拆走乜 | 結果 |
+|---|---|---|
+| ① | 人口放闊(唔要 `not: null`) | **1 紅** |
+| ② | `failed` 當 rejection | **1 紅** |
+| ③ | rate 返 `0` 唔返 `null` | **1 紅** |
+| ④ | mean 代 median | **2 紅**(修完 fixture 之後) |
+| ⑤ | fast 門檻改 inclusive | **1 紅** |
+| ⑥ | `abortRun` 補 `decidedAt` | **1 紅** |
+| ⑦ | 拆走 per-reviewer | **5 紅** |
+
+### 數字
+
+api **1243 → 1260 / 85 → 87** 全綠 · tsc 0 / lint 0 · **web 一個字冇改**。W28 drift test **第三次**捉到新 agent surface,snapshot 睇過先更新(**只加一行 `GET /agent/review-stats → roles [ADMIN]`**)。
+
+### 未收
+- 🚧 **`G7-o` R13 監測 UI** —— ⚠️ **同 `G2-j` / `G3-n` 唔同,呢個 UI 唔淨係方便**:G7 個重點就係「**只能靠數字,靠唔到留意**」,而**一個要打 API 先睇到嘅數字,冇人會定期望** ⇒ **R13 嘅緩解措施實際上要等 UI 先真正生效**。⚠️ 擺喺邊未決
+- 🚧 **`G2-j` / `G3-n`** —— 三個 UI 項一齊卡住本機 stack(5433)
+- 🚧 期二剩 `G4`(要重新答 **OQ-7**)· `G5`(要答 **OQ-5**)· `G6`(SSE)
+
+---
+
+## Day 15 — 2026-08-16(三個 UI 項一次過 + H6 真 render)
+
+**Chris 批准停 `ai-doc-extraction-db`** ⇒ `G2-j` / `G3-n` / `G7-o` 一次過收。**次序刻意係「先寫晒 UI(唔使 DB),最後先起 stack」** —— 咁另一個項目個 DB 停機時間最短。
+
+### 新 Settings tab「AI agent」
+
+kill switch card + review stats card。**唔擺落 Integrations**:嗰個 tab 講 **vendor wiring**(邊個 runtime、邊個 model),呢兩個講 **operation** —— 個能力行唔行,同埋前面道人閘仲有冇人用。
+
+🔴 **badge tone 跟 `settled` 唔跟 `enabled`。**「閂咗」係一個**打算之內**嘅狀態,唔應該嘈;**「閂咗但仲有 run park 住」先係要人知嗰個**。
+
+🔴 **dialog 兩個方向講唔同嘢,而「開返」嗰個先係嚇親人嗰個** —— 閂:講清楚**連 approval 都會拒**(唔止新 run)。開返:**逐個數報出嚟**兼明講「入面可能有一個真派 licence 嘅 assign」。
+
+### 🔴🔴 render 捉到一個四層 test 全綠嘅真缺陷
+
+`Select` 個 wrapper 係 `w-full`,而佢個 chevron 係 `absolute` 貼住嗰個 wrapper。我淨係 size 咗入面個 `<select>` ⇒ **個箭嘴飛咗去成張 card header 最右邊**,同個掣完全分家。
+
+**tsc 0 · lint 0 · 11 條 UI test 全綠。** 冇一樣嘢會紅。
+
+⇒ **CH-030 個教訓原封重演:「字喺唔喺度」同「佢喺邊」係兩件事**,而只有真 render 答得到第二條。改成外面包一個 `w-[150px]` div;順帶 subtitle 都唔再折行。
+
+### 🔴🔴 順帶喺真 Postgres 上驗到成套 G7 邏輯,唔係 mock
+
+Fixture 落咗真 DB 之後打 endpoint:
+
+| 欄 | 值 | 證到乜 |
+|---|---|---|
+| `decided` / `approved` | 4 / 3 | **`failed` 真係當咗批准**(G1 嗰行) |
+| `medianSecondsToDecide` | **5** | 真值 [3,4,6,1320] median = 5,而 **mean 會係 333** |
+| `approvalRate` | 0.75 | — |
+| `byReviewer` | 2 行 | 一個有名(100% / 4s / 3 快)· 一個 `displayName: null` |
+| kill switch | `enabled:false`,`liveRuns:1`,`pendingProposals:1` | ⇒ **`settled:false`** |
+
+**Mock 證得到公式,證唔到 Prisma 個 `where` 真係咁行。** 呢次兩樣都有咗。
+
+### 🔴 H4:fixture 用假帳戶,唔用 DB 入面兩個真人
+
+呢個 DB 得兩個 `AppUser`,**兩個都係真公司地址**。而呢個 panel 成個作用就係**點名** ⇒ 用真名 render 就係把真名寫入一份 artifact。
+
+改用一個 `.invalid`(保留 TLD,唔可能係真地址)嘅假帳戶,另加一個唔存在嘅 id 去 render「Unknown account」嗰個狀態 —— **兩個狀態都驗到,零真 PII**。
+
+Fixture 全部 `zzrf-` 前綴。收工逐張表對返數:**0 principals / 0 runs / 0 proposals / 2 users** —— 同開工前逐字一樣。screenshot 亦已刪。
+
+### ⚠️ 兩個 §9 未記過嘅環境陷阱
+
+🔴 **①呢個 worktree 個 compose project name 唔同咗。** `docker compose up -d` **唔係** start 返舊 container,係**試圖新建**(撞名失敗)—— 兼且**開咗一個空 `ai-agent_pgdata` volume**。⚠️ **若果佢成功咗,拎到嘅就係一個空 DB**,而畫面會睇落好正常。正確做法係 `docker start uop-postgres uop-redis`(舊 container 揸住真數據同啱嘅 port binding)。§9 舊有嗰條記嘅係「`Up (healthy)` 但冇 listener」,**同呢個唔同族**。
+
+🔴 **②`prisma generate` 撞 `EPERM ... query_engine-windows.dll.node`** —— 因為一個殘留 api 進程**鎖住咗個 engine DLL**。⇒ **`kill-zombies` 要行喺 `sync-code` 之前**,而 SOP 目前個次序係反嘅。
+
+📌 順帶:呢個 DB **叫 `platform` 唔叫 `uop`**。
+
+### 5433 交還
+
+驗到 §9 硬規則要求嗰個標準:**真 TCP connect = True** + `pg_isready accepting` + **佢個真 DB `ai_document_extraction` 仲喺**(唔係一個空 recreate)。**唔係睇 `docker ps` 個 `Up (healthy)`。** 順手清咗個空 volume 同 network。
+
+### 數字
+
+web **403 → 414**(6 紅 = pre-existing,數目一個字冇變)· tsc 0 / lint 0 · 新 test 11 條 · **四張 render 全部零橫向溢出**,token 兩個 theme 真 swap。
+
+### 未收
+- 🚧 期二剩 `G4`(要重新答 **OQ-7**)· `G5`(要答 **OQ-5**)· `G6`(SSE)
+- 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)
+
+---
+
+## Day 16 — 2026-08-16(`ADR-0038` 起草 + `OQ-5` 查清楚 —— **零 code**)
+
+由 Chris 兩條問題帶起:「**OQ-7 要答什麼?**」同「**OQ-5 卡什麼?**」。答完第一條之後佢定咗
+**`G4` = 架構證明**,而嗰句話直接決定咗本日其餘全部嘢。
+
+### 🛑 H2 —— 一個查證揭穿咗「G4 只差一個 OQ」呢個前提
+
+開工前查 `@anthropic-ai/sdk`:
+
+| 查 | 結果 |
+|---|---|
+| root + `apps/api` 兩份 `package.json` grep `anthropic` | **零 match** |
+| `node_modules/@anthropic-ai` · `apps/api/node_modules/@anthropic-ai` | **兩個位都唔存在** |
+
+⇒ **連 transitive 都冇。**
+
+🔴 **同 ADR-0037 嗰陣唔同,而呢個分別本身值得記**:當時 `openai@7` 早就係 `@openai/agents`
+(`apps/api/package.json:41`)嘅 transitive ⇒ 換去 Azure client **零新 dependency**,**H2 根本冇觸發**。
+所以「上次接一個新 provider 冇觸發 H2」推論唔到「今次都唔會」——
+`plan §2.2` 自己一直標住:`G5` 寫 **`H2(已 locked)`**,而 **`G4` 淨係寫 `H2`**。
+
+⇒ **STOP,冇自己 `npm i`。** Chris 同日批,寫 **`ADR-0038`**。
+
+### 🔴 「G4 = 架構證明」解封咗一樣,同時揭穿咗一樣
+
+**解封** —— `OQ-7` Claude 半邊唔再 block `G4`(ADR-0038 **D5**)。
+
+ADR-0037 `E7` 寫嘅係「**G4 開工之前**要再答一次」,而佢個時點判斷有一個**隱含前提:「G4 = 真打 Claude」**。
+Chris 講明唔係 ⇒ **前提唔成立,唔係決定被推翻**。`E7` 嘅**實質禁令**(唔可以引用 ADR-0037 當已答)
+**一個字冇郁** —— 真打嗰刻仍然要重新答,因為 Anthropic 唔喺公司個 M365 / Azure 信任面。
+
+📌 **收窄唔係推翻,呢個形狀 ADR-0035 行過**(`schema.prisma` 反對嘅係「第二個 candidate idempotency
+key」唔係「第二個 SN number」)。⇒ **ADR-0037 一個字唔改**(§6:`Accepted` 唔改內容),
+只喺 `plan §7` + ADR-0038 D5 記低 target 移咗。
+
+**揭穿** —— 「G4 唔真打」如果只寫喺 ADR 度,**就係一個約定唔係一道閘**。
+
+呢個正正係 ADR-0036 **D2** 要求嘅性質:`OQ-4`(agent 讀唔到 `AuditLog`)之所以安全,係由
+「**registry 冇註冊**」保證,唔係由「我哋記住唔好加」保證。同一條尺 ⇒ **D3**:provider 未配就 503
+(跟 `openai-agents.provider.ts:324-332` `resolveModel()` 先例)+ 一條 test 守住唔會建真 HTTP client。
+
+### 🔴 D4 —— 「點解要真裝」嘅第二個獨立理由,而佢比方便重要
+
+唔裝,`toSdkTools()` 嘅 Claude 版就係對住「**我以為 `betaTool()` 收成點**」寫,
+而 test 兩邊都係自己寫嘅 fixture ⇒ **永遠綠,證咗個零**。
+
+⚠️ 唔係假設 —— **本 phase 已經中過三次同族**:對稱 fixture 令 mean 同 median 分唔開(G7)·
+`for` over 空 list 滿足任何 claim(G2)· 由同一個 step 推導期望值嘅 tautology assert(CH-023)。
+
+📌 而 **ADR-0036 初稿要整份改寫,起因就係「假設咗一個 SDK 做唔到乜」** ⇒ D4 係把嗰個教訓變成一條規矩,
+唔係一句提醒。
+
+### 🔴 起草寫 `Proposed` 唔寫 `Accepted`
+
+Chris 批嗰陣見到嘅係「G4 要 `npm i @anthropic-ai/sdk`」。而寫嘅時候浮出嚟嘅
+**D3**(唔打網絡要有 test)· **D4**(對真型別 assert)· **D5**(OQ-7 target 收窄)· **D6**(三件未查證)
+**佢未見過**。
+
+⇒ 沿用 ADR-0037 同一條路(嗰次亦係起草 `Proposed`,五條後果逐條過目之後同日 `Accepted`)。
+**「批咗個標題」同「批咗成份後果」係兩件事** —— 本項目 §9 記低過嗰種漂移,就係由前者被當成後者開始。
+
+⚠️ **代價要講白,唔用「將來會用到」開脫**:呢個 dependency 喺可見將來**冇產品用途**,
+佢今日就係為咗證 D1 而存在。
+
+### 🔴 兩個新 risk
+
+| ID | Risk |
+|---|---|
+| **R20** | 兩個 SDK 各自 ship `zod` / HTTP client ⇒ 版本撞。**tool schema 就係靠 `zod`** |
+| **R21** | 🔴 **「裝咗個 SDK」被讀成「可以打 Anthropic」** ⇒ 有人填個 key 就真打,而 OQ-7 Claude 半邊**從來未答過**。D3 嗰條 test 係唯一防線 —— **同 `R18`(「轉咗 Azure」被讀成「PII 解決咗」)完全同族:一件令人安心嘅事實,擺喺一個佢答唔到嘅問題隔籬** |
+
+### 🔎 `OQ-5` —— 佢表面係一個數字,實際卡四樣
+
+Chris 問「OQ-5 卡什麼?」。查完寫入 `plan §7`,因為**每次重問呢條問題都要重新查同一批 code**。
+
+1. **一個掛住嘅 run 永久封鎖嗰張 request** —— `agent-run-status.ts:28` 個
+   `NON_TERMINAL_RUN_STATUSES` 包住 `awaiting_approval`,而 OQ-3 定咗一張 request 同時只准一個非終態 run
+   ⇒ **一張真單被一個冇人撳嘅 dialog 鎖死,而平台冇任何自愈路**。
+2. **有兩種過期,而一個時間門檻只解決到一種** —— 時間過期由時鐘決定;
+   🔴 **結構過期(R16)由部署決定**(`schema.prisma:640` `runState Json?` +
+   `openai-agents.provider.ts:290` `RunState.fromString()`),升 SDK 嗰一刻全部 parked run 可能即刻死。
+   而今日 `ai-assist.service.ts:254` **只喺有人撳 approve 嗰刻先發現讀唔到** ⇒ **冇人撳就冇人知**。
+3. **佢決定 G3 個 kill switch 會唔會永遠 `settled: false`** —— 「閂咗但系統未停定」由**例外狀態**
+   變成**常態**,個 badge 就冇咗意義。**呢個唔係假設,係已經跑緊嘅行為。**
+4. **過期落咩 status 會撞到 G7** —— G7 個人口係 `decidedAt != null` ⇒ **過期嘅 proposal 今日完全唔入分母**,
+   但「冇人審到過期」正正係 **R13 rubber-stamp 嘅另一面**(唔係亂批,係唔理)。
+
+📌 **G5 有一半唔卡佢**:推去 BullMQ worker 唔使知 expiry,卡嘅只係 **expiry 由邊個執行**
+(delayed job 綁 run 建立嗰刻 vs `@nestjs/schedule` 批次 sweep)—— **同 G4 一樣拆得開**。
+
+### 數字
+
+**零 code 改動。** Doc:`ADR-0038`(新)· `adr/README.md`(index)· `plan.md`(§2.2 G4 / §7 OQ-7 / §7 新增
+OQ-5 一段 / §9 changelog)· `checklist.md`(`G4-pre-1..3` + `G5-pre-1`)· `BACKLOG.md`。
+
+### 🟢🟢 同日收尾:`ADR-0038` `Accepted`
+
+四條後果過目之後 Chris 批 ⇒ **`G4` 嘅 R1 gate 過,開得工**。
+
+🟢 **同 ADR-0037 一個分別值得記住,因為佢反方向**:嗰邊個 `Accepted` **唔等於每一條都答咗**
+(`E4` auth 係知情之下 deferred,ADR 頂部特登加咗個 🔴 blockquote 提醒);
+本 ADR **D1–D6 零 deferred** —— **`D6` 唔係一條未答嘅決定,佢本身就係決定**
+(「G4 第一步係查嗰三樣,唔係寫 adapter」)。
+
+⇒ **`OQ-1` / `OQ-5` / `E4` 嗰個「approved as deferred」形狀唔適用喺呢度。**
+本項目撞過嘅係「一格寫住 approved 而下手當咗成格都答晒」,而**反方向一樣係誤讀**:
+一份真係逐條批晒嘅 ADR 被當成「又係一格半開嘅嘢」,就會有人喺開工前再問多一次冇人需要答嘅問題。
+
+### 未收
+- 🚧 `G4` —— **ADR-0038 `Accepted`,開得工**;`G4-pre-2` 裝完
+  **第一件事係查 D6 三樣,唔係寫 adapter**
+- 🟢 `G5` —— **OQ-5 同日答咗(Chris:7 日)⇒ gate 過**。🔴 **四格來源唔一樣**:①門檻 = 佢答;
+  ②新 status `expired` ③R16 版本標記 + 主動對比 ④fail loud 走 `OutboundFailure` = **AI 建議,
+  佢冇反對但冇逐條講**(`CH-015` / `F9-8` 先例:兩種證據都算數,唔可以寫成同一種)。
+  📌 **`OQ-1` 而家係 W46 唯一一條真正未答嘅 OQ**,而佢卡 infra
+- 🚧 `G6`(SSE)—— **零 gate,即刻開得**
+- 🚧 `F11-2` / `A14` live —— 仍然卡 infra request(未發出)
+- 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
+
+---
+
+## Day 17 — 2026-08-16(期二 `G4` — 第二個 runtime,**D1 第一次真被測試**)
+
+api **1260 → 1289 / 87 → 88 suites** 全綠零跌 · tsc 0 / lint 0 · **falsification ×7 真紅零誤傷** ·
+web 一個字冇改。
+
+### 🟢🟢 結論先講:D1 成立,而且係最強嗰個版本
+
+ADR-0037 `E2` 換 client 嗰次只證到「換 **endpoint** 唔使改」。今次換嘅係**成個 SDK**,即 D1 當初嘅原話。
+
+**`AgentToolRegistry`、六個 tool、`AgentTool`、`AgentToolSchema`、seam ⑤ 個 vocabulary —— 一個字冇改。**
+按 E2 立嗰條尺(「要改 registry 就係 D1 錯咗,要返轉頭講唔係硬塞」)⇒ **唔使返轉頭。**
+
+最硬嗰條證據係一句 `toBe`:**schema object 由 registry 去到 SDK 係同一個 reference**,唔係一個結構相等嘅複製品。
+
+### 🔴 三件靠估會錯嘅事,全部由真嘢糾正 —— 呢啲就係 D4 買嘅嘢
+
+**① `input_schema` 唔係 `inputSchema`** —— `betaTool` 收 camelCase option、emit API 個 snake_case wire 欄。
+D1 唔受損:改嘅只係托住 schema 嗰個 key,而**改 key 名正正就係 adapter 唯一獲准做嘅事**。
+
+**② `BetaRunnableTool` = `BetaToolUnion & { run }`,個 union 包住 Anthropic 內建 tool**(text editor / bash …),
+嗰啲**冇 `inputSchema`** ⇒ TypeScript 拒絕直接 cast,而佢係啱嘅。
+🟢 **D2 因此多咗一層意思**:內建 tool 由**同一個 `tools` array** 入嚟。`toClaudeTools` 只 map registry ——
+**「邊界喺 registry」呢句,喺 SDK 自己遞一個 shell 畀你嗰陣仍然成立。**
+
+**③ 🔴🔴 一個只有真 SDK 講得出嘅陷阱。**
+`lib/tools/BetaToolRunner.js`:iterator **`:23,27` 先 `yield`,`:54` 先執行 tool** ⇒ **`break` 出個 loop 就係
+approval gate**(generator 停喺 `yield`,`#generateToolResponse` 永遠到唔到)。
+**但同一段 code 喺 `:31-33` 把 assistant turn push 落 `params.messages`,而嗰句排喺 `yield` 之後** ⇒
+**一 `break` 就跳過咗** ⇒ 唔自己補 push,`tool_use` block 唔會入 saved conversation,resume 嗰陣個
+`tool_result` 指住一個唔存在嘅 call = **API 400**。
+⚠️ **冇任何 type signature 講呢件事**,而任何一個「幫手」嘅 fake 都會掩蓋佢 —— 所以個 fake runner 特登
+**唔**做嗰個 push。
+
+📌 三件加埋就係 **ADR-0038 D4 由「一條規矩」變成「一件回本咗嘅嘢」**:第一件同第二件**當場**紅畀我睇。
+
+### 🔴 ADR-0036 兩處要更正,而兩處都唔係 H1
+
+**`D3`「用 SDK 原生 pause/resume」** —— Tool Runner **冇** pause/resume,亦冇 `needsApproval` 欄。
+D3 嘅**實質決定**(write tool 一律要人批 · 批准真相落平台 DB 唔落 SDK state)**一個字冇變**,
+而且喺呢個 runtime **更加成立** —— 佢根本冇 SDK 側 approval state 可以畀人誤當真相。
+變嘅只係「點實現」:**approval 喺呢邊唔係一個機制,係唔繼續。**
+
+📌 **而咁樣先令 seam ⑤ 真正回本**:ADR-0017 D2 講 seam 嘅核心設計工作就係嗰套 vocabulary,
+而 `AgentTurn`(`completed | awaiting_approval` + `state` + `pendingApprovals`)**載得起兩個唔似樣嘅暫停機制**。
+
+**`D9`** 寫 `client.beta.messages.tool_runner` —— 實際叫 **`toolRunner`**。小事,但正正係靠記憶寫 API 名嗰種。
+
+### 🔴 D3(唔打網絡)落地成兩樣嘢,唔係一句話
+
+1. `buildClient()` **明文讀 `ANTHROPIC_API_KEY` 再自己 check**。
+   **`new Anthropic()` 唔傳 key 會靜靜攞同一個 env var** ⇒ 交畀 SDK 就等於「一個冇人覆核過嘅
+   環境變數」係平台同第三方之間唯一嗰道嘢 —— **同 ADR-0036 D11 tracing 完全同一個形狀**。
+2. 一條 test assert **`Anthropic` constructor 完全冇被 call**。
+   「佢 throw 咗」對一個**建咗 client、開咗連線、之後先失敗**嘅版本一樣成立。
+
+🟢 **secret 走 `ConfigService` 唔走 `ConnectorConfig`** —— ADR-0013 Model C;加個 DB 欄仲會係 **H1**。
+🟢 **零新 env**:`ANTHROPIC_API_KEY` F3 嗰陣已經喺 `.env.example`,今次只更新註釋(標明 **R21:填咗佢 = 真打**)。
+
+### 🔴 factory 唔再 fall back,而個 test 要搬位
+
+揀 `claude-tool-runner` 而家真係行佢;冇 key 就 **503,唔會靜靜跌返去 OpenAI** ——
+**平台唔可以用「喺第二度行咗」嚟回答「喺 Claude 行」。**
+
+⚠️ 而 BUG-011 嗰條 `recordChoice` test **要搬去 typo case**:Claude 已實作之後,喺嗰度 assert 就變成
+`'claude-tool-runner'` 同自己比 —— **factory 記邊個字串都會綠**。同 W46 已經中過三次嗰族一樣
+(一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事)。
+
+### ⚠️ 我個 falsification script 自己有洞,捉返咗
+
+jest **成功時把 summary 寫去 stderr**,而 script 成功路只讀 stdout ⇒ **baseline 同 restored 兩行都係
+`NO TEST LINE`** —— 即係話「還原乾淨」呢個結論**根本冇驗到**,而七個 mutation 嘅紅係真嘅。
+補跑一次真 jest(**36/36 綠**)+ `git diff --stat`(零殘留)先收。
+
+📌 **形狀**:一個 verify 工具**自己**可以喺「令人安心」嗰個方向靜靜壞 —— 同 G7 嗰句
+「risk metric 喺令人安心嗰個方向出錯,衰過冇 metric」同源。
+
+### 數字
+
+`@anthropic-ai/sdk@0.117.1`(6 個 package)· **MIT** · deps 得兩個 · **`zod` 係 optional peerDependency**
+(⇒ **R20 幾乎唔存在**)· 新 test **28 + 1**(provider spec 28 · factory 多一條 Claude 側 `recordChoice`)。
+
+### 未收
+- 🚧 `G5` —— OQ-5 答咗(7 日),未開工
+- 🚧 `G6`(SSE)—— 零 gate
+- 🚧 `F11-2` / `A14` live —— 卡 infra request(未發出)
+- 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
+- 🔴 **Claude 側 OQ-7 仍然未答** —— G4 唔需要佢,真打之前需要(ADR-0037 E7 / ADR-0038 D5)
+
+---
+
+## Day 18 — 2026-08-16(期二 `G5-A` — run expiry / OQ-5)
+
+api **1289 → 1308 / 88 → 89** · web **414 → 415**(6 紅 = pre-existing,數目一個字冇變)·
+兩邊 tsc 0 / lint 0 · **falsification ×9 真紅零誤傷**(內含一個反方向)。
+
+### 🔴 開工第一件事係把 G5 拆兩半,而理由唔係工作量
+
+| | |
+|---|---|
+| **A. run expiry(OQ-5)** | 🟢 零 API 契約改動、零前端行為改動、有現成 pattern(`SyncSweepService`)⇒ **今日做咗** |
+| **B. BullMQ 落地** | 🔴 `POST /agent/runs` 而家**同步等 LLM 返 `AgentRunDto`**。推去 worker = 契約由「返結果」變「返一個 pending run」⇒ F8 張卡要改,**而前端點知幾時完 = 就係 `G6` SSE** |
+
+⇒ **B 同 G6 係同一件事嘅兩半**。B 冇 G6 就要 polling,而 polling 唔係一個過渡 —— 佢係一個會留低嘅設計。
+**等 Chris 一句。**
+
+### 🔴🔴 OQ-5 ① 唔止係一個門檻,佢指住一個真 bug
+
+`resumeRun` 個 R16 檢查(saved state 讀唔到)**throw 咗但唔改 row**,而佢排喺 `try` **之前** ⇒
+**永遠唔會經 `failRun`** ⇒ run 停喺 `awaiting_approval` **永遠**。加上 OQ-3(一張 request 只准一個
+非終態 run)⇒ **嗰張單永遠開唔到新 run,而平台冇任何自愈路**。
+
+⚠️ **成個檔其他路都處理咗,就係呢個早退冇** —— 而冇任何嘢係紅嘅。
+
+### 🔴 兩個入口一個實現,而呢個唔係品味
+
+`AiAssistService.expireRun()` = 機制;`AgentRunExpiryService` 只決定「幾時」。
+
+**`agent.boundary.spec.ts` assert `AgentStep` 只有一個 writer** ⇒ sweep 自己寫 step 就會被佢捉到,
+而佢係啱嘅。形狀跟 **CH-015 `openSyncGate`**(sweep 同 on-demand 兩條路唔可以漂)。
+
+### 🔄 我更正咗自己嘅 ④ 建議:`OutboundFailure` → `AgentStep`
+
+寫 code 嗰陣睇返 `OutboundFailure` 先發現建議錯咗:佢係**重做得到嘅嘢**嘅佇列(Delivery failures
+有 retry 掣),而一個過期 run **重做唔到**。擺個永遠撳唔得嘅掣落嗰個畫面 —— **同 G1 嗰個
+`Nothing proposed.` 一模一樣嘅錯**。
+
+`AgentStep` = D4 action ledger,而 F8 張卡已經 render steps ⇒ **零前端改動就見到**。
+
+### 🔴 兩個「刻意唔做」,兩個都寫低咗
+
+**sweep 唔掃 `running`** —— 佢有 in-flight model call,由另一個 process 令佢過期就係平台自己講一件
+仲做緊嘅事做完咗。要偵測真死咗嗰啲需要 **heartbeat 唔係門檻** ⇒ **列做已知缺口,唔喺度塞一個錯答案**。
+
+**過期 proposal 唔寫 `decidedAt`/`approvedById`** —— 寫咗就會令佢哋入 G7 個人口做 rejection ⇒
+**一隊人愈唔審,批准率愈低,睇落愈嚴謹**。⚠️ 一個 risk metric 唔可以喺佢量緊嘅行為變差嗰陣自己變靚。
+
+### 🟢 F11-1b 嗰個對比,今日拎到實證
+
+加 `'expired'` 落 `AgentRunStatus` union,web tsc 即刻出**兩個** `TS2741`(`RUN_TONE` + `RUN_LABEL`)——
+**`Record<AgentRunStatus, …>` 真係守住咗**。而隔籬 `STEP_LABEL` 係 `Record<string, string>`,**一聲不響**。
+
+### 🔴🔴 順帶修咗 F11-1b 自己一個缺口
+
+`ai-assist-step-labels.test.ts` 個 `PLATFORM_KEYS` 係 **hardcode**,註釋仲寫住
+「hardcoded on purpose: if one is renamed, this list is where the rename has to be noticed」——
+**個理由對「改名」成立,對「新增」完全靜音**。
+
+⚠️ **形狀值得記**:同一個檔、守住同一個 map,registry 嗰半係**掃出嚟**(新 tool 捉到)、
+platform 嗰半係**手寫**(新 key 捉唔到)⇒ **兩半用咗兩種強度,而弱嗰半正正就係我今日踩中嗰半。**
+而家兩半都掃,各自有 vacuous-pass guard。
+
+### ⚠️ 一個 mutation 證唔到嘢,唔等於個 claim 錯 —— 可能只係 mutation 揀錯位
+
+Falsification ⑧(把 `platformStepKeys` 改返 hardcode)我**預期綠**(證明舊版盲),佢**紅咗**。
+原因:條 test **另一半**(orphan label,反方向嗰條)捉到 —— `STEP_LABEL` 有 `expired` 而 known set 冇。
+
+⇒ 要證「舊版盲」就要**同時**拆走 label(⑨),而 ⑨ **真係 5 綠**。
+📌 如果我停喺 ⑧ 就會寫低一個**同證據相反**嘅結論;如果我因為 ⑧ 紅就話「舊版本冇問題」,
+就會漏咗一個真缺口。**兩個方向都要走一次先講得出邊個係真。**
+
+### 未收
+- 🚧 **`G5-B` BullMQ** —— 等 Chris 一句(見上)
+- 🚧 `G6`(SSE)—— 零 gate
+- 🚧 `F11-2` / `A14` live —— 卡 infra request(未發出)
+- 🚧 **R11–R21** 未入 `RISK_REGISTER.md`
+- 🔴 **`running` run 死咗冇人知** —— 本單刻意冇處理(要 heartbeat),已寫入 code 註釋
+
+---
+
+## Day 19 — 2026-08-16(期二 `G5-B` + `G6` — run 推去背景 + SSE,**兩個 H1**)
+
+api **1308 → 1348 / 89 → 91** · web **415 → 433**(6 紅 = pre-existing,數目一個字冇變)·
+兩邊 tsc 0 / lint 0 · **falsification ×11 真紅零誤傷**(內含一個反方向)。
+
+`ADR-0039` **Accepted**(Chris 過目五條後果之後)⇒ **R1 gate 過先寫 code**。
+
+### 🔴🔴 我喺自己啱啱寫落 ADR 嘅論據上中招
+
+起草 `F9` 嗰陣寫住「**零新 dependency** —— `ioredis` 今日只係 `bullmq` 嘅 transitive」。
+`npm i bullmq` 之後真查:
+
+| | |
+|---|---|
+| `bullmq@6.1.2` `dependencies` | `cron-parser` / `msgpackr` / `node-abort-controller` / `semver` / `tslib` —— **冇 `ioredis`** |
+| `peerDependencies` | `ioredis >=5` · `redis >=5` · `pg >=8` · `bullmq-otel` |
+| `require('ioredis')` | **`MODULE_NOT_FOUND`** |
+
+⇒ **BullMQ 6 唔再自帶 Redis client**(佢連 `PostgresQueueBackend` 都有),要自己揀一個裝。
+
+📌 **呢個正正係 `ADR-0038 D4` 講嗰件事** —— 唔真裝就係對住「我以為佢係點」寫。分別係 D4 講嘅係
+test fixture,今次係**一份 ADR 嘅論據**,而佢已經寫咗落去。**F9 個決定唔變**(仍然用
+`QueueEvents`),消失嘅只係理由①;另外兩個原封成立,兼且真裝之後多咗一個更強嘅:
+**`QueueEventsProducer` 唔使 job 喺手就 publish 得到** ⇒ `writeStep`(boundary spec 已經 assert
+佢係 `AgentStep` 唯一 writer)可以同時做**唯一 publish 點**,唔使把一個 BullMQ `Job` handle 穿過
+成個 service。
+
+🔴 **H2 我 STOP 咗一句先做**:冇任何一個讀法可以令 BullMQ 唔使 Redis client ⇒ 「批咗 BullMQ」
+邏輯上已經包住佢(**ADR-0035 個「必然後果唔係新決定」形狀**)。
+
+### 🟢🟢 契約唔使 break,而呢個係查證返嚟唔係設計出嚟
+
+Day 18 寫住「推去 worker = 契約由『返結果』變『返一個 pending run』⇒ F8 張卡要改」。
+真睇 code 之後:**`AgentRunDto` 照返得**,只係 `status: 'running'` / `steps` 得一個 /
+`proposals` 空 —— 而 **`RUN_TONE.running` 同 `RUN_LABEL.running` 喺 `F8` 寫嗰陣就已經喺度**。
+
+⇒ **唔係 breaking change,係「返嘅嘢無咁完整」**。H1 仍然觸發(語義變咗:個回應唔再代表
+「做完咗」),但**代價細一個數量級**,而且**回退去 polling 都唔使再改契約**。
+
+### 🔴 `G5-A` 嗰個永久封鎖,今日經另一道門走返出嚟兩次
+
+`startRun` 建咗 row(`running`)先 enqueue。**enqueue 失敗如果只係 throw**,row 就留喺
+`running` —— 而 OQ-3 只准一張 request 一個非終態 run,**expiry sweep 又刻意唔掃 `running`**
+⇒ **嗰張 request 永遠開唔到新 run**。同 G5-A 喺 `resumeRun` 揾到嗰個**一模一樣**,分別只係
+成因由「SDK upgrade」變成「infra outage」。
+
+第二次:`executeRun` 個 kill switch。排喺 `try` **之上**(最順眼嗰個位)= 閂咗就 throw,
+row 又留喺 `running` 永遠。⇒ **一次係 bug,兩次係 pattern**,所以佢排喺 `try` 入面。
+
+🔴 **反過嚟 `status !== 'running'` 就刻意唔 `failRun`** —— 嗰個 run 已經有結論
+(`aborted` / `expired` / 一個遲到嘅重複 job),覆蓋佢就係**用一個錯答案冚一個真答案**。
+
+### 🔴 SSE 送咩:一個「refetch 啦」嘅信號,唔送內容
+
+`{ runId, type }`,冇 step、冇 status、冇 detail。三個理由,中間嗰個先係會痛嗰個:
+
+1. **唔養第二個真相** —— stream 出去嘅 step 同 refetch 返嚟嘅一有差,畫面就攞住兩個版本。
+   **`CH-028` 刻意唔喺 Platform view 計 delta,講嘅就係同一件事。**
+2. 🔴 **H4** —— `AgentStep.detail` 可以有 vendor error,而 vendor error 引嘅 path 帶 UPN
+   (**BUG-004**)。今日佢**入表之前**經 `scrubPii`;放上一條**新** transport 就係開多一條
+   要記住去 scrub 嘅路。**一條唔載內容嘅路,冇嘢要記住。**
+3. 回退去 polling 唔使改契約 —— 一個 notify-then-refetch 同一個 poll 讀同一個 endpoint。
+
+⚠️ 一個 race 明寫咗:run 可以喺瀏覽器連上之前就完 ⇒ **連上嗰刻即刻發一個 tick**。
+falsification ⑤ 拆走佢 = **3 紅**。
+
+### 🔴 一個 publish 點 + 三個補位,而個分野唔係美感
+
+`writeStep` 已經係 `AgentStep` 唯一 writer(`agent.boundary.spec.ts` assert 住,原本為咗
+A7 / INC-001)⇒ publish 擺喺嗰度就覆蓋晒每一個 step,冇 call-site 清單要跟。
+
+🔴 **但「改 status 而唔寫 step」嗰啲佢結構上睇唔到** —— `completed`(G1 個
+`Nothing proposed.` 就係呢條路)、`awaiting_approval`、`failRun`、`abortRun`、`expireRun`。
+唔補就係**一個已經完咗嘅 run 上面卡住個 spinner**。falsification ④ 拆走 `completed` 嗰個
+= 1 紅,而條 test **數 publish 次數**(`stepKeys().length + 1`)先至見到 —— 淨係 assert
+「有 call 過」嘅話,單靠啲 step 已經滿足到。
+
+### 🟢 三層之中兩層喺我哋手上
+
+nginx **住喺 web container**(`apps/web/nginx.conf.template`)⇒ 自己改得到。
+加咗一個 **regex location 專用**,**唔關掉成個 `/api/`** —— 為一條 endpoint 付全域代價冇道理,
+而 location 匹配本來就容得落更精確嘅路徑。
+
+🔴 **自己 catch 咗一個**:regex location **唔可以**靠 trailing slash strip `/api`(嗰個只對
+**prefix** location 成立)⇒ 要 `rewrite ^/api/(.*)$ /$1 break;` + 一個冇 URI 部分嘅
+`proxy_pass`。送 `/api/agent/...` 上去就係 404,因為 API 路由冇呢個前綴。
+
+🟡 **ACA ingress 係唯一改唔到嗰層,而佢對 SSE 嘅行為未驗證**(F7 / R22)。本 ADR
+**唔假設佢得亦唔假設佢唔得**;唔得就回退 polling,而 F2 令嗰時契約唔使再改。
+
+### 🔴 `EventSource` 兩個性質,兩個都要處理
+
+1. **佢自己會無限重連,而且睇唔到 status code** ⇒ 一個 404(run 冇咗)或者 403(唔同 OpCo)
+   同一個 blip 完全一樣,會重試到閂 tab 為止。⇒ **連續三次失敗就收線**,`onopen` 重置
+   (唔重置就變成「一世累積三次」,一條開足一日嘅連線遲早夠數然後永久停)。
+2. **終態 run 唔開連線** —— 終態係呢張卡大部分時間顯示緊嘅嘢。逐個開 = **一張卡一條 socket**,
+   開足成個 session,更新一件唔會變嘅嘢。📌 寫成 **LIVE set 唔係 terminal set**:兩者可以互推,
+   但**新加嘅 status 大機會係終態**,咁寫令未知情況 fail closed。
+
+### 🔴 兩個 test helper 各自令一條 test 睇唔到嘢,兩個都係真跑先揭到
+
+| | |
+|---|---|
+| api | `state.eventsOn.mock.calls[0]` 假設「第一個 listener 就係我要嗰個」,而 `onModuleInit` 早就註冊咗 `'error'` ⇒ 改成**按 name 搵** |
+| web | `mount('running', undefined)` 撞正 **default parameter 食咗 explicit `undefined`** ⇒ 條 test 從來冇行過佢聲稱嗰個 case |
+
+**兩個都紅咗,所以先至係腳註。** 同 `G7-k`(對稱 fixture 令 mean/median 分唔開)同族:
+**一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事。**
+
+### ✅ Falsification ×11 真紅零誤傷
+
+①enqueue 失敗唔 `failRun` **1 紅** ②kill switch 移出 `try` **1 紅** ③拆走 status 守衛 **1 紅**
+④拆走 `completed` 個 publish **1 紅** ⑤拆走開場 tick **3 紅** ⑥拆走 `runId` filter **1 紅**
+⑦拆走 teardown `off` **1 紅** ⑧enqueue 錯誤訊息改成 kill-switch 講法 **1 紅**(R23)
+⑨`LIVE_STATUSES` 加 `completed` **2 紅** ⑩拆走 `onopen` reset **1 紅**
+⑪**反方向**:SSE 先開 channel 後驗權 **2 紅**(兩條都捉到 —— 訂閱前就開咗 + 權限失敗仍然 leak)。
+
+還原之後**真跑一次**確認:api **1348 / 91 全綠** · web **433 passed / 6 pre-existing 紅**
+(Day 18 記低過:呢一步唔可以靠 `git diff` 睇完就算)。
+
+### 🚧 留低咗嘅
+
+- **`B6`(SSE 喺 DEV 真通)** —— 要 **Redis 喺 DEV 存在**先做得到(F5),而 **ACA ingress 嗰層
+  未驗證**(F7)。⇒ **卡 infra,同 `A14` 完全同一個形狀**
+- 🔴🔴 **`REDIS_URL` = 本 phase 第二個 infra 依賴,應該即刻併入嗰封仲未發出嘅信**
+  (`11-azure-openai-infra-request.md`)—— 發完先追加,喺本項目歷史上就係多等一輪
+- **`running` run 死咗仍然冇人執** —— G5-A 刻意留低嘅缺口,而本日**令佢更容易發生**
+  (run 而家真係喺背景跑)。要 heartbeat 唔係門檻
+- **R11–R24 仍然未入 `RISK_REGISTER.md`**
+
+---
+
+## Day 20 — 2026-08-17(W46 收尾:掃 acceptance · 補 `B3` · 清 risk 債)
+
+冇新功能。三件收尾工作,而其中一件揾到嘢。
+
+### 🔴 `plan.md` 個 acceptance 表由頭到尾冇更新過
+
+21 條全部仲係 `[ ]`,而實際上 **18 條老早做完** —— 勾咗喺 `checklist.md`,兩份文件各講各。
+
+**呢個唔係「文件唔靚」。** plan 個 acceptance 就係「W46 算唔算完」嘅定義,佢全部空白即係
+**冇人講得出仲差幾多**。而收尾嘅第一個問題正正就係嗰條。
+
+📌 **掃法**:逐條搵返實際證據(邊個 spec、邊個 `describe`),**唔靠記憶勾**。掃出兩件:
+
+| | |
+|---|---|
+| **A1** | 係**一半**(本機 ✅ / DEV ❌),之前被當成一條 |
+| 🔴 **B3** | **只做咗一半** —— 見下 |
+
+### 🔴🔴 `B3` 只做咗一半,而缺嗰半正正係佢個重點
+
+`claude-tool-runner.provider.spec.ts` 個 `D1` 證咗 **schema identity**(`toBe`,同一個 object
+reference 交去 `betaTool`)。但 B3 原文要嘅係:
+
+> assert 兩個 provider 對同一個 tool 呼叫產生**同一個 `AgentStep`**(同
+> `license-ops.contract.spec.ts` 同族)
+
+⇒ **成個 W46 冇一條 cross-provider 對照。** 補咗 `agent-runtime.contract.spec.ts`(7 條)。
+
+🔴 **點解 schema identity 唔頂得住呢個 claim**:佢證嘅係「兩個 adapter 收同一份嘢」,唔係
+「兩個 adapter 做同一件事」。而 `AgentStep` 係 **audit truth**(D4)—— 佢一旦因為一個配置字串
+而有兩個意思,建喺佢上面嘅每一個查證都係喺讀兩種語言當一種。
+
+### 🔴 補完之後,佢第一次跑就紅咗一條,而紅嘅位唔係我預期嗰個
+
+| | tool 掟 error 之後 |
+|---|---|
+| **兩個 adapter** | 逐行一樣:`record({status:'failed', detail})` → `throw err` |
+| `@openai/agents` 個 `tool()` | 🔴 **自己 catch 咗**,返一個 error **字串**畀 model |
+| `betaTool` | 掟返出嚟畀 caller |
+
+🟢 **點解佢唔推翻 B3(講出嚟而唔係假設)**:嗰個分歧住喺 **adapter 之下、ledger 之上** ——
+`AgentStep` 兩邊**逐字一樣**(已 assert),而**兩邊個 model 都知道 tool 失敗咗**,只係一個經
+exception 一個經回傳值。條 test 兩個機制**各 assert 一次**,唔係淨係 assert「有 throw」——
+只 assert `threw === null` 會 pin 住個 swallow 而 pin 唔住「有嘢生還」,而後者先係重點。
+
+跟 `license-ops.contract.spec.ts` 先例:**pin 佢,唔抹走佢**(嗰邊為 W39 OQ-1 個 replay 分歧
+做過同一件事)。
+
+📌 **值得記嘅唔係呢個分歧,係佢點解一直冇人見到** —— **兩個 provider spec 各自都完全正確**,
+因為每個都只講自己。**「兩個實作一致」呢個 claim,結構上冇一個單一實作嘅 spec 講得到。**
+
+### ✅ Falsification ×3,其中一個係測 contract spec 自己嘅盲點
+
+①claude 側 `toolName` 改大寫 ⇒ **2 紅**
+②**兩邊一齊**改大寫 ⇒ **1 紅** —— 🔴 **互相比較嗰條綠咗,hardcode 期望嗰條紅** ⇒ 兩種 assert
+**夾埋先有意義**(CH-023 tautology 教訓嘅正面應用:一條「兩邊一致」嘅 assert,對「兩邊一齊錯」
+係盲嘅)
+③拆走 claude 失敗路個 record ⇒ **2 紅**
+
+還原之後 `git diff --stat` 對兩個 provider **零輸出**,兼且**真跑過**(api 1355 / 92 全綠)。
+
+### ✅ `R11`–`R25` 十五條入咗 `RISK_REGISTER.md`
+
+carry 咗最耐嗰筆。`plan §6` 只定義咗 `R11`–`R16`,其餘散落喺 ADR-0037 / 0038 / 0039 同封
+infra 信 —— **即係話有九條 risk 由頭到尾冇一個地方會令佢浮上嚟**,同 `PAR-submit` 一模一樣嘅
+形狀(住喺一份文件尾嘅 `- [ ]`)。
+
+🔴 **入冊嗰陣校正咗一條**:`R20`(兩個 SDK 各自 ship `zod` ⇒ 版本撞)—— 實測
+`@anthropic-ai/sdk` 得**兩個** dependency 而 **`zod` 係 optional peerDependency**,workspace
+解析到**一個** `zod@4.4.3` ⇒ **標 `🟢 Resolved`,理由寫成「實測推翻咗原假設」**,唔係靜靜刪走。
+
+### 收尾數字
+
+api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0。
+
+### 🚧 W46 淨低三條,全部同一個原因
+
+`A1`(DEV 半邊)· `A14` · `B6` —— **三條都係「要一個真環境」**,而真環境要 infra 開兩個
+resource。封信已經寫好(含 Redis,2026-08-17 併入)但**未發**,而幾時發係 owner 決定。
+
+---
+
+## Day 21 — 2026-08-17(同日續:Azure 真接線 · 第一次真跑 agent · 一個修正)
+
+🔴 **上面 Day 20 收尾嗰句「三條都要一個真環境」,當日就冧咗一半** —— Chris 開咗一個 Azure
+OpenAI resource,`A14` 由「卡 infra」變成「跑得」。**封信仍然未發**(Redis 嗰半仍然要),
+但 `A14` 唔再等佢。
+
+### 🔴 H1 觸發過一次,而佢令設計好咗
+
+原定跟 `ADR-0037 B4` 把 endpoint 放 `ConnectorConfig`。一 Read `connectors.ts` 就見到:
+個 editable 集合**係 Prisma 欄** ⇒ 加欄 = migration = **H1** ⇒ STOP。
+
+改行 **env**,三個理由:①endpoint 同 key 同源,分兩處存反而易錯 ②env 改完唔使重 build web
+image(同 ADR-0028 個 `ENTRA_*` **同族**)③`ConnectorConfig` 係 **runtime 可改**嘅嘢,而呢三個
+係**部署事實**。偏離已 log。
+
+### 🟢🟢 `E1` 由一個假設變成一道真閘
+
+之前 `E1`(唔准打公共 OpenAI API)**靠「冇人填 `OPENAI_API_KEY`」成立** —— 即係話佢係一個
+慣例,唔係一個機制。而家 `buildAzureClient` 每次 `buildAgent` 都 `setDefaultOpenAIClient(...)`,
+而三個 `AZURE_OPENAI_*` **缺一就 503、冇 default** ⇒ **填咗 `OPENAI_API_KEY` 都唔會用到佢**。
+
+`connectors.ts` 個 label 因此改成 `(unused — E1 forbids the public API)` 而**唔移走個 key**
+—— R9 嗰個理由:一個突然消失嘅配置欄,對住緊佢嘅人嚟講係「壞咗」唔係「唔再需要」。
+
+### 🔴 `AZURE_OPENAI_API_VERSION` 刻意冇 default,而佢第一次跑就證明咗自己
+
+**Run 1 `failed`**,Azure 原文:`… only for api-version 2025-03-01-preview and later`。
+
+一個 default 喺呢個位會變成**一個靜靜過時嘅數字** —— 而佢過時嗰日,錯誤訊息會指向 model
+或者 request 形狀,唔會指向嗰個 default。冇 default ⇒ 錯就即刻大聲、即刻指啱位。
+
+🟢 **順帶**:呢個失敗**證咗 endpoint 通兼 key 有效** —— 打得入去先有得佢嫌 version 舊。
+
+### ✅ 第一次真跑,四件事有真數據
+
+| | |
+|---|---|
+| **Run 2** | `start → get_request → search_catalog → propose_line_items`,items 空(fixture 冇提 licence)。agent **主動講明**,兼認得張單已 `COMPLETED` |
+| **abort** | run `aborted`,佢個 pending proposal **自動 `rejected`**(`The run was stopped`)⇒ `abortRun` 嗰段 bulk reject 第一次有真數據 |
+| **Run 3** | `search_catalog ×3`、**9 條 transcript**、兩個 GUID **落 DB 逐字對得返**(`Microsoft_365_E5_(no_Teams)` / `VISIOCLIENT`);reasoning **主動指名另外兩個變體兼叫人覆核** |
+| **UI** | light/dark **token 真 swap**、零橫向溢出、`STEP_LABEL` 生效 |
+
+### 🟢🟢 approve → 409,而呢個 409 就係 `F8-3` 嗰句卡片文案第一次被驗證
+
+撳落去返 **409 `This request is complete…`**,零副作用。
+
+F8 張卡寫住「**Approving runs the platform's normal checks — they can still refuse**」——
+今日之前佢係一句**宣稱**。而家證咗:個閘唔喺 agent 側,係 `RequestService.addLineItem` 本身,
+**而佢照拒**。⇒ `A14` 三分二收,最後三分一(批准後 resume)**驗唔到,因為佢被同一道閘擋住**。
+
+📌 **同一件事一次過證咗一樣嘢又擋住另一樣** —— 要驗 resume,下次要一張**非 `COMPLETED`** 嘅
+request。呢個唔再係 infra 問題,係 fixture 問題。
+
+### 🔴🔴 而個 409 順帶揭到一個真缺陷,而佢嘅形狀唔係「漏咗一行」
+
+`agent-approval.service.ts` 四個「決定」writer,**得 `createLineItems` 個 catch 冇寫
+`approvedById`**。第一眼睇落係漏,查落去先發現**佢係兩邊都唔企**:
+
+| 路徑 | 有人撳過 approve? | `decidedAt` | `approvedById` |
+|---|---|---|---|
+| `abortRun` 批量 reject | ❌ | 唔寫 | 唔寫 |
+| run expiry | ❌ | 唔寫(`ai-assist.service.ts:538` 明文) | 唔寫 |
+| `approveAssign` 被閘拒 | ✅ | 寫 | **寫** |
+| **`createLineItems` throw** | ✅ | **寫** | **❌** |
+
+🔴 **`decidedAt` 冇 `approvedById` 呢個組合,喺呢個 codebase 自己嘅語彙入面唔存在** ——
+`review-stats.service.ts:136-140` 明文講「`abortRun` sets **neither**」,即係話「唔算決定」
+嘅表達方式係**兩個都唔寫**。寫一個唔寫另一個,係一個冇人定義過嘅第三種狀態。
+
+**點解係 bug 唔係品味**:G7 人口 = `decidedAt != null`,而 `isApproval` **把 `failed` 當批准**
+(`review-stats.service.ts:120`,理由寫得好清楚:「Counting `failed` as a rejection would make
+a reviewer look more sceptical the more often the platform had to save them」)⇒ 呢條 row
+**入到 aggregate**,但 `byReviewer` 把佢掉入 `approverId: null` 個 bucket ⇒ **撳咗 approve
+嗰個人,少咗一次批准**。而 `R13` 自己嘅規矩就係:**review metric 唔可以喺令人安心嗰個方向錯**。
+
+### 🔴 分界線係「有冇人撳過」,唔係「HTTP 成唔成功」
+
+一度以為應該反方向修(刪 `decidedAt`,同 `abortRun` 睇齊)。**推翻佢嘅係先例本身**:
+`abortRun` 同 expiry 兩條路**冇人撳過任何嘢**,係平台自己執手尾;而 `createLineItems` 只喺
+`approve` **收咗一個人嘅決定之後**先跑得到。⇒ 佢屬「有人撳過」嗰邊,補 `approvedById`。
+
+⚠️ **順手校正咗一句會誤導下一個人嘅 test 註釋** —— 原文「The proposal is marked `failed`,
+and **nobody decided anything**」係講 **audit row**,但佢會被讀成「呢條路唔算決定」。改成
+講清楚兩份記錄答**唔同問題**:audit 記「**發生咗咩**」(冇嘢發生 ⇒ 冇 row),
+`approvedById`/`decidedAt` 記「**邊個撳咗**」(有人撳咗 ⇒ 寫)。**呢一路上佢哋合法地唔同意。**
+
+### ✅ Falsification 真跑
+
+新 test 兩個欄**一齊 assert**(佢哋淨係一齊出現先有意思)。拆走 `approvedById: approver.id`
+⇒ **1 紅 / 29 綠,零誤傷**,紅嗰條正正係新 test(`Received: undefined`)。
+
+api **1361 → 1362 / 92** · tsc **0** · lint **0**。
+
+📌 tsc 特意用 `--incremental false` —— 唔想為咗一次 type-check 留低一個 `tsbuildinfo`,
+然後喺下次起 stack 嗰陣變成 §9 嗰個假綠燈。
+
+### 🟢🟢 `A14` 最後三分一同日收咗 —— 而卡住佢嘅由頭到尾唔係 infra
+
+上一段收筆嗰陣寫住「要一張非 `COMPLETED` 嘅 request」。**咁就去整一張。**
+
+`zzrf-resume-req-1`(`OPEN`,`onboarding-intake`)⇒ run 去到 `awaiting_approval`
+(7 steps / 1 proposal / 兩個 GUID)⇒ **approve → run `completed`,proposals 清空**。
+
+🔴 **收貨標準係落 DB 對數,唔係睇個 HTTP 200**:
+
+| | |
+|---|---|
+| proposal | `executed` · `approvedById` **有值** · `createdLineItemIds` 兩個真 id |
+| line item | **2 條** —— `Microsoft_365_E5_(no_Teams)` / `VISIO_PLAN2_DEPT`,**逐字對返** proposal 兩個 GUID |
+| event | 2 條 `NOTE` |
+| request status | 仍然 **`OPEN`** —— 兩條 `REQUESTED`,同 `aggregateRequestStatus:65-67` 對得返 |
+
+⇒ **`A14` 全收。W46 21 條 acceptance 而家 19 條 ✅。**
+
+### 🔴 撳之前查證咗個真風險,而唔係假設佢安全
+
+approve 會行 `RequestService.addLineItem`,而**本機 Graph 同 ServiceNow 都係通嘅**(§9)——
+即係話「撳一個 approve」理論上可以真開一張 SN 單。**所以先 Read 佢實作再撳**:三個 Prisma 寫
+(line item / event / recompute),**零 outbound**。最壞情況只係本機 DB 多幾行。
+
+⚠️ 順帶由同一段 code 確認咗 `request.service.ts:117` 嗰句 409 文案**逐字**就係前一段撞到嗰句
+—— 即係話嗰個 409 唔係一個含糊嘅「唔得」,係一個查得返出處嘅拒絕。
+
+### ⚠️ agent 主動標明咗一個唔完美嘅 match
+
+Visio 嗰個提咗 `VISIO_PLAN2_DEPT`,而 reasoning 自己寫住:
+
+> the catalogue offers a **departmental variant**; this is the closest exact Plan 2 match,
+> **so it is proposed for human approval**
+
+⇒ **佢冇扮完美 match**。呢個正正係 D 側想要嘅行為 —— 一個唔肯講「我唔肯定」嘅 agent,
+先至係要人覆核嗰陣最危險嗰種。
+
+### ✅ 收工逐張表對數
+
+刪 **1 audit / 25 message / 8 step / 1 proposal / 1 run / 2 event / 2 line item / 1 request**,
+四個 count **全 0**。fixture free-text 還原**用長度對數**(`146` → `46` = backup 長度),
+`_w46_fixture_backup` 已 `DROP`(`to_regclass` 返 null)。帶真 UPN 嘅 screenshot **2 → 0**,
+全程**冇 Read 過**(H4:要刪一件嘢唔使先睇佢)。
+
+### 🚧 留低咗嘅
+
+- **`A1` DEV 半邊 · `B6`** —— 仍然卡封未發嘅信(**Redis 嗰半**)
+- **`.env` 個 `AZURE_OPENAI_API_VERSION` 仲係舊值** —— 今日靠 shell env 頂住,重起就冇
+- **`ANTHROPIC_API_KEY` 已填** ⇒ `R21` 由風險變成已發生,建議清走
+
+---
+
+## Day 22 — 2026-08-17(同日續:接返 `main`,準備落地)
+
+Chris 拍板 **先把 W46 落地,再開 Tier 2**。落地第一步唔係開 PR,係**接返 `main`**。
+
+### 🔴 branch 落後 `main` 17 個 commit,而冇人為此開過單
+
+W46 開工之後 `main` 行前咗:CH-030 · 部署 #8 · 三個 CI / lint 改動。
+**唔接返就開 PR**,等於叫 review 嗰個人喺一個過時嘅基準上面睇 108 個檔。
+
+### ✅ 先 dry-run,唔改 working tree
+
+`git merge-tree --write-tree --name-only origin/main feat/w46-agent-runtime`
+⇒ **108 個檔入面 106 個 auto-merge**,兩個 conflict:`CLAUDE.md` / `BACKLOG.md`
+—— **都係我當日改過嗰兩份**。
+
+### 🔴 兩個 conflict 要用**唔同**做法,而分辨嘅根據係一個實測唔係手感
+
+`git diff <merge-base> HEAD --stat` 一句就答咗:
+
+| 檔 | branch 側改咗幾多 | ⇒ 做法 |
+|---|---|---|
+| `CLAUDE.md` | **1 行**(就係 §0 Phase 格) | 攞 `main` 版做底,Edit 加返 W46 段 —— **HEAD 側獨有嘅就只有嗰段**,零丟失 |
+| `BACKLOG.md` | **新增 4 行** | 🔴 **唔可以**同樣做 —— `--theirs` 覆蓋**成個檔**,會連 conflict 以外 auto-merge 咗嘅 4 行(W46 行 / `AGENT-TIER2` 行)一齊丟失 ⇒ 逐行保留 branch 嘅 W46 行 + `main` 版 CH-029 行 |
+
+📌 **`--theirs` 唔係「揀一邊」咁簡單 —— 佢係「用一邊嘅成個檔」。** 兩者喺
+「conflict 以外仲有冇改動」呢一點上完全唔同,而 `git diff --stat` 就係分辨嗰句。
+
+### 🟢🟢 驗證用「同 `main` 對 diff」,唔係「睇個檔順唔順眼」
+
+resolved 之後 `git diff origin/main --stat` = **`CLAUDE.md` 1 行改 + `BACKLOG.md`
+4 行新增**,同 branch 側原本嘅差異**逐字一樣**。
+
+**點解呢個係強驗證**:丟失咗 `main` 側嘅嘢會**多出 deletion**,丟失咗 branch 側嘅嘢會
+**少 insertion** —— 兩個方向都被同一條數蓋住,唔使逐段肉眼對。
+
+### 🟢🟢 `main` 帶入嚟三件會改變「跑咗 test 即係驗過乜」嘅嘢
+
+| commit | 內容 |
+|---|---|
+| `31b5c7d` | **修好咗嗰 6 條長期紅** —— 根因係 **Node 25 預設開 Web Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom 無關、同我哋嘅 code 無關 |
+| `371e3a5` | 清 16 個 prettier error + **root lint 蓋埋 web** |
+| `e3e61b8` | **root `test` / `build` 加埋 `-w @uop/web`** |
+
+🔴 **第三件先係最重要嗰件**:之前 root script 只 `-w @uop/api`,而 CI 直接跑 root script
+⇒ **web suite 由頭到尾冇入過任何 gate**。**嗰 6 條可以紅足幾個星期冇人知,唔係因為冇人
+記得跑,係因為 gate 結構上見唔到佢。**
+
+### ✅ 接返之後四個 gate 全部真跑
+
+api **1362 / 92** · web **439 / 43 零紅**(433 + 修好嗰 6 = **439**,逐個對得上)
+· root lint **exit 0** · root build **exit 0**。
+
+⚠️ **lint 嗰個先係真風險,而佢過咗** —— branch 新增嗰批 web 檔(`agent-panel` /
+`ai-assist-card` / `agent-run-events` …)**從未經過** prettier gate,今日第一次入。
+
+### 🚧 下一步
+
+**開 PR → merge 落 `main` → 部署 DEV(⚠️ Redis 要先喺度)→ 收 `A1` DEV 半邊 + `B6`。**

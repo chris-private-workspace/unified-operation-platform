@@ -4,6 +4,9 @@ import type {
   ActivityEvent,
   AdminOpco,
   AdminUser,
+  AgentKillSwitchStatus,
+  AgentReviewStats,
+  AgentRun,
   AuditFilters,
   AuditPage,
   ConnectorStatus,
@@ -203,6 +206,32 @@ export function usePermissions() {
 }
 
 /**
+ * GET /agent/kill-switch — 期二 G3. ADMIN-only, so a 403 is authoritative and
+ * the tab degrades to a restricted state rather than retrying.
+ */
+export function useAgentKillSwitch() {
+  return useQuery({
+    queryKey: ['agent', 'kill-switch'],
+    queryFn: () => apiGet<AgentKillSwitchStatus>('/agent/kill-switch'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * GET /agent/review-stats — 期二 G7 (R13). ADMIN-only.
+ *
+ * The window is part of the query key so each one caches independently, the
+ * same shape the audit filters use.
+ */
+export function useAgentReviewStats(days: number) {
+  return useQuery({
+    queryKey: ['agent', 'review-stats', days],
+    queryFn: () => apiGet<AgentReviewStats>(`/agent/review-stats?days=${days}`),
+    retry: retryUnless403,
+  });
+}
+
+/**
  * GET /admin/audit — the platform audit trail (W29 F4). ADMIN-only: the rows
  * carry P-B whitelisted PII, so a 403 is authoritative (retryUnless403) and the
  * /audit page degrades to a restricted state. Filters are part of the query key
@@ -289,5 +318,30 @@ export function useRequest(id: string | undefined) {
     queryKey: ['fulfilment', 'requests', id],
     queryFn: () => apiGet<RequestDetail>(`/fulfilment/requests/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/**
+ * W46 F8 — the most recent AI-Assist run on a request, or null.
+ *
+ * "Most recent" rather than "the open one": a finished run's proposals and
+ * transcript are still what a person opens the card to read.
+ *
+ * 🔴 Still no polling — and since 期二 G6 that is no longer a gap being lived
+ * with. `useAgentRunEvents` opens an SSE connection while a run is live and
+ * invalidates THIS query on every change (ADR-0039 F10), so the card updates
+ * without an interval that would bill a request every few seconds whether or
+ * not anything moved.
+ *
+ * 🟢 Which is why this hook did not change: a notify-then-refetch channel and a
+ * poll read the same endpoint, so if ACA's ingress turns out to buffer SSE
+ * (F7 / R22), the fallback is an option on this query — not a contract change.
+ */
+export function useAgentRun(requestId: string | undefined) {
+  return useQuery({
+    queryKey: ['agent', 'runs', requestId],
+    queryFn: () =>
+      apiGet<AgentRun | null>(`/agent/runs?requestId=${requestId}`),
+    enabled: Boolean(requestId),
   });
 }

@@ -429,15 +429,33 @@ export interface UpdateOpcoBody {
  * user can reach it. Treat as a finding, not a state.
  */
 export type AccessKind =
-  'roles' | 'public' | 'm2m' | 'authenticated' | 'unguarded';
+  | 'roles'
+  | 'public'
+  | 'm2m'
+  | 'authenticated'
+  | 'unguarded'
+  // W46 G2 — an agent tool, not a route. `agent-read` runs during a turn with
+  // nobody deciding it; `agent-propose` cannot take effect until a person
+  // approves it (ADR-0036 D3).
+  | 'agent-read'
+  | 'agent-propose';
 
 /**
- * GET /admin/permissions → the derived role × endpoint matrix (ADMIN-only; a
+ * Who is doing the reaching (W46 G2 / ADR-0036 D7). An `agent` row is an
+ * AgentPrincipal, which is deliberately NOT an AppUser and holds no Role — so
+ * an empty `roles` on such a row is a fact, never a missing value.
+ */
+export type ActorKind = 'user' | 'agent';
+
+/**
+ * GET /admin/permissions → the derived actor × surface matrix (ADMIN-only; a
  * non-admin caller 403s and the tab shows a restricted state).
  *
  * NOTE: this answers "which role may CALL this endpoint". It does NOT express
  * row-level scope — OPCO_IT is additionally limited to its own OpCo by the
- * backend (AUTH-3a opco-scope.ts), which no endpoint-level matrix can show.
+ * backend (AUTH-3a opco-scope.ts), which no endpoint-level matrix can show. The
+ * agent rows inherit the same caveat: every tool runs under the OpCo scope of
+ * whoever started the run.
  */
 export interface PermissionEntry {
   controller: string;
@@ -445,8 +463,64 @@ export interface PermissionEntry {
   method: string;
   path: string;
   access: AccessKind;
+  actor: ActorKind;
   roles: Role[];
   guards: string[];
+}
+
+/**
+ * GET /agent/kill-switch → 期二 G3 / plan B5. ADMIN-only.
+ *
+ * 🔴 TWO facts, and the second is the point. `enabled` is the switch;
+ * `settled` is whether anything agent-originated is still in the system.
+ * Switching off does NOT remove runs already parked for approval — they become
+ * inert, and live again the moment the switch does. An operator who reads only
+ * `enabled` during an incident will conclude the agent has stopped when it has
+ * not.
+ */
+export interface AgentKillSwitchStatus {
+  principal: string;
+  enabled: boolean;
+  liveRuns: number;
+  pendingProposals: number;
+  settled: boolean;
+  updatedAt: string | null;
+}
+
+/** One person's reviewing record (期二 G7). */
+export interface ReviewerStats {
+  approverId: string | null;
+  displayName: string | null;
+  decided: number;
+  approved: number;
+  rejected: number;
+  approvalRate: number | null;
+  medianSecondsToDecide: number | null;
+  fastDecisions: number;
+}
+
+/**
+ * GET /agent/review-stats → 期二 G7 / plan B7 (R13). ADMIN-only.
+ *
+ * 🔴 One half of this is evidence and the other half is not, and the screen has
+ * to say which. `fastDecisions` is the signal — a proposal decided seconds
+ * after it appeared was not read, and that needs no assumptions.
+ * `medianSecondsToDecide` is context ONLY: the clock starts when the proposal
+ * was created, not when a person first saw it, so a long median may equally
+ * mean nobody was at their desk.
+ */
+export interface AgentReviewStats {
+  windowDays: number;
+  since: string;
+  decided: number;
+  approved: number;
+  rejected: number;
+  approvalRate: number | null;
+  medianSecondsToDecide: number | null;
+  fastDecisions: number;
+  fastReviewSeconds: number;
+  pending: number;
+  byReviewer: ReviewerStats[];
 }
 
 /**
@@ -749,6 +823,79 @@ export interface AssignResult {
   steps: AssignStep[];
   /** Absent on a refusal — nothing was assigned. */
   lineItem?: RequestLineItem;
+}
+
+/* ── W46 / ADR-0036 — AI-Assist runs ─────────────────────────
+ *
+ * 🔴 There is no `runState` here and there must never be. It is the SDK's own
+ * serialised state and it carries the model's message history UNSCRUBBED; the
+ * redacted copy is `messages` below (D6). The server excludes it with an
+ * explicit `select` for the same reason.
+ */
+
+export type AgentRunStatus =
+  | 'running'
+  | 'awaiting_approval'
+  | 'approved'
+  | 'rejected'
+  | 'completed'
+  | 'failed'
+  | 'aborted'
+  /**
+   * 期二 G5 / plan OQ-5 — nobody decided within the threshold (7 days), or the
+   * saved state turned out to be unreadable (R16).
+   *
+   * 🔴 Distinct from `aborted` on purpose: that one means a person stopped the
+   * run. Collapsing them would hide "nobody reviewed this", which is exactly
+   * what R13 exists to make visible.
+   */
+  | 'expired';
+
+/** 🟢 Written by the PLATFORM around real execution. The audit truth (D4). */
+export interface AgentStep {
+  id: string;
+  /** A tool name, or `start` / `proposal` / `run` / `abort`. */
+  key: string;
+  /** `skipped` is NOT a flavour of `ok` — the AssignStep rule, reused. */
+  status: 'ok' | 'failed' | 'skipped';
+  detail?: string | null;
+  retryable?: boolean | null;
+  whoFixes?: AssignStepOwner | null;
+  createdAt: string;
+}
+
+/** ⚠️ What the AGENT said. A narrative, not evidence (D4 / INC-001). */
+export interface AgentMessage {
+  id: string;
+  role:
+    'user' | 'assistant' | 'thinking' | 'tool_call' | 'tool_result' | 'unknown';
+  content: string;
+  createdAt: string;
+}
+
+export interface AgentProposal {
+  id: string;
+  kind: string;
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  /** ⚠️ The model's own arguments. Re-validated when carried out. */
+  payload: unknown;
+  approvedById?: string | null;
+  rejectedReason?: string | null;
+  decidedAt?: string | null;
+  createdAt: string;
+}
+
+export interface AgentRun {
+  id: string;
+  requestId?: string | null;
+  status: AgentRunStatus;
+  /** Whose OpCo scope the run's tools apply — not necessarily the approver. */
+  startedById: string;
+  startedAt: string;
+  endedAt?: string | null;
+  steps: AgentStep[];
+  messages: AgentMessage[];
+  proposals: AgentProposal[];
 }
 
 /** An operational-history event (detail view). */

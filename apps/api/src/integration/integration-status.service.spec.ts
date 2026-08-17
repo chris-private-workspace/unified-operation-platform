@@ -86,6 +86,18 @@ describe('IntegrationStatusService', () => {
    * inventory further down, so this cannot fall behind a new connector.
    */
   const LEAK_ENV: Record<string, string> = {
+    // W46 / ADR-0036 seam ⑤. The two keys are secrets and carry the marker;
+    // the runtime and model are non-secret, and neither reaches the response —
+    // `state` is derived from whether a model exists, never from its name.
+    AGENT_RUNTIME: 'openai-agents',
+    AGENT_MODEL: 'fixture-model-not-a-real-id',
+    // 🔴 ADR-0037 E1 — the credential that actually reaches a model. Added
+    // 2026-08-17 with the Azure wiring, and this fixture went red the moment
+    // the connector grew it: the coverage assertion below derives the key list
+    // from the registry, so a new secret cannot slip in untested.
+    AZURE_OPENAI_API_KEY: 'SECRET-AZURE-OPENAI-DO-NOT-LEAK',
+    OPENAI_API_KEY: 'SECRET-OPENAI-DO-NOT-LEAK',
+    ANTHROPIC_API_KEY: 'SECRET-ANTHROPIC-DO-NOT-LEAK',
     GRAPH_TENANT_ID: '11111111-2222-3333-4444-555555555555',
     GRAPH_CLIENT_ID: '66666666-7777-8888-9999-aaaaaaaaaaaa',
     GRAPH_CLIENT_SECRET: 'SECRET-GRAPH-DO-NOT-LEAK',

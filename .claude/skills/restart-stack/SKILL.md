@@ -66,15 +66,25 @@ Backend endpoint **冇 `/api` prefix**(`:3100/me` 200、`:3100/api/me` 404);vite
    兩個容器)。2026-08-12 同 08-13 各中一次,兩次都係:`docker stop ai-doc-extraction-db` →
    用完 → `docker start` 佢返 ⇒ **`Up (healthy)` 但 `Ports` 只有 `5432/tcp`,host 零 listener**,
    而 **`docker restart` 唔會重新 attach**。
-   💡 **最快嘅決定性診斷 = `docker inspect`**:`HostConfig.PortBindings` **仍然寫住 `5433`**
+   💡 **最快嘅決定性診斷 = 兩個 docker 命令自己打交**:`docker inspect` 個
+   `HostConfig.PortBindings` **仍然寫住 `5433`**,但 **`docker port <c>` 返空**
    ⇒ 容器以為自己 publish 咗,而 host 冇 ⇒ 唔使再試 start/restart,直接 recreate。
+   (2026-08-17 實測:`docker port` 呢半比 `inspect` 更爽快 —— 佢**直接答「而家有冇」**,
+   唔使你自己判斷嗰個 binding 有冇生效。)
    ✅ **修法(實測有效,唔使 `cd` 入去,亦唔使估 project name)**:
 
    ```powershell
    docker compose -f "C:\Users\rci.ChrisLai\ai-document-extraction-project\docker-compose.yml" `
      --project-directory "C:\Users\rci.ChrisLai\ai-document-extraction-project" `
-     --project-name ai-document-extraction-project up -d postgres
+     --project-name ai-document-extraction-project up -d --force-recreate postgres
    ```
+
+   🔴 **`--force-recreate` 唔可以慳 —— 2026-08-17 實測慳咗就白做一輪。** 冇佢個陣
+   compose 見到 container config 同 compose file 一致(`PortBindings` 本身就係啱嘅),
+   於是**只 `Starting` / `Started`**,而 runtime 側**照樣冇 attach**:`docker port` 仍然空、
+   `Test-NetConnection` 仍然 `False`。⚠️ 呢個同上面第 3 條 redis 嗰段講嘅係**同一件事**,
+   但本段一直寫住冇 `--force-recreate` 嘅版本 ⇒ **同一份 SOP 兩處講唔同嘢,而下手嗰個
+   多數會跟最貼題嗰段**(即本段)。
 
    ⚠️ **佢係另一個項目,做之前要 Chris 批。** 兩件事做之前先查清(2026-08-13 都查過):
    ①`docker inspect <c> --format '{{.Config.Image}}'` —— 實測 `postgres:15-alpine`(**pinned tag**,
