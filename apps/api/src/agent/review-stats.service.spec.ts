@@ -93,6 +93,42 @@ describe('AgentReviewStatsService', () => {
     expect(where.decidedAt.gte).toBeInstanceOf(Date);
   });
 
+  /**
+   * 🔴🔴 CH-031 / ADR-0040 D4 — hiding a run must not move this number.
+   *
+   * The whole reason soft-hide was chosen over a delete: R13 is a RATIO, so
+   * removing runs moves it in whichever direction the removed proposals leaned,
+   * silently and with nothing red. Soft-hide is immune not because anyone is
+   * careful but because this population is `AgentProposal.decidedAt` and knows
+   * nothing about `AgentRun.hiddenAt`.
+   *
+   * That immunity is only real while nobody "helpfully" joins the two. This
+   * asserts on the query rather than on an output number on purpose — a count
+   * can come out equal by luck; a `where` clause that never mentions the column
+   * cannot filter on it. Falsification (CH-031 C3): add `hiddenAt: null` to the
+   * service's `where` and this goes red.
+   */
+  it('never filters on whether the run was hidden (ADR-0040 D4)', async () => {
+    await service.summarise(30);
+
+    const findManyArg = prisma.agentProposal.findMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    };
+    const countArg = prisma.agentProposal.count.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    };
+
+    // Neither directly…
+    expect(findManyArg.where).not.toHaveProperty('hiddenAt');
+    expect(countArg.where).not.toHaveProperty('hiddenAt');
+    // …nor through the run relation, which is the spelling that would actually
+    // be reached for. `toHaveProperty(key)` alone passes on `undefined`, so the
+    // serialised form is checked too (the BUG-011 lesson).
+    expect(findManyArg.where).not.toHaveProperty('run');
+    expect(JSON.stringify(findManyArg.where)).not.toContain('hidden');
+    expect(JSON.stringify(countArg.where)).not.toContain('hidden');
+  });
+
   it('bounds the window by the requested number of days', async () => {
     const before = Date.now();
     await service.summarise(7);

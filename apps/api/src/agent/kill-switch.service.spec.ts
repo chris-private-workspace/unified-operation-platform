@@ -115,7 +115,17 @@ describe('AgentKillSwitchService', () => {
       });
     });
 
-    it('counts only runs that have not finished', async () => {
+    /**
+     * 🔴 CH-031 / ADR-0040 D4 — this test now guards a second claim, so the
+     * exact-match form below is load-bearing rather than stylistic.
+     *
+     * `hiddenAt` must never appear in either `where`. Excluding hidden runs
+     * here looks tidy and produces a kill switch that reports `settled: true`
+     * over work nobody settled — the exact failure ADR-0040 rejected hard
+     * delete to avoid. `toHaveBeenCalledWith` on the whole argument fails on an
+     * ADDED key, which a `toMatchObject` would wave through.
+     */
+    it('counts only runs that have not finished, and never asks whether one is hidden', async () => {
       await service.status();
 
       expect(prisma.agentRun.count).toHaveBeenCalledWith({

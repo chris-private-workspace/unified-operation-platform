@@ -197,6 +197,29 @@ export function useAbortAgentRun(requestId: string) {
 }
 
 /**
+ * CH-031 / ADR-0040 — take a finished run off this card. ADMIN-only.
+ *
+ * 🔴 `hide`, not `delete`, and the wording is worth keeping straight all the
+ * way out to the UI: the run, its steps, its transcript and its proposals all
+ * stay. What changes is that `GET /agent/runs?requestId=` stops returning it,
+ * so this card goes back to its empty state. Anyone with the id can still open
+ * the run.
+ *
+ * The invalidation is what makes it disappear here — the card reads the
+ * request-scoped query, and that is the one query the server filters.
+ */
+export function useHideAgentRun(requestId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) =>
+      apiPost<AgentRun>(`/agent/runs/${runId}/hide`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: agentRunKey(requestId) });
+    },
+  });
+}
+
+/**
  * PATCH /agent/kill-switch — 期二 G3. ADMIN-only.
  *
  * Invalidates the review stats too: switching the agent off is exactly when

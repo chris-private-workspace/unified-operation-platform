@@ -19,11 +19,11 @@ spec_refs:
 
 > **Spec version**:1.0(**approved** 2026-08-17)
 > **Owner**:Chris Lai · **提出**:Chris Lai(2026-08-17,「開單處理 `DELETE /agent/runs/:id`」)· **Approved by**:**Chris Lai**(2026-08-17,揀 §4 選項 **B**)
-> **決策 SSOT**:**`ADR-0040`**(🟡 **Proposed** —— 見下面「開工前提」)
+> **決策 SSOT**:**`ADR-0040`**(🟢 **Accepted** 2026-08-17)
 > **分類**:**Change**(改現有 feature 嘅生命週期語意;唔係新 feature,唔係 bug —— 今日冇 DELETE 係 W46 從來冇 scope 過,唔係壞咗)
 > 🔴 **觸發 H1**(改 Prisma schema · additive)—— 見 **§3**。
 >
-> 🔴🔴 **開工前提**:`ADR-0040` 而家仲係 **`Proposed`**。**佢一日未 `Accepted`,一日唔可以落 code**(CLAUDE.md §5.1 H1 required behavior ④)。Chris 揀咗選項 B = 批咗**方向**,`ADR-0040` 要批嘅係**八條 D 嘅具體形狀**,入面有兩條**唔喺選項 B 原文入面、係我加嘅**(`D2` 個 `unhide` · `D7` RBAC 收窄做 ADMIN-only)—— 見 §4.2。
+> 🟢🟢 **開工閘已過**(2026-08-17):`ADR-0040` **`Accepted`**,八條 D 連 §4.2 兩條 deviation(`D2` `unhide` · `D7` ADMIN-only)一併批 ⇒ **可以落 code**。
 
 ---
 

@@ -179,6 +179,25 @@ export const AUDIT_ACTIONS = {
    * exists to prevent. Recorded in the W46 changelog (R3) for a decision.
    */
   AGENT_KILL_SWITCH_SET: 'agent.kill_switch_set',
+  /**
+   * CH-031 / ADR-0040 D5 — an admin took an agent run out of the day-to-day
+   * workflow, or put it back. `metadata.hidden` says which way.
+   *
+   * The argument is not a new one: it is `AGENT_KILL_SWITCH_SET`'s, one line
+   * up. That row exists because the alternative is an admin control that
+   * changes what people see and leaves no record of who changed it — the thing
+   * ADR-0009 exists to prevent. Making a run disappear from the card needs that
+   * record at least as much as switching the agent off does.
+   *
+   * One action for both directions, told apart by `metadata.hidden`, for the
+   * reason AGENT_PROPOSAL_DECIDED shares one across approve and reject.
+   *
+   * 🔴 Costs nothing beyond this line: `'AgentRun'` is already an
+   * `AuditTargetType` (AGENT_RUN_STARTED uses it), and the row is event-only —
+   * `before` / `after` stay empty, so the per-target allow-list below is
+   * untouched and no new field reaches storage.
+   */
+  AGENT_RUN_HIDDEN: 'agent.run_hidden',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

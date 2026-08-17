@@ -651,6 +651,22 @@ model AgentRun {
   startedAt DateTime  @default(now())
   endedAt   DateTime?
 
+  // 🔴 CH-031 / ADR-0040 — set when an admin takes this run out of the day-to-day
+  // workflow. It is NOT a delete, and the difference is the whole decision.
+  //
+  // Deleting the row would cascade AgentStep, AgentMessage and AgentProposal
+  // away (see their onDelete below), i.e. the audit truth plus "who approved
+  // what" — and ADR-0036 D6 keeps AgentMessage forever. ADR-0022 D1 hit the
+  // identical shape on OpcoSkuLedger and answered it the same way: same effect,
+  // one-sided cost, so keep the row and hide it at the read layer.
+  //
+  // 🔴 Deliberately NOT read by review-stats or the kill switch. Those aggregate
+  // AgentProposal.decidedAt and AgentRun.status, which are orthogonal to this
+  // column — so R13's rubber-stamp metric cannot be moved by hiding a run. That
+  // is a structural property, not a habit, and `review-stats.service.ts` has a
+  // falsification test pinning it (CH-031 C3).
+  hiddenAt DateTime?
+
   steps     AgentStep[]
   messages  AgentMessage[]
   proposals AgentProposal[]

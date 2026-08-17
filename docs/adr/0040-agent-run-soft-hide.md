@@ -1,7 +1,7 @@
 # ADR-0040: Agent run 由工作流程移除 = soft-hide,唔係 delete
 
 **Date**: 2026-08-17
-**Status**: Proposed
+**Status**: **Accepted**(Chris Lai,2026-08-17 —— 八條 D 連 §4.2 兩條 deviation[`D2` `unhide` · `D7` ADMIN-only]一併批)
 **Approver**: Chris Lai
 
 ---

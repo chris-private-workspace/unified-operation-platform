@@ -28,6 +28,8 @@ exports[`permission matrix (derived from @Roles + the tool registry) matches the
   "GET /agent/runs/:id → roles [ADMIN,REGIONAL]",
   "POST /agent/runs/:id/abort → roles [ADMIN,REGIONAL]",
   "GET /agent/runs/:id/events → roles [ADMIN,REGIONAL]",
+  "POST /agent/runs/:id/hide → roles [ADMIN]",
+  "POST /agent/runs/:id/unhide → roles [ADMIN]",
   "POST /auth/entra/callback → public []",
   "GET /auth/entra/start → public []",
   "POST /auth/forgot-password → public []",
