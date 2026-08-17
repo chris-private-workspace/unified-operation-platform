@@ -4,15 +4,18 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   Agent,
   RunResult,
   RunState,
   run,
+  setDefaultOpenAIClient,
   setTracingDisabled,
   tool,
   type RunToolApprovalItem,
 } from '@openai/agents';
+import { AzureOpenAI } from 'openai';
 import { ConnectorConfigService } from '../integration/connector-config.service';
 import { AgentToolRegistry } from './tool-registry';
 import type { AgentTool, AgentToolContext } from './agent-tool';
@@ -58,6 +61,66 @@ import {
  */
 export function enforceTracingDisabled(): void {
   setTracingDisabled(true);
+}
+
+/**
+ * 🔴🔴 ADR-0037 `E1` — inference goes to the COMPANY's Azure OpenAI resource,
+ * and `api.openai.com` is not an allowed fallback.
+ *
+ * Until this existed, E1 was enforced by nobody setting `OPENAI_API_KEY`. That
+ * is not a boundary — it is an absence. `@openai/agents` defaults to the public
+ * API, so one env var would have sent a real person's email text (names, UPNs)
+ * to a third party with no error, no log and nothing red.
+ *
+ * ⚠️ **The asymmetry that made this worth writing**: the Claude runtime — which
+ * nobody uses — already refused to build a client without explicit
+ * configuration, and a test held that in place (ADR-0038 D3). The DEFAULT
+ * runtime had no such thing. The weaker guard was on the busier path, which is
+ * the wrong way round, and it took a question from Chris (2026-08-17) to
+ * surface it rather than any checklist.
+ *
+ * A free function returning the client, rather than a method calling
+ * `setDefaultOpenAIClient` itself — same reason as `toSdkTools`: it makes the
+ * claim testable without a model call. What a test can then assert is the thing
+ * that actually matters, which is where the client POINTS.
+ *
+ * 🔴 Three values, all required, none with a code-side default:
+ *   - endpoint    — the whole point of E1. Missing ⇒ refuse, never fall back.
+ *   - api key     — H4: only ever from env, never DB, never an API response.
+ *   - api version — deliberately no default: it decides whether the deployment
+ *                   speaks the Responses API, which is what `@openai/agents`
+ *                   uses. Guessing one here would turn "wrong API version" into
+ *                   a puzzling 404 rather than a clear refusal.
+ *
+ * 📌 `deployment` is deliberately NOT set on the client. Azure then takes the
+ * deployment name from the per-request `model`, which is `AGENT_MODEL` /
+ * `ConnectorConfig.agentModel` — so the one value an operator really does
+ * change stays changeable at run time (ADR-0013 Model C), exactly as ADR-0037
+ * E3 describes.
+ */
+export function buildAzureClient(config: ConfigService): AzureOpenAI {
+  const endpoint = config.get<string>('AZURE_OPENAI_ENDPOINT')?.trim();
+  if (!endpoint) {
+    throw new ServiceUnavailableException(
+      'AI-Assist inference is restricted to the company Azure OpenAI resource (ADR-0037 E1). Set AZURE_OPENAI_ENDPOINT — the public OpenAI API is NOT an allowed fallback.',
+    );
+  }
+
+  const apiKey = config.get<string>('AZURE_OPENAI_API_KEY')?.trim();
+  if (!apiKey) {
+    throw new ServiceUnavailableException(
+      'Azure OpenAI is configured but has no credential. Set AZURE_OPENAI_API_KEY (env only — never the database, ADR-0013 Model C).',
+    );
+  }
+
+  const apiVersion = config.get<string>('AZURE_OPENAI_API_VERSION')?.trim();
+  if (!apiVersion) {
+    throw new ServiceUnavailableException(
+      'Set AZURE_OPENAI_API_VERSION. It decides whether the deployment speaks the Responses API, so a guessed default would surface as an unexplained 404.',
+    );
+  }
+
+  return new AzureOpenAI({ endpoint, apiKey, apiVersion });
 }
 
 /**
@@ -260,6 +323,7 @@ export class OpenAiAgentsProvider extends AgentRuntimeProvider {
   constructor(
     private readonly registry: AgentToolRegistry,
     private readonly connectorConfig: ConnectorConfigService,
+    private readonly config: ConfigService,
   ) {
     super();
     enforceTracingDisabled();
@@ -339,6 +403,20 @@ export class OpenAiAgentsProvider extends AgentRuntimeProvider {
   }
 
   private async buildAgent(setup: AgentSetup) {
+    /**
+     * 🔴 E1 is applied HERE, on every run, rather than once in the constructor.
+     *
+     * Two reasons, and the second is the one that matters:
+     *   1. It matches `resolveModel` below — configuration is read when it is
+     *      used, so a change takes effect without a restart.
+     *   2. 🔴 A constructor that threw would take the whole Nest module down at
+     *      boot, which turns "AI-Assist is not configured" into "the API will
+     *      not start" — and the platform's other nine screens have nothing to
+     *      do with this. Refusing per-run keeps the blast radius at the feature
+     *      that is actually unconfigured.
+     */
+    setDefaultOpenAIClient(buildAzureClient(this.config));
+
     return new Agent({
       name: AGENT_NAME,
       instructions: setup.instructions,

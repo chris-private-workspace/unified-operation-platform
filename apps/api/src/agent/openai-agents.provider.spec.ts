@@ -1,10 +1,12 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ServiceUnavailableException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { getGlobalTraceProvider, setTracingDisabled } from '@openai/agents';
 import type { AppUser } from '@prisma/client';
 import {
   OpenAiAgentsProvider,
+  buildAzureClient,
   normaliseTurn,
   toSdkTools,
   type RunResultLike,
@@ -72,9 +74,26 @@ const interruption = (callId: string, name: string, args: string) => ({
   rawItem: { callId, name, arguments: args },
 });
 
+/**
+ * A `ConfigService` stand-in. Defaults to a COMPLETE Azure configuration, so a
+ * test that is not about E1 does not have to think about it — and the E1 tests
+ * below take things away one at a time.
+ */
+const configOf = (over: Record<string, string | undefined> = {}) =>
+  ({
+    get: (key: string) =>
+      ({
+        AZURE_OPENAI_ENDPOINT: 'https://uop-test.openai.azure.com/',
+        AZURE_OPENAI_API_KEY: 'azure-fake-key',
+        AZURE_OPENAI_API_VERSION: '2024-10-21',
+        ...over,
+      })[key],
+  }) as unknown as ConfigService;
+
 describe('OpenAiAgentsProvider', () => {
   let registry: AgentToolRegistry;
   let connectorConfig: { resolve: jest.Mock };
+  let config: ConfigService;
   let provider: OpenAiAgentsProvider;
 
   beforeEach(() => {
@@ -82,10 +101,87 @@ describe('OpenAiAgentsProvider', () => {
     // on Prisma until a tool actually executes.
     registry = new AgentToolRegistry({} as unknown as PrismaService);
     connectorConfig = { resolve: jest.fn() };
+    config = configOf();
     provider = new OpenAiAgentsProvider(
       registry,
       connectorConfig as unknown as ConnectorConfigService,
+      config,
     );
+  });
+
+  /**
+   * 🔴🔴 ADR-0037 `E1` — inference only ever goes to the company's Azure
+   * OpenAI resource.
+   *
+   * ⚠️ These tests are the ONLY thing enforcing that. Before 2026-08-17, E1 was
+   * held up by nobody having set `OPENAI_API_KEY` — an absence, not a boundary.
+   * One env var would have sent a real person's email text to the public API
+   * with no error and nothing red.
+   *
+   * 📌 The asymmetry worth remembering: the CLAUDE runtime, which nobody uses,
+   * already had exactly this guard (ADR-0038 D3). The default runtime did not.
+   * The weaker guard sat on the busier path, and no checklist noticed — it took
+   * a question about "how does one actually use this" to surface it.
+   */
+  describe('🔴 E1 — the public OpenAI API is not a fallback (ADR-0037)', () => {
+    it('refuses to run rather than defaulting to api.openai.com', () => {
+      expect(() =>
+        buildAzureClient(configOf({ AZURE_OPENAI_ENDPOINT: undefined })),
+      ).toThrow(ServiceUnavailableException);
+    });
+
+    /**
+     * The message is asserted, not just the throw. An operator reading
+     * "inference is not configured" would reasonably reach for the nearest key
+     * they have — which is the public one. The refusal has to say that is not
+     * the answer.
+     */
+    it('says why, so nobody reaches for a public API key instead', () => {
+      expect(() =>
+        buildAzureClient(configOf({ AZURE_OPENAI_ENDPOINT: undefined })),
+      ).toThrow(/NOT an allowed fallback/);
+    });
+
+    it('refuses without a credential', () => {
+      expect(() =>
+        buildAzureClient(configOf({ AZURE_OPENAI_API_KEY: undefined })),
+      ).toThrow(ServiceUnavailableException);
+    });
+
+    /**
+     * 🔴 No default api-version, deliberately. It decides whether the deployment
+     * speaks the Responses API — which is what `@openai/agents` uses — so a
+     * guessed value turns a configuration problem into a 404 that mentions
+     * neither.
+     */
+    it('refuses without an api-version rather than guessing one', () => {
+      expect(() =>
+        buildAzureClient(configOf({ AZURE_OPENAI_API_VERSION: undefined })),
+      ).toThrow(/AZURE_OPENAI_API_VERSION/);
+    });
+
+    /**
+     * 🔴 The positive half, and it asserts the thing that actually matters:
+     * where the client POINTS. Asserting "a client was returned" would pass for
+     * a perfectly-constructed client aimed at the public API.
+     */
+    it('builds a client aimed at the company resource, not the public API', () => {
+      const client = buildAzureClient(configOf());
+
+      expect(client.baseURL).toContain('uop-test.openai.azure.com');
+      expect(client.baseURL).not.toContain('api.openai.com');
+    });
+
+    /**
+     * 📌 `deployment` is NOT pinned on the client, on purpose: Azure then reads
+     * it from the per-request `model`, which is `AGENT_MODEL` /
+     * `ConnectorConfig.agentModel`. That keeps the one value an operator really
+     * does change editable at run time (ADR-0013 Model C / ADR-0037 E3) instead
+     * of freezing it into a client built once.
+     */
+    it('leaves the deployment to the per-request model', () => {
+      expect(buildAzureClient(configOf()).deploymentName).toBeUndefined();
+    });
   });
 
   // ── A4 / D11 — tracing ─────────────────────────────────────
@@ -112,6 +208,7 @@ describe('OpenAiAgentsProvider', () => {
       new OpenAiAgentsProvider(
         registry,
         connectorConfig as unknown as ConnectorConfigService,
+        config,
       );
 
       expect(currentTraceId()).toBe(NOOP_TRACE_ID);

@@ -313,10 +313,25 @@ export const CONNECTOR_CONFIG: Record<ConnectorKey, ConnectorConfigSpec> = {
         kind: 'text',
       },
     ],
-    // Both keys stay in env forever (D10, H4). Which ones are *needed* depends on
-    // the runtime, but both are listed so the panel reports honestly either way.
+    // Keys stay in env forever (D10, H4). Which ones are *needed* depends on the
+    // runtime, but all are listed so the panel reports honestly either way.
     secrets: [
-      { envKey: 'OPENAI_API_KEY', label: 'OpenAI API key' },
+      // 🔴 ADR-0037 E1 — inference goes to the company's Azure OpenAI resource.
+      // This is the credential that is actually used by the default runtime.
+      { envKey: 'AZURE_OPENAI_API_KEY', label: 'Azure OpenAI key' },
+      /**
+       * 🔴 Listed as UNUSED rather than removed, and that is the point.
+       *
+       * E1 forbids `api.openai.com`, and since 2026-08-17 `buildAzureClient`
+       * enforces it — so this key can no longer reach anything. Dropping it from
+       * the panel would mean a key somebody had set stops being visible, which
+       * is the opposite of what a monitoring surface is for (R9). Naming it as
+       * unused says both things at once: it is there, and it should not be.
+       */
+      {
+        envKey: 'OPENAI_API_KEY',
+        label: 'OpenAI API key (unused — E1 forbids the public API)',
+      },
       { envKey: 'ANTHROPIC_API_KEY', label: 'Anthropic API key' },
     ],
   },
