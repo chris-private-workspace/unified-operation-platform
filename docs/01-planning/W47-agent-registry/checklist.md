@@ -73,7 +73,13 @@
 
 ## `F7` — Live 驗
 
-- [ ] F7-1 本機:兩個 profile(唔同 model)各跑一個 run,列表分得開
+- [x] F7-1 🟢🟢 **2026-08-17 全收 —— agent 真跑咗兩次,而且係一個對照實驗唔係兩次 smoke test**。⚠️ **刻意唔用「兩個唔同 model」**(本機只有一個真 Azure deployment,第二個會直接 fail,證唔到嘢)⇒ 改成**同一段 request text · 同一個 model · 唯一變數係 prompt**:
+  - profile `gpt-5.6-luna`(內建 prompt)→ **2 個 SKU**(`SPE_E5` + `POWER_BI_PRO`)
+  - profile `power-bi-only`(custom prompt)→ **1 個**,而 reasoning 明文寫住 **「I ignored the Microsoft 365 E5 request … as instructed to propose only Power BI licences」**
+  ⇒ **`R26`(prompt 落 DB = 一個真嘅 runtime 行為面)由推論變成實證**,而個 agent 仲自己講得出點解
+- [x] F7-1a ✅ **四條拒絕路 live 驗,而且全部具名唔係 generic**:①兩個 active 冇指名 → `This agent has 2 active profiles — say which one to run on`(= `F3-2` 個 R3 偏離嘅重點:**fail loud + 講得出有幾多個**)②唔存在 → 400 ③熄咗嗰個 → `The profile 'power-bi-only' is switched off…`。🔴 **四次 refuse 之後 run 數仍然係 3(開工前個數)** ⇒ `F3-3` 個核心(refuse 唔可以留低 row,否則 OQ-3 永久封死嗰張 request)真驗到
+- [x] F7-1b ✅ **`F4` live**:5 個 run newest-first(兩新帶 profile 名 · 三舊 `Before W47`)· 按 `profileId` 篩 → 1 個 · cursor 分頁 page2 **冇重複 page1 尾行**(`skip: 1` 生效)
+- [x] F7-1c 🟢🟢 **`OQ-C` / `R26` 第一道防線 live 驗**:`agent.profile_update` 個 `before.prompt` **616 字元** → `after.prompt` **61 字元**,而 `before`/`after` **兩邊都淨係得 `prompt` 一個 key**(`auditDiff` 真係只記變咗嗰樣,唔係成份 row)。⚠️ 再送一次**同一個值** ⇒ audit 由 1 變 1,**冇新 row**(`F2-6` 個決定:no-op edit 唔可以塞爆 `R26` 靠嗰條 query)
 - [ ] F7-2 DEV:migration + 列表
 - [ ] F7-3 ⚠️ **唔可以睇 revision status 當證據** —— entrypoint 令 migrate 失敗 NON-FATAL
 

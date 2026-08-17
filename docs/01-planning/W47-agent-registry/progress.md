@@ -185,6 +185,39 @@ handoff 由頭到尾冇 textarea(兩邊 grep 零命中)⇒ 冇嘢可以對照,�
 🟢 **而且係實測唔係聲稱** —— live probe 對 `<input>` 同 `<textarea>` 逐項比:border / radius / background / color / font-size 兩個 theme 全部逐字相同。
 🔴 **`resize-y` 唔可以係 `resize`**:水平 resize 係瀏覽器預設,佢容許用戶由**元件內部**把自己拉闊過個 dialog ⇒ 打破成個 console 唯一嗰條 layout 硬規矩,而**冇任何一行 code 改動可以賴**。
 
-### ⚠️ 空 prompt 一定要送 `null`,唔可以送 `''`
+### ⚠️ 空 prompt 一定要送 `null`,唔可以送 `''`(標題,詳見下)
 
 送 `''` 會 compile、會過 validation、run 亦會正常(server 當 blank = unset)—— 但 row 會話有 prompt,而 registry 個表就會為一個**跑緊內建指示**嘅 profile 顯示「Custom」。**一個畫面同自己講唔埋,冇任何錯誤。** falsification 驗過:改成送 `''` ⇒ 兩條 test 精準紅。
+
+---
+
+## Day 1(收尾)— 2026-08-17 · `F7-1` live
+
+### 🟢🟢🟢 agent 真跑咗兩次,而佢係一個**對照實驗**唔係兩次 smoke test
+
+`F7-1` 原文寫「兩個 profile(**唔同 model**)各跑一個 run」。落手先發現嗰個設計證唔到嘢:本機只有**一個**真 Azure deployment,第二個 model 會直接 fail,而「一個成功一個失敗」講唔出 profile 有冇生效。
+
+⇒ 改成:**同一段 request text · 同一個 model · 唯一變數係 prompt**。
+
+| profile | 提咗 | agent 自己嘅理由 |
+|---|---|---|
+| `gpt-5.6-luna`(內建) | **2 個 SKU**(`SPE_E5` + `POWER_BI_PRO`) | 「matched Microsoft 365 E5 … and Power BI Pro」 |
+| `power-bi-only`(custom) | **1 個**(`POWER_BI_PRO`) | 「**I ignored the Microsoft 365 E5 request** … as instructed to propose only Power BI licences」 |
+
+📌 **`R26` 由推論變咗實證** —— 「`prompt` 落 DB 就係一個把行為交畀 runtime 配置嘅位」呢句,而家有一對可以並排睇嘅 proposal 撐住,而且 agent **自己講得出佢點解唔提 E5**。三道防線(audit / allow-list 留喺 code / 8000 字 cap)唔再係紙上談兵。
+
+### 🔴 四條拒絕路 live,而重點係「refuse 之後冇留低 row」
+
+①兩個 active 冇指名 → `This agent has 2 active profiles — say which one to run on` ②唔存在 → 400 ③熄咗 → `The profile 'power-bi-only' is switched off…`
+
+全部**具名**,唔係 generic error。而最重要嗰條係:**四次 refuse 之後 run 數仍然係 3(開工前個數)**。`F3-3` 個理由就係呢個 —— OQ-3 只准一張 request 有一個非 terminal run,refusal 留低一行 `running` 就係永久封死。
+
+### 🟢🟢 `OQ-C` 唔止「有入 audit」,而係「入到答得出改成咩」
+
+`agent.profile_update`:`before.prompt` **616 字元** → `after.prompt` **61 字元**,而 `before`/`after` 兩邊**淨係得 `prompt` 一個 key**。
+再送一次**同一個值** ⇒ audit **1 → 1,冇新 row**。`F2-6` 嗰個決定(no-op 唔寫)喺度真係擋住咗:冇佢,`R26` 靠嗰條 query 會畀一堆「改過但冇改到」嘅 row 塞爆。
+
+### ⚠️ 一個唔屬本單、但今日撞咗三次嘅嘢
+
+`ai-doc-extraction-db` **會自己返嚟搶 5433**(今日交換咗三次)。其中一次 `TCP 5433 = True` **差啲被我當成「我哋個 DB 通」** —— 實際上通嘅係另一個項目個 DB。
+📌 同 `CLAUDE.md §9` 嗰句「有 listener ≠ 啱嗰個 DB」係同一件事,而今日先真撞到。**每次交換之後都要用真 query 驗係邊個 DB,唔可以只睇 port。**
