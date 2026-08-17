@@ -5,7 +5,33 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-**當前座標(2026-08-14)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 1044 test(74 suites)· web 377 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0035**(🟢 **0035 = Accepted 2026-08-14** —— 平台自己開嘅 licence REQ 號碼落 `Request`,**非 `@unique` 兼唔准入任何 `where`**,呢個限制本身就係決定;落地單 = **CH-030**)(🟢 **0034 = Accepted 2026-08-13**,落地單 **CH-029**)(🔴 **0031 = Rejected**,見下)· CH 到 **030**(🟢🟢 **030 = 2026-08-14 一日收晒** —— 實作 + test + migration + H6 light/dark 真 render;✅ `OD-1` backfill **= 唔做,Chris 同日拍板** ⇒ 新欄只對 ADR-0035 之後開嘅 request 有值,**已收嘅決定唔係遺留待辦**)(🟢🟢 **029 = 2026-08-14 全收 closed** —— 實作 + test + `F5-4` render + **`D-C` live @ DEV** + **`D-A` live @ 本機**,三個 deliverable 各自都有 live 證據) · BUG 到 **011**(✅ closed)。
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17)**
+
+**你多數喺 branch `feat/w46-agent-runtime`,而佢由頭到尾未 merge 落 `main`。**
+
+| | `main` | branch `feat/w46-agent-runtime` |
+|---|---|---|
+| test | api **1044 / 74** · web **377** | api **1355 / 92** · web **433**(+6 pre-existing 紅) |
+| ADR | 到 **0035** | 到 **0039**(0036 / 0037 / 0038 / 0039 **全部住喺 branch**) |
+| 有冇 agent | **冇** | 有(`src/agent` + `src/agent-approval` 兩個 module) |
+
+⇒ **下面「`main` 嘅座標」嗰段仍然啱,但佢唔係你 working tree 嘅樣。**
+
+**W46 `agent-runtime` 2026-08-17 收尾** —— 21 條 acceptance **18 條 ✅**,淨低三條
+(`A1` DEV 半邊 · `A14` live 驗 · `B6` SSE 喺 DEV 真通)**全部同一個原因:要一個真環境**,
+而真環境要 infra 開 **Azure OpenAI + Redis** 兩個 resource。
+🟡 **封信寫好晒但未發**(`docs/13-deployment/11-azure-openai-infra-request.md`)——
+**幾時發係 owner 決定,冇嘢逼住**;Chris 2026-08-17 傾過:W46 code 一行都未入 `main`,
+喺呢個時候叫人開 production tenant 嘅資源,次序係反嘅。
+⚠️ **本機開發完全唔受影響** —— 本機一直有 Redis(`docker-compose.yml:23-32`),LLM 全部 mock。
+
+🔴 **一件部署前一定要知嘅事**:`main` 一 merge 咗 W46,**部署 DEV 之前 Redis 要喺度**,
+否則 `POST /agent/runs` 直接 503(`ADR-0039 F1`:個 POST 而家只 enqueue)。呢個同
+Azure OpenAI **唔同**級別 —— 冇 Azure OpenAI 只係少一條 live 驗,冇 Redis 係 agent 整個停。
+
+---
+
+**`main` 嘅座標(2026-08-14)**:git 連 GitHub **private**(`chris-private-workspace`,`main`)。Backend `apps/api`(NestJS)、`/docs/api` 200、DB seeded(**24** OpCos + admin + catalog SKU)。`apps/web` = **約 10 個實畫面**(Overview / SKU Catalog / Requests + detail + new[開單] / Drift / License Assets / Settings / **Audit log** / **Delivery failures** / Login)。**api 1044 test(74 suites)· web 377 passed**(⚠️ 另有 **6 條 pre-existing 紅**,見下)。ADR 到 **0035**(🟢 **0035 = Accepted 2026-08-14** —— 平台自己開嘅 licence REQ 號碼落 `Request`,**非 `@unique` 兼唔准入任何 `where`**,呢個限制本身就係決定;落地單 = **CH-030**)(🟢 **0034 = Accepted 2026-08-13**,落地單 **CH-029**)(🔴 **0031 = Rejected**,見下)· CH 到 **030**(🟢🟢 **030 = 2026-08-14 一日收晒** —— 實作 + test + migration + H6 light/dark 真 render;✅ `OD-1` backfill **= 唔做,Chris 同日拍板** ⇒ 新欄只對 ADR-0035 之後開嘅 request 有值,**已收嘅決定唔係遺留待辦**)(🟢🟢 **029 = 2026-08-14 全收 closed** —— 實作 + test + `F5-4` render + **`D-C` live @ DEV** + **`D-A` live @ 本機**,三個 deliverable 各自都有 live 證據) · BUG 到 **011**(✅ closed)。
 
 ⚠️ **上面呢句 2026-08-13 更正過兩處,而兩處都係同一格入面自己同自己唔同步**:CH-029 喺同一句出現兩次,一處寫 `approved 未開工`、另一處寫 `proposed,三條 OQ 未答` —— 而**兩個都已經過時**。⇒ **改一個 ID 嘅狀態之前,先 grep 成份檔數吓佢有幾多個 entry**(呢個形狀 2026-08-13 一日內中咗六次)。
 
