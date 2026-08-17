@@ -93,16 +93,20 @@ describe('New request — parked (flag off)', () => {
     expect(screen.queryByRole('button', { name: 'New request' })).toBeNull();
   });
 
-  it('redirects /requests/new instead of rendering the form', async () => {
-    const route = newRequestRoute(await loadRouter(false));
+  it(
+    'redirects /requests/new instead of rendering the form',
+    async () => {
+      const route = newRequestRoute(await loadRouter(false));
 
-    expect(route).toBeTruthy();
-    expect(route.element.type).toBe(Navigate);
-    expect(route.element.props.to).toBe('/requests');
-    // `replace` keeps the parked URL out of history, so Back does not bounce
-    // the operator straight into another redirect.
-    expect(route.element.props.replace).toBe(true);
-  }, ROUTER_LOAD_TIMEOUT_MS);
+      expect(route).toBeTruthy();
+      expect(route.element.type).toBe(Navigate);
+      expect(route.element.props.to).toBe('/requests');
+      // `replace` keeps the parked URL out of history, so Back does not bounce
+      // the operator straight into another redirect.
+      expect(route.element.props.replace).toBe(true);
+    },
+    ROUTER_LOAD_TIMEOUT_MS,
+  );
 });
 
 describe('New request — restored (flag on)', () => {
@@ -113,12 +117,16 @@ describe('New request — restored (flag on)', () => {
     expect(screen.getByRole('button', { name: 'New request' })).toBeTruthy();
   });
 
-  it('routes /requests/new to the real screen again', async () => {
-    const route = newRequestRoute(await loadRouter(true));
+  it(
+    'routes /requests/new to the real screen again',
+    async () => {
+      const route = newRequestRoute(await loadRouter(true));
 
-    expect(route.element.type).not.toBe(Navigate);
-    // Named rather than compared by identity: `resetModules` means the imported
-    // NewRequest here would be a different module instance than the router's.
-    expect(route.element.type.name).toBe('NewRequest');
-  }, ROUTER_LOAD_TIMEOUT_MS);
+      expect(route.element.type).not.toBe(Navigate);
+      // Named rather than compared by identity: `resetModules` means the imported
+      // NewRequest here would be a different module instance than the router's.
+      expect(route.element.type.name).toBe('NewRequest');
+    },
+    ROUTER_LOAD_TIMEOUT_MS,
+  );
 });

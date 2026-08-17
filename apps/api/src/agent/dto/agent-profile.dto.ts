@@ -34,14 +34,23 @@ export class CreateAgentProfileDto {
   @MaxLength(120)
   model!: string;
 
+  /**
+   * 🔴 `string | null`, and the null half is load-bearing rather than tidy
+   * typing: `null` is how a caller says "use the built-in instructions", which
+   * is a different statement from omitting the field (leave whatever is there).
+   * `@IsOptional()` already skips validation for null, so this only makes the
+   * OpenAPI document match what the endpoint has always accepted — the same
+   * gap `F2-7` found on the response side, on the request side.
+   */
   @ApiPropertyOptional({
     description:
-      'System prompt. Omit to use the default that lives in code. 🔴 Every change is audited (W47 R1).',
+      'System prompt. `null` or omitted uses the default that lives in code. 🔴 Every change is audited (W47 R1).',
+    nullable: true,
   })
   @IsOptional()
   @IsString()
   @MaxLength(MAX_PROMPT_LENGTH)
-  prompt?: string;
+  prompt?: string | null;
 
   @ApiPropertyOptional({
     description:
@@ -72,13 +81,16 @@ export class UpdateAgentProfileDto {
   @MaxLength(120)
   model?: string;
 
+  /** 🔴 `null` clears it back to the built-in instructions. See CreateAgentProfileDto. */
   @ApiPropertyOptional({
-    description: '🔴 Audited with before/after (W47 R1).',
+    description:
+      '🔴 Audited with before/after (W47 R1). `null` restores the built-in instructions.',
+    nullable: true,
   })
   @IsOptional()
   @IsString()
   @MaxLength(MAX_PROMPT_LENGTH)
-  prompt?: string;
+  prompt?: string | null;
 
   @ApiPropertyOptional({ description: 'false retires the profile.' })
   @IsOptional()

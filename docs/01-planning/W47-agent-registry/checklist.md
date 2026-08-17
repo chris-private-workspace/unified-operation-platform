@@ -58,7 +58,9 @@
 - [x] F5-5 ✅ DS-5(model / 時間 / requestId / 頁碼 mono;profile **名**唔係識別碼 ⇒ sans)· DS-3(一個 primary,**有 test 數住 `bg-accent` 只得一個**)· DS-8(6 個既有 tone,零新色)
 - [x] F5-6 ✅ `ui-design` 逐條答過 —— 12 條入面 **DS-11 一開始係 ❌**(prototype 冇呢個畫面)⇒ 補咗入 `design-system.md §6` owner-approved 表
 - [x] F5-7 ✅ light + dark 真 render(用 W46 committed 嗰個 `render-check.mjs`,唔再靠 session 有咩瀏覽器工具):token 真 swap(`#f5f5f6`→`#08080a` · accent `#E60027`→`#ff3355`)· **零橫向溢出**(scrollWidth = clientWidth = 1440)· 真數據
-- [x] F5-8 🔴 **H6 STOP —— textarea 未批,`prompt` 因此改唔到**。實測 `design_handoff_licenseops` 同 `apps/web/src/components/ui` **兩邊都零 textarea** ⇒ 加一個係新 primitive,要 owner 批。表入面照顯示「Built-in / Custom」,免得一個靜靜帶住自訂指示嘅 profile 喺全個產品都見唔到
+- [x] F5-8 🟢🟢 **H6 STOP 解封 —— Chris 2026-08-17 批咗 `Textarea`**,已加入 `design-system.md §2`(**本系統第一個唔係由 handoff spec 重建出嚟嘅 primitive**,所以約束寫得特別死:每個值由 `Input` 抄 · 只有三樣刻意唔同 · **`resize-y` 唔可以係 `resize`** —— 水平 resize 容許用戶由元件內部把自己拉闊過個 dialog,即打破成個 console 唯一嗰條 layout 硬規矩,而冇任何一行 code 改動可以賴)。`prompt` 而家改得,**空 = `null` 唔係 `''`**(送 `''` 會令 row 話有 prompt 而行為係內建 ⇒ 個表會為一個跑緊內建指示嘅 profile 顯示「Custom」,一個畫面同自己講唔埋)
+- [x] F5-10 ✅ **API DTO 補返 `prompt?: string | null`** —— `@IsOptional()` 一路都收 null,只係 OpenAPI 冇講 ⇒ **同 `F2-7` 揾到嗰個契約缺口同族,喺 request 側**
+- [x] F5-11 🔴 **揾到一個真 a11y 缺陷,而佢係我由 `users-panel` 抄過嚟嘅**:`Field` 個 `<label>` 同 control 冇關聯(冇 `htmlFor`)⇒ 撳 label 唔會 focus,screen reader 讀到一個冇名嘅輸入框。改成 `<label>` **包住** control。⚠️ **hint 要放喺 label 外面** —— 包住嘅 label 入面所有嘢都會變成 accessible name,而個 hint 帶住字數,即係話個 field 個名會每打一個字變一次。**兩個問題都係一條 test 揾唔到 field 先浮出嚟,唔係 review**
 - [x] F5-9 ⚠️ **render 揾到兩件唔喺本單修嘅事**:①header 個 primary 掣掉咗落標題下面 —— 根因係 `Card` 有自己一個 body wrapper,落 `className` 嘅 flex 包唔到 children,而 **`/audit` 一模一樣**(render 對比過)⇒ 既有樣式,唔單方面改 ②dark 之下 `IconButton` 個 pencil 對比偏弱(既有 primitive)
 
 ## `F6` — Gate

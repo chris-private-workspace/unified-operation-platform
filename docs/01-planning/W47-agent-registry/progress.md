@@ -144,3 +144,47 @@ write surface,只係一條 read route 搬咗位** —— 但矩陣一樣捉到,�
 - `F5` UI · `F6` gate · `F7` live —— 未開始
 - `F1-6` DEV migration(等部署)
 - `F8-3` 六條 risk 仲未入 `RISK_REGISTER.md`
+
+---
+
+## Day 1(續)— 2026-08-17 · `F5` + `F6` + `Textarea`
+
+`e6fc6ed` F5 頁面 · `8cf4bd8` checklist · 之後 Chris 批 `Textarea` ⇒ prompt 改得。
+
+**數字**:api **1410 / 94** · web **439 → 453 / 44** · lint 0 · build 0 · falsification 累計 **六次**。
+
+### 🔴🔴 今日最貴嗰個教訓:**截圖自己講大話**
+
+驗 dialog 嗰陣,兩個 theme 嘅截圖都顯示 **dialog 半透明、底下 Runs 表嘅文字疊晒上嚟,而 45% scrim 完全唔見**。睇落係一個嚴重視覺缺陷,而且會影響**全部** dialog(users-panel、kill switch…)。
+
+第一個懷疑係 Playwright `fullPage: true` 對 `position: fixed` 嘅 artifact ⇒ 改 viewport 截圖再試 —— **一模一樣**。
+
+真正解決係**去量度 DOM**:
+
+| | 實測 |
+|---|---|
+| scrim | `opacity: 1` · `rgba(0, 0, 0, 0.45)` · 零 running animation |
+| panel | `opacity: 1` · **實色** `rgb(255, 255, 255)` |
+
+⇒ **頁面完全正常,係個 capture 呃人。** 兩張截圖、兩種模式、兩個 theme 全部一致噉呃 —— 而**一致唔等於真**。
+
+📌 **形狀同 `CLAUDE.md §9` 嗰一串完全同族**:「revision `Healthy` ≠ DB 通」·「`sync-check` 返 `FOUND` ≠ 個 user 存在」·「有 listener ≠ 啱嗰個 DB」(今日先撞過)。今次係 **「截圖睇到 X」≠「真係 X」**。
+📌 而**分辨方法一直都係同一個**:唔好再睇多次同一個信號,去攞一個**唔同層**嘅證據。
+⇒ 已喺 `render-check.mjs` 頂寫低警告,連實測數字,免得下一個人再花一個鐘。
+
+### 🔴 一個真 a11y 缺陷,由一條「揾唔到 field」嘅 test 揾出嚟
+
+`Field` 個 `<label>` 同 control 冇關聯 —— 我由 `users-panel` 抄過嚟,而嗰個一路都係咁。撳 label 唔 focus,screen reader 讀到一個冇名嘅框。
+改成 `<label>` 包住 control 之後**仲要再改一次**:包住嘅 label 入面所有嘢都算入 accessible name,而個 hint 帶住即時字數 ⇒ 個 field 個名會**每打一個字變一次**。hint 要放喺 label 外面。
+📌 兩個問題都唔係 review 揾到,係 `getByLabelText` 失敗逼出嚟。
+
+### 🔴 `Textarea` —— 本系統第一個冇 handoff spec 嘅 primitive
+
+handoff 由頭到尾冇 textarea(兩邊 grep 零命中)⇒ 冇嘢可以對照,而**冇對照就係最大 drift 風險**:下一個人加嘅時候一定憑感覺揀值。
+所以約束寫得死:每個值由 `Input` 抄,只有三樣刻意唔同(高度 / 垂直 padding / 行高),而三樣都係單行 field 結構上冇嘅。
+🟢 **而且係實測唔係聲稱** —— live probe 對 `<input>` 同 `<textarea>` 逐項比:border / radius / background / color / font-size 兩個 theme 全部逐字相同。
+🔴 **`resize-y` 唔可以係 `resize`**:水平 resize 係瀏覽器預設,佢容許用戶由**元件內部**把自己拉闊過個 dialog ⇒ 打破成個 console 唯一嗰條 layout 硬規矩,而**冇任何一行 code 改動可以賴**。
+
+### ⚠️ 空 prompt 一定要送 `null`,唔可以送 `''`
+
+送 `''` 會 compile、會過 validation、run 亦會正常(server 當 blank = unset)—— 但 row 會話有 prompt,而 registry 個表就會為一個**跑緊內建指示**嘅 profile 顯示「Custom」。**一個畫面同自己講唔埋,冇任何錯誤。** falsification 驗過:改成送 `''` ⇒ 兩條 test 精準紅。

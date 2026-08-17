@@ -3,11 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import {
   useCreateAgentProfile,
   useUpdateAgentProfile,
 } from '@/hooks/mutations';
-import { validateProfileForm, type ProfileForm } from '@/lib/agent-registry';
+import {
+  PROMPT_MAX_LENGTH,
+  validateProfileForm,
+  type ProfileForm,
+} from '@/lib/agent-registry';
 import type { AgentProfile } from '@/lib/api-types';
 
 /**
@@ -17,12 +22,22 @@ import type { AgentProfile } from '@/lib/api-types';
  * historical run points at its profile to record what it ran on, and that answer
  * has to survive somebody tidying the list.
  *
- * ⚠️ **The system prompt is deliberately not editable here yet.** It needs a
- * multi-line field, and neither `design_handoff_licenseops` nor `components/ui`
- * has one — adding a primitive is an H6 decision for the design owner, not
- * something to slip into a feature. Until then a profile is a MODEL choice, and
- * the list shows whether a prompt is set so its absence is visible rather than
- * silently assumed.
+ * 🔴 The system prompt IS editable here (Chris approved the `Textarea`
+ * primitive, 2026-08-17 · design-system §2), and it is the one field on this
+ * screen that changes what the agent DOES rather than which model it does it
+ * on — RISK `R26`. Three things carry that, and none of them is this dialog:
+ * every write is audited before/after, the tool allow-list stays in the
+ * server's code, and the length is capped. What this dialog owes them is
+ * honesty about the cap and about what "empty" means.
+ */
+/**
+ * ⚠️ The `<label>` WRAPS the control rather than sitting beside it.
+ *
+ * The version copied from `users-panel` has them as siblings with no `htmlFor`,
+ * which means the two are not associated: clicking the label does not focus the
+ * field, and a screen reader announces an unlabelled box. Wrapping is the
+ * smallest fix that needs no id plumbing — and the defect was found by a test
+ * failing to locate a field by its label, not by review.
  */
 function Field({
   label,
@@ -35,8 +50,17 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-[6px]">
-      <label className="text-[12px] text-fg-muted">{label}</label>
-      {children}
+      {/*
+        ⚠️ The hint sits OUTSIDE the label on purpose. Everything inside a
+        wrapping label becomes part of the control's accessible name, so a hint
+        in here would have a screen reader announce the field as
+        "System prompt 0 of 8000 characters. Replaces the built-in…" — and the
+        character count changes on every keystroke.
+      */}
+      <label className="flex flex-col gap-[6px]">
+        <span className="text-[12px] text-fg-muted">{label}</span>
+        {children}
+      </label>
       {hint && <span className="text-[11.5px] text-fg-subtle">{hint}</span>}
     </div>
   );
@@ -75,18 +99,35 @@ export function ProfileDialog({
     const onError = (e: unknown) =>
       setFailed(e instanceof Error ? e.message : 'Could not save the profile');
 
+    /**
+     * 🔴 An empty box means "use the built-in instructions", and the only way
+     * to say that is `null`.
+     *
+     * Sending `''` would store an empty prompt, and the server treats a blank
+     * prompt as unset anyway — so the row would say one thing while behaving as
+     * another, and the list here would show "Custom" for a profile running the
+     * built-in instructions. Trimmed at the ends only: whitespace INSIDE a
+     * prompt is the author's paragraphing, not noise.
+     */
+    const prompt = form.prompt.trim() ? form.prompt.trim() : null;
+
     if (profile) {
       update.mutate(
         {
           id: profile.id,
-          body: { name: form.name.trim(), model: form.model.trim(), active },
+          body: {
+            name: form.name.trim(),
+            model: form.model.trim(),
+            prompt,
+            active,
+          },
         },
         { onSuccess: onClose, onError },
       );
       return;
     }
     create.mutate(
-      { name: form.name.trim(), model: form.model.trim() },
+      { name: form.name.trim(), model: form.model.trim(), prompt },
       { onSuccess: onClose, onError },
     );
   };
@@ -129,6 +170,30 @@ export function ProfileDialog({
             value={form.model}
             placeholder="gpt-5.6-luna"
             onChange={(e) => set({ model: e.target.value })}
+          />
+        </Field>
+
+        <Field
+          label="System prompt"
+          hint={
+            form.prompt.trim()
+              ? `${form.prompt.length} of ${PROMPT_MAX_LENGTH} characters. Replaces the built-in instructions entirely.`
+              : 'Leave empty to use the built-in instructions.'
+          }
+        >
+          {/*
+            🔴 The hint says REPLACES, not "adds to", because that is what the
+            server does. Appending would be the safer-sounding design and is the
+            wrong one: two sets of instructions that disagree produce behaviour
+            neither author predicted, and an admin reading their own prompt here
+            would have no way to know what else sits in front of it.
+          */}
+          <Textarea
+            aria-label="System prompt"
+            value={form.prompt}
+            placeholder="Leave empty to use the built-in instructions."
+            maxLength={PROMPT_MAX_LENGTH}
+            onChange={(e) => set({ prompt: e.target.value })}
           />
         </Field>
 

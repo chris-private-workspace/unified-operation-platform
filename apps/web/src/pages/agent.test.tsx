@@ -285,4 +285,136 @@ describe('Agent registry (W47 F5)', () => {
       within(dialog).getByRole('button', { name: 'Create profile' }),
     ).toBeDisabled();
   });
+
+  // ── the system prompt (W47 F5-8 — Textarea approved 2026-08-17) ──
+
+  /**
+   * 🔴 An empty box means "use the built-in instructions", and the ONLY way to
+   * say that on the wire is `null`.
+   *
+   * Sending `''` is the version that compiles, passes validation, and is
+   * wrong in a way nothing surfaces: the server treats a blank prompt as unset,
+   * so the run behaves correctly — while the row says a prompt is set and this
+   * very table then shows "Custom" for a profile running the built-in
+   * instructions. A screen disagreeing with itself, with no error anywhere.
+   */
+  it('sends null rather than an empty string when the prompt is left blank', () => {
+    const mutate = vi.fn();
+    vi.mocked(useCreateAgentProfile).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateAgentProfile>);
+
+    render(<Agent />);
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Name'), {
+      target: { value: 'fast' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Model'), {
+      target: { value: 'gpt-x' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Create profile' }),
+    );
+
+    expect(mutate).toHaveBeenCalledWith(
+      { name: 'fast', model: 'gpt-x', prompt: null },
+      expect.anything(),
+    );
+  });
+
+  /**
+   * ⚠️ Trimmed at the ENDS only. Whitespace inside a prompt is the author's
+   * paragraphing — a prompt is instructions somebody wrote, and collapsing its
+   * line breaks would silently rewrite what the agent is told.
+   */
+  it('keeps the whitespace inside a prompt while trimming its ends', () => {
+    const mutate = vi.fn();
+    vi.mocked(useCreateAgentProfile).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateAgentProfile>);
+
+    render(<Agent />);
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Name'), {
+      target: { value: 'strict' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Model'), {
+      target: { value: 'gpt-x' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('System prompt'), {
+      target: { value: '  Rule one.\n\nRule two.  ' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Create profile' }),
+    );
+
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'Rule one.\n\nRule two.' }),
+      expect.anything(),
+    );
+  });
+
+  /**
+   * 🔴 Clearing an existing prompt has to REACH the server as `null`.
+   *
+   * The plausible bug is a dialog that only sends fields it considers "changed"
+   * and treats empty as nothing to send — so the admin watches the box empty,
+   * saves, and the old prompt is still what runs. `R26`'s whole point is that
+   * this column is the one place behaviour can be changed at runtime; a change
+   * that silently does not apply is worse than one that is refused.
+   */
+  it('clears an existing prompt back to the built-in instructions', () => {
+    const mutate = vi.fn();
+    vi.mocked(useUpdateAgentProfile).mockReturnValue({
+      mutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateAgentProfile>);
+    vi.mocked(useAgentProfiles).mockReturnValue(
+      query([PROFILE({ prompt: 'Only Power BI.' })]) as ReturnType<
+        typeof useAgentProfiles
+      >,
+    );
+
+    render(<Agent />);
+    fireEvent.click(screen.getByRole('button', { name: /^Edit / }));
+
+    const dialog = screen.getByRole('dialog');
+    // The existing prompt is loaded, not silently dropped.
+    expect(within(dialog).getByLabelText('System prompt')).toHaveValue(
+      'Only Power BI.',
+    );
+
+    fireEvent.change(within(dialog).getByLabelText('System prompt'), {
+      target: { value: '' },
+    });
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Save changes' }),
+    );
+
+    expect(mutate).toHaveBeenCalledWith(
+      { id: 'prof-1', body: expect.objectContaining({ prompt: null }) },
+      expect.anything(),
+    );
+  });
+
+  /**
+   * ⚠️ The cap is enforced at three layers (this field, `validateProfileForm`,
+   * and the server's own check). This asserts the one a person actually meets:
+   * a field that stops accepting input beats a 400 after they have typed 12,000
+   * characters they cannot get back.
+   */
+  it('caps the prompt at the length the server will store', () => {
+    render(<Agent />);
+    fireEvent.click(screen.getByRole('button', { name: 'New profile' }));
+
+    expect(
+      screen.getByRole('dialog').querySelector('textarea'),
+    ).toHaveAttribute('maxlength', '8000');
+  });
 });
