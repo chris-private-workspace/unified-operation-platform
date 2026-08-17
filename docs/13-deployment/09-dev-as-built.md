@@ -514,6 +514,58 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-17 · 部署 #9(`dev-45ad525`)— **W46 agent runtime 上機 + DEV 第一次有 Redis**
+
+**點解要有呢次部署**:W46 `agent-runtime` 2026-08-17 經 PR #114 merge 落 main(tip `45ad525`),而 W46 淨低兩條 acceptance(`A1` DEV 半邊 · `B6` SSE 喺 DEV 真通)**結構上要部署先收得到**。
+
+#### 🔴 開工前推翻咗一個 handoff 前提:「Redis 要等 infra 開」唔成立
+
+handoff 寫住「Redis 要先喺 DEV,`docs/13-deployment/11-azure-openai-infra-request.md` 寫好晒但未發」。逐樣實測之後,**要 infra 做嘅嘢一件都冇**:
+
+| 前提 | 實測 |
+|---|---|
+| Redis 資源 | `redis-rapo-uop-dev` **`provisioningState: Succeeded`**(Redis 6.0 · Basic · SSL 6380 · `enableNonSslPort: false` · `publicNetworkAccess: Disabled`) |
+| 網絡路徑 | `pe-redis-rapo-uop-dev` `Succeeded` → **`Subnet-RCITest-D-DB`** —— **同 `pe-pgsql-…` 同一個 subnet**,而 PG 嗰條由 2026-08-06 起跑過 19 個 migration |
+| Access key | 部署 SP(`d2f094a3-…`,RG Contributor)**攞得到**(只驗存在性,值從未印出) |
+
+⇒ 缺嘅唔係資源,係 **connection string 冇配落 container app**,而嗰個係改 params 一個 parameter + 部署腳本兩行嘅事。
+
+📌 **同 W44 `B2` 同一形狀** —— 當時判斷「PG private,我哋連唔到 data-plane,所以建唔到 database」,而實際上建 database 係 **management plane** 操作,SP 一直做得到,問題白白掛咗一輪喺 infra 清單上。**「要人幫手」呢個判斷本身要有實測撐,唔可以由「個資源睇落唔喺我哋手」推出嚟。**
+
+#### 🔴 配 Redis 兩個會靜靜失敗嘅位
+
+1. **scheme 必須 `rediss://`(兩個 s)** —— `agentRedisConnection()`(`apps/api/src/agent/agent-run.queue.ts:110-121`)只傳 `{ url, skipWaitingForReady }`,**完全冇 TLS option**,TLS 純粹靠 URL scheme 決定;而 DEV Redis 係 6380 TLS-only。⚠️ **`.env.example` 個 default 正正係 `redis://`** ⇒ 照抄就係「配咗、部署咗、睇落 OK、一撳 agent 照樣 503」。
+2. **key 必須 percent-encode** —— Azure Redis key 係 base64,含 `+` `/` `=`。實測今次個 key **44 → 46 字元**(一個 `=` 變 `%3D`)。同 W44 `F3-2`(PG 密碼個 `$` 同 `?` 靜靜截斷 credential)同族。
+
+#### 部署本身
+
+- image `dev-45ad525` 兩個 build + 真 push(api `sha256:3eca2aa8…` / web `sha256:20db4a6c…`);build host 出口 IP 實測 `52.187.129.166`(Azure 段,唔經公司 proxy)
+- `patch-deploy-dev.ps1` raw ARM PATCH,兩個都 `exit 0`;dry-run sanity:api secrets **9 → 10** · env **25 → 26** · `has environmentId: False` · web `sends external/customDomains: False`
+- api revision `--0000011` `RunningAtMaxScale`(舊 `--0000010` `Deprovisioning`)· web `--0000008`
+
+#### 驗證 —— 三個 migration 各自有獨立佐證,唔靠 migrate summary
+
+container log 原文:`25 migrations found` → `Applying migration 20260815030000_w46_agent_runtime` / `…_w46_agent_connector` / `…_w46_agent_run_actor` → `All migrations have been successfully applied.` → `Seeded 24 OpCos + admin + RHK OPCO_IT user.` → `Nest application successfully started`。
+
+🔴 **但 summary 講嘅係「跑咗」唔係「跑出咗嘢」,而 `docker-entrypoint.sh` 令失敗 NON-FATAL** ⇒ 三個各自再驗一次:
+
+| Migration | 獨立 runtime 佐證 |
+|---|---|
+| `w46_agent_runtime` | `GET /api/agent/runs?requestId=…` **200**,run row 讀得返 ⇒ `AgentRun` 表真存在 |
+| `w46_agent_connector` | `GET /api/admin/integrations` 回應帶 `"column": "agentRuntime"` / `"agentModel"` |
+| `w46_agent_run_actor` | run 回應個 **`startedById` 有值** |
+
+**`B6`(SSE)**:`POST /api/agent/runs` → **201** `{"runId":"cmswylt7c…","status":"running"}`(⇒ Redis 通,job 真 enqueue);`GET /api/agent/runs/{id}/events` → **HTTP 200** · `Content-Type: text/event-stream` · 真收到 `id: 1` + `data: {"runId":"…","type":"changed"}` ⇒ **nginx / ACA ingress / api 三層都通**。
+
+⚠️ **誠實界線**:嗰個 run 最後 `status: failed`,因為 **DEV 側冇配 `AZURE_OPENAI_*`**。所以收到嘅係「**SSE 管道通、event 推得到 client**」,**唔係**「run 由 `running` 行到 `completed` 全程 SSE 推送」。
+
+#### ⚠️ 順帶揪到嘅兩件事
+
+1. **`GET /agent/runs` 缺 `requestId` 會 500 唔係 400** —— OpenAPI 標 `required: true`,但 runtime 冇 enforce,直接落到 `prisma.request.findUnique({ where: { id: undefined } })` ⇒ `PrismaClientValidationError` → 500。1362 條 test 全綠冇捉到。
+2. **`N8N_OUTBOUND_WEBHOOK_KEY` 係 `getOrThrow` 但唔喺 DEV 嘅 env 入面** —— 今日冇事,因為 `REQUEST_SUBMISSION_PROVIDER=direct` 令個 provider 唔會被建。但 BUG-011 個 Integrations panel 就係畀 operator 喺 UI 轉 provider 去 n8n 嘅。未深挖,未開單。
+
+---
+
 ### 2026-08-15 · 部署 #8(`dev-4bbbe0f`)— **追返 CH-030 / ADR-0035**
 
 **點解要有呢次部署**:CH-030 喺 2026-08-14 merge(PR #104 → #105 → #106),DEV 仍然跑 `dev-2a68f8d` ⇒ 落後一個 CH。

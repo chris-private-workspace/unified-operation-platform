@@ -86,6 +86,19 @@ $apiBody = @{
         # ADR-0028 - the SSO client secret. This is the ONE secret Entra SSO
         # needs, and it never leaves the server: the browser holds no token.
         @{ name = 'entra-client-secret';          value = $p.entraClientSecret.value }
+        # W46 / ADR-0039 - BullMQ queue behind POST /agent/runs. Held as a
+        # secret because the URL carries the Redis access key in its userinfo.
+        #
+        # Two things this URL must get right, both of which fail SILENTLY:
+        #   1. scheme MUST be rediss:// (two s). agentRedisConnection() passes
+        #      no TLS option at all - TLS is decided purely by the scheme
+        #      (agent-run.queue.ts:110-121) - and DEV Redis is 6380 TLS-only
+        #      with enableNonSslPort=false. .env.example defaults to redis://,
+        #      so copying it is the easy way to get "configured but unreachable".
+        #   2. the key MUST be percent-encoded. Azure Redis keys are base64 and
+        #      contain + / = ; an unescaped / truncates the credential exactly
+        #      the way the PG password's $ and ? did (W44 F3-2).
+        @{ name = 'redis-url';                    value = $p.redisUrl.value }
       )
     }
     template = @{
@@ -132,6 +145,11 @@ $apiBody = @{
           @{ name = 'INTAKE_API_KEY';               secretRef = 'intake-api-key' }
           @{ name = 'AUTH_JWT_SECRET';              secretRef = 'auth-jwt-secret' }
           @{ name = 'ACS_CONNECTION_STRING';        secretRef = 'acs-connection-string' }
+          # W46 - config.get with a default (redis://127.0.0.1:6379), NOT
+          # getOrThrow, so leaving this unset still boots. What it costs is not
+          # visible at boot: POST /agent/runs answers 503 "the background queue
+          # (Redis) is unreachable" and nothing else in the platform notices.
+          @{ name = 'REDIS_URL';                    secretRef = 'redis-url' }
         )
       } )
       scale = @{ minReplicas = 1; maxReplicas = 1 }
