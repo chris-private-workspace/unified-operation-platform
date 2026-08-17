@@ -1734,9 +1734,52 @@ api **1361 → 1362 / 92** · tsc **0** · lint **0**。
 📌 tsc 特意用 `--incremental false` —— 唔想為咗一次 type-check 留低一個 `tsbuildinfo`,
 然後喺下次起 stack 嗰陣變成 §9 嗰個假綠燈。
 
+### 🟢🟢 `A14` 最後三分一同日收咗 —— 而卡住佢嘅由頭到尾唔係 infra
+
+上一段收筆嗰陣寫住「要一張非 `COMPLETED` 嘅 request」。**咁就去整一張。**
+
+`zzrf-resume-req-1`(`OPEN`,`onboarding-intake`)⇒ run 去到 `awaiting_approval`
+(7 steps / 1 proposal / 兩個 GUID)⇒ **approve → run `completed`,proposals 清空**。
+
+🔴 **收貨標準係落 DB 對數,唔係睇個 HTTP 200**:
+
+| | |
+|---|---|
+| proposal | `executed` · `approvedById` **有值** · `createdLineItemIds` 兩個真 id |
+| line item | **2 條** —— `Microsoft_365_E5_(no_Teams)` / `VISIO_PLAN2_DEPT`,**逐字對返** proposal 兩個 GUID |
+| event | 2 條 `NOTE` |
+| request status | 仍然 **`OPEN`** —— 兩條 `REQUESTED`,同 `aggregateRequestStatus:65-67` 對得返 |
+
+⇒ **`A14` 全收。W46 21 條 acceptance 而家 19 條 ✅。**
+
+### 🔴 撳之前查證咗個真風險,而唔係假設佢安全
+
+approve 會行 `RequestService.addLineItem`,而**本機 Graph 同 ServiceNow 都係通嘅**(§9)——
+即係話「撳一個 approve」理論上可以真開一張 SN 單。**所以先 Read 佢實作再撳**:三個 Prisma 寫
+(line item / event / recompute),**零 outbound**。最壞情況只係本機 DB 多幾行。
+
+⚠️ 順帶由同一段 code 確認咗 `request.service.ts:117` 嗰句 409 文案**逐字**就係前一段撞到嗰句
+—— 即係話嗰個 409 唔係一個含糊嘅「唔得」,係一個查得返出處嘅拒絕。
+
+### ⚠️ agent 主動標明咗一個唔完美嘅 match
+
+Visio 嗰個提咗 `VISIO_PLAN2_DEPT`,而 reasoning 自己寫住:
+
+> the catalogue offers a **departmental variant**; this is the closest exact Plan 2 match,
+> **so it is proposed for human approval**
+
+⇒ **佢冇扮完美 match**。呢個正正係 D 側想要嘅行為 —— 一個唔肯講「我唔肯定」嘅 agent,
+先至係要人覆核嗰陣最危險嗰種。
+
+### ✅ 收工逐張表對數
+
+刪 **1 audit / 25 message / 8 step / 1 proposal / 1 run / 2 event / 2 line item / 1 request**,
+四個 count **全 0**。fixture free-text 還原**用長度對數**(`146` → `46` = backup 長度),
+`_w46_fixture_backup` 已 `DROP`(`to_regclass` 返 null)。帶真 UPN 嘅 screenshot **2 → 0**,
+全程**冇 Read 過**(H4:要刪一件嘢唔使先睇佢)。
+
 ### 🚧 留低咗嘅
 
-- **`A14` 最後三分一** —— 要一張非 `COMPLETED` 嘅 request,唔再卡 infra
 - **`A1` DEV 半邊 · `B6`** —— 仍然卡封未發嘅信(**Redis 嗰半**)
 - **`.env` 個 `AZURE_OPENAI_API_VERSION` 仲係舊值** —— 今日靠 shell env 頂住,重起就冇
 - **`ANTHROPIC_API_KEY` 已填** ⇒ `R21` 由風險變成已發生,建議清走

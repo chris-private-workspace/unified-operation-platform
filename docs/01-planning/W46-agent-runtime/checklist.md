@@ -302,7 +302,10 @@
 - [x] G-LIVE-f 🟢🟢 **approve → 409 `This request is complete…`,零副作用** —— **`F8-3` 卡上嗰句「Approving runs the platform's normal checks — they can still refuse」第一次真驗證**:個閘唔喺 agent 側,係 `RequestService.addLineItem` 本身,而佢照拒
 - [x] G-LIVE-g 🔴🔴 **而個 409 順帶揭到一個真缺陷 —— `agent-approval.service.ts` 四個決定 writer,得佢一個冇寫 `approvedById`** —— 修咗(見下)
 - [x] G-LIVE-h ✅ **UI render** —— light/dark **token 真 swap**、零橫向溢出、`STEP_LABEL` 生效(`Read the request` / `Searched the catalogue`)
-- [ ] G-LIVE-i 🚧 **`A14` 最後三分一仍然未驗:批准之後 run 真係 resume** —— 唔再卡 infra,卡**要一張非 `COMPLETED` 嘅 request**(今次張 fixture 剛好係 `COMPLETED`,而佢正正就係 `G-LIVE-f` 嗰個 409 嘅原因)⇒ **同一件事一次過證咗閘、擋咗 resume**
+- [x] G-LIVE-i 🟢🟢 **`A14` 最後三分一同日收咗 ⇒ `A14` 全收** —— 卡住嘅唔係 infra,係**要一張非 `COMPLETED` 嘅 request**(`G-LIVE-f` 嗰個 409 同呢個阻塞係同一道閘)。建咗一張 throwaway(`zzrf-resume-req-1`,`OPEN`)⇒ run `awaiting_approval`(7 steps / 1 proposal,兩個 GUID)⇒ **approve → run `completed`、proposals 清空**。🔴 **落 DB 對數而唔係睇 HTTP**:proposal `executed` + `approvedById` 有值 + `createdLineItemIds` 兩個真 id · request **2 條 line item**(`Microsoft_365_E5_(no_Teams)` / `VISIO_PLAN2_DEPT`,逐字對返 proposal 兩個 GUID)· 2 條 `NOTE` event · request 仍然 `OPEN`(兩條 `REQUESTED`,同 `aggregateRequestStatus:65-67` 對得返)
+- [x] G-LIVE-j 🟢 **撳之前查證咗個真風險,而唔係假設佢安全** —— approve 會行 `RequestService.addLineItem`,而本機 Graph / ServiceNow 都係通嘅 ⇒ **先 Read 佢實作**:三個 Prisma 寫(line item / event / recompute),**零 outbound**。⇒ 撳落去最壞情況只係本機 DB 多幾行。⚠️ 順帶由同一段 code 確認咗 `:117` 嗰句 409 文案**逐字**就係前一日撞到嗰句
+- [x] G-LIVE-k ✅ **收工逐張表對數** —— 刪 1 audit / 25 message / 8 step / 1 proposal / 1 run / 2 event / 2 line item / 1 request,四個 count **全 0**。fixture free-text 還原**用長度對數**(`146` → `46` = backup 長度),`_w46_fixture_backup` 已 `DROP`(`to_regclass` 返 null)。帶真 UPN 嘅 screenshot **2 → 0**(全程**冇 Read 過**)
+- [x] G-LIVE-l ⚠️ **agent 主動標明咗一個唔完美嘅 match** —— Visio 嗰個提咗 `VISIO_PLAN2_DEPT`,reasoning 寫住「the catalogue offers a **departmental variant**; this is the closest exact Plan 2 match, **so it is proposed for human approval**」⇒ **佢冇扮完美 match**,呢個正正係 D 側想要嘅行為
 
 ### `G-FIX` —— `approvedById` 漏寫(2026-08-17)
 

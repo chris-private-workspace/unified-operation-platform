@@ -17,13 +17,21 @@
 
 ⇒ **下面「`main` 嘅座標」嗰段仍然啱,但佢唔係你 working tree 嘅樣。**
 
-**W46 `agent-runtime` 2026-08-17 收尾** —— 21 條 acceptance **18 條 ✅**,淨低三條
-(`A1` DEV 半邊 · `A14` live 驗 · `B6` SSE 喺 DEV 真通)**全部同一個原因:要一個真環境**,
-而真環境要 infra 開 **Azure OpenAI + Redis** 兩個 resource。
-🟡 **封信寫好晒但未發**(`docs/13-deployment/11-azure-openai-infra-request.md`)——
-**幾時發係 owner 決定,冇嘢逼住**;Chris 2026-08-17 傾過:W46 code 一行都未入 `main`,
-喺呢個時候叫人開 production tenant 嘅資源,次序係反嘅。
-⚠️ **本機開發完全唔受影響** —— 本機一直有 Redis(`docker-compose.yml:23-32`),LLM 全部 mock。
+**W46 `agent-runtime` 2026-08-17 收尾** —— 21 條 acceptance **19 條 ✅**,淨低兩條
+(`A1` DEV 半邊 · `B6` SSE 喺 DEV 真通),而**兩條都係卡 Redis,唔係卡 Azure OpenAI**。
+🟢🟢 **`A14` 同日全收** —— Chris 開咗 Azure OpenAI resource,agent **第一次真跑**:
+`awaiting_approval` → **approve → `completed`**,落 DB 對數(proposal `executed` +
+`approvedById` 有值 + 2 條 line item 逐字對返兩個 GUID)。
+🔴 **批准嗰半分兩次先收齊,而第一次「失敗」嗰次先係最有價值**:撞 **409
+`This request is complete…`** ⇒ **`F8-3` 卡上嗰句「Approving runs the platform's normal
+checks — they can still refuse」第一次真驗證**(閘喺 `RequestService.addLineItem`,唔喺
+agent 側)。
+🟡 **封信仍然未發**(`docs/13-deployment/11-azure-openai-infra-request.md`)—— 但**佢而家
+淨係為 Redis 而存在**;幾時發係 owner 決定。Chris 2026-08-17 傾過:W46 code 一行都未入
+`main`,喺呢個時候叫人開 production tenant 嘅資源,次序係反嘅。
+⚠️ **本機開發完全唔受影響** —— 本機一直有 Redis(`docker-compose.yml:23-32`)。
+🔴 **本機 LLM 唔再全部 mock** —— `AZURE_OPENAI_*` 三個 env 一填就打真 Azure(缺一即 503,
+冇 default)。
 
 🔴 **一件部署前一定要知嘅事**:`main` 一 merge 咗 W46,**部署 DEV 之前 Redis 要喺度**,
 否則 `POST /agent/runs` 直接 503(`ADR-0039 F1`:個 POST 而家只 enqueue)。呢個同
