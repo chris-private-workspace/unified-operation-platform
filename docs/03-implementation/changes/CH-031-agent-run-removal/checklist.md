@@ -1,7 +1,7 @@
 ---
 change_id: CH-031
 derived_from: spec.md §6
-status: in-progress      # 🟢 2026-08-17 S0–S5 全收(A2 + E3 都真驗咗);淨低 S6 部署 + live、S7 收尾
+status: in-progress      # 🟢 2026-08-17 S0–S5 + S7 全收,PR #117 merged;🚧 淨低 S6 部署 #10 + DEV live
 ---
 
 # CH-031 — Implementation checklist
@@ -79,10 +79,16 @@ status: in-progress      # 🟢 2026-08-17 S0–S5 全收(A2 + E3 都真驗咗);
 - [ ] **S6-2** DEV 兩個測試 run hide 走;驗 **request detail 唔再見到** **兼且** `GET /agent/runs/:id` **仍然 200** → 收 `G1`
 - [ ] **S6-3** 落 DB / 落 API 對數,唔係睇 HTTP 200 → 收 `G2`
 
+## S6 — 部署 + live
+
+- [ ] **S6-1** 🚧 部署 #10 上 DEV(migration 會跟住跑)→ 收 `A2` DEV 半
+- [ ] **S6-2** 🚧 DEV 兩個測試 run hide 走;驗 **request detail 唔再見到** **兼且** `GET /agent/runs/:id` **仍然 200** → 收 `G1`
+- [ ] **S6-3** 🚧 落 DB / 落 API 對數,唔係睇 HTTP 200 → 收 `G2`
+
 ## S7 — 收尾
 
-- [ ] **S7-1** `progress.md` 寫 Day-N(R2)
-- [ ] **S7-2** `spec.md §6` **逐條搵返證據**勾(唔靠記憶)
-- [ ] **S7-3** `BACKLOG.md` CH-031 行更新;`agent-boundary-gaps` 行按實際結果調整(R7)
-- [ ] **S7-4** `CLAUDE.md §0` + `SESSION_SUMMARY.md` 掃一次(CLAUDE.md §14 硬規矩)
-- [ ] **S7-5** `RISK_REGISTER.md`:睇下 `R13` 要唔要補一句(hide 唔影響佢,但值唔值得寫落 risk 度做記錄)
+- [x] **S7-1** `progress.md` 寫咗 Day 1(R2)—— 重點寫「值得記低嘅六件事」唔係流水帳
+- [x] **S7-2** `spec.md §6` 逐條勾咗兼寫返證據;`G1`/`G2` **維持 `[ ]` + 🚧**(未做就唔勾 —— W46 教訓)
+- [x] **S7-3** `BACKLOG.md` CH-031 行更新;`agent-boundary-gaps` 維持獨立候選(R7)
+- [x] **S7-4** `CLAUDE.md §0` + `SESSION_SUMMARY.md` 掃咗(§14 硬規矩)—— 🔴 **§0 有一句真係變咗假**:「平台今日冇任何路徑刪一個 agent run … 加 `DELETE` 屬 H1,**未開單**」,已改寫兼講明**加嘅唔係 `DELETE`**;順手修 `ADR 到 0039` → `0040`、test 數 `1362/439` → `1381/450`
+- [x] **S7-5** `RISK_REGISTER.md` 睇過 —— **`R13` 唔使改**。理由值得寫低:本單**冇加新 risk 亦冇減低 R13**,佢做嘅係**令 R13 唔會被新功能削弱**(`D4` 正交性)。把「我哋新加嘅嘢冇整壞佢」寫入 risk register 會**溝淡**登記簿 —— 嗰度應該登真風險,唔係登「冇發生嘅風險」。呢個 claim 嘅住處係 `ADR-0040 D4` + falsification test,唔係 RISK
