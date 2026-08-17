@@ -514,6 +514,61 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-17 · 部署 #9b(同一個 image `dev-45ad525`)— **配 Azure OpenAI ⇒ agent 喺 DEV 第一次真行到底**
+
+**冇重 build**,只係 env + secret 改動 ⇒ 同一個 image,新 revision `--0000012`。
+
+#### 點解要有呢一步
+
+部署 #9 之後 `B6` 收咗,但個 run 最後 `failed` —— 因為 DEV 冇配 `AZURE_OPENAI_*`。三個 key 全部係 `config.get` + lazy 503(`openai-agents.provider.ts:102-121`),所以**唔會令 container boot 唔起**,只會令「一開 run 就 503」。
+
+#### 值由邊度嚟(⚠️ 呢個本身係一個發現)
+
+🔴 **`rcitest` subscription 冇任何 Azure OpenAI resource**(`az cognitiveservices account list` → `[]`,而 `az account list --all` 只有一個 sub)⇒ **部署 SP 睇唔到 Chris 開嗰個**。值最後喺 **W46 worktree 嗰份 `apps/api/.env`** 攞到(`orca/workspaces/…/ai-agent/apps/api/.env`)。
+
+⚠️ **主 worktree 嗰份 `.env` 冇呢啲 key** —— 28 個 key 入面一個 `AZURE_OPENAI_*` / `ANTHROPIC_*` 都冇。**兩個 worktree 嘅 `.env` 內容唔同**,凡係「`.env` 入面有 X」嘅講法都要講明係邊一份。
+
+#### 配咗乜
+
+| Env | 形式 | 值 |
+|---|---|---|
+| `AZURE_OPENAI_ENDPOINT` | plain | 由 W46 `.env` 搬(59 字元) |
+| `AZURE_OPENAI_API_KEY` | **secretRef** `azure-openai-api-key` | 由 W46 `.env` 搬(84 字元) |
+| `AZURE_OPENAI_API_VERSION` | plain | **`2025-03-01-preview`** —— **刻意唔照抄 `.env`**(嗰度係 `2024-12-01-preview`,舊值,會 400) |
+| `AGENT_MODEL` | plain | `gpt-5.6-luna`(**deployment name,唔係 model id**) |
+
+🔴 **`AGENT_RUNTIME` 刻意冇配** —— 佢行 `ConnectorConfigService` **DB-first**,擺個 env fallback 落去會同 operator 喺 Integrations panel 揀嘅嘢**靜靜競爭**,而邊個贏取決於 DB 有冇 row,唔係取決於邊個「比較新」。
+
+dry-run sanity:secrets **10 → 11** · env **26 → 30** · `has environmentId: False`。
+
+#### 驗證 —— 真跑一次,唔靠讀 env
+
+「有設定」同「設定啱」係兩件事(§9 反覆記過),所以冇讀 container env 落結論,直接開一個 run:
+
+```
+POST /api/agent/runs → 201
+status    : awaiting_approval     ← 部署 #9 嗰次係 failed
+steps     : 4
+proposals : 1                     ← agent 真係出咗建議
+```
+
+⇒ **Azure OpenAI 通,agent 喺 DEV 第一次行到底。**
+
+#### 🔴 收尾:test run 清唔走,只 abort 到
+
+`/agent/runs/{id}` **冇 `DELETE`**(OpenAPI 逐個 method 查過:`get` only),而 DEV DB 係 private endpoint,operator 側連唔到 ⇒ **平台今日冇任何路徑刪一個 run**。
+
+做到嘅只有:
+
+```
+cmswz56uk…  awaiting_approval → POST abort 200 → aborted   (proposal 唔會執行)
+cmswylt7c…  failed            → POST abort 409           (已 terminal)
+```
+
+⇒ 兩個 run 都係 terminal state、冇 pending proposal,**但兩行 row 仍然留喺 DEV DB 兼且會出現喺 UI**。要真刪要麼加一個 `DELETE /agent/runs/:id`(**H1,要開單**),要麼由連得到 DB 嗰邊執行 SQL。**未開單。**
+
+---
+
 ### 2026-08-17 · 部署 #9(`dev-45ad525`)— **W46 agent runtime 上機 + DEV 第一次有 Redis**
 
 **點解要有呢次部署**:W46 `agent-runtime` 2026-08-17 經 PR #114 merge 落 main(tip `45ad525`),而 W46 淨低兩條 acceptance(`A1` DEV 半邊 · `B6` SSE 喺 DEV 真通)**結構上要部署先收得到**。

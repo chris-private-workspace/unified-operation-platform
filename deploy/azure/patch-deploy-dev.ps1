@@ -99,6 +99,12 @@ $apiBody = @{
         #      contain + / = ; an unescaped / truncates the credential exactly
         #      the way the PG password's $ and ? did (W44 F3-2).
         @{ name = 'redis-url';                    value = $p.redisUrl.value }
+        # W46 / ADR-0037 - Azure OpenAI. Only the key is a secret; endpoint,
+        # api-version and the deployment name go in as plain env below.
+        # All three are config.get with a lazy 503, NOT getOrThrow - leaving
+        # them unset boots fine and fails only when a run actually starts
+        # (openai-agents.provider.ts:102-121).
+        @{ name = 'azure-openai-api-key';         value = $p.azureOpenAiApiKey.value }
       )
     }
     template = @{
@@ -150,6 +156,15 @@ $apiBody = @{
           # visible at boot: POST /agent/runs answers 503 "the background queue
           # (Redis) is unreachable" and nothing else in the platform notices.
           @{ name = 'REDIS_URL';                    secretRef = 'redis-url' }
+          # W46 / ADR-0037 - Azure OpenAI. AGENT_MODEL is the DEPLOYMENT name,
+          # not a model id. AGENT_RUNTIME is deliberately NOT set here: it
+          # resolves DB-first through ConnectorConfigService, and setting an env
+          # fallback would quietly compete with whatever an operator picks in
+          # the Integrations panel.
+          @{ name = 'AZURE_OPENAI_ENDPOINT';        value = $p.azureOpenAiEndpoint.value }
+          @{ name = 'AZURE_OPENAI_API_VERSION';     value = $p.azureOpenAiApiVersion.value }
+          @{ name = 'AGENT_MODEL';                  value = $p.agentModel.value }
+          @{ name = 'AZURE_OPENAI_API_KEY';         secretRef = 'azure-openai-api-key' }
         )
       } )
       scale = @{ minReplicas = 1; maxReplicas = 1 }
