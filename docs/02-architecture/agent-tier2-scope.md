@@ -253,7 +253,7 @@ dock 個 chat 要靠嗰條管道,而 `B6` 今日卡「DEV 冇 Redis」+「ACA in
 | **OQ-4** | 對話要唔要 **persist**?留幾耐? | 關 `AuditLog` retention(BACKLOG `audit-retention` 一直未做)+ H4(對話會含 PII) |
 | **OQ-5** | 邊個可以**建立 / 改** agent?ADMIN only? | 關 `T2-e`,亦關 W28 個 code-derived 權限模型 |
 | **OQ-6** | Claude 側要唔要**真打網絡**? | `ADR-0038 D3` 今日明文禁,而 `G4-pre-3` 講咗真打之前要重新答 `OQ-7`(inference 側 PII) |
-| 🆕 **OQ-8** | **model 升級係「改一個現有 agent」定「建一個新 agent」?** | 🔴 **由 `OQ-1` 個答案直接引爆,見 §5.4** |
+| ~~**OQ-8**~~ | ~~model 升級係「改一個現有 agent」定「建一個新 agent」?~~ | 🟢 **2026-08-17 揀咗 §5.4 個 B ⇒ 問題消失**(升級 = 加一個 `AgentProfile`,principal 一個字唔郁) |
 
 ### 5.4 🔴 `OQ-1` 個答案同 `AgentPrincipal` 自己個註釋有直接張力
 
@@ -275,9 +275,13 @@ dock 個 chat 要靠嗰條管道,而 `B6` 今日卡「DEV 冇 Redis」+「ACA in
 | **B** | `AgentPrincipal` 維持 capability,另開 `AgentProfile`(model + prompt)掛落佢 | 兩層,但 `who did this` 穩定,而歷史 run 記得返當時用邊個 profile |
 | **C** | model / prompt 落 `ConnectorConfig`(跟原設計) | 一次得一個,**答唔到「多個」**⇒ 唔符合 `OQ-1` |
 
-⇒ **C 出局。A vs B 係 `T2-a` 開工前要答嘅第一條題**,而 **B 睇落更貼近現有設計嘅意圖**
-(佢保住咗「audit 歸屬唔應該隨 model 升級而變」呢個原意,同時滿足「多個」)。
-**但呢個要 owner 拍板,唔係本文件決定。**
+⇒ **C 出局。A vs B 係 `T2-a` 開工前要答嘅第一條題。**
+
+🟢🟢 **Chris 2026-08-17 揀咗 B ⇒ `OQ-8` 一併答咗。** 理由:B **把兩個問題分開答** ——
+「邊個做咗呢件事」= `AgentPrincipal`(唔隨 model 升級而變),「當時用咩跑」=
+`AgentProfile`(`AgentRun.profileId` 查得返)。⇒ **`AgentPrincipal` 原註釋一個字唔使改,
+亦唔使為咗「model 升級算改現有定建新」揀一個有代價嘅答案** —— 嗰條問題喺 B 之下唔存在
+(升級 = 加一個 profile)。落地形狀見 `docs/01-planning/W47-agent-registry/plan.md` `F1`。
 
 ---
 
@@ -309,7 +313,12 @@ dock 個 chat 要靠嗰條管道,而 `B6` 今日卡「DEV 冇 Redis」+「ACA in
 🟢 **Chris 2026-08-17 批咗方向同次序** —— `OQ-1`/`OQ-2`/`OQ-3` 答齊,兼且拍板
 **先把 W46 落地,再開 Tier 2**(§7 建議獲接納)。
 
-### 8.1 而家做(W46 落地)
+> 🟢🟢 **2026-08-17 更新:§8.1 全部收晒,而家喺 §8.2。**
+> W46 merge 咗(PR #114)· 部署 #9 + #9b 上咗 DEV · **`A1` + `B6` 都收咗**
+> ⇒ **21/21 全收**。`T2-a` 個 phase folder 開咗:`docs/01-planning/W47-agent-registry/`
+> (`status: draft`,等四條 OQ 答完先 `active`)。
+
+### 8.1 ~~而家做~~ ✅ 做完(W46 落地)
 
 1. **merge W46 落 `main`**
 2. **部署 DEV** —— ⚠️ 部署之前 **Redis 要喺度**,否則 `POST /agent/runs` 直接 503
