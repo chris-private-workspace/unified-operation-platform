@@ -341,7 +341,9 @@ export function useAgentRun(requestId: string | undefined) {
   return useQuery({
     queryKey: ['agent', 'runs', requestId],
     queryFn: () =>
-      apiGet<AgentRun | null>(`/agent/runs?requestId=${requestId}`),
+      // W47 F4 — moved from `/agent/runs?requestId=`, which now means "every
+      // run" and returns a paged summary rather than one full run.
+      apiGet<AgentRun | null>(`/agent/runs/latest?requestId=${requestId}`),
     enabled: Boolean(requestId),
   });
 }

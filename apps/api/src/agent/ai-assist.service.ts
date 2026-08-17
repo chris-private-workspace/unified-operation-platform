@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, type AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { assertOpcoScope } from '../auth/opco-scope';
+import { assertOpcoScope, scopeWhere } from '../auth/opco-scope';
 import { scrubPii } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
@@ -542,6 +542,93 @@ export class AiAssistService {
     if (!run) throw new NotFoundException('Agent run not found');
     if (run.request) assertOpcoScope(user, run.request.opcoId);
     return run;
+  }
+
+  /**
+   * Every run, newest first — W47 F4.
+   *
+   * 🔴 **Scope follows `getRun`, not the run's starter, and the plan said the
+   * other thing.** `F4-2` reads "OpCo scope comes from the starter"; that
+   * sentence is about `OQ-2` (what an agent may SEE while it runs, which is
+   * capped by whoever started it) and applying it to VISIBILITY would put the
+   * two endpoints in disagreement: `getRun` lets an OPCO_IT operator open a run
+   * a colleague started on a request they both own, so filtering this list by
+   * starter would hide rows the very next click can open. Worse in the other
+   * direction: a REGIONAL's runs are unscoped, so a starter-based filter would
+   * either leak them to everyone or hide them from everyone.
+   *
+   * So: a run is visible if its REQUEST is (`request: scopeWhere(user)`), which
+   * is `getRun`'s rule expressed as a query instead of an assertion. Logged as a
+   * plan deviation.
+   *
+   * 🔴 `runState` is absent from the select for the reason `getRun` states at
+   * length: it is the SDK's serialised history, unscrubbed. A list is the
+   * easiest place for that to escape, because nobody reads a list response.
+   */
+  async listRuns(
+    user: AppUser,
+    filters: {
+      status?: string;
+      profileId?: string;
+      since?: Date;
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ) {
+    /**
+     * ⚠️ A ceiling, not a suggestion — `R5`.
+     *
+     * `take: 1000` with a `limit` parameter that callers may exceed is how a
+     * list "supports pagination" while still loading everything, and the day
+     * that hurts is the day there are enough runs for it to matter, by which
+     * point the screen is already built on it.
+     */
+    const limit = Math.min(Math.max(filters.limit ?? 25, 1), 100);
+
+    const rows = await this.prisma.agentRun.findMany({
+      where: {
+        // 🔴 `is:` — a nullable relation. `AgentRun.requestId` is optional, and
+        // a bare `request: { opcoId }` would silently drop every run that has no
+        // request at all rather than including it. For a SCOPED user dropping
+        // them is right (an unattached run belongs to no OpCo, so it is not
+        // theirs to see); for an unscoped one `scopeWhere` returns `{}` and this
+        // whole clause disappears, which is why it is safe to write once.
+        ...(user.opcoScopeId ? { request: { is: scopeWhere(user) } } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.profileId ? { profileId: filters.profileId } : {}),
+        ...(filters.since ? { startedAt: { gte: filters.since } } : {}),
+      },
+      select: {
+        id: true,
+        requestId: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        startedById: true,
+        profileId: true,
+        profile: { select: { id: true, name: true, model: true } },
+      },
+      // `id` breaks ties. Two runs can share a `startedAt` to the millisecond,
+      // and an unstable order makes cursor paging skip or repeat rows.
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
+    });
+
+    /**
+     * One extra row is fetched purely to answer "is there more?" without a
+     * second count query — and it is dropped here rather than returned, so
+     * `items.length` always means what it says.
+     */
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+
+    return {
+      items,
+      // null, not undefined: "there is no next page" is an answer the client
+      // should be able to read, not a missing field it has to interpret.
+      nextCursor: hasMore ? (items.at(-1)?.id ?? null) : null,
+    };
   }
 
   /**

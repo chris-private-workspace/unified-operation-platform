@@ -90,6 +90,7 @@ describe('AiAssistService', () => {
     agentRun: {
       findFirst: jest.Mock;
       findUnique: jest.Mock;
+      findMany: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
     };
@@ -140,6 +141,7 @@ describe('AiAssistService', () => {
       agentRun: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
@@ -1497,6 +1499,159 @@ describe('AiAssistService', () => {
       expect(setup.model).toBe('retired-model');
       // The registry is not consulted at all on this path — the row is.
       expect(profiles.resolveForRun).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * W47 F4 — the global run list.
+   *
+   * The structural gap W46 left: runs were only ever reachable one request at a
+   * time, so "what has this agent been doing" had no answer that did not start
+   * with knowing which request to look at.
+   */
+  describe('F4 — listing runs', () => {
+    const listArg = () =>
+      prisma.agentRun.findMany.mock.calls.at(-1)?.[0] as {
+        where: Record<string, unknown>;
+        select: Record<string, unknown>;
+        take: number;
+        cursor?: { id: string };
+        skip?: number;
+        orderBy: unknown;
+      };
+
+    beforeEach(() => {
+      prisma.agentRun.findMany.mockResolvedValue([]);
+    });
+
+    /**
+     * 🔴 F4-4 — `runState` may not reach the wire, and a LIST is the easiest
+     * place for that to go wrong: nobody reads a list response, so an `include`
+     * here would hand out the model's unscrubbed history for every run at once
+     * and look like nothing at all.
+     */
+    it('never selects runState', async () => {
+      await service.listRuns(admin);
+
+      expect(listArg().select.runState).toBeFalsy();
+      expect(listArg().select).toBeDefined();
+    });
+
+    /**
+     * 🔴 F4-2, and NOT what the plan said.
+     *
+     * The plan's wording was "scope comes from the starter". That belongs to
+     * `OQ-2` (what an agent may see WHILE running); applying it to visibility
+     * would disagree with `getRun`, which scopes on the run's REQUEST — so the
+     * list would hide rows that the very next click opens successfully.
+     */
+    it('shows a scoped user only runs whose request is in their OpCo', async () => {
+      await service.listRuns(opcoIt);
+
+      expect(listArg().where.request).toEqual({ is: { opcoId: 'opco-a' } });
+    });
+
+    /**
+     * ⚠️ The other half, and it is not symmetrical: for an unscoped user the
+     * clause must be ABSENT, not `{ is: {} }`. A relation filter — even an empty
+     * one — makes Prisma require the relation to exist, which would silently
+     * drop every run that has no request from an ADMIN's list.
+     */
+    it('applies no request filter at all for an unscoped user', async () => {
+      await service.listRuns(admin);
+
+      expect(listArg().where.request).toBeUndefined();
+    });
+
+    it('filters by status, profile and start time', async () => {
+      const since = new Date('2026-08-01T00:00:00.000Z');
+
+      await service.listRuns(admin, {
+        status: 'awaiting_approval',
+        profileId: 'prof-1',
+        since,
+      });
+
+      expect(listArg().where).toMatchObject({
+        status: 'awaiting_approval',
+        profileId: 'prof-1',
+        startedAt: { gte: since },
+      });
+    });
+
+    it('leaves out the filters that were not asked for', async () => {
+      await service.listRuns(admin, { status: 'running' });
+
+      const where = listArg().where;
+      expect(where.status).toBe('running');
+      // Present-but-undefined would be the same to Prisma, but not to a reader,
+      // and `profileId: undefined` in a where clause is one refactor away from
+      // `profileId: null`, which means something entirely different.
+      expect('profileId' in where).toBe(false);
+      expect('startedAt' in where).toBe(false);
+    });
+
+    /**
+     * 🔴 `R5` — real paging, and the assertion is on `take`.
+     *
+     * "Supports pagination" is easy to claim with `take: 1000` and a `limit`
+     * nobody enforces. The ceiling is enforced twice (DTO and service) because
+     * the DTO stops being the only door the moment anything else calls this.
+     */
+    it('caps how much can be asked for at once', async () => {
+      await service.listRuns(admin, { limit: 5000 });
+
+      expect(listArg().take).toBe(101);
+    });
+
+    it('asks for one row more than requested, to know whether there is a next page', async () => {
+      await service.listRuns(admin, { limit: 10 });
+
+      expect(listArg().take).toBe(11);
+    });
+
+    it('skips the cursor row itself, so a page never repeats its predecessor’s last row', async () => {
+      await service.listRuns(admin, { cursor: 'run-7' });
+
+      expect(listArg().cursor).toEqual({ id: 'run-7' });
+      expect(listArg().skip).toBe(1);
+    });
+
+    /**
+     * ⚠️ Two runs can share `startedAt` to the millisecond — the queue starts
+     * them in bursts. Without the `id` tiebreak the order is undefined between
+     * them, and cursor paging then skips or repeats rows at page boundaries:
+     * a bug that only appears under load and never reproduces.
+     */
+    it('orders by start time with id as a tiebreak', async () => {
+      await service.listRuns(admin);
+
+      expect(listArg().orderBy).toEqual([
+        { startedAt: 'desc' },
+        { id: 'desc' },
+      ]);
+    });
+
+    it('hands back a cursor only when there really is another page', async () => {
+      prisma.agentRun.findMany.mockResolvedValue(
+        Array.from({ length: 3 }, (_, i) => ({ id: `run-${i}` })),
+      );
+
+      const page = await service.listRuns(admin, { limit: 2 });
+
+      expect(page.items).toHaveLength(2);
+      expect(page.nextCursor).toBe('run-1');
+    });
+
+    it('returns a null cursor on the last page, rather than omitting it', async () => {
+      prisma.agentRun.findMany.mockResolvedValue([{ id: 'run-0' }]);
+
+      const page = await service.listRuns(admin, { limit: 2 });
+
+      expect(page.items).toHaveLength(1);
+      // Null rather than undefined: "no next page" is an answer the client can
+      // read, not a missing field it has to guess the meaning of.
+      expect(page.nextCursor).toBeNull();
     });
   });
 });

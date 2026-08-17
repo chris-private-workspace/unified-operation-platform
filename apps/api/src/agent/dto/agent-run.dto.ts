@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsISO8601,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 /**
  * W46 F8 — what the agent screens read.
@@ -34,6 +42,51 @@ export class StartAgentRunDto {
   @IsOptional()
   @IsString()
   profileId?: string;
+}
+
+/**
+ * Query for GET /agent/runs — W47 F4.
+ *
+ * 🔴 `limit` is capped in the SERVICE as well as here. A ceiling that lives only
+ * at the HTTP edge stops being true the first time anything else calls
+ * `listRuns`, and the ceiling is the whole of `R5`'s mitigation.
+ */
+export class ListAgentRunsDto {
+  @ApiPropertyOptional({
+    description: 'running | awaiting_approval | completed | failed | aborted …',
+  })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Only runs that used this profile.' })
+  @IsOptional()
+  @IsString()
+  profileId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ISO date-time. Only runs started at or after it.',
+  })
+  @IsOptional()
+  @IsISO8601()
+  since?: string;
+
+  @ApiPropertyOptional({ description: '1–100, default 25.' })
+  @IsOptional()
+  // Query values arrive as strings; without this the validator sees '25' and
+  // `@IsInt` rejects every request that sets it.
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    description: 'The `nextCursor` from the previous page.',
+  })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
 }
 
 export class AgentStepDto {
@@ -136,4 +189,37 @@ export class AgentRunDto {
   @ApiPropertyOptional() profileId?: string | null;
   @ApiPropertyOptional({ type: AgentRunProfileDto })
   profile?: AgentRunProfileDto | null;
+}
+
+/**
+ * One row of GET /agent/runs — W47 F4.
+ *
+ * 🔴 A SEPARATE class from `AgentRunDto`, not an omission of it. Reusing the
+ * detail shape would put `steps`, `messages` and `proposals` in the OpenAPI
+ * document for a response that does not carry them — and the temptation to
+ * "just include them" is exactly how a list ends up loading every transcript on
+ * the platform to render a table.
+ */
+export class AgentRunSummaryDto {
+  @ApiProperty() id!: string;
+  @ApiPropertyOptional() requestId?: string | null;
+  @ApiProperty() status!: string;
+  @ApiProperty() startedById!: string;
+  @ApiProperty() startedAt!: Date;
+  @ApiPropertyOptional() endedAt?: Date | null;
+  @ApiPropertyOptional() profileId?: string | null;
+  @ApiPropertyOptional({ type: AgentRunProfileDto })
+  profile?: AgentRunProfileDto | null;
+}
+
+export class AgentRunListDto {
+  @ApiProperty({ type: [AgentRunSummaryDto] })
+  items!: AgentRunSummaryDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Pass as `cursor` for the next page. `null` means this is the last one.',
+    nullable: true,
+  })
+  nextCursor!: string | null;
 }

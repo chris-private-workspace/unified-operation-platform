@@ -29,6 +29,7 @@ describe('AgentRunController (F10-2e)', () => {
     const aiAssist = {
       startRun: jest.fn().mockResolvedValue({ id: 'run-1' }),
       findLatestForRequest: jest.fn().mockResolvedValue(null),
+      listRuns: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
       getRun: jest.fn(),
       abortRun: jest.fn().mockResolvedValue({ id: 'run-1' }),
     };
@@ -83,6 +84,59 @@ describe('AgentRunController (F10-2e)', () => {
       await controller.start({ requestId: 'req-1', profileId: 'prof-9' }, user);
 
       expect(aiAssist.startRun).toHaveBeenCalledWith(user, 'req-1', 'prof-9');
+    });
+
+    // ── W47 F4 — the run list ────────────────────────────────
+
+    /**
+     * 🔴 `since` arrives as a STRING and the service takes a `Date`. Somewhere
+     * has to convert, and the version that does not — handing the string
+     * straight to Prisma — does not throw: it produces a `gte` comparison
+     * against a value Prisma coerces differently, so the filter silently
+     * matches the wrong set. A list that quietly returns the wrong rows is worse
+     * than one that errors, because nothing about it looks wrong.
+     */
+    it('parses `since` into a Date before the service sees it', async () => {
+      const { controller, aiAssist } = build();
+
+      await controller.list({ since: '2026-08-01T00:00:00.000Z' }, user);
+
+      const [, filters] = aiAssist.listRuns.mock.calls[0] as [
+        unknown,
+        { since?: Date },
+      ];
+      expect(filters.since).toBeInstanceOf(Date);
+      expect(filters.since?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    });
+
+    it('passes every filter through, and undefined for the ones not given', async () => {
+      const { controller, aiAssist } = build();
+
+      await controller.list(
+        { status: 'running', profileId: 'prof-1', limit: 10, cursor: 'run-5' },
+        user,
+      );
+
+      expect(aiAssist.listRuns).toHaveBeenCalledWith(user, {
+        status: 'running',
+        profileId: 'prof-1',
+        since: undefined,
+        limit: 10,
+        cursor: 'run-5',
+      });
+    });
+
+    /**
+     * ⚠️ The caller is passed through, and this is the assertion that says the
+     * list is scoped at all. A `listRuns(filters)` that forgot the user would
+     * compile, run, and show every OpCo's runs to everyone.
+     */
+    it('gives the service the calling user, which is what scopes the list', async () => {
+      const { controller, aiAssist } = build();
+
+      await controller.list({}, user);
+
+      expect(aiAssist.listRuns.mock.calls[0][0]).toBe(user);
     });
 
     it('passes the query value straight through to the service', async () => {
