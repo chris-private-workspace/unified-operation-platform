@@ -82,7 +82,8 @@
 - [x] F7-1c 🟢🟢 **`OQ-C` / `R26` 第一道防線 live 驗**:`agent.profile_update` 個 `before.prompt` **616 字元** → `after.prompt` **61 字元**,而 `before`/`after` **兩邊都淨係得 `prompt` 一個 key**(`auditDiff` 真係只記變咗嗰樣,唔係成份 row)。⚠️ 再送一次**同一個值** ⇒ audit 由 1 變 1,**冇新 row**(`F2-6` 個決定:no-op edit 唔可以塞爆 `R26` 靠嗰條 query)
 - [x] F7-2 ✅ **DEV migration + 列表**(部署 #10):列表返 `{items,nextCursor}` 分頁 shape,每行有 `profileId`。🔴 **負面命中(最強嗰個)**:`GET /agent/runs?requestId=<id>` **唔再返單一 run**,top-level 冇 `id` 鍵 ⇒ 舊路真係搬咗去 `/latest`。⚠️ **但呢條收唔到 `G8`** —— DEV `/agent/profiles` 實測 **`[]`**,而 `G8` 要求嘅係開兩個只有 prompt 唔同嘅 profile 各跑一次再比對,**部署唔會幫你開 profile**
 - [x] F7-3 ✅ **守住咗** —— 全程冇用 revision status 做證據(entrypoint 令 migrate 失敗 NON-FATAL)。用嘅係「只有新 build 先出到」嘅嘢:agent route **8 → 13** 條 · OpenAPI **66,893 → 84,518 B** · web bundle 換名兼**舊 bundle 404**(排除 CDN cache)· 上面兩條 `200 唔係 500` 嘅推理
-- [ ] F7-4 🚧 **`G8` DEV 半邊仍然未做** —— 要開兩個 profile(同 model、唔同 prompt)各跑一次,比對提幾多個 SKU。**成本唔係零**:兩次真 model call + 喺 DEV 留低兩個新 run row(而部署 #10 啱啱先 hide 走舊嗰兩個)⇒ **要 Chris 話事**
+- [x] F7-4 🟢🟢 **`G8` DEV 半邊 2026-08-17 做咗** —— 同一段 text · 同一個 model `gpt-5.6-luna` · 唯一變數係 prompt:baseline → **2 個 SKU**、power-bi-only → **1 個**(reasoning 明文「ignoring the Microsoft 365 E5 request」)。⚠️ **request text 係 PATCH 落去嘅**(DEV 原本啲 text 係 `update 1 idk` 之類,分唔開會同 prompt 無關);改之前 snapshot 四個 patchable 欄,做完還原。收工兩個 run hide 咗、兩個 profile `active=false`,`/agent/runs` 返 0 items。🔴 **順帶第一次 live 命中 `R15`**:power-bi-only 提咗 `c1d032e0-…`,**101 個 catalog row 一個都對唔上**。**唔係缺陷** —— proposal payload 明文設計成唔驗(`ai-assist.service.ts:1031-1034`),兩道閘住喺 tool body 而 tool body approve 之後先行 ⇒ 入得到 proposal,入唔到 line item。**但操作員 approve 之前睇到嗰個就係未驗版本,而佢冇信號** ⇒ product question,已寫入 `RISK_REGISTER` R15,**未開單**
+- [ ] F7-5 🚧 **原本嗰條(保留做記錄)**:`G8` DEV 半邊仍然未做 —— 要開兩個 profile(同 model、唔同 prompt)各跑一次,比對提幾多個 SKU。**成本唔係零**:兩次真 model call + 喺 DEV 留低兩個新 run row(而部署 #10 啱啱先 hide 走舊嗰兩個)⇒ **要 Chris 話事**
 
 ## `F8` — 收尾
 
