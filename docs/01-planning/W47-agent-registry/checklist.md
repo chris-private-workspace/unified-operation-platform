@@ -77,6 +77,6 @@
 
 - [ ] F8-1 `plan.md` acceptance 逐條掃(**W46 教訓:呢張表由頭到尾冇更新過**)
 - [ ] F8-2 progress retro
-- [ ] F8-3 新 risk 入 `RISK_REGISTER.md`(特別係 `R1` prompt-in-DB)
+- [x] F8-3 ✅ 六條入咗 `RISK_REGISTER.md` 做 **`R26`–`R31`**(2026-08-17,提早做咗唔等收尾)。`R6`(邊個改 profile)已答 ⇒ 冇入,佢係 plan OQ 唔係 risk。🔴 **`R28` 寫嗰陣先睇清一件事:`onDelete: Restrict` 擋到「刪」但擋唔到「改」** —— profile 係 mutable,所以 `AgentRun.profileId` 答到「用邊個 profile」但答唔到「嗰一刻佢係咩 model」。要真答就要喺 `AgentRun` 存 model snapshot = schema 改動(**H1,未開單**)
 - [ ] F8-4 `BACKLOG.md` 同步(R7)
 - [ ] F8-5 `CLAUDE.md §0` + `SESSION_SUMMARY.md` doc-sync(§14:**佢哋過時 = 下個 session 用錯前提開始**)
