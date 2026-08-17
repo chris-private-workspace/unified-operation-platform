@@ -20,8 +20,11 @@ import { useAgentRunEvents } from '@/hooks/agent-run-events';
 import {
   useAbortAgentRun,
   useDecideProposal,
+  useHideAgentRun,
   useStartAgentRun,
 } from '@/hooks/mutations';
+import { useCurrentUser } from '@/lib/auth/use-current-user';
+import { canHideAgentRun } from '@/lib/roles';
 import { STEP_LABEL } from './ai-assist-labels';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -206,16 +209,28 @@ export function AiAssistCard({ requestId }: AiAssistCardProps) {
   useAgentRunEvents(requestId, run);
   const start = useStartAgentRun(requestId);
   const abort = useAbortAgentRun(requestId);
+  const hide = useHideAgentRun(requestId);
   const decide = useDecideProposal(requestId);
+  const { role } = useCurrentUser();
 
   const [showTranscript, setShowTranscript] = useState(false);
   const [rejecting, setRejecting] = useState<AgentProposal | null>(null);
   const [reason, setReason] = useState('');
 
-  const pending = start.isPending || abort.isPending || decide.isPending;
+  const pending =
+    start.isPending || abort.isPending || hide.isPending || decide.isPending;
   const open =
     run != null &&
     ['running', 'awaiting_approval', 'approved'].includes(run.status);
+  /**
+   * CH-031 / ADR-0040 — offered only once the run is over, and only to ADMIN.
+   *
+   * `!open` mirrors the server's terminal-only gate (D6) rather than trusting
+   * it: a control that can only ever return 409 is worse than no control. The
+   * role check mirrors D7 the same way — the 403 is the real authority, this
+   * just avoids offering something that would refuse.
+   */
+  const mayHide = run != null && !open && canHideAgentRun(role);
   const waiting = run?.proposals.filter((p) => p.status === 'pending') ?? [];
 
   const header = (
@@ -274,13 +289,29 @@ export function AiAssistCard({ requestId }: AiAssistCardProps) {
               Stop
             </Button>
           )}
+          {/* DS-3 / H6 — ghost, like Stop next to it. This card's own action is
+              already secondary (the page's primary belongs to the request), and
+              a third control here must not outrank either. */}
+          {mayHide && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => hide.mutate(run.id)}
+            >
+              Hide
+            </Button>
+          )}
         </span>
       }
     >
       <div className="flex flex-col gap-[14px]">
-        {(start.error || abort.error || decide.error) && (
+        {(start.error || abort.error || hide.error || decide.error) && (
           <div className="rounded-lg bg-danger-soft px-[12px] py-[10px] text-[11.5px] leading-[1.45] text-danger">
-            {(start.error ?? abort.error ?? decide.error)?.message}
+            {
+              (start.error ?? abort.error ?? hide.error ?? decide.error)
+                ?.message
+            }
           </div>
         )}
 

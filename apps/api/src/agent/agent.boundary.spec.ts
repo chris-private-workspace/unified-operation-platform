@@ -232,6 +232,25 @@ describe('agent module boundary (ADR-0036 D0)', () => {
       expect(writersOf('agentMessage')).toEqual(['agent/ai-assist.service.ts']);
     });
 
+    /**
+     * 🔴 CH-031 / ADR-0040 D8 — added because this change added a writer.
+     *
+     * `AgentRun` was the one table in this group with no writer constraint,
+     * which meant a `prisma.agentRun.delete(...)` could be added anywhere and
+     * nothing would go red — and deleting a run cascades AgentStep,
+     * AgentMessage and AgentProposal away. That was a guard MISSING, not a
+     * guard permitting, and the distinction matters: nobody had decided
+     * deletion was fine, the question had simply never been asked.
+     *
+     * ⚠️ The verb list above still omits `deleteMany`, so this does not close
+     * the hole completely — `tool-registry.spec.ts` bans both. Tracked as
+     * `agent-boundary-gaps`; widening the list here would change what the three
+     * assertions above assert, which is not this change's to do.
+     */
+    it('only ai-assist.service writes AgentRun', () => {
+      expect(writersOf('agentRun')).toEqual(['agent/ai-assist.service.ts']);
+    });
+
     it('the tool registry writes nothing at all', () => {
       // F2-6, restated from the outside: a tool that could write would be able
       // to cause the side-effect its own approval exists to gate.

@@ -79,6 +79,11 @@ export class AgentRunDto {
   startedById!: string;
   @ApiProperty() startedAt!: Date;
   @ApiPropertyOptional() endedAt?: Date | null;
+  @ApiPropertyOptional({
+    description:
+      'CH-031 / ADR-0040 — set when an admin took this run out of the request card. Not a delete: steps, transcript and proposals are all still here, and this endpoint still returns the run.',
+  })
+  hiddenAt?: Date | null;
   @ApiProperty({
     type: [AgentStepDto],
     description: '🟢 Written by the PLATFORM. This is the audit truth.',

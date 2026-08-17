@@ -893,6 +893,13 @@ export interface AgentRun {
   startedById: string;
   startedAt: string;
   endedAt?: string | null;
+  /**
+   * CH-031 / ADR-0040 — an admin took this run off the request card. NOT a
+   * delete: the steps, transcript and proposals below are all still here, which
+   * is why this arrives on a run at all. `GET /agent/runs?requestId=` filters
+   * these out; `GET /agent/runs/{id}` does not.
+   */
+  hiddenAt?: string | null;
   steps: AgentStep[];
   messages: AgentMessage[];
   proposals: AgentProposal[];
