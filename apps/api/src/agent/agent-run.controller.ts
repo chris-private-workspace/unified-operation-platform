@@ -20,7 +20,12 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { AiAssistService } from './ai-assist.service';
 import { AgentRunQueue, type AgentRunChangeMessage } from './agent-run.queue';
-import { AgentRunDto, StartAgentRunDto } from './dto/agent-run.dto';
+import {
+  AgentRunDto,
+  AgentRunListDto,
+  ListAgentRunsDto,
+  StartAgentRunDto,
+} from './dto/agent-run.dto';
 
 /**
  * AI-Assist runs (W46 F8 / ADR-0036).
@@ -54,10 +59,41 @@ export class AgentRunController {
       'Queue an AI-Assist run on a request. Returns immediately with status `running`; watch `/events` or refetch for the result.',
   })
   start(@Body() dto: StartAgentRunDto, @CurrentUser() user: AuthUser) {
-    return this.aiAssist.startRun(user, dto.requestId);
+    return this.aiAssist.startRun(user, dto.requestId, dto.profileId);
   }
 
+  /**
+   * W47 F4 — every run, newest first.
+   *
+   * 🔴 This took `GET /agent/runs`, which used to mean "the latest run on ONE
+   * request" (now `/latest`). The alternative was to keep one path and branch on
+   * whether `requestId` was supplied — two response shapes behind one URL, which
+   * the OpenAPI document cannot describe and a client therefore has to guess at.
+   * One caller existed and moved with it.
+   */
   @Get()
+  @ApiOkResponse({ type: AgentRunListDto })
+  @ApiOperation({
+    summary:
+      'Runs, newest first. Cursor-paged; only runs whose request is in your OpCo scope.',
+  })
+  list(@Query() query: ListAgentRunsDto, @CurrentUser() user: AuthUser) {
+    return this.aiAssist.listRuns(user, {
+      status: query.status,
+      profileId: query.profileId,
+      // Validated as an ISO string by the DTO; parsed once, here, so the service
+      // takes a Date and cannot be handed an unparsed one by a future caller.
+      since: query.since ? new Date(query.since) : undefined,
+      limit: query.limit,
+      cursor: query.cursor,
+    });
+  }
+
+  /**
+   * ⚠️ Declared BEFORE `:id`. Nest matches in declaration order, so the reverse
+   * order would make this reachable only as a run whose id is the word "latest".
+   */
+  @Get('latest')
   @ApiOperation({
     summary:
       'The most recent run on a request, or null. `requestId` is required.',

@@ -21,6 +21,16 @@ import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
 import { AgentKillSwitchService } from './kill-switch.service';
 import { AgentRunQueue } from './agent-run.queue';
+import { AgentProfileService } from './agent-profile.service';
+import { ConnectorConfigService } from '../integration/connector-config.service';
+
+/** W47 F3 — the profile every run in this file resolves to unless it says otherwise. */
+const PROFILE = {
+  id: 'profile-1',
+  name: 'test profile',
+  model: 'test-model-1',
+  prompt: null as string | null,
+};
 
 /**
  * W46 F5 — A5, A6 and A7.
@@ -80,6 +90,7 @@ describe('AiAssistService', () => {
     agentRun: {
       findFirst: jest.Mock;
       findUnique: jest.Mock;
+      findMany: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
     };
@@ -91,6 +102,14 @@ describe('AiAssistService', () => {
   let audit: { log: jest.Mock };
   let killSwitch: { assertEnabled: jest.Mock };
   let queue: { enqueue: jest.Mock; publishChanged: jest.Mock };
+  /** W47 F3 — the registry. Resolves to one profile by default; F3-3 has its own describe. */
+  let profiles: { resolveForRun: jest.Mock };
+  /**
+   * W47 F3-5 — reached ONLY by runs that predate the registry. A default value
+   * here would hide the difference, so it resolves to `undefined` and the one
+   * test that needs it says so out loud.
+   */
+  let connectorConfig: { resolve: jest.Mock };
   /** Set while `$transaction`'s callback is running (see the mock below). */
   let insideTransaction = false;
   let auditSawOpenTransaction: boolean | null = null;
@@ -122,6 +141,7 @@ describe('AiAssistService', () => {
       agentRun: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
+        findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
       },
@@ -191,6 +211,11 @@ describe('AiAssistService', () => {
       publishChanged: jest.fn().mockResolvedValue(undefined),
     };
 
+    profiles = {
+      resolveForRun: jest.fn().mockResolvedValue(PROFILE),
+    };
+    connectorConfig = { resolve: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AiAssistService,
@@ -199,6 +224,8 @@ describe('AiAssistService', () => {
         { provide: AuditService, useValue: audit },
         { provide: AgentKillSwitchService, useValue: killSwitch },
         { provide: AgentRunQueue, useValue: queue },
+        { provide: AgentProfileService, useValue: profiles },
+        { provide: ConnectorConfigService, useValue: connectorConfig },
       ],
     }).compile();
     service = moduleRef.get(AiAssistService);
@@ -221,6 +248,8 @@ describe('AiAssistService', () => {
       status: 'running',
       requestId,
       startedBy: user,
+      // W47 F3 — the row carries the profile `startRun` resolved for it.
+      profile: PROFILE,
     });
     return service.executeRun(started.runId);
   };
@@ -752,6 +781,9 @@ describe('AiAssistService', () => {
       status: 'running',
       requestId: 'req-1',
       startedBy: opcoIt,
+      // W47 F3 — read off the ROW, not the registry: a queued job can execute
+      // after an admin has edited or retired the profile it started on.
+      profile: PROFILE,
       ...over,
     });
 
@@ -926,6 +958,7 @@ describe('AiAssistService', () => {
       status: 'awaiting_approval',
       runState: STATE,
       startedBy: opcoIt,
+      profile: PROFILE,
       ...overrides,
     });
 
@@ -1267,6 +1300,382 @@ describe('AiAssistService', () => {
       await expect(service.getRun(opcoIt, 'run-1')).rejects.toBeInstanceOf(
         ForbiddenException,
       );
+    });
+
+    /**
+     * 🔴 W47 `F1-5` / `R2` — the run that predates the registry.
+     *
+     * Every run that exists on the day W47 deploys has `profileId = null`, and
+     * they are the majority for a while. A read path that assumed a profile
+     * would 500 on all of them at once — on the request detail card, which is
+     * where anybody would be looking.
+     */
+    it('reads a run started before the registry existed', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        ...parked,
+        profileId: null,
+        profile: null,
+      });
+
+      const run = await service.getRun(admin, 'run-1');
+
+      expect(run.id).toBe('run-1');
+      // Null is the ANSWER, not a gap: OQ-D shows these as "(before W47)"
+      // rather than hiding them.
+      expect(run.profileId).toBeNull();
+      expect(run.profile).toBeNull();
+    });
+
+    it('never selects the profile prompt onto the run response', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue(parked);
+
+      await service.getRun(admin, 'run-1');
+
+      // A prompt can be 8000 characters and belongs to the registry screen. On
+      // this path it would ship the agent's instructions to everyone who can
+      // read a run, on every poll.
+      const profileSelect = findUniqueArg().select?.profile as
+        { select?: Record<string, unknown> } | undefined;
+      expect(profileSelect?.select?.prompt).toBeFalsy();
+    });
+  });
+
+  /**
+   * W47 F3 — which profile a run uses, and what happens when that is unclear.
+   */
+  describe('F3 — the run picks a profile', () => {
+    it('stores the resolved profile on the run row', async () => {
+      await service.startRun(admin, 'req-1', 'prof-9');
+
+      expect(profiles.resolveForRun).toHaveBeenCalledWith(
+        'prof-9',
+        'principal-1',
+      );
+      const created = prisma.agentRun.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(created.data.profileId).toBe(PROFILE.id);
+    });
+
+    /**
+     * 🔴 The refusal must land BEFORE the row exists, and this is the assertion
+     * that says so.
+     *
+     * OQ-3 allows one non-terminal run per request. A refusal that left a
+     * `running` row behind would count against that request forever — the same
+     * permanent block 期二 G5-A found twice in this file, arriving through a
+     * third door. "It threw" would be equally true of the broken version.
+     */
+    it('refuses an unusable profile without creating a run', async () => {
+      profiles.resolveForRun.mockRejectedValue(
+        new BadRequestException('That agent profile does not exist'),
+      );
+
+      await expect(
+        service.startRun(admin, 'req-1', 'prof-gone'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(prisma.agentRun.create).not.toHaveBeenCalled();
+      expect(queue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('hands the profile’s model and prompt to the runtime', async () => {
+      profiles.resolveForRun.mockResolvedValue({
+        ...PROFILE,
+        model: 'a-specific-model',
+        prompt: 'Only ever propose Power BI.',
+      });
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'running',
+        requestId: 'req-1',
+        startedBy: admin,
+        profile: {
+          id: 'profile-1',
+          name: 'test profile',
+          model: 'a-specific-model',
+          prompt: 'Only ever propose Power BI.',
+        },
+      });
+
+      await service.executeRun('run-1');
+
+      const setup = runtime.start.mock.calls[0][0] as AgentSetup;
+      expect(setup.model).toBe('a-specific-model');
+      // 🔴 REPLACES the built-in instructions rather than appending. Two sets of
+      // instructions that disagree produce behaviour neither author predicted,
+      // and an admin reading their own prompt on screen would have no way to
+      // know what else sits in front of it.
+      expect(setup.instructions).toBe('Only ever propose Power BI.');
+    });
+
+    it('treats a blank prompt as “not set” and keeps the built-in instructions', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'running',
+        requestId: 'req-1',
+        startedBy: admin,
+        profile: { ...PROFILE, prompt: '   ' },
+      });
+
+      await service.executeRun('run-1');
+
+      const setup = runtime.start.mock.calls[0][0] as AgentSetup;
+      expect(setup.instructions).toContain('AI-Assist');
+      expect(setup.instructions).not.toBe('   ');
+    });
+
+    /**
+     * 🔴 F3-5 — the compatibility path, and the reason it is not a fallback.
+     *
+     * A run sitting at `awaiting_approval` when W47 deploys has no profile. If
+     * resuming refused, that run would be stranded and its request blocked
+     * (OQ-3 again). So the environment still answers for those — and ONLY those,
+     * because `startRun` writes `profileId` on every row it creates.
+     */
+    it('resumes a pre-registry run on the configured model', async () => {
+      connectorConfig.resolve.mockResolvedValue('legacy-model');
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'awaiting_approval',
+        runState: '{"state":1}',
+        startedBy: admin,
+        profile: null,
+      });
+      runtime.resume.mockResolvedValue(completedTurn());
+
+      await service.resumeRun('run-1', []);
+
+      const setup = runtime.resume.mock.calls[0][0] as AgentSetup;
+      expect(setup.model).toBe('legacy-model');
+      expect(connectorConfig.resolve).toHaveBeenCalledWith(
+        'agent',
+        'agentModel',
+      );
+    });
+
+    /**
+     * ⚠️ The other half of the same rule: a pre-registry run with nothing
+     * configured is refused OUT LOUD rather than run on a guessed model. OQ-1's
+     * "no default anywhere" survives the move to the seam.
+     */
+    it('refuses a pre-registry run when nothing is configured either', async () => {
+      connectorConfig.resolve.mockResolvedValue(undefined);
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'awaiting_approval',
+        runState: '{"state":1}',
+        startedBy: admin,
+        profile: null,
+      });
+
+      await expect(service.resumeRun('run-1', [])).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(runtime.resume).not.toHaveBeenCalled();
+    });
+
+    /**
+     * 🔴 A profile retired mid-flight still finishes the run it started.
+     *
+     * `active: false` stops NEW runs (`resolveForRun` refuses it). Applying it
+     * to a run already in flight would strand every `awaiting_approval` run the
+     * moment somebody tidied the registry — a permanent block triggered by a
+     * routine admin action rather than by a bug.
+     */
+    it('resumes on a profile that has since been retired', async () => {
+      prisma.agentRun.findUnique.mockResolvedValue({
+        id: 'run-1',
+        status: 'awaiting_approval',
+        runState: '{"state":1}',
+        startedBy: admin,
+        profile: { ...PROFILE, model: 'retired-model' },
+      });
+      runtime.resume.mockResolvedValue(completedTurn());
+
+      await service.resumeRun('run-1', []);
+
+      const setup = runtime.resume.mock.calls[0][0] as AgentSetup;
+      expect(setup.model).toBe('retired-model');
+      // The registry is not consulted at all on this path — the row is.
+      expect(profiles.resolveForRun).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * W47 F4 — the global run list.
+   *
+   * The structural gap W46 left: runs were only ever reachable one request at a
+   * time, so "what has this agent been doing" had no answer that did not start
+   * with knowing which request to look at.
+   */
+  describe('F4 — listing runs', () => {
+    const listArg = () =>
+      prisma.agentRun.findMany.mock.calls.at(-1)?.[0] as {
+        where: Record<string, unknown>;
+        select: Record<string, unknown>;
+        take: number;
+        cursor?: { id: string };
+        skip?: number;
+        orderBy: unknown;
+      };
+
+    beforeEach(() => {
+      prisma.agentRun.findMany.mockResolvedValue([]);
+    });
+
+    /**
+     * 🔴 The merge-shaped defect, pinned — CH-031 / ADR-0040 × W47.
+     *
+     * ADR-0040 hid runs from the request card; W47 added a list that answers
+     * "what has this agent been doing" for the whole platform. NEITHER branch
+     * could have written this test, because on each of them one of the two
+     * things did not exist — so a textually clean merge shipped a global list
+     * that showed every hidden run, with both suites green.
+     *
+     * That makes this assertion the only place the rule is stated: hidden means
+     * hidden everywhere that is a LIST. `getRun` stays unfiltered on purpose
+     * (D3) — that asymmetry is the whole difference from a delete.
+     *
+     * Both callers are exercised because the clause is unconditional: a scoped
+     * user with filters is the shape most likely to be rewritten later.
+     */
+    it('never lists hidden runs, for any caller or filter', async () => {
+      await service.listRuns(admin);
+      expect(listArg().where.hiddenAt).toBeNull();
+
+      await service.listRuns(opcoIt, { status: 'running', profileId: 'p1' });
+      expect(listArg().where.hiddenAt).toBeNull();
+    });
+
+    /**
+     * 🔴 F4-4 — `runState` may not reach the wire, and a LIST is the easiest
+     * place for that to go wrong: nobody reads a list response, so an `include`
+     * here would hand out the model's unscrubbed history for every run at once
+     * and look like nothing at all.
+     */
+    it('never selects runState', async () => {
+      await service.listRuns(admin);
+
+      expect(listArg().select.runState).toBeFalsy();
+      expect(listArg().select).toBeDefined();
+    });
+
+    /**
+     * 🔴 F4-2, and NOT what the plan said.
+     *
+     * The plan's wording was "scope comes from the starter". That belongs to
+     * `OQ-2` (what an agent may see WHILE running); applying it to visibility
+     * would disagree with `getRun`, which scopes on the run's REQUEST — so the
+     * list would hide rows that the very next click opens successfully.
+     */
+    it('shows a scoped user only runs whose request is in their OpCo', async () => {
+      await service.listRuns(opcoIt);
+
+      expect(listArg().where.request).toEqual({ is: { opcoId: 'opco-a' } });
+    });
+
+    /**
+     * ⚠️ The other half, and it is not symmetrical: for an unscoped user the
+     * clause must be ABSENT, not `{ is: {} }`. A relation filter — even an empty
+     * one — makes Prisma require the relation to exist, which would silently
+     * drop every run that has no request from an ADMIN's list.
+     */
+    it('applies no request filter at all for an unscoped user', async () => {
+      await service.listRuns(admin);
+
+      expect(listArg().where.request).toBeUndefined();
+    });
+
+    it('filters by status, profile and start time', async () => {
+      const since = new Date('2026-08-01T00:00:00.000Z');
+
+      await service.listRuns(admin, {
+        status: 'awaiting_approval',
+        profileId: 'prof-1',
+        since,
+      });
+
+      expect(listArg().where).toMatchObject({
+        status: 'awaiting_approval',
+        profileId: 'prof-1',
+        startedAt: { gte: since },
+      });
+    });
+
+    it('leaves out the filters that were not asked for', async () => {
+      await service.listRuns(admin, { status: 'running' });
+
+      const where = listArg().where;
+      expect(where.status).toBe('running');
+      // Present-but-undefined would be the same to Prisma, but not to a reader,
+      // and `profileId: undefined` in a where clause is one refactor away from
+      // `profileId: null`, which means something entirely different.
+      expect('profileId' in where).toBe(false);
+      expect('startedAt' in where).toBe(false);
+    });
+
+    /**
+     * 🔴 `R5` — real paging, and the assertion is on `take`.
+     *
+     * "Supports pagination" is easy to claim with `take: 1000` and a `limit`
+     * nobody enforces. The ceiling is enforced twice (DTO and service) because
+     * the DTO stops being the only door the moment anything else calls this.
+     */
+    it('caps how much can be asked for at once', async () => {
+      await service.listRuns(admin, { limit: 5000 });
+
+      expect(listArg().take).toBe(101);
+    });
+
+    it('asks for one row more than requested, to know whether there is a next page', async () => {
+      await service.listRuns(admin, { limit: 10 });
+
+      expect(listArg().take).toBe(11);
+    });
+
+    it('skips the cursor row itself, so a page never repeats its predecessor’s last row', async () => {
+      await service.listRuns(admin, { cursor: 'run-7' });
+
+      expect(listArg().cursor).toEqual({ id: 'run-7' });
+      expect(listArg().skip).toBe(1);
+    });
+
+    /**
+     * ⚠️ Two runs can share `startedAt` to the millisecond — the queue starts
+     * them in bursts. Without the `id` tiebreak the order is undefined between
+     * them, and cursor paging then skips or repeats rows at page boundaries:
+     * a bug that only appears under load and never reproduces.
+     */
+    it('orders by start time with id as a tiebreak', async () => {
+      await service.listRuns(admin);
+
+      expect(listArg().orderBy).toEqual([
+        { startedAt: 'desc' },
+        { id: 'desc' },
+      ]);
+    });
+
+    it('hands back a cursor only when there really is another page', async () => {
+      prisma.agentRun.findMany.mockResolvedValue(
+        Array.from({ length: 3 }, (_, i) => ({ id: `run-${i}` })),
+      );
+
+      const page = await service.listRuns(admin, { limit: 2 });
+
+      expect(page.items).toHaveLength(2);
+      expect(page.nextCursor).toBe('run-1');
+    });
+
+    it('returns a null cursor on the last page, rather than omitting it', async () => {
+      prisma.agentRun.findMany.mockResolvedValue([{ id: 'run-0' }]);
+
+      const page = await service.listRuns(admin, { limit: 2 });
+
+      expect(page.items).toHaveLength(1);
+      // Null rather than undefined: "no next page" is an answer the client can
+      // read, not a missing field it has to guess the meaning of.
+      expect(page.nextCursor).toBeNull();
     });
   });
 

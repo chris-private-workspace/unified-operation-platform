@@ -16,7 +16,6 @@ import {
   type RunToolApprovalItem,
 } from '@openai/agents';
 import { AzureOpenAI } from 'openai';
-import { ConnectorConfigService } from '../integration/connector-config.service';
 import { AgentToolRegistry } from './tool-registry';
 import type { AgentTool, AgentToolContext } from './agent-tool';
 import {
@@ -320,9 +319,15 @@ export class OpenAiAgentsProvider extends AgentRuntimeProvider {
 
   private readonly logger = new Logger(OpenAiAgentsProvider.name);
 
+  /**
+   * ⚠️ No `ConnectorConfigService`, since W47 F3-5 — and its absence is the
+   * point rather than a tidy-up. This adapter can no longer read what model is
+   * configured, so it cannot quietly reacquire an opinion about which one to
+   * run: the caller's profile is the only source, and that is now enforced by
+   * what this class can reach rather than by a comment.
+   */
   constructor(
     private readonly registry: AgentToolRegistry,
-    private readonly connectorConfig: ConnectorConfigService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -420,26 +425,18 @@ export class OpenAiAgentsProvider extends AgentRuntimeProvider {
     return new Agent({
       name: AGENT_NAME,
       instructions: setup.instructions,
-      model: await this.resolveModel(),
+      /**
+       * W47 F3-5 — from the caller, which got it from the run's profile.
+       *
+       * 🔴 The "no default" rule this file used to enforce with its own
+       * `resolveModel` has not been relaxed, it has MOVED: `AgentSetup.model` is
+       * required, so an unset model is now a compile error here and a refusal in
+       * `AgentProfileService.resolveForRun` there. What is gone is this adapter
+       * having a private opinion about which model "the" model is — two
+       * adapters holding that opinion separately is how they drift.
+       */
+      model: setup.model,
       tools: toSdkTools(this.registry.list(), setup.ctx, setup.onToolExecuted),
     });
-  }
-
-  /**
-   * 🔴 No default, on purpose (plan OQ-1 / OQ-7).
-   *
-   * Which model this runs on decides what it costs, what it can do, and which
-   * third party receives a real person's request text. A fallback constant
-   * would make all three choices silently and then hide them in this file, so
-   * an unset value stops the run instead.
-   */
-  private async resolveModel(): Promise<string> {
-    const model = await this.connectorConfig.resolve('agent', 'agentModel');
-    if (!model?.trim()) {
-      throw new ServiceUnavailableException(
-        'No agent model is configured — set ConnectorConfig.agentModel or AGENT_MODEL (W46 OQ-1)',
-      );
-    }
-    return model.trim();
   }
 }

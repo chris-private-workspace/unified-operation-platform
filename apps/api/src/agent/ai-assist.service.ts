@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, type AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { assertOpcoScope } from '../auth/opco-scope';
+import { assertOpcoScope, scopeWhere } from '../auth/opco-scope';
 import { scrubPii } from '../integration/scrub-pii';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
@@ -26,6 +26,8 @@ import {
   AI_ASSIST_PRINCIPAL,
   NON_TERMINAL_RUN_STATUSES,
 } from './agent-run-status';
+import { AgentProfileService } from './agent-profile.service';
+import { ConnectorConfigService } from '../integration/connector-config.service';
 
 /**
  * W46 F5 / ADR-0036 — the AI-Assist run.
@@ -90,6 +92,15 @@ export class AiAssistService {
     private readonly audit: AuditService,
     private readonly killSwitch: AgentKillSwitchService,
     private readonly queue: AgentRunQueue,
+    private readonly profiles: AgentProfileService,
+    /**
+     * W47 F3-5 — read ONLY for runs that predate the registry.
+     *
+     * 🔴 Not a fallback for new runs. `resolveForRun` refuses rather than
+     * reaching for the environment, and this must not quietly undo that. See
+     * `modelForLegacyRun`.
+     */
+    private readonly connectorConfig: ConnectorConfigService,
   ) {}
 
   /**
@@ -109,7 +120,11 @@ export class AiAssistService {
    *   worker has no `user` and reads scope back off the row, exactly as
    *   `resumeRun` already did.
    */
-  async startRun(user: AppUser, requestId: string): Promise<AiAssistRunResult> {
+  async startRun(
+    user: AppUser,
+    requestId: string,
+    profileId?: string,
+  ): Promise<AiAssistRunResult> {
     // 期二 G3 — first, because everything below it costs something: a model
     // call, a row, a person's attention. `startRun` already refused a
     // deactivated principal further down; that check now lives in one place
@@ -146,6 +161,18 @@ export class AiAssistService {
     }
 
     /**
+     * W47 F3 — which profile this run uses, settled BEFORE the row exists.
+     *
+     * 🔴 Position matters. `resolveForRun` refuses when the choice is
+     * unanswerable (no active profile, several with none named, one that has
+     * been switched off), and every one of those is a 400 that must land before
+     * anything is written — otherwise a refusal leaves a `running` row that
+     * OQ-3 then counts against the request, blocking it from ever getting
+     * another run. Same permanent-block shape 期二 G5-A found twice already.
+     */
+    const profile = await this.profiles.resolveForRun(profileId, principal.id);
+
+    /**
      * Run row and audit row in ONE transaction (ADR-0009 D8.1: "done but
      * unrecorded" is worse than "not done").
      *
@@ -164,6 +191,7 @@ export class AiAssistService {
           startedById: user.id,
           requestId,
           status: 'running',
+          profileId: profile.id,
         },
         select: { id: true },
       });
@@ -225,7 +253,17 @@ export class AiAssistService {
       // 🔴 No `runState` — it carries the model's unscrubbed history and
       // nothing here needs it (the `getRun` lesson, and `run-expiry` repeats
       // it). A fresh start has no state to resume from by definition.
-      select: { id: true, status: true, requestId: true, startedBy: true },
+      select: {
+        id: true,
+        status: true,
+        requestId: true,
+        startedBy: true,
+        // W47 F3 — the run's own profile, not whatever is configured now. A
+        // queued job can execute long after an admin edited the registry.
+        profile: {
+          select: { id: true, name: true, model: true, prompt: true },
+        },
+      },
     });
     if (!run) throw new NotFoundException('Agent run not found');
 
@@ -243,11 +281,7 @@ export class AiAssistService {
       );
     }
 
-    const setup: AgentSetup = {
-      instructions: INSTRUCTIONS,
-      ctx: { runId: run.id, user: run.startedBy },
-      onToolExecuted: (record) => this.recordToolExecution(run.id, record),
-    };
+    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
 
     /**
      * 🔴 The kill switch is INSIDE the try, and 期二 G5-A is why.
@@ -310,7 +344,17 @@ export class AiAssistService {
 
     const run = await this.prisma.agentRun.findUnique({
       where: { id: runId },
-      select: { id: true, status: true, runState: true, startedBy: true },
+      select: {
+        id: true,
+        status: true,
+        runState: true,
+        startedBy: true,
+        // The SAME profile the run started on — an approval can land overnight,
+        // and by then the registry may say something different.
+        profile: {
+          select: { id: true, name: true, model: true, prompt: true },
+        },
+      },
     });
     if (!run) throw new NotFoundException('Agent run not found');
     if (run.status !== 'awaiting_approval') {
@@ -347,11 +391,7 @@ export class AiAssistService {
       );
     }
 
-    const setup: AgentSetup = {
-      instructions: INSTRUCTIONS,
-      ctx: { runId: run.id, user: run.startedBy },
-      onToolExecuted: (record) => this.recordToolExecution(run.id, record),
-    };
+    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
 
     try {
       const turn = await this.runtime.resume(setup, run.runState, decisions);
@@ -360,6 +400,82 @@ export class AiAssistService {
       await this.failRun(run.id, err);
       throw err;
     }
+  }
+
+  /**
+   * The setup both `executeRun` and `resumeRun` hand to the runtime — W47 F3-5.
+   *
+   * 🔴 Built from the RUN'S profile, read off the row, never from the registry
+   * as it stands now. A run is queued and may execute minutes later; an
+   * `awaiting_approval` run may resume the next morning. In both gaps an admin
+   * can edit or retire a profile, and "which model did this run use" has to keep
+   * one answer across the whole run rather than changing under it.
+   *
+   * ⚠️ A retired profile still runs a run that already started. Retiring is how
+   * you stop NEW runs (`resolveForRun` refuses it); applying it to a run already
+   * in flight would strand every `awaiting_approval` run the moment somebody
+   * tidied the list — the permanent-block shape again, this time triggered by a
+   * routine admin action rather than a bug.
+   */
+  private async buildSetup(
+    runId: string,
+    user: AgentSetup['ctx']['user'],
+    profile: {
+      id: string;
+      name: string;
+      model: string;
+      prompt: string | null;
+    } | null,
+  ): Promise<AgentSetup> {
+    return {
+      /**
+       * 🔴 `prompt` REPLACES the built-in instructions rather than appending to
+       * them, and an empty string is treated as "not set".
+       *
+       * Appending would be the safer-sounding choice and is the wrong one: two
+       * sets of instructions that disagree produce behaviour neither author
+       * predicted, and an admin reading their own prompt on screen would have no
+       * way to know what else is in front of it. D2 already establishes that
+       * prompt text is not a security boundary — the tool allow-list and the
+       * OpCo scope are — so what is being handed over here is usefulness, not
+       * authority.
+       */
+      instructions: profile?.prompt?.trim() || INSTRUCTIONS,
+      model: profile?.model ?? (await this.modelForLegacyRun(runId)),
+      ctx: { runId, user },
+      onToolExecuted: (record) => this.recordToolExecution(runId, record),
+    };
+  }
+
+  /**
+   * 🔴 The ONLY place the environment can still decide a model, and it exists
+   * for exactly one situation: a run that was started before the registry did.
+   *
+   * The situation is real and it is not rare — deploying W47 while a run sits at
+   * `awaiting_approval` is the ordinary case, not the edge one. Those rows have
+   * `profileId = null`, and refusing them here would strand them: OQ-3 allows
+   * one non-terminal run per request, `AgentRunExpiryService` does not sweep
+   * every state, and the person approving would get a 503 with no way forward.
+   * That is 期二 G5-A's permanent block, and it has already been found twice in
+   * this file by two different routes.
+   *
+   * ⚠️ So this is a compatibility path, NOT a fallback. It cannot be reached by
+   * a run started after W47, because `startRun` writes `profileId` on every row
+   * it creates and `resolveForRun` refuses rather than returning nothing. It
+   * logs at warn level for the same reason: the day this fires for a NEW run,
+   * something is wrong upstream and the log is how anyone would find out.
+   */
+  private async modelForLegacyRun(runId: string): Promise<string> {
+    const model = await this.connectorConfig.resolve('agent', 'agentModel');
+    if (!model?.trim()) {
+      throw new ServiceUnavailableException(
+        `Run ${runId} predates the agent registry and no model is configured to run it on — set ConnectorConfig.agentModel or AGENT_MODEL (W47 F3-5)`,
+      );
+    }
+    this.logger.warn(
+      `Run ${runId} has no profile (started before W47) — falling back to the configured model`,
+    );
+    return model.trim();
   }
 
   // ── the parts that read ────────────────────────────────────
@@ -399,6 +515,16 @@ export class AiAssistService {
         // from a visible one, and this is the endpoint that still returns it.
         hiddenAt: true,
         startedById: true,
+        /**
+         * W47 F3-4 — what this run ran on.
+         *
+         * 🔴 `null` for runs started before the registry, and the screen says
+         * "(before W47)" rather than hiding them (OQ-D). `prompt` is NOT
+         * selected: it can be 8000 characters and belongs on the registry
+         * screen, not on every run detail response.
+         */
+        profileId: true,
+        profile: { select: { id: true, name: true, model: true } },
         steps: { orderBy: { createdAt: 'asc' } },
         messages: { orderBy: { createdAt: 'asc' } },
         proposals: {
@@ -423,6 +549,113 @@ export class AiAssistService {
   }
 
   /**
+   * Every run, newest first — W47 F4.
+   *
+   * 🔴 **Scope follows `getRun`, not the run's starter, and the plan said the
+   * other thing.** `F4-2` reads "OpCo scope comes from the starter"; that
+   * sentence is about `OQ-2` (what an agent may SEE while it runs, which is
+   * capped by whoever started it) and applying it to VISIBILITY would put the
+   * two endpoints in disagreement: `getRun` lets an OPCO_IT operator open a run
+   * a colleague started on a request they both own, so filtering this list by
+   * starter would hide rows the very next click can open. Worse in the other
+   * direction: a REGIONAL's runs are unscoped, so a starter-based filter would
+   * either leak them to everyone or hide them from everyone.
+   *
+   * So: a run is visible if its REQUEST is (`request: scopeWhere(user)`), which
+   * is `getRun`'s rule expressed as a query instead of an assertion. Logged as a
+   * plan deviation.
+   *
+   * 🔴 `runState` is absent from the select for the reason `getRun` states at
+   * length: it is the SDK's serialised history, unscrubbed. A list is the
+   * easiest place for that to escape, because nobody reads a list response.
+   */
+  async listRuns(
+    user: AppUser,
+    filters: {
+      status?: string;
+      profileId?: string;
+      since?: Date;
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ) {
+    /**
+     * ⚠️ A ceiling, not a suggestion — `R5`.
+     *
+     * `take: 1000` with a `limit` parameter that callers may exceed is how a
+     * list "supports pagination" while still loading everything, and the day
+     * that hurts is the day there are enough runs for it to matter, by which
+     * point the screen is already built on it.
+     */
+    const limit = Math.min(Math.max(filters.limit ?? 25, 1), 100);
+
+    const rows = await this.prisma.agentRun.findMany({
+      where: {
+        /**
+         * 🔴 CH-031 / ADR-0040 — added when W47 merged `main`, and it is the
+         * one line neither branch's tests could have asked for.
+         *
+         * CH-031 put `hiddenAt: null` on `findLatestForRequest` because that
+         * was the only list-shaped read that existed at the time. This endpoint
+         * did not exist on that branch, and `hiddenAt` did not exist on this
+         * one — so a textually clean merge yields a global list that shows
+         * every run an admin has just taken out of the workflow, with BOTH
+         * suites green. The defect lives between the two changes, which is
+         * where this project keeps finding them.
+         *
+         * ADR-0040 wrote the answer down before either side landed, in its own
+         * Consequences: "Tier 2 用得返:`T2-a` 個 run list 直接 `hiddenAt: null`".
+         *
+         * Unconditional, with no `includeHidden` escape hatch: `GET
+         * /agent/runs/:id` is deliberately the way back to a hidden run (D3),
+         * and a flag here would be a second answer to the same question.
+         */
+        hiddenAt: null,
+        // 🔴 `is:` — a nullable relation. `AgentRun.requestId` is optional, and
+        // a bare `request: { opcoId }` would silently drop every run that has no
+        // request at all rather than including it. For a SCOPED user dropping
+        // them is right (an unattached run belongs to no OpCo, so it is not
+        // theirs to see); for an unscoped one `scopeWhere` returns `{}` and this
+        // whole clause disappears, which is why it is safe to write once.
+        ...(user.opcoScopeId ? { request: { is: scopeWhere(user) } } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.profileId ? { profileId: filters.profileId } : {}),
+        ...(filters.since ? { startedAt: { gte: filters.since } } : {}),
+      },
+      select: {
+        id: true,
+        requestId: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        startedById: true,
+        profileId: true,
+        profile: { select: { id: true, name: true, model: true } },
+      },
+      // `id` breaks ties. Two runs can share a `startedAt` to the millisecond,
+      // and an unstable order makes cursor paging skip or repeat rows.
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
+    });
+
+    /**
+     * One extra row is fetched purely to answer "is there more?" without a
+     * second count query — and it is dropped here rather than returned, so
+     * `items.length` always means what it says.
+     */
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+
+    return {
+      items,
+      // null, not undefined: "there is no next page" is an answer the client
+      // should be able to read, not a missing field it has to interpret.
+      nextCursor: hasMore ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  /**
    * The most recent run on a request, or null.
    *
    * The card needs this to decide what to show, and "most recent" rather than
@@ -439,8 +672,13 @@ export class AiAssistService {
 
     const latest = await this.prisma.agentRun.findFirst({
       /**
-       * 🔴 CH-031 / ADR-0040 D3 — this is the ONE read that filters on
-       * `hiddenAt`, and `getRun` deliberately does not.
+       * 🔴 CH-031 / ADR-0040 D3 — this read filters on `hiddenAt`, and `getRun`
+       * deliberately does not.
+       *
+       * ⚠️ This said "the ONE read" until W47's global run list merged and
+       * became the second one. Same rule, other endpoint — the asymmetry below
+       * is between LISTS and `getRun`, not between this method and everything
+       * else.
        *
        * That asymmetry IS the decision. Hiding a run means "stop putting this
        * in front of people doing the day job", not "this never happened": the

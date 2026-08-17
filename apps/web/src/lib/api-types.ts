@@ -885,6 +885,37 @@ export interface AgentProposal {
   createdAt: string;
 }
 
+/**
+ * W47 — a model + prompt combination a run can be started under.
+ *
+ * 🔴 NOT a second agent. `OQ-1` settled that "several agents" means the same
+ * capability on different models and prompts: what an agent may DO is one
+ * allow-list in the server's code, and what a run may SEE is the starter's OpCo
+ * scope. Neither is here, and nothing on this screen can widen either.
+ */
+export interface AgentProfile {
+  id: string;
+  principalId: string;
+  name: string;
+  /** The Azure DEPLOYMENT name, not a model family (ADR-0037 E3). */
+  model: string;
+  /** Replaces the built-in instructions when set. ⚠️ Every change is audited. */
+  prompt?: string | null;
+  /** `false` retires it: existing runs keep working, new ones cannot pick it. */
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** Only sent by the list endpoint, which joins it. */
+  principal?: { name: string } | null;
+}
+
+/** The profile a run used, as both the run detail and the run list carry it. */
+export interface AgentRunProfileRef {
+  id: string;
+  name: string;
+  model: string;
+}
+
 export interface AgentRun {
   id: string;
   requestId?: string | null;
@@ -894,15 +925,54 @@ export interface AgentRun {
   startedAt: string;
   endedAt?: string | null;
   /**
+   * W47 — `null` for every run started before the registry existed, and it stays
+   * null: back-filling would assert a fact that never happened. The screen says
+   * "Before W47" rather than hiding those runs (`OQ-D`).
+   */
+  profileId?: string | null;
+  profile?: AgentRunProfileRef | null;
+  /**
    * CH-031 / ADR-0040 — an admin took this run off the request card. NOT a
    * delete: the steps, transcript and proposals below are all still here, which
-   * is why this arrives on a run at all. `GET /agent/runs?requestId=` filters
-   * these out; `GET /agent/runs/{id}` does not.
+   * is why this arrives on a run at all.
+   *
+   * 🔴 Rewritten at the W47 merge, because the original sentence stopped being
+   * true: it said `GET /agent/runs?requestId=` filters these out, and W47 moved
+   * that path onto `GET /agent/runs/latest`. The filter lives there now, and the
+   * global list `GET /agent/runs` filters them out as well (ADR-0040's own
+   * Consequences: "T2-a 個 run list 直接 `hiddenAt: null`").
+   * `GET /agent/runs/{id}` still does NOT filter — that is ADR-0040 D3, and it
+   * is the whole difference between "hidden" and "gone".
    */
   hiddenAt?: string | null;
   steps: AgentStep[];
   messages: AgentMessage[];
   proposals: AgentProposal[];
+}
+
+/**
+ * A row of the global run list — W47.
+ *
+ * 🔴 Deliberately NOT `AgentRun` minus fields. The list endpoint does not send
+ * `steps` / `messages` / `proposals`, and typing it as the full run would invite
+ * a caller to read a transcript that is not there — or, worse, invite someone to
+ * "fix" that by loading every transcript on the platform to render a table.
+ */
+export interface AgentRunSummary {
+  id: string;
+  requestId?: string | null;
+  status: AgentRunStatus;
+  startedById: string;
+  startedAt: string;
+  endedAt?: string | null;
+  profileId?: string | null;
+  profile?: AgentRunProfileRef | null;
+}
+
+export interface AgentRunPage {
+  items: AgentRunSummary[];
+  /** Pass back as `cursor`. `null` means this is the last page. */
+  nextCursor: string | null;
 }
 
 /** An operational-history event (detail view). */

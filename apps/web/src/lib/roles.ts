@@ -63,6 +63,25 @@ export function canUseAgent(role: Role | undefined): boolean {
 }
 
 /**
+ * W47 `OQ-A` — the agent registry (`/agent`) is ADMIN-only, narrower than
+ * `canUseAgent` right beside it.
+ *
+ * The two questions are genuinely different, which is why this is a separate
+ * predicate rather than a reuse of `canSeeAdminNav`: starting a run costs a
+ * model call, while editing a profile changes what EVERY future run does,
+ * including runs other people start. Narrowing a permission after people rely on
+ * it is the expensive direction, so this starts at the narrow end.
+ *
+ * ⚠️ The run list on that page is ADMIN + REGIONAL at the server. The page is
+ * still gated at ADMIN, because a screen whose two halves answer to different
+ * roles is a screen that has to explain itself — and REGIONAL already sees its
+ * own runs on the request they belong to.
+ */
+export function canManageAgentProfiles(role: Role | undefined): boolean {
+  return role === 'ADMIN';
+}
+
+/**
  * Breaking an OpCo's licence budget on purpose is ADMIN-only (W36 / ADR-0016
  * D3) — REGIONAL is deliberately excluded even though it can see every OpCo.
  *

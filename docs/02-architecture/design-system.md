@@ -70,7 +70,7 @@ shadcn/ui 做底但 re-skin 用上面 token(或 alias `--primary:var(--accent)` 
 
 | 類 | Primitives | API 慣例 |
 |---|---|---|
-| forms | Button · IconButton · Input · Select · Checkbox · Switch · SegmentedControl | `variant`('primary'/'secondary'/'ghost'/'danger')· `size`('sm'/'md'/'lg')· 一 view 一個 primary |
+| forms | Button · IconButton · Input · **Textarea** · Select · Checkbox · Switch · SegmentedControl | `variant`('primary'/'secondary'/'ghost'/'danger')· `size`('sm'/'md'/'lg')· 一 view 一個 primary。⚠️ **Textarea 唔喺 handoff 19 個入面** —— owner-approved 新增(W47),約束見下 |
 | display | Card · StatCard · Badge · Avatar | `Badge tone dot`;`StatCard label value tone icon delta sub`(tone 只 tint icon chip,value 保持中性) |
 | navigation | NavItem · Stepper · Tabs · Pagination | `Stepper steps current`(short 3-dot / procurement 6-dot,current 帶 `--ring-accent`) |
 | overlay / feedback | Tooltip · Dialog · Toast · EmptyState | Dialog 45% scrim;Toast bottom-center ~2.6s(**帶 action 時要更長**,見下);EmptyState 用於 all-clear/no-results |
@@ -91,6 +91,19 @@ Handoff 原版得 `‹` prev / `›` next + 最多 5 個 window 頁碼。**加�
 - **icon 用 lucide `ChevronsLeft` / `ChevronsRight`**,唔用 handoff 個 `‹` `›` 文字 glyph —— DS-6(icon = lucide stroke)喺呢個元件一樣成立,而且少一個字體相依嘅字符
 
 ⚠️ **改動前 229 頁係全部逐個掣 render 出嚟**(`Array.from({length: pageCount})`)。見到呢個 pattern = 未 wire 新元件。
+
+**`Textarea`(owner-approved **新** primitive,Chris 2026-08-17 · W47 `F5-8`)**
+
+Handoff **由頭到尾冇 textarea**(`design_handoff_licenseops` 同 `apps/web/src/components/ui` 兩邊實測零命中)—— prototype 冇一個畫面需要多行輸入。所以佢係**本系統第一個唔係由 handoff spec 重建出嚟嘅 primitive**,而呢件事本身就係最大嘅 drift 風險:冇 spec 對照,下一個人加嘅時候就會憑感覺揀值。
+
+**⇒ 約束(違反即 drift)**:
+
+- **每一個值都由 `Input` 抄,唔可以自己揀** —— `rounded-lg` · `border-border` · `bg-card` · `text-[12.5px]` · `text-fg` · `placeholder:text-fg-subtle` 逐個一樣。**只有三樣刻意唔同**,而三樣都係單行 field 結構上冇嘅:①`h-[34px]` → `min-h` + `rows`(高度就係佢存在嘅理由)②垂直 padding(`py-[8px]`)③`leading-[1.55]`(12.5px 文字排滿一版,行高唔開就讀唔到)
+- 🔴 **`resize-y`,唔可以係 `resize`** —— 水平 resize 係瀏覽器預設,而佢容許用戶由**元件內部**把自己拉闊過個 dialog,即係話成個 console 唯一嗰條 layout 硬規矩(頁面永遠唔可以橫向捲)會被打破,而**冇任何一行 code 改動可以賴**
+- **唔加 auto-grow / 字數 badge / markdown 預覽** —— 加咗就唔再係一個 field,係一個 editor,要另外傾。字數提示屬 **caller** 責任(W47 個 prompt field 用 `Field` 個 hint 顯示剩餘字數)
+- **一定要有 cap,而 cap 由 caller 傳** —— 一個冇上限嘅多行輸入,喺一個會落 DB 嘅欄後面,就係一個冇人講過嘅 storage 決定
+
+📌 **點解值得開呢個 primitive**:W47 個 `AgentProfile.prompt` 係平台第一個「人手輸入、會改變 agent 行為」嘅欄(RISK `R26`)。冇呢個 field,個 registry 就得一半 —— 而佢三道防線(audit `before`/`after` · tool allow-list 留喺 code · 8000 字 cap)本身就係為咗令呢個欄安全存在而砌。
 
 **Toast `action`(owner-approved primitive 擴充,Chris 2026-07-31 · CH-013)**
 
@@ -142,4 +155,5 @@ Handoff 原版得 `‹` prev / `›` next + 最多 5 個 window 頁碼。**加�
 | 畫面 / 導航 | 內容 | 拍板 |
 |---|---|---|
 | `/audit` Audit log 頁 + sidebar「Administration → Audit log」項 | 平台 audit trail 唯讀時間序表(action / target 篩選 · 分頁 · before→after 展開 row)。**零 primary action**(唯讀)。ADMIN-only:sidebar 以 `canSeeAdminNav` 隱藏,直開 URL 落 restricted state(後端 403 係真權威)。全部組合既有 primitive(Card / Badge / Select / Button / EmptyState),無新 token / 新色 / 新 pattern;prototype 僅得「only auditor」字眼,無此畫面。 | Chris,2026-07-20(W29 plan §9 Q2;ADR-0009) |
+| `/agent` Agent registry 頁 + sidebar「Administration → Agent」項 | AI-Assist 嘅 **profile 表**(名 / model / prompt 有冇 / 狀態 · 建立同編輯 dialog)+ **全域 run 列表**(狀態 · profile 篩選 · cursor 分頁)。**一個 primary**(`New profile`)—— run 表刻意零 action:對一個 run 做得嘅兩件事(批 proposal · 停佢)都住喺嗰張 request 度,即係有 context 落決定嘅地方。ADMIN-only:sidebar 用**自己一個** predicate `canManageAgentProfiles`(唔借 `canSeeAdminNav` —— 跟本檔 `canRepairOutbound` 個先例,「開唔開得admin console」同「改唔改得每個未來 run 用邊個 model」係兩條問題),直開 URL 落 restricted state。全部組合既有 primitive(Card / Badge / Button / IconButton / Select / Input / Dialog / EmptyState),無新 token / 新色 / 新 pattern。狀態走既有 6 個 tone(`runStatusTone`),`prompt = custom` 用 **purple**(= handoff map 個 `AI→purple`)。🔴 **一個明講嘅缺口**:`prompt` 喺呢版**睇得到改唔到** —— 改佢要一個 multi-line 輸入,而 handoff 同 `components/ui` 兩邊都**冇** textarea,加一個係 H6 決定。表入面照顯示「Built-in / Custom」,免得一個靜靜帶住自訂指示嘅 profile 喺全個產品入面都見唔到。 | Chris,2026-08-17(W47 `OQ-B`;Tier 2 `T2-a`)。⏳ **textarea 未批** |
 | `/outbound-failures` Delivery failures 頁 + sidebar「Administration → Delivery failures」項 | Outbound 交付失敗嘅**營運工作佇列**(status / kind 篩選 · 展開睇 payload + 已發生嘅 SN 副作用 · 逐行補救)。**零 view-level primary** —— 所有補救掣係 per-row secondary(頁面職責係展示佇列,唔係推一個動作)。**ADMIN + REGIONAL**(闊過其餘 admin 項)→ sidebar 嘅 Administration 區由「整區 ADMIN gate」改為**逐 entry 帶 role predicate**,令 REGIONAL 有入口但仍然入唔到 Users & roles。非授權者落 **restricted state**(唔似 Overview activity feed 嘅隱藏 —— 呢個係專程去嘅畫面,值得一個解釋)。🔴 **補救掣文案唔可以係 generic「Retry」**:`request.mirror` 個掣必須讀成「Record locally」而唔係「Resubmit」,否則操作員會以為會再開一張 SN ticket(ADR-0011 D3 喺 UI 層嘅延伸,有 test guard)。組合既有 primitive,無新 token / 新色。 | Chris,2026-07-21(W31;ADR-0011 D2/D3/D4) |

@@ -13,7 +13,6 @@ import {
 } from './openai-agents.provider';
 import { AgentToolRegistry } from './tool-registry';
 import type { PrismaService } from '../prisma/prisma.service';
-import type { ConnectorConfigService } from '../integration/connector-config.service';
 import type { AgentTool, AgentToolContext } from './agent-tool';
 
 /**
@@ -92,21 +91,13 @@ const configOf = (over: Record<string, string | undefined> = {}) =>
 
 describe('OpenAiAgentsProvider', () => {
   let registry: AgentToolRegistry;
-  let connectorConfig: { resolve: jest.Mock };
   let config: ConfigService;
-  let provider: OpenAiAgentsProvider;
 
   beforeEach(() => {
     // The registry builds its tool list in the constructor and touches nothing
     // on Prisma until a tool actually executes.
     registry = new AgentToolRegistry({} as unknown as PrismaService);
-    connectorConfig = { resolve: jest.fn() };
     config = configOf();
-    provider = new OpenAiAgentsProvider(
-      registry,
-      connectorConfig as unknown as ConnectorConfigService,
-      config,
-    );
   });
 
   /**
@@ -205,11 +196,7 @@ describe('OpenAiAgentsProvider', () => {
        */
       expect(currentTraceId()).not.toBe(NOOP_TRACE_ID);
 
-      new OpenAiAgentsProvider(
-        registry,
-        connectorConfig as unknown as ConnectorConfigService,
-        config,
-      );
+      new OpenAiAgentsProvider(registry, config);
 
       expect(currentTraceId()).toBe(NOOP_TRACE_ID);
     });
@@ -352,30 +339,35 @@ describe('OpenAiAgentsProvider', () => {
 
   // ── OQ-1 — no model, no run ────────────────────────────────
 
-  describe('model configuration (OQ-1)', () => {
-    it('refuses to start when no model is configured, instead of picking one', async () => {
-      connectorConfig.resolve.mockResolvedValue(undefined);
-      await expect(
-        provider.start({ instructions: 'help', ctx }, 'hello'),
-      ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    });
-
-    it('treats a blank configured model as unset', async () => {
-      connectorConfig.resolve.mockResolvedValue('   ');
-      await expect(
-        provider.start({ instructions: 'help', ctx }, 'hello'),
-      ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    });
-
-    it('reads the model from the agent connector, DB-then-env', async () => {
-      connectorConfig.resolve.mockResolvedValue(undefined);
-      await provider
-        .start({ instructions: 'help', ctx }, 'hello')
-        .catch(() => undefined);
-      expect(connectorConfig.resolve).toHaveBeenCalledWith(
-        'agent',
-        'agentModel',
-      );
-    });
+  describe('model configuration (OQ-1 → W47 F3-5)', () => {
+    /**
+     * 🔴 Three tests used to live here, all asserting that this adapter resolved
+     * its own model from `ConnectorConfig` and refused when there was none.
+     *
+     * That refusal still exists — it MOVED. `AgentSetup.model` is required, so
+     * "no model" is now a compile error at every call site instead of a runtime
+     * throw, and the refusal for a choice that is genuinely unanswerable (no
+     * active profile, or several with none named) lives in
+     * `AgentProfileService.resolveForRun` where a person can be told which of
+     * those two it is. OQ-1's rule is intact: nothing anywhere picks a model on
+     * somebody's behalf.
+     *
+     * ⚠️ Nothing replaces them IN THIS FILE, and that is deliberate rather than
+     * a gap. Two attempts were made and both were worthless:
+     *
+     *   - asserting `connectorConfig.resolve` was never called — it passes
+     *     trivially, because this adapter no longer TAKES that service, so the
+     *     mock was wired to nothing. An assertion about a collaborator that does
+     *     not exist cannot fail.
+     *   - asserting the model reached the SDK — this spec does not mock
+     *     `@openai/agents` at all (it exercises `toSdkTools`, `normaliseTurn`
+     *     and `buildAzureClient` as real functions), so there is no constructor
+     *     call to inspect.
+     *
+     * The claim is instead held where it can actually fail:
+     * `claude-tool-runner.provider.spec.ts` asserts `params.model` is the value
+     * from the setup, and `agent.boundary.spec.ts` asserts neither adapter may
+     * import `ConnectorConfigService` at all.
+     */
   });
 });

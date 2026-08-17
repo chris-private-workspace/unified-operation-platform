@@ -20,6 +20,17 @@
  * Screenshots go wherever --out points. Keep them OUT of the repo (.gitignore
  * §Playwright), and delete any that carry a real UPN (H4).
  *
+ * 🔴 **A screenshot of a `position: fixed` overlay is not evidence** (W47,
+ * 2026-08-17). Capturing an open Dialog here produces an image where the panel
+ * looks translucent and the 45% scrim is missing entirely — in BOTH `fullPage`
+ * and viewport modes. It is the capture, not the page: probing the live DOM at
+ * the same moment returns `opacity: 1` on the panel, a solid `rgb(255,255,255)`
+ * background, `rgba(0, 0, 0, 0.45)` on the scrim, and zero running animations.
+ *
+ * Nearly an hour went into "fixing" a defect that did not exist. So for
+ * overlays, trust `page.evaluate` on computed styles — which is what `probe()`
+ * below already does for tokens — and treat the PNG as a layout sketch only.
+ *
  * Usage:
  *   node apps/web/scripts/render-check.mjs --out <dir> --url /requests --url /drift
  */

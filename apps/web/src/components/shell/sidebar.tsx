@@ -1,5 +1,6 @@
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Bot,
   Boxes,
   Building2,
   Cable,
@@ -24,7 +25,11 @@ import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
 import { useUiStore } from '@/store/ui';
 import { useDrift } from '@/hooks/queries';
-import { canRepairOutbound, canSeeAdminNav } from '@/lib/roles';
+import {
+  canManageAgentProfiles,
+  canRepairOutbound,
+  canSeeAdminNav,
+} from '@/lib/roles';
 import type { Role } from '@/lib/api-types';
 import { roleLabel, roleTone } from '@/lib/user-admin';
 
@@ -99,6 +104,16 @@ const ADMIN: {
     label: 'Delivery failures',
     Icon: PackageX,
     visible: canRepairOutbound,
+  },
+  // W47 F5 — the agent registry (Tier 2 `T2-a`). Its own predicate rather than
+  // canSeeAdminNav: "may I open the admin console?" and "may I change which
+  // model every future run uses?" are different questions, and one moving must
+  // not silently move the other.
+  {
+    to: '/agent',
+    label: 'Agent',
+    Icon: Bot,
+    visible: canManageAgentProfiles,
   },
 ];
 

@@ -113,6 +113,19 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         // (ADR-0009 Decision 7): it reports named individuals' reviewing
         // behaviour, which is management information about colleagues.
         'AgentReviewStatsController',
+        // W47 F2 / `OQ-A` — GET/POST/PATCH /agent/profiles, @Roles(ADMIN).
+        //
+        // 🔴 Narrower than AgentRunController (ADMIN + REGIONAL), and the reason
+        // is the same one the kill switch gives: starting a run decides what
+        // happens to one request, editing a profile decides what EVERY future
+        // run does — including runs other people start. One of these columns is
+        // `prompt`, which is the only place in W47 where behaviour is handed to
+        // runtime configuration (W47 R1).
+        //
+        // 🔴 And again the matrix demanded this line rather than review noticing
+        // — third time an agent write surface has been caught here. That is the
+        // test working, not the test being annoying.
+        'AgentProfileController',
         // W46 F8 — /agent/runs (start, read, abort), @Roles(ADMIN,REGIONAL).
         // Neither ADR-0036 nor the plan settles who may START a run, so this
         // matches the approval surface: a run costs a model call and creates

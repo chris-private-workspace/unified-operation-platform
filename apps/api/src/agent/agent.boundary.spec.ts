@@ -116,6 +116,36 @@ describe('agent module boundary (ADR-0036 D0)', () => {
     );
   });
 
+  /**
+   * 🔴 W47 F3-5 — the runtime adapters may not read configuration.
+   *
+   * Which model a run uses is decided by its profile and handed down through
+   * `AgentSetup.model`. Before W47 each adapter resolved that for itself, and an
+   * adapter that regains the ability to do so does not fail loudly — it quietly
+   * makes the registry advisory: the screen would name one model while the run
+   * used another, with nothing red anywhere.
+   *
+   * ⚠️ Scoped to the two adapters, NOT to the folder. `ai-assist.service.ts`
+   * legitimately reads it for runs that predate the registry (`modelForLegacyRun`),
+   * so a blanket ban would be false. This is the narrowest form of the rule that
+   * is actually true — and the reason it lives here rather than in either
+   * provider spec is that a mock of a collaborator a class no longer accepts
+   * cannot fail, which is what the first two attempts at this assertion did.
+   *
+   * 📌 Matches the IMPORT, not the name. Written first as a bare
+   * `ConnectorConfigService` search, it went red immediately — on the comments
+   * in both adapters explaining why they no longer take one. A ban that a file
+   * trips by DOCUMENTING its compliance is not enforcing the rule it states.
+   */
+  it.each(['openai-agents.provider.ts', 'claude-tool-runner.provider.ts'])(
+    '%s resolves no configuration of its own (F3-5)',
+    (file) => {
+      expect(read(join(AGENT_DIR, file))).not.toContain(
+        "from '../integration/connector-config.service'",
+      );
+    },
+  );
+
   // ── the one legal crossing ─────────────────────────────────
 
   describe('agent-approval is the only module that sees both sides (F6 / H1)', () => {

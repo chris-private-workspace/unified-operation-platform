@@ -116,7 +116,6 @@ const fakeRunner = (turns: unknown[], finalMessages: unknown[] = []) => ({
 
 describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
   let registry: { list: jest.Mock };
-  let connectorConfig: { resolve: jest.Mock };
   let config: { get: jest.Mock };
   let provider: InstanceType<typeof ClaudeToolRunnerProvider>;
   let recorded: ToolExecution[];
@@ -125,21 +124,19 @@ describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     registry = { list: jest.fn().mockReturnValue(TOOLS) };
-    connectorConfig = { resolve: jest.fn().mockResolvedValue('claude-x-1') };
     config = { get: jest.fn().mockReturnValue('sk-ant-fake') };
     recorded = [];
     setup = {
       instructions: 'Be useful.',
+      // W47 F3-5 — the model now arrives WITH the setup. Before, this adapter
+      // resolved it from `ConnectorConfig` itself.
+      model: 'claude-x-1',
       ctx: CTX,
       onToolExecuted: async (r) => {
         recorded.push(r);
       },
     };
-    provider = new ClaudeToolRunnerProvider(
-      registry as never,
-      connectorConfig as never,
-      config as never,
-    );
+    provider = new ClaudeToolRunnerProvider(registry as never, config as never);
   });
 
   /* ------------------------------------------------------------------ D1 */
@@ -259,9 +256,27 @@ describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
       await expect(provider.start(setup, 'hi')).rejects.toThrow(/OQ-7/);
     });
 
-    it('refuses without a configured model (OQ-1), same as the OpenAI runtime', async () => {
-      connectorConfig.resolve.mockResolvedValue(undefined);
-      await expect(provider.start(setup, 'hi')).rejects.toThrow(/OQ-1/);
+    /**
+     * 🔴 W47 F3-5 — this used to assert that the adapter REFUSED an unconfigured
+     * model. That refusal has not been removed, it has moved: `AgentSetup.model`
+     * is required, so "no model" is now a compile error at every call site
+     * rather than a runtime throw here, and the refusal for a genuinely
+     * unanswerable choice lives in `AgentProfileService.resolveForRun`.
+     *
+     * ⚠️ The obvious replacement — asserting `connectorConfig.resolve` was never
+     * called — was written first and thrown away: this adapter no longer TAKES
+     * that service, so the mock would be wired to nothing and the assertion
+     * could not fail. What holds the claim instead is `agent.boundary.spec.ts`
+     * (neither adapter may import it) plus the positive assertion further down
+     * that `params.model` IS the value from the setup.
+     */
+    it('sends the caller’s model to the SDK, not one of its own (F3-5)', async () => {
+      mockToolRunner.mockReturnValue(fakeRunner([assistantDone()]));
+
+      await provider.start({ ...setup, model: 'a-different-model' }, 'hi');
+
+      const params = mockToolRunner.mock.calls.at(-1)?.[0] as { model: string };
+      expect(params.model).toBe('a-different-model');
     });
   });
 
@@ -400,6 +415,10 @@ describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
         max_iterations: number;
       };
       expect(params.system).toBe('Be useful.');
+      // 🔴 Both of these now come from the SETUP — the prompt always did, the
+      // model since W47 F3-5. Asserted together because they travel together:
+      // a profile is a model AND a prompt, and an adapter that honoured one
+      // while resolving the other itself would make half of every profile a lie.
       expect(params.model).toBe('claude-x-1');
       expect(params.tools).toHaveLength(TOOLS.length);
       // A ceiling exists. Deliberately asserted as "a number", not the constant:

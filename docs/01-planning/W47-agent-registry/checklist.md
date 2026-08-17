@@ -1,0 +1,98 @@
+# W47 — Agent Registry · Checklist
+
+> 由 `plan.md` derive。🟢 **plan `status: active`(Chris 2026-08-17 approve,四條 OQ 全答)**。
+> 每項做完即勾 + 寫 `progress.md` Day-N(R2)。
+
+## `F0` — 開工前(唔使 approve 都做得)
+
+- [x] F0-1 掃 phase 號 —— `git fetch --all` + 掃晒所有 remote branch(PROCESS §2.1,有兩個 W36 撞過嘅實例)⇒ 最大 **W46**,揀 **W47**
+- [x] F0-2 由 `origin/main` 開 `feat/w47-agent-registry`(`125ab50`,已含部署 #9 / #9b)
+- [x] F0-3 確認 W46 前置真收 —— `A1`(container log `25 migrations found` → 三個 W46 migration 逐個 applied)· `B6`(`POST /agent/runs` **201** + SSE **200** `text/event-stream`)· DEV OpenAPI 三個 agent path 都喺
+- [x] F0-4 🟢 **四條 OQ 2026-08-17 全部答齊,plan `draft → active`** —— `OQ-A` ADMIN only · `OQ-B` 獨立 route `/agent` · `OQ-C` 改 prompt 入 audit · `OQ-D` 舊 run 顯示「(W47 之前)」唔隱藏
+
+## `F1` — `AgentProfile` model + migration(H1)
+
+- [x] F1-1 ✅ `AgentProfile` model(`principalId` / `name` / `model` / `prompt?` / `active`,`@@unique([principalId, name])`)—— 三段 `///` 註釋寫低咗**點解係另一個 model 唔係加欄**,同埋 `prompt` 個 `R1` 三道防線
+- [x] F1-2 ✅ `AgentRun.profileId String?` + `@@index([profileId])` —— **nullable 而且會長期 nullable**:W47 之前開嘅 run 冇 profile,追溯 back-fill 就係聲稱一件冇發生過嘅事
+- [x] F1-3 ✅ migration 生成 + 對本機真 DB 跑(Chris 2026-08-17 批准停 `ai-doc-extraction-db`)。**SQL 純 additive,零 DROP**;落 DB 對過真結構(8 個欄 · `prompt` nullable · `AgentRun.profileId` nullable)。🔴 **生成之後揾到一個同 `F2-3` 打交嘅位**:Prisma 對 optional relation 預設 `ON DELETE SET NULL` ⇒ 一個直接落 DB 嘅 delete 會把「呢個 run 用邊個 profile 跑」**一次過**變成 unknown,冇任何錯誤 —— 而 `F2-3` 存在嘅理由正正係保住嗰個答案。改成 **`onDelete: Restrict`**,兩個 fkey 落 DB 實測都係 `RESTRICT`
+- [x] F1-4 ✅ **唔係 plan 寫嗰個「default profile」,因為佢落唔到手** —— `AgentPrincipal` 係第一次 run 先 lazy 建,而 `runtime` 欄明文只准係 provider 實際 boot 嗰個(BUG-011)⇒ seed 冇 provider,唔可以捏造嗰行。改成**一次性遷移**:principal 已存在 **兼且** 零 profile 先做,model 由 `ConnectorConfig.agentModel → AGENT_MODEL`(同兩個 provider `resolveModel()` 同源),冇配置就唔種。用 **model 做 profile 名**(叫「Default」會宣稱一個 registry 刻意冇嘅地位)。實測種咗 `gpt-5.6-luna`,第二次跑 `left alone`
+- [x] F1-5 ✅ **G2 嘅 test** —— `profileId = null` 嘅舊 run 讀得返(`profileId` / `profile` 兩個都係 `null` 而唔係爆);順帶釘住 **run 回應永遠唔 select `prompt`**(8000 字,屬 registry 畫面)
+- [ ] F1-6 DEV migration(部署之後)
+
+## `F2` — Profile CRUD
+
+- [x] F2-1 ✅ `AgentProfileService`(list / create / update / **`resolveForRun`**)
+- [x] F2-2 ✅ `GET/POST/PATCH /agent/profiles`,**`@Roles(ADMIN)`**(`OQ-A`)
+- [x] F2-3 ✅ **冇 DELETE** —— 只 `active=false`(`R3`:歷史 run 指住佢講「當時用咩跑」,呢個答案要捱得住有人執嗰張列表)
+- [x] F2-4 ✅ 名重複 → **409**(narrow 咗 `P2002`,**其餘錯誤原封 rethrow** —— 把任意失敗報成「個名撞咗」係講大話,INC-001 就係呢個代價)· DTO `@IsNotEmpty` + `@MaxLength`
+- [x] F2-5 🟢🟢 **drift test 真係捉到我** —— 加完 controller 跑 full suite,`permissions.spec.ts` 兩條即刻紅:「discovers every controller」同 snapshot。**呢個係第三次一個 agent write surface 被矩陣捉到而唔係被 review 捉到**。已加入鎖定矩陣(帶理由,唔係淨係加個名)+ 更新 snapshot,實測三條路由全部 `roles [ADMIN]`
+- [x] F2-6 🔴 ✅ 改 `prompt` **入 audit `before`/`after`** —— `AUDIT_ACTIONS` 加 `AGENT_PROFILE_CREATE` / `_UPDATE`,`AuditTargetType` 加 `AgentProfile`,whitelist `['name','model','prompt','active']`。🔴 **whitelist 註釋明文講咗點解唔算重開 transcript 嗰個決定**(model 生成 vs 人寫嘅配置)。⚠️ **no-op PATCH 唔寫 audit**(`auditDiff`)—— 否則 `R1` 靠嗰條 query 會被冇改過嘢嘅 edit 塞爆
+- [x] F2-7 ✅ controller spec —— **第一次跑就揾到一個真缺口**:`list()` join 咗 `principal: { name }` 送落去,而 `AgentProfileDto` 由頭到尾冇宣告過佢 ⇒ 照 OpenAPI 寫嘅前端會以為冇呢個欄。**同 BUG-011 同一條縫,方向相反**(嗰次係 controller 漏送 read-model 有嘅欄)。兩邊 key 都 typed(`keyof typeof PROFILE_SELECT` vs `keyof AgentProfileDto`)⇒ 任何一邊加欄都 compile 唔到。順帶釘住 query string → boolean 嘅轉換(service 結構上見唔到字串)
+
+## `F3` — 啟動 run 揀 profile
+
+- [x] F3-1 ✅ `StartAgentRunDto` 加 `profileId?`(controller spec 釘住佢真係傳到落去 —— 掉咗個值嘅版本會照樣開得成 run、成功、有紀錄,**只係跑咗一個冇人揀嘅 model**,冇一個畫面睇得出)
+- [x] F3-2 ✅ 唔送 → `resolveForRun`(**冇 default 概念**,見 §8 changelog 第 2 條)
+- [x] F3-3 ✅ inactive / 唔存在 / 屬另一個 principal → **400**。🔴 **refusal 一定要喺 row 建之前**:OQ-3 只准一張 request 有一個非 terminal run,refusal 留低一行 `running` 就會**永久封死**嗰張 request —— 即 期二 `G5-A` 嗰個形狀第三次由另一道門入嚟。已有一條 test 專門 assert 「refuse 咗冇建 row」
+- [x] F3-4 ✅ `AgentRun.profileId` 寫低 + `GET /agent/runs/:id` 出 `profileId` / `profile{id,name,model}`(**冇 `prompt`**)
+- [x] F3-5 ✅ model 由 profile 經 **`AgentSetup.model`(required)** 落 adapter,兩個 adapter 唔再自己 `resolveModel()`。⚠️ **三個 `AZURE_OPENAI_*` 缺一即 503 一個字冇改**(`buildAzureClient` 冇郁)。🔴 **順帶清走兩個 adapter 個 `ConnectorConfigService`** —— 留住一個「攞得到 config」嘅 adapter,隨時攞返嚟用,到時畫面講一個 model、run 用另一個,冇一處紅。⚠️ **保留一條相容路 `modelForLegacyRun`**:部署嗰刻卡喺 `awaiting_approval` 嘅 run 冇 profile,喺嗰度 refuse 就係再造一次 `G5-A`
+- [x] F3-6 ✅ falsification ×4 真跑真紅:①拆 cross-principal guard → 1 紅 ②profile model 唔用 → 33 紅(**太粗,紅嘅原因係 503 唔係揀錯 model**)③profile prompt 唔用 → **1 紅零誤傷** ④加返 banned import → 1 紅。全部還原後真跑過
+- [x] F3-7 🔴 **兩條我自己寫嘅 test 係假嘅** —— 「assert adapter 冇 call `connectorConfig.resolve`」,但 adapter 而家連收都唔收嗰個 service ⇒ **一條對住唔存在嘅協作者嘅 assert,結構上冇可能紅**。改咗去 `agent.boundary.spec.ts` 用 import ban;而**嗰條 ban 第一版又即刻紅咗** —— 紅喺兩個 adapter 解釋自己點解唔再用佢嗰段註釋度。**一條「檔案寫低自己守規矩就會犯規」嘅 ban,唔係喺度執行佢講嗰條規矩**。收窄到 import 本身
+
+## `F4` — 全域 run 列表
+
+- [x] F4-1 ✅ `GET /agent/runs?status=&profileId=&since=&limit=&cursor=`。⚠️ **呢條路本來係「一張 request 最近嗰個 run」,搬咗去 `/agent/runs/latest`** —— 另一條路係同一個 URL 睇有冇 `requestId` 分流,即一條 endpoint 兩個 response shape,OpenAPI 描述唔到。得一個 caller,一齊搬。**`@Get('latest')` 一定要宣告喺 `@Get(':id')` 之前**
+- [x] F4-2 🔴 ✅ **但同 plan 寫嗰句唔同,而 plan 嗰句係錯嘅**(見 §8 changelog 第 3 條)—— 可見性跟 `getRun`(run 嗰張 request 嘅 OpCo),唔跟啟動者。⚠️ 亦揾到 `request: { is: … }` **只可以喺有 scope 嗰陣加**:Prisma 對 nullable relation 落任何 filter(即使空)都會要求 relation 存在 ⇒ 無條件加就會靜靜令 ADMIN 睇唔到冇 request 嘅 run
+- [x] F4-3 ✅ cursor + `skip: 1` + `take: limit + 1` 探下一頁;limit 上限 **DTO 同 service 各夾一次**。⚠️ orderBy 要有 **`id` tiebreak** —— 兩個 run 可以同一毫秒開,order 唔穩定就會喺頁邊界跳行或者重複,而佢淨係喺有負載嗰陣出現、永遠 reproduce 唔到
+- [x] F4-4 ✅ `runState` 唔出 wire —— 列表係最易漏嘅位,因為**冇人會讀一個列表回應**
+- [x] F4-5 ✅ 每個 param 一條;另加「冇送嘅 filter 唔可以以 `undefined` 形式留喺 where」(對 Prisma 一樣,對讀嘅人唔一樣,而 `profileId: undefined` 距離 `profileId: null` 只差一次 refactor,而後者意思完全唔同)
+- [x] F4-6 ✅ falsification:拆走 scope filter → **1 紅零誤傷**,還原後真跑
+- [x] F4-7 🟢🟢 **W28 drift test 第四次捉到我** —— 新 route `GET /agent/runs/latest` 令鎖定矩陣紅。確認佢繼承 class-level `@Roles` 之後更新,diff **一行、零其他改動**
+
+## `F5` — 管理 UI(H6)
+
+- [x] F5-1 ✅ route `/agent` + sidebar entry(**自己一個 predicate `canManageAgentProfiles`**,唔借 `canSeeAdminNav` —— 跟 `roles.ts` 自己嘅慣例:「開唔開得 admin console」同「改唔改得每個未來 run 用邊個 model」係兩條問題)
+- [x] F5-2 ✅ profile 表 + create / edit dialog(plain `useState` + `validateProfileForm` 純函數,跟 `users-panel` 先例)。🔴 **`prompt` 睇得到改唔到 —— H6 STOP,未批**(見下 `F5-8`)
+- [x] F5-3 ✅ run 列表(時間 / 狀態 / profile / request · 狀態 + profile 兩個篩選 · cursor 分頁)。⚠️ **filter 一改就要清 cursor** —— 舊 cursor 指向一個唔再存在嘅結果集,而個症狀似壞資料唔似 bug
+- [x] F5-4 ✅ 舊 run 顯示「Before W47」**唔隱藏**(`OQ-D`)—— 真 render 驗到:本機 3 個 W46 run **三個都顯示咗**
+- [x] F5-5 ✅ DS-5(model / 時間 / requestId / 頁碼 mono;profile **名**唔係識別碼 ⇒ sans)· DS-3(一個 primary,**有 test 數住 `bg-accent` 只得一個**)· DS-8(6 個既有 tone,零新色)
+- [x] F5-6 ✅ `ui-design` 逐條答過 —— 12 條入面 **DS-11 一開始係 ❌**(prototype 冇呢個畫面)⇒ 補咗入 `design-system.md §6` owner-approved 表
+- [x] F5-7 ✅ light + dark 真 render(用 W46 committed 嗰個 `render-check.mjs`,唔再靠 session 有咩瀏覽器工具):token 真 swap(`#f5f5f6`→`#08080a` · accent `#E60027`→`#ff3355`)· **零橫向溢出**(scrollWidth = clientWidth = 1440)· 真數據
+- [x] F5-8 🟢🟢 **H6 STOP 解封 —— Chris 2026-08-17 批咗 `Textarea`**,已加入 `design-system.md §2`(**本系統第一個唔係由 handoff spec 重建出嚟嘅 primitive**,所以約束寫得特別死:每個值由 `Input` 抄 · 只有三樣刻意唔同 · **`resize-y` 唔可以係 `resize`** —— 水平 resize 容許用戶由元件內部把自己拉闊過個 dialog,即打破成個 console 唯一嗰條 layout 硬規矩,而冇任何一行 code 改動可以賴)。`prompt` 而家改得,**空 = `null` 唔係 `''`**(送 `''` 會令 row 話有 prompt 而行為係內建 ⇒ 個表會為一個跑緊內建指示嘅 profile 顯示「Custom」,一個畫面同自己講唔埋)
+- [x] F5-10 ✅ **API DTO 補返 `prompt?: string | null`** —— `@IsOptional()` 一路都收 null,只係 OpenAPI 冇講 ⇒ **同 `F2-7` 揾到嗰個契約缺口同族,喺 request 側**
+- [x] F5-11 🔴 **揾到一個真 a11y 缺陷,而佢係我由 `users-panel` 抄過嚟嘅**:`Field` 個 `<label>` 同 control 冇關聯(冇 `htmlFor`)⇒ 撳 label 唔會 focus,screen reader 讀到一個冇名嘅輸入框。改成 `<label>` **包住** control。⚠️ **hint 要放喺 label 外面** —— 包住嘅 label 入面所有嘢都會變成 accessible name,而個 hint 帶住字數,即係話個 field 個名會每打一個字變一次。**兩個問題都係一條 test 揾唔到 field 先浮出嚟,唔係 review**
+- [x] F5-9 ⚠️ **render 揾到兩件唔喺本單修嘅事**:①header 個 primary 掣掉咗落標題下面 —— 根因係 `Card` 有自己一個 body wrapper,落 `className` 嘅 flex 包唔到 children,而 **`/audit` 一模一樣**(render 對比過)⇒ 既有樣式,唔單方面改 ②dark 之下 `IconButton` 個 pencil 對比偏弱(既有 primitive)
+
+## `F6` — Gate
+
+- [x] F6-1 ✅ root `npm test` exit 0 —— api **1410 / 94 suites** · web **449 / 44**。🔴 **`F8-1` 更正:web 個 449 由呢一刻開始就係 stale** —— Textarea(`65ebbb0`)喺呢個 gate **之後**先入,2026-08-17 重跑係 **453 / 44**。**一個勾咗嘅 gate 唔等於嗰個 gate 蓋住咗今日棵樹**(同 §0「PR `MERGED` ≠ commit 入齊」同族)。🔴 **第一次跑紅咗一條同我無關嘅 test**:`requests.new-request-flag.test.tsx` render 成個 router,而我加咗 `/agent` 落去 ⇒ parallel run 5009ms 撞爆 5s,**單獨跑 1512ms 綠**。⚠️ **嗰個檔早就記錄過同一件事一次**(當時靠拆 loader 買 margin)⇒ 第二次唔應該再買,改成 per-test budget + 註釋講明呢個成本會隨 app 增長
+- [x] F6-2 ✅ root `npm run lint` exit 0
+- [x] F6-3 ✅ root `npm run build` exit 0
+- [x] F6-4 ✅ `agent.boundary.spec.ts` 全綠 —— 兼且**多咗一條**:兩個 adapter 唔准 import `ConnectorConfigService`(`F3-7`)
+- [x] F6-5 ✅ falsification **五次**逐個真跑真紅,每次還原後真跑:①cross-principal guard ②profile model ③profile prompt ④banned import ⑤list scope filter
+
+## `F7` — Live 驗
+
+- [x] F7-1 🟢🟢 **2026-08-17 全收 —— agent 真跑咗兩次,而且係一個對照實驗唔係兩次 smoke test**。⚠️ **刻意唔用「兩個唔同 model」**(本機只有一個真 Azure deployment,第二個會直接 fail,證唔到嘢)⇒ 改成**同一段 request text · 同一個 model · 唯一變數係 prompt**:
+  - profile `gpt-5.6-luna`(內建 prompt)→ **2 個 SKU**(`SPE_E5` + `POWER_BI_PRO`)
+  - profile `power-bi-only`(custom prompt)→ **1 個**,而 reasoning 明文寫住 **「I ignored the Microsoft 365 E5 request … as instructed to propose only Power BI licences」**
+  ⇒ **`R26`(prompt 落 DB = 一個真嘅 runtime 行為面)由推論變成實證**,而個 agent 仲自己講得出點解
+- [x] F7-1a ✅ **四條拒絕路 live 驗,而且全部具名唔係 generic**:①兩個 active 冇指名 → `This agent has 2 active profiles — say which one to run on`(= `F3-2` 個 R3 偏離嘅重點:**fail loud + 講得出有幾多個**)②唔存在 → 400 ③熄咗嗰個 → `The profile 'power-bi-only' is switched off…`。🔴 **四次 refuse 之後 run 數仍然係 3(開工前個數)** ⇒ `F3-3` 個核心(refuse 唔可以留低 row,否則 OQ-3 永久封死嗰張 request)真驗到
+- [x] F7-1b ✅ **`F4` live**:5 個 run newest-first(兩新帶 profile 名 · 三舊 `Before W47`)· 按 `profileId` 篩 → 1 個 · cursor 分頁 page2 **冇重複 page1 尾行**(`skip: 1` 生效)
+- [x] F7-1c 🟢🟢 **`OQ-C` / `R26` 第一道防線 live 驗**:`agent.profile_update` 個 `before.prompt` **616 字元** → `after.prompt` **61 字元**,而 `before`/`after` **兩邊都淨係得 `prompt` 一個 key**(`auditDiff` 真係只記變咗嗰樣,唔係成份 row)。⚠️ 再送一次**同一個值** ⇒ audit 由 1 變 1,**冇新 row**(`F2-6` 個決定:no-op edit 唔可以塞爆 `R26` 靠嗰條 query)
+- [ ] F7-2 DEV:migration + 列表
+- [ ] F7-3 ⚠️ **唔可以睇 revision status 當證據** —— entrypoint 令 migrate 失敗 NON-FATAL
+
+## `F8` — 收尾
+
+- [x] F8-1 ✅ **`plan.md` acceptance 逐條掃完,§3 加咗「狀態 / 實測證據」兩欄** —— **8 條:6 全收 · 2 半收**(`G1` migration @ DEV · `G8` live @ DEV,**兩條缺嘅係同一件事:一次部署**)。⚠️ **Redis 唔係阻塞**(W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201**,冇 Redis 佢會 503)—— `CLAUDE.md §0` 嗰句警告對 W46 嗰刻啱,對今日唔再係未解決事項。🔴 **掃出三件唔掃就唔會知嘅事**:①**`G7` 個 gate 同 code 脫節咗** —— `F6` 之後仲有一個 code commit ⇒ 重跑(api **1410 / 94** · web **453 / 44** · lint 0 · build 0,三個真 exit 0)②`F1` 同 `F7` **兩條 acceptance 自己寫錯咗**(seed 建 principal 落唔到手 · 「兩個唔同 model」證唔到嘢)⇒ 補入 §8 changelog 第 6 條 ③`F5` 實際做咗兩件 acceptance 冇要求嘅(Textarea H6 STOP · `<label>` a11y)
+- [x] F8-2 ✅ progress retro —— 交付 vs plan(**估 20h / 3 日,code 側 1 日做晒**,而快咗嗰兩日主要係 **W46 舖低嘅嘢今日收成**:seam · boundary spec · drift test · `render-check.mjs`)+ 四個教訓(**assert 瞄準一個唔存在嘅協作者** · **紅得多 ≠ 釘得準** · **截圖自己講大話** · **勾咗嘅 gate ≠ 蓋住今日棵樹**)+ 兩條 plan acceptance 自己寫錯嘅形狀 + carry-over 表
+- [x] F8-3 ✅ 六條入咗 `RISK_REGISTER.md` 做 **`R26`–`R31`**(2026-08-17,提早做咗唔等收尾)。`R6`(邊個改 profile)已答 ⇒ 冇入,佢係 plan OQ 唔係 risk。🔴 **`R28` 寫嗰陣先睇清一件事:`onDelete: Restrict` 擋到「刪」但擋唔到「改」** —— profile 係 mutable,所以 `AgentRun.profileId` 答到「用邊個 profile」但答唔到「嗰一刻佢係咩 model」。要真答就要喺 `AgentRun` 存 model snapshot = schema 改動(**H1,未開單**)
+- [x] F8-4 ✅ `BACKLOG.md` 同步(R7)—— `AGENT-TIER2` 行嗰段 W47 由 `status: draft` 更新到收尾實況(四條 OQ 決定 · 交付清單 · test 數 · **6 全收 / 2 半收** · `R26` 實證 · `R28` carry)。⚠️ **刻意冇搬區** —— 本行喺 C 區(blocked on 外部)而 `T2-a` 自己已經唔 blocked,但呢行講緊成個 Tier 2(`T2-b`/`c`/`d` 未開),搬咗會令另外三塊睇落唔再等外部
+- [x] F8-6 🔴🔴 **merge `main` 落 branch(PR #119 報 conflict)** —— `main` 喺 W47 開工之後多咗 **CH-031 / ADR-0040 agent run soft-hide**,而佢直接掂 agent module。**5 個 text conflict 逐行 resolve**(`audit-fields.ts` · `api-types.ts` · `permissions.spec.ts.snap` · `CLAUDE.md` · `SESSION_SUMMARY.md`),**冇用過 `--ours` / `--theirs`**(BACKLOG 硬規矩 7)。⚠️ `CLAUDE.md` 個 §0 成格係**一行**,所以做法係保留我嗰行再**逐處手動施加 CH-031 兩個改動**,收貨標準用**負面命中**驗(舊句「平台今日冇任何路徑刪一個 agent run」唔再喺檔案入面)。
+  - 🔴🔴 **真正嘅缺陷唔喺 conflict 嗰邊,喺 auto-merge 嗰邊** —— `listRuns()` **merge 得完全乾淨而佢係壞嘅**:CH-031 把 `hiddenAt: null` 放咗喺 `findLatestForRequest`(嗰陣**得嗰一條 list-shaped read**),W47 加全域列表嗰陣 `hiddenAt` 喺呢條 branch **未存在** ⇒ merge 之後 admin hide 咗嘅 run **照樣出現喺 `/agent`**,而**兩邊 suite 全綠**。**兩條 branch 各自都完全正確,因為每條都只知自己嗰半**(同 W46 `B3` 結構上同一件事)。🟢 **唔使我判斷點做:`ADR-0040` Consequences 逐字寫低咗「`T2-a` 個 run list 直接 `hiddenAt: null`」** ⇒ 加 filter + 一條 test + falsification(**1 紅零誤傷**,還原後 100/100 綠),兼更正 `findLatestForRequest` 上面「this is the ONE read that filters on `hiddenAt`」嗰句(merge 之後唔再啱)
+  - ⚠️ **`prisma generate` 唔跑就 7 個 suite 開唔到身**(`hiddenAt` 唔喺 generated type,而錯誤指住 `ai-assist.service.ts` 唔指住 client)—— `restart-stack` skill 早就記低嘅 code drift
+  - ✅ **merge 後三個 gate 重跑**:api **1430 / 94** · web **464 / 44** · lint 0 · build 0。🟢 **對得晒數**(W47 1410 + CH-031 19 + 新加 1 = 1430;453 + 11 = 464)⇒ **兩邊冇一條 test 喺 merge 入面蒸發**。snapshot 順序(我 resolve 嗰陣係猜嘅)實測啱,唔使 `-u`
+  - 🔴 **push 完即刻查 PR,會攞到一個 stale 答案,而佢睇落一模一樣就係「第五次踩坑」** —— 實測:push 完即刻 `gh pr view 119` 報 head `0ba6b7d`(舊)· `CONFLICTING` · 15 commits;**幾秒後用 `gh api` 再查**係 head `1a49805`(= local = remote branch tip)· `mergeable: true` · 16 commits。⚠️ **呢個唔推翻 §0 嗰句「`gh pr view` 報嘅 commit 數係真嘅唔係 stale API」** —— 嗰句講嘅係「唔好攞 stale 做藉口去解釋一個真嘅漏 commit」,而**今次係 push 之後 5 秒內查**,兩件事唔同。⇒ **判準:唔好只信一次 `gh pr view`,要對 `git ls-remote origin refs/heads/<branch>`**(呢個唔經 PR API,唔會 stale)
+  - 🚧 **本機 DB 仲未 apply CH-031 個 migration** —— 要停 `ai-doc-extraction-db` 交還 5433(**要 Chris 批**),而 merge 本身唔需要(test 全 mock)。⚠️ 做嗰陣**一定要 `prisma migrate deploy` 唔可以 `dev`**(本機 DB 同另一個 worktree 共用,`dev` 見到 drift 會提議 reset)
+- [x] F8-5 ✅ `CLAUDE.md §0` + `SESSION_SUMMARY.md` doc-sync(§14)—— 兩份都加咗 W47 座標,而**最重要嗰句係「`main` 上面冇 W47」**(`main` = `125ab50`,branch 13 個 commit 未 merge)。🔴 **順手掃出 `SESSION_SUMMARY` 自己有兩處 stale,而兩處都會令下手用錯前提**:①仲寫住 **W46「19 條 ✅,淨低兩條卡 Redis」**,而 `CLAUDE.md §0` 一早更新咗做 **21/21**(部署 #9 / #9b 之後 `A1` + `B6` 都收咗)⇒ **兩份文件各講各,正正係 §14 講嗰種** ②仲寫住「**部署 DEV 之前 Redis 要喺度**」做未解決前置,而 `B6` 就係喺 DEV 打嗰個 `POST /agent/runs` 攞到 **201**(冇 Redis 會 503)⇒ Redis 一早通咗。⚠️ **順帶標記(冇下結論)**:infra 信之前寫住「淨係為 Redis 而存在」,而 Redis 已通 ⇒ **封信可能冇存在理由**,但我冇讀過佢而家嘅內容,留畀 owner 掃
