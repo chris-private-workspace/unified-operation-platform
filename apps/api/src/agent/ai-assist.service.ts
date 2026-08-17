@@ -26,6 +26,8 @@ import {
   AI_ASSIST_PRINCIPAL,
   NON_TERMINAL_RUN_STATUSES,
 } from './agent-run-status';
+import { AgentProfileService } from './agent-profile.service';
+import { ConnectorConfigService } from '../integration/connector-config.service';
 
 /**
  * W46 F5 / ADR-0036 — the AI-Assist run.
@@ -90,6 +92,15 @@ export class AiAssistService {
     private readonly audit: AuditService,
     private readonly killSwitch: AgentKillSwitchService,
     private readonly queue: AgentRunQueue,
+    private readonly profiles: AgentProfileService,
+    /**
+     * W47 F3-5 — read ONLY for runs that predate the registry.
+     *
+     * 🔴 Not a fallback for new runs. `resolveForRun` refuses rather than
+     * reaching for the environment, and this must not quietly undo that. See
+     * `modelForLegacyRun`.
+     */
+    private readonly connectorConfig: ConnectorConfigService,
   ) {}
 
   /**
@@ -109,7 +120,11 @@ export class AiAssistService {
    *   worker has no `user` and reads scope back off the row, exactly as
    *   `resumeRun` already did.
    */
-  async startRun(user: AppUser, requestId: string): Promise<AiAssistRunResult> {
+  async startRun(
+    user: AppUser,
+    requestId: string,
+    profileId?: string,
+  ): Promise<AiAssistRunResult> {
     // 期二 G3 — first, because everything below it costs something: a model
     // call, a row, a person's attention. `startRun` already refused a
     // deactivated principal further down; that check now lives in one place
@@ -146,6 +161,18 @@ export class AiAssistService {
     }
 
     /**
+     * W47 F3 — which profile this run uses, settled BEFORE the row exists.
+     *
+     * 🔴 Position matters. `resolveForRun` refuses when the choice is
+     * unanswerable (no active profile, several with none named, one that has
+     * been switched off), and every one of those is a 400 that must land before
+     * anything is written — otherwise a refusal leaves a `running` row that
+     * OQ-3 then counts against the request, blocking it from ever getting
+     * another run. Same permanent-block shape 期二 G5-A found twice already.
+     */
+    const profile = await this.profiles.resolveForRun(profileId, principal.id);
+
+    /**
      * Run row and audit row in ONE transaction (ADR-0009 D8.1: "done but
      * unrecorded" is worse than "not done").
      *
@@ -164,6 +191,7 @@ export class AiAssistService {
           startedById: user.id,
           requestId,
           status: 'running',
+          profileId: profile.id,
         },
         select: { id: true },
       });
@@ -225,7 +253,17 @@ export class AiAssistService {
       // 🔴 No `runState` — it carries the model's unscrubbed history and
       // nothing here needs it (the `getRun` lesson, and `run-expiry` repeats
       // it). A fresh start has no state to resume from by definition.
-      select: { id: true, status: true, requestId: true, startedBy: true },
+      select: {
+        id: true,
+        status: true,
+        requestId: true,
+        startedBy: true,
+        // W47 F3 — the run's own profile, not whatever is configured now. A
+        // queued job can execute long after an admin edited the registry.
+        profile: {
+          select: { id: true, name: true, model: true, prompt: true },
+        },
+      },
     });
     if (!run) throw new NotFoundException('Agent run not found');
 
@@ -243,11 +281,7 @@ export class AiAssistService {
       );
     }
 
-    const setup: AgentSetup = {
-      instructions: INSTRUCTIONS,
-      ctx: { runId: run.id, user: run.startedBy },
-      onToolExecuted: (record) => this.recordToolExecution(run.id, record),
-    };
+    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
 
     /**
      * 🔴 The kill switch is INSIDE the try, and 期二 G5-A is why.
@@ -310,7 +344,17 @@ export class AiAssistService {
 
     const run = await this.prisma.agentRun.findUnique({
       where: { id: runId },
-      select: { id: true, status: true, runState: true, startedBy: true },
+      select: {
+        id: true,
+        status: true,
+        runState: true,
+        startedBy: true,
+        // The SAME profile the run started on — an approval can land overnight,
+        // and by then the registry may say something different.
+        profile: {
+          select: { id: true, name: true, model: true, prompt: true },
+        },
+      },
     });
     if (!run) throw new NotFoundException('Agent run not found');
     if (run.status !== 'awaiting_approval') {
@@ -347,11 +391,7 @@ export class AiAssistService {
       );
     }
 
-    const setup: AgentSetup = {
-      instructions: INSTRUCTIONS,
-      ctx: { runId: run.id, user: run.startedBy },
-      onToolExecuted: (record) => this.recordToolExecution(run.id, record),
-    };
+    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
 
     try {
       const turn = await this.runtime.resume(setup, run.runState, decisions);
@@ -360,6 +400,82 @@ export class AiAssistService {
       await this.failRun(run.id, err);
       throw err;
     }
+  }
+
+  /**
+   * The setup both `executeRun` and `resumeRun` hand to the runtime — W47 F3-5.
+   *
+   * 🔴 Built from the RUN'S profile, read off the row, never from the registry
+   * as it stands now. A run is queued and may execute minutes later; an
+   * `awaiting_approval` run may resume the next morning. In both gaps an admin
+   * can edit or retire a profile, and "which model did this run use" has to keep
+   * one answer across the whole run rather than changing under it.
+   *
+   * ⚠️ A retired profile still runs a run that already started. Retiring is how
+   * you stop NEW runs (`resolveForRun` refuses it); applying it to a run already
+   * in flight would strand every `awaiting_approval` run the moment somebody
+   * tidied the list — the permanent-block shape again, this time triggered by a
+   * routine admin action rather than a bug.
+   */
+  private async buildSetup(
+    runId: string,
+    user: AgentSetup['ctx']['user'],
+    profile: {
+      id: string;
+      name: string;
+      model: string;
+      prompt: string | null;
+    } | null,
+  ): Promise<AgentSetup> {
+    return {
+      /**
+       * 🔴 `prompt` REPLACES the built-in instructions rather than appending to
+       * them, and an empty string is treated as "not set".
+       *
+       * Appending would be the safer-sounding choice and is the wrong one: two
+       * sets of instructions that disagree produce behaviour neither author
+       * predicted, and an admin reading their own prompt on screen would have no
+       * way to know what else is in front of it. D2 already establishes that
+       * prompt text is not a security boundary — the tool allow-list and the
+       * OpCo scope are — so what is being handed over here is usefulness, not
+       * authority.
+       */
+      instructions: profile?.prompt?.trim() || INSTRUCTIONS,
+      model: profile?.model ?? (await this.modelForLegacyRun(runId)),
+      ctx: { runId, user },
+      onToolExecuted: (record) => this.recordToolExecution(runId, record),
+    };
+  }
+
+  /**
+   * 🔴 The ONLY place the environment can still decide a model, and it exists
+   * for exactly one situation: a run that was started before the registry did.
+   *
+   * The situation is real and it is not rare — deploying W47 while a run sits at
+   * `awaiting_approval` is the ordinary case, not the edge one. Those rows have
+   * `profileId = null`, and refusing them here would strand them: OQ-3 allows
+   * one non-terminal run per request, `AgentRunExpiryService` does not sweep
+   * every state, and the person approving would get a 503 with no way forward.
+   * That is 期二 G5-A's permanent block, and it has already been found twice in
+   * this file by two different routes.
+   *
+   * ⚠️ So this is a compatibility path, NOT a fallback. It cannot be reached by
+   * a run started after W47, because `startRun` writes `profileId` on every row
+   * it creates and `resolveForRun` refuses rather than returning nothing. It
+   * logs at warn level for the same reason: the day this fires for a NEW run,
+   * something is wrong upstream and the log is how anyone would find out.
+   */
+  private async modelForLegacyRun(runId: string): Promise<string> {
+    const model = await this.connectorConfig.resolve('agent', 'agentModel');
+    if (!model?.trim()) {
+      throw new ServiceUnavailableException(
+        `Run ${runId} predates the agent registry and no model is configured to run it on — set ConnectorConfig.agentModel or AGENT_MODEL (W47 F3-5)`,
+      );
+    }
+    this.logger.warn(
+      `Run ${runId} has no profile (started before W47) — falling back to the configured model`,
+    );
+    return model.trim();
   }
 
   // ── the parts that read ────────────────────────────────────
@@ -395,6 +511,16 @@ export class AiAssistService {
         startedAt: true,
         endedAt: true,
         startedById: true,
+        /**
+         * W47 F3-4 — what this run ran on.
+         *
+         * 🔴 `null` for runs started before the registry, and the screen says
+         * "(before W47)" rather than hiding them (OQ-D). `prompt` is NOT
+         * selected: it can be 8000 characters and belongs on the registry
+         * screen, not on every run detail response.
+         */
+        profileId: true,
+        profile: { select: { id: true, name: true, model: true } },
         steps: { orderBy: { createdAt: 'asc' } },
         messages: { orderBy: { createdAt: 'asc' } },
         proposals: {

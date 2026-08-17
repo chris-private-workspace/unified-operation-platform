@@ -61,7 +61,28 @@ describe('AgentRunController (F10-2e)', () => {
 
       // Passing `dto` straight through would still compile and still work
       // today; it would stop working the moment the DTO grows a field.
-      expect(aiAssist.startRun).toHaveBeenCalledWith(user, 'req-1');
+      //
+      // 📌 W47 F3-1 is that moment: the DTO grew `profileId`, and this
+      // assertion went red because it names its arguments one by one. The
+      // explicit `undefined` is the whole value of writing it this way — it
+      // makes "nothing was chosen" a stated fact rather than an absent one.
+      expect(aiAssist.startRun).toHaveBeenCalledWith(user, 'req-1', undefined);
+    });
+
+    /**
+     * 🔴 W47 F3-1 — a chosen profile has to survive the trip.
+     *
+     * The failure this guards against is silent in the worst way: the run would
+     * start, succeed, and be recorded — on a model nobody picked. Nothing about
+     * that looks wrong on any screen, and `AgentRun.profileId` would even name a
+     * profile, just not the one the operator selected.
+     */
+    it('carries a chosen profileId through to the service', async () => {
+      const { controller, aiAssist } = build();
+
+      await controller.start({ requestId: 'req-1', profileId: 'prof-9' }, user);
+
+      expect(aiAssist.startRun).toHaveBeenCalledWith(user, 'req-1', 'prof-9');
     });
 
     it('passes the query value straight through to the service', async () => {

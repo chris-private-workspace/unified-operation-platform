@@ -73,6 +73,25 @@ export interface AgentSetup {
   instructions: string;
   ctx: AgentToolContext;
   /**
+   * W47 F3-5 — which model this run uses, decided by the CALLER.
+   *
+   * 🔴 Required, and that is the whole point of moving it here. Before W47 each
+   * adapter resolved its own model from `ConnectorConfig`/env, which meant two
+   * implementations each held a private opinion about what "the model" is —
+   * and, more importantly, that the answer could change between a run starting
+   * and the same run resuming after an overnight approval.
+   *
+   * ⚠️ Required does NOT mean the caller always has a profile to read it from:
+   * runs started before the registry existed have `profileId = null`. Resolving
+   * that is deliberately the service's job (`ai-assist.service`), not the
+   * seam's. A seam that accepted `model?: string` would push the ambiguity into
+   * both adapters, where the natural resolution is a fallback constant — and a
+   * fallback constant is exactly what ADR-0036 D10 and both providers refuse to
+   * have, because which model runs decides cost, capability, and which third
+   * party receives a real person's request text.
+   */
+  model: string;
+  /**
    * Called by the adapter around real tool execution.
    *
    * Optional so a test can drive a provider without a database, and so the

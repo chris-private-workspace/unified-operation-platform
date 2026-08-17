@@ -54,7 +54,7 @@ export class AgentRunController {
       'Queue an AI-Assist run on a request. Returns immediately with status `running`; watch `/events` or refetch for the result.',
   })
   start(@Body() dto: StartAgentRunDto, @CurrentUser() user: AuthUser) {
-    return this.aiAssist.startRun(user, dto.requestId);
+    return this.aiAssist.startRun(user, dto.requestId, dto.profileId);
   }
 
   @Get()

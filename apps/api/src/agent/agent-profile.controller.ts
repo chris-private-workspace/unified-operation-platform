@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -38,7 +46,8 @@ export class AgentProfileController {
   @Get()
   @ApiOkResponse({ type: [AgentProfileDto] })
   @ApiOperation({
-    summary: 'Every agent profile. Retired ones only with includeInactive=true.',
+    summary:
+      'Every agent profile. Retired ones only with includeInactive=true.',
   })
   list(@Query('includeInactive') includeInactive?: string) {
     return this.profiles.list(includeInactive === 'true');

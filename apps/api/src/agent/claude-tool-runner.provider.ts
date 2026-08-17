@@ -7,7 +7,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaTool } from '@anthropic-ai/sdk/helpers/beta/json-schema';
-import { ConnectorConfigService } from '../integration/connector-config.service';
 import { AgentToolRegistry } from './tool-registry';
 import type { AgentTool, AgentToolContext } from './agent-tool';
 import {
@@ -251,9 +250,9 @@ export class ClaudeToolRunnerProvider extends AgentRuntimeProvider {
 
   private readonly logger = new Logger(ClaudeToolRunnerProvider.name);
 
+  /** ⚠️ No `ConnectorConfigService` since W47 F3-5 — same reason as the OpenAI adapter. */
   constructor(
     private readonly registry: AgentToolRegistry,
-    private readonly connectorConfig: ConnectorConfigService,
     private readonly config: ConfigService,
   ) {
     super();
@@ -415,7 +414,10 @@ export class ClaudeToolRunnerProvider extends AgentRuntimeProvider {
     const registered = this.registry.list();
 
     const runner = client.beta.messages.toolRunner({
-      model: await this.resolveModel(),
+      // W47 F3-5 — from the caller (the run's profile), not resolved here. See
+      // the note on `AgentSetup.model`: the "no default model" rule moved to the
+      // seam, it did not go away.
+      model: setup.model,
       max_tokens: MAX_OUTPUT_TOKENS,
       system: setup.instructions,
       messages,
@@ -487,17 +489,6 @@ export class ClaudeToolRunnerProvider extends AgentRuntimeProvider {
       );
     }
     return new Anthropic({ apiKey: apiKey.trim() });
-  }
-
-  /** Same rule, same reason as the OpenAI adapter: no default model (OQ-1). */
-  private async resolveModel(): Promise<string> {
-    const model = await this.connectorConfig.resolve('agent', 'agentModel');
-    if (!model?.trim()) {
-      throw new ServiceUnavailableException(
-        'No agent model is configured — set ConnectorConfig.agentModel or AGENT_MODEL (W46 OQ-1)',
-      );
-    }
-    return model.trim();
   }
 }
 

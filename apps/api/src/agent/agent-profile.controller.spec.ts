@@ -1,9 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { AgentProfileController } from './agent-profile.controller';
-import {
-  AgentProfileService,
-  PROFILE_SELECT,
-} from './agent-profile.service';
+import { AgentProfileService, PROFILE_SELECT } from './agent-profile.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import { AgentProfileDto } from './dto/agent-profile.dto';
 

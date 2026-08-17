@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 /**
  * W46 F8 — what the agent screens read.
@@ -16,6 +16,24 @@ export class StartAgentRunDto {
   @ApiProperty({ description: 'The request the agent should read.' })
   @IsString()
   requestId!: string;
+
+  /**
+   * W47 F3-1 — which model / prompt combination to run on.
+   *
+   * ⚠️ Optional on the wire, but omitting it is NOT "use the default": there is
+   * no default. It is resolved by `AgentProfileService.resolveForRun`, which
+   * uses the single active profile when there is exactly one and refuses with a
+   * 400 when the answer is genuinely ambiguous — several active profiles, or
+   * none. Omitting it is how the existing AI-Assist card keeps working
+   * unchanged while there is only one profile to pick.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Profile to run on. Omit while only one is active; a 400 says so if the choice is ambiguous.',
+  })
+  @IsOptional()
+  @IsString()
+  profileId?: string;
 }
 
 export class AgentStepDto {
@@ -67,6 +85,19 @@ export class AgentProposalDto {
   @ApiProperty() createdAt!: Date;
 }
 
+/**
+ * The run's profile, as the run detail carries it — W47 F3-4.
+ *
+ * 🔴 No `prompt`. It can be 8000 characters and it belongs to the registry
+ * screen; putting it on every run response would ship the agent's instructions
+ * to anyone who can read a run, on every poll.
+ */
+export class AgentRunProfileDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() model!: string;
+}
+
 export class AgentRunDto {
   @ApiProperty() id!: string;
   @ApiPropertyOptional() requestId?: string | null;
@@ -91,4 +122,18 @@ export class AgentRunDto {
   messages!: AgentMessageDto[];
   @ApiProperty({ type: [AgentProposalDto] })
   proposals!: AgentProposalDto[];
+
+  /**
+   * W47 F3-4 / `OQ-D` — which profile this run used, `null` before the registry.
+   *
+   * 🔴 Null is a real, permanent answer, not a gap waiting to be back-filled.
+   * Runs started before W47 ran on whatever the environment said at the time,
+   * and asserting a profile for them would claim a fact that never existed. The
+   * screen shows those as "(before W47)" rather than hiding them: hiding turns
+   * "how many runs predate the registry" into an unanswerable question, and that
+   * is precisely the number a new list is easiest to be wrong about.
+   */
+  @ApiPropertyOptional() profileId?: string | null;
+  @ApiPropertyOptional({ type: AgentRunProfileDto })
+  profile?: AgentRunProfileDto | null;
 }

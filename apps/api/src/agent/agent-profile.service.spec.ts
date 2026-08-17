@@ -5,7 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, type AppUser } from '@prisma/client';
-import { AgentProfileService, MAX_PROMPT_LENGTH } from './agent-profile.service';
+import {
+  AgentProfileService,
+  MAX_PROMPT_LENGTH,
+} from './agent-profile.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit-fields';
@@ -63,7 +66,9 @@ describe('AgentProfileService', () => {
         create: jest.fn().mockResolvedValue(profile()),
         update: jest.fn().mockResolvedValue(profile()),
       },
-      agentPrincipal: { findUnique: jest.fn().mockResolvedValue({ id: 'pr1' }) },
+      agentPrincipal: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'pr1' }),
+      },
     };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
 
@@ -111,7 +116,9 @@ describe('AgentProfileService', () => {
     it('rethrows a non-unique database failure untouched', async () => {
       // Reporting an arbitrary failure as "that name is taken" would be a lie
       // about what happened — INC-001 is this project's record of what that costs.
-      prisma.agentProfile.create.mockRejectedValue(new Error('connection lost'));
+      prisma.agentProfile.create.mockRejectedValue(
+        new Error('connection lost'),
+      );
 
       await expect(
         service.create({ name: 'n', model: 'gpt-4o' }, actor),
@@ -250,9 +257,9 @@ describe('AgentProfileService', () => {
     it('refuses an id that does not exist', async () => {
       prisma.agentProfile.findUnique.mockResolvedValue(null);
 
-      await expect(service.resolveForRun('ghost', 'pr1')).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        service.resolveForRun('ghost', 'pr1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

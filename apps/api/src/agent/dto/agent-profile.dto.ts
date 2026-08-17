@@ -27,8 +27,7 @@ export class CreateAgentProfileDto {
   name!: string;
 
   @ApiProperty({
-    description:
-      'The Azure DEPLOYMENT name, not a model family (ADR-0037 E3).',
+    description: 'The Azure DEPLOYMENT name, not a model family (ADR-0037 E3).',
   })
   @IsString()
   @IsNotEmpty()
@@ -45,7 +44,8 @@ export class CreateAgentProfileDto {
   prompt?: string;
 
   @ApiPropertyOptional({
-    description: "Which agent this profile belongs to. Defaults to 'ai-assist'.",
+    description:
+      "Which agent this profile belongs to. Defaults to 'ai-assist'.",
   })
   @IsOptional()
   @IsString()
@@ -72,7 +72,9 @@ export class UpdateAgentProfileDto {
   @MaxLength(120)
   model?: string;
 
-  @ApiPropertyOptional({ description: '🔴 Audited with before/after (W47 R1).' })
+  @ApiPropertyOptional({
+    description: '🔴 Audited with before/after (W47 R1).',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(MAX_PROMPT_LENGTH)
