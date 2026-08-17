@@ -221,3 +221,75 @@ handoff 由頭到尾冇 textarea(兩邊 grep 零命中)⇒ 冇嘢可以對照,�
 
 `ai-doc-extraction-db` **會自己返嚟搶 5433**(今日交換咗三次)。其中一次 `TCP 5433 = True` **差啲被我當成「我哋個 DB 通」** —— 實際上通嘅係另一個項目個 DB。
 📌 同 `CLAUDE.md §9` 嗰句「有 listener ≠ 啱嗰個 DB」係同一件事,而今日先真撞到。**每次交換之後都要用真 query 驗係邊個 DB,唔可以只睇 port。**
+
+---
+
+## Retro(`F8-2`)— 2026-08-17
+
+### 交付 vs plan
+
+| | Plan | 實際 |
+|---|---|---|
+| 日數 | 3 日(D1 schema+CRUD / D2 揀 profile+列表 / D3 UI+live) | **code 側 1 日做晒**,DEV 嗰半未做 |
+| Effort | F1 3h + F2 4h + F3 3h + F4 4h + F5 6h = **20h** | 一日 |
+| Acceptance | 8 條 | **6 全收 · 2 半收**(`G1` / `G8`,兩條都係缺一次 DEV 部署) |
+| test | — | api **1362 → 1410 / 92 → 94** · web **439 → 453 / 43 → 44** |
+| ADR | 預咗可能要 | **零份** —— schema 改動喺已 approve plan 範圍內,唔係新架構決定 |
+
+🔴 **「快咗兩日」唔係因為做少咗,主要係 W46 舖低嘅嘢今日直接收成**:seam(`AgentSetup`
+一加個 `model` 欄,兩個 adapter 就唔使各自揾 model)· `agent.boundary.spec.ts`(加一條
+ban 就守得住)· W28 drift test(**兩次自動捉到我**)· `render-check.mjs`(H6 render 唔再
+靠 session 有咩瀏覽器工具)。**呢啲全部係 W46 當時睇落「多做咗」嘅嘢。**
+
+### 🔴 本 phase 最值錢嗰個教訓:一條 assert 可以連「有嘢畀佢捉」呢個前提都冇
+
+`F3-7`:我寫咗兩條 test,assert 兩個 adapter **冇** call `connectorConfig.resolve`。睇落嚴謹,
+實際上 —— **adapter 而家連收都唔收嗰個 service**。一條對住一個**唔存在嘅協作者**嘅 assert,
+**結構上冇可能紅**。
+
+📌 **點解值得同 `CLAUDE.md §9` 嗰三個並排**:嗰三個(tautology · `toHaveProperty(key)` ·
+`expect(false)` 喺 no-op 之下)都係「**assert 太弱**」。今次唔同 —— assert 本身寫得好好,
+**係佢瞄準嗰件嘢唔存在**。⇒ 「拆走實作睇佢紅唔紅」呢個方法**照樣捉得到**,但你要記得
+對一條**已經綠**嘅 test 都做一次,而唔係只對啱啱寫嘅新閘做。
+
+➕ 同族第二件(`F3-6`):第二個 falsification **33 紅**,睇落好勁,但**紅嘅原因係 503 唔係
+揀錯 model** ⇒ **紅得多 ≠ 釘得準**。一個 falsification 要問嘅唔係「紅唔紅」,係「**紅嗰個
+原因係咪我想證嗰個**」。
+
+### 🔴🔴 第二貴:截圖自己講大話(`F5-7` / `F5-9`)
+
+Dialog 截圖顯示面板半透明、45% scrim 完全唔見,`fullPage` 同 viewport **兩種模式一致**。
+差啲就去「修」一個唔存在嘅缺陷 —— 直到 probe live DOM:`opacity: 1`、實色
+`rgb(255,255,255)`、scrim `rgba(0,0,0,0.45)`、零 running animation。**係 capture 唔係頁面。**
+
+📌 **一致唔等於真** —— 兩種 capture 模式同時錯,睇落就似「兩個獨立來源互相印證」。
+已寫警告落 `render-check.mjs`(committed,唔淨係寫喺呢份 progress)⇒ **下次唔使再畀一次
+同樣嘅成本。**
+
+### ⚠️ 兩條 plan acceptance 自己寫錯咗,而佢哋錯得唔一樣
+
+- `F1`「seed 建一個 default profile」—— **落唔到手**(`AgentPrincipal` lazy 建,`runtime` 欄
+  只准係 provider 實際 boot 嗰個 ⇒ seed 冇 provider,建嗰行一定係捏造)
+- `F7`「兩個 profile(**唔同 model**)」—— **做得到但證唔到嘢**(本機一個 deployment,第二個
+  必 fail,而「一成一敗」同「model 名打錯字」結果一模一樣)
+
+📌 **形狀**:寫 plan 嗰陣未落手,所以 acceptance 難免會寫到一啲**聽落合理、做落先知唔成立**
+嘅嘢。**應對唔係「plan 寫好啲」**(嗰個要求等於要求未做之前就知答案),**係落手一發現就
+即刻入 changelog** —— 本 phase 三條偏離(`F3-2` / `F1-4` / `F4-2`)加收尾兩條,全部入咗 §8。
+
+### 🔴 `F8-1` 掃出一件唔掃就唔會知嘅事
+
+**`F6` 個 gate 同今日棵樹脫節咗** —— `F6-1` 勾嗰陣 web 係 449,而 Textarea(`65ebbb0`)喺
+**gate 之後**先入。重跑先知係 453。
+
+📌 **一個勾咗嘅 gate 唔等於嗰個 gate 蓋住咗今日棵樹**,同 §0 嗰句「PR 顯示 `MERGED` 唔等於
+啲 commit 入齊咗」完全同族:**summary-level 綠燈證明唔到下面每一件都真係做咗。**
+⇒ **收尾一定要重跑 gate,唔可以抄 checklist 個數。**
+
+### 🚧 卡住 / carry-over
+
+| 項 | 狀態 | 缺咩 |
+|---|---|---|
+| `F1-6` · `F7-2` · `F7-3` | ❌ | **一次 DEV 部署**(merge → 部署 #10 → 驗)。⚠️ **Redis 唔係阻塞**:W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201** ⇒ 一早通咗 |
+| `R28` 一半 | 🔴 未答 | `onDelete: Restrict` 擋到**刪**擋唔到**改** ⇒ `AgentRun.profileId` 答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」。要真答 = `AgentRun` 存 model snapshot = **schema 改動(H1),未開單** |
+| `F5-9` 兩件 | 🚧 唔喺本單 | header primary 掣位置(**`/audit` 一模一樣** ⇒ 既有樣式,唔單方面改)· dark 之下 `IconButton` 對比偏弱(既有 primitive) |

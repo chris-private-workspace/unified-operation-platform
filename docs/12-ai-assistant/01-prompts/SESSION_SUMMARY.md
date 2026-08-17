@@ -5,22 +5,23 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17 · W47 收尾後)**
 
-**🟢🟢 W46 `agent-runtime` 2026-08-17 已經 merge 落 `main`(PR #114,tip `45ad525`)。**
-⚠️ 呢一段本身之前寫住「branch 仲未 merge 返落 `main`」+ 一張「`main` 有冇 agent = **冇**」嘅
-對照表 —— **兩樣而家都唔啱**,`main` 就係有 agent 嗰個。以下係 merge 之後嘅真相:
+**🟢 W47 `agent-registry`(Tier 2 `T2-a`)code 側做晒,但 🔴 仲喺 branch —— `main` 上面冇。**
+⚠️ 呢一段之前收尾嗰句寫住「**`main` 同你 working tree 而家係同一件嘢**」——
+**W47 開工之後就唔再成立**。以下係今日嘅真相:
 
-| | `main`(= 你 working tree) |
-|---|---|
-| test | api **1362 / 92 suites** · web **439 / 43 files,零紅** |
-| ADR | 到 **0039**(0036 agent-runtime seam · 0037 inference boundary · 0038 tool-runner dep · 0039 async + SSE) |
-| agent module | **有** —— `src/agent` + `src/agent-approval` |
-| root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` |
+| | `main`(`125ab50`) | working tree(`feat/w47-agent-registry`,tip `b309de0`,**13 個 commit**) |
+|---|---|---|
+| test | api **1362 / 92** · web **439 / 43** | api **1410 / 94 suites** · web **453 / 44 files** |
+| agent registry | **冇** —— 一個 agent,seed 出嚟嘅一行 `AgentPrincipal`,冇 CRUD / 冇 UI / 冇得揀 | **有** —— `AgentProfile` + `/agent` 管理頁 + **全域 run 列表** |
+| `Textarea` primitive | 冇 | **有**(H6 STOP → Chris 批,`design-system.md §2`) |
+| ADR | 到 **0039** | 到 **0039** —— **W47 零新 ADR**(schema 改動喺已 approve 嘅 plan 範圍內) |
+| root gate | `test` / `build` / `lint` 三個都蓋埋 `-w @uop/web` | 同左 |
 
-🔴 **「已 merge」唔係睇 PR state 得出嘅** —— 十個 commit 逐個 `git merge-base --is-ancestor
-<sha> origin/main` 驗過(CLAUDE.md §9 先例:PR **#87** 顯示 `MERGED`,實際只入咗 6 個入面
-頭 2 個)。
+🔴 **「已 merge」唔係睇 PR state 得出嘅** —— W46 十個 commit 逐個 `git merge-base
+--is-ancestor <sha> origin/main` 驗過(CLAUDE.md §9 先例:PR **#87** 顯示 `MERGED`,實際
+只入咗 6 個入面頭 2 個)。**W47 merge 之後同樣要逐個驗。**
 
 🟢🟢 **嗰 6 條長期紅冇咗** —— `main` 側 `31b5c7d` 修好咗,根因係 **Node 25 預設開 Web
 Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom / 同我哋嘅 code 都無關。
@@ -31,11 +32,10 @@ Storage,把 `globalThis.localStorage` 裝成一個空 `{}`**,同 jsdom / 同我�
 root script ⇒ web 由頭到尾冇入過任何 gate,呢個就係嗰 6 條可以紅足幾個星期冇人知嘅機制)。
 merge 之後四個 gate 全部真跑過:**test / lint / build 三個 exit 0**。
 
-⇒ **`main` 同你 working tree 而家係同一件嘢** —— 呢度之前寫住「下面嗰段唔係你 working
-tree 嘅樣」,merge 之後唔再成立。
-
-**W46 `agent-runtime` 2026-08-17 收尾** —— 21 條 acceptance **19 條 ✅**,淨低兩條
-(`A1` DEV 半邊 · `B6` SSE 喺 DEV 真通),而**兩條都係卡 Redis,唔係卡 Azure OpenAI**。
+**W46 `agent-runtime` 2026-08-17 收尾 —— 🟢🟢 21 條 acceptance 21/21 全收。**
+⚠️ **呢度之前寫住「19 條 ✅,淨低 `A1` DEV 半邊同 `B6`,而兩條都卡 Redis」—— 已經過時**:
+同日部署 **#9**(`dev-45ad525`)同 **#9b**(同一個 image,淨係加 env)之後兩條都收咗,
+`CLAUDE.md §0` 一早更新咗而**呢份冇跟** —— 正正係 §14 講嗰種「兩份文件各講各」。
 🟢🟢 **`A14` 同日全收** —— Chris 開咗 Azure OpenAI resource,agent **第一次真跑**:
 `awaiting_approval` → **approve → `completed`**,落 DB 對數(proposal `executed` +
 `approvedById` 有值 + 2 條 line item 逐字對返兩個 GUID)。
@@ -43,16 +43,48 @@ tree 嘅樣」,merge 之後唔再成立。
 `This request is complete…`** ⇒ **`F8-3` 卡上嗰句「Approving runs the platform's normal
 checks — they can still refuse」第一次真驗證**(閘喺 `RequestService.addLineItem`,唔喺
 agent 側)。
-🟡 **封信仍然未發**(`docs/13-deployment/11-azure-openai-infra-request.md`)—— 但**佢而家
-淨係為 Redis 而存在**;幾時發係 owner 決定。Chris 2026-08-17 傾過:W46 code 一行都未入
+🟡 **封信仍然未發**(`docs/13-deployment/11-azure-openai-infra-request.md`)—— 之前寫住
+**「佢而家淨係為 Redis 而存在」**;⚠️ **而 DEV Redis 實測已通**(見上)⇒ **封信可能已經
+冇存在理由**。🔴 **呢句刻意唔寫死** —— 我冇讀過封信而家嘅內容,亦未確認佢講嘅係咪淨係
+DEV;**owner 決定發唔發之前應該先掃一次封信**。幾時發係 owner 決定。Chris 2026-08-17 傾過:W46 code 一行都未入
 `main`,喺呢個時候叫人開 production tenant 嘅資源,次序係反嘅。
 ⚠️ **本機開發完全唔受影響** —— 本機一直有 Redis(`docker-compose.yml:23-32`)。
 🔴 **本機 LLM 唔再全部 mock** —— `AZURE_OPENAI_*` 三個 env 一填就打真 Azure(缺一即 503,
 冇 default)。
 
-🔴 **一件部署前一定要知嘅事**:`main` 一 merge 咗 W46,**部署 DEV 之前 Redis 要喺度**,
-否則 `POST /agent/runs` 直接 503(`ADR-0039 F1`:個 POST 而家只 enqueue)。呢個同
-Azure OpenAI **唔同**級別 —— 冇 Azure OpenAI 只係少一條 live 驗,冇 Redis 係 agent 整個停。
+🔴 ~~**部署 DEV 之前 Redis 要喺度,否則 `POST /agent/runs` 直接 503**~~
+**—— 呢句唔再係一個未解決嘅前置(2026-08-17 `F8-1` 掃出)**:`B6` 收嗰陣就係喺 DEV 打
+`POST /agent/runs` 攞到 **201**,而冇 Redis 佢會直接 503(`ADR-0039 F1`:個 POST 只
+enqueue)⇒ **DEV Redis 一早通咗**。
+⚠️ **機制本身仍然成立,所以留住呢句做知識** —— 冇 Redis = agent **整個停**,同 Azure
+OpenAI 嗰種「少一條 live 驗」唔同級別;但**唔好再當佢係部署前要先解決嘅嘢**。
+
+### W47 `agent-registry` —— 掂 agent 之前要知嘅五件事
+
+1. **冇「default profile」呢個概念** —— 一個 active 就用佢;多過一個而冇指名 → **400 兼
+   講明有幾多個**;零個 → 400,**唔准 fallback 落 env**。理由:一個畫面上睇唔到嘅 default,
+   就係將來用錯 model 都冇人發現嗰個位。
+2. **model 由 profile 經 `AgentSetup.model`(required)落 adapter** —— 兩個 adapter 唔再
+   自己 `resolveModel()`,亦**唔再收 `ConnectorConfigService`**(`agent.boundary.spec.ts`
+   有 import ban 守住)。⚠️ **三個 `AZURE_OPENAI_*` 缺一即 503,一個字冇改**。
+   ⚠️ 另有一條相容路 `modelForLegacyRun` —— 部署嗰刻卡喺 `awaiting_approval` 嘅 run 冇
+   profile,喺嗰度 refuse 就會永久封死嗰張 request。
+3. **`prompt` 改得,改動入 audit `before`/`after`**,而 **no-op PATCH 唔寫 row**。
+   🔴 **`R26` 已經係實證唔係推論**:同一段 text · 同一個 model,唯一變數係 prompt ⇒ 提
+   **2 個 SKU** vs **1 個**,而 agent 自己個 reasoning 寫住「**I ignored the Microsoft 365
+   E5 request … as instructed**」。
+4. **舊 run(`profileId = null`)顯示「Before W47」,唔隱藏**(`OQ-D`);兩個 fkey 都係
+   **`onDelete: Restrict`**(Prisma optional relation 預設嗰個 `SET NULL` 會令一個直接落 DB
+   嘅 delete 把「呢個 run 用邊個 profile 跑」一次過變 unknown)。
+5. **`Textarea` 係新 primitive** —— 用之前讀 `design-system.md §2`;🔴 **`resize-y` 唔可以
+   寫成 `resize`**(水平 resize 容許用戶由元件內部把自己拉闊過個 dialog = 打破成個 console
+   唯一嗰條 layout 硬規矩,而冇任何一行 code 改動可以賴)。
+
+🚧 **W47 淨低三項,而三項係同一件事:一次 DEV 部署**(`F1-6` migration · `F7-2` 列表 ·
+`F7-3` 唔可以睇 revision status 當證據)⇒ merge → 部署 #10 → 驗。
+🔴 **`R28` 一半未答(H1,未開單)**:`Restrict` 擋到**刪**擋唔到**改**,而 profile 係
+mutable ⇒ 今日答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」;要真答就要
+`AgentRun` 存 model snapshot。
 
 ---
 

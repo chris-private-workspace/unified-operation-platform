@@ -65,7 +65,7 @@
 
 ## `F6` — Gate
 
-- [x] F6-1 ✅ root `npm test` exit 0 —— api **1410 / 94 suites** · web **449 / 44**。🔴 **第一次跑紅咗一條同我無關嘅 test**:`requests.new-request-flag.test.tsx` render 成個 router,而我加咗 `/agent` 落去 ⇒ parallel run 5009ms 撞爆 5s,**單獨跑 1512ms 綠**。⚠️ **嗰個檔早就記錄過同一件事一次**(當時靠拆 loader 買 margin)⇒ 第二次唔應該再買,改成 per-test budget + 註釋講明呢個成本會隨 app 增長
+- [x] F6-1 ✅ root `npm test` exit 0 —— api **1410 / 94 suites** · web **449 / 44**。🔴 **`F8-1` 更正:web 個 449 由呢一刻開始就係 stale** —— Textarea(`65ebbb0`)喺呢個 gate **之後**先入,2026-08-17 重跑係 **453 / 44**。**一個勾咗嘅 gate 唔等於嗰個 gate 蓋住咗今日棵樹**(同 §0「PR `MERGED` ≠ commit 入齊」同族)。🔴 **第一次跑紅咗一條同我無關嘅 test**:`requests.new-request-flag.test.tsx` render 成個 router,而我加咗 `/agent` 落去 ⇒ parallel run 5009ms 撞爆 5s,**單獨跑 1512ms 綠**。⚠️ **嗰個檔早就記錄過同一件事一次**(當時靠拆 loader 買 margin)⇒ 第二次唔應該再買,改成 per-test budget + 註釋講明呢個成本會隨 app 增長
 - [x] F6-2 ✅ root `npm run lint` exit 0
 - [x] F6-3 ✅ root `npm run build` exit 0
 - [x] F6-4 ✅ `agent.boundary.spec.ts` 全綠 —— 兼且**多咗一條**:兩個 adapter 唔准 import `ConnectorConfigService`(`F3-7`)
@@ -85,8 +85,8 @@
 
 ## `F8` — 收尾
 
-- [ ] F8-1 `plan.md` acceptance 逐條掃(**W46 教訓:呢張表由頭到尾冇更新過**)
-- [ ] F8-2 progress retro
+- [x] F8-1 ✅ **`plan.md` acceptance 逐條掃完,§3 加咗「狀態 / 實測證據」兩欄** —— **8 條:6 全收 · 2 半收**(`G1` migration @ DEV · `G8` live @ DEV,**兩條缺嘅係同一件事:一次部署**)。⚠️ **Redis 唔係阻塞**(W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201**,冇 Redis 佢會 503)—— `CLAUDE.md §0` 嗰句警告對 W46 嗰刻啱,對今日唔再係未解決事項。🔴 **掃出三件唔掃就唔會知嘅事**:①**`G7` 個 gate 同 code 脫節咗** —— `F6` 之後仲有一個 code commit ⇒ 重跑(api **1410 / 94** · web **453 / 44** · lint 0 · build 0,三個真 exit 0)②`F1` 同 `F7` **兩條 acceptance 自己寫錯咗**(seed 建 principal 落唔到手 · 「兩個唔同 model」證唔到嘢)⇒ 補入 §8 changelog 第 6 條 ③`F5` 實際做咗兩件 acceptance 冇要求嘅(Textarea H6 STOP · `<label>` a11y)
+- [x] F8-2 ✅ progress retro —— 交付 vs plan(**估 20h / 3 日,code 側 1 日做晒**,而快咗嗰兩日主要係 **W46 舖低嘅嘢今日收成**:seam · boundary spec · drift test · `render-check.mjs`)+ 四個教訓(**assert 瞄準一個唔存在嘅協作者** · **紅得多 ≠ 釘得準** · **截圖自己講大話** · **勾咗嘅 gate ≠ 蓋住今日棵樹**)+ 兩條 plan acceptance 自己寫錯嘅形狀 + carry-over 表
 - [x] F8-3 ✅ 六條入咗 `RISK_REGISTER.md` 做 **`R26`–`R31`**(2026-08-17,提早做咗唔等收尾)。`R6`(邊個改 profile)已答 ⇒ 冇入,佢係 plan OQ 唔係 risk。🔴 **`R28` 寫嗰陣先睇清一件事:`onDelete: Restrict` 擋到「刪」但擋唔到「改」** —— profile 係 mutable,所以 `AgentRun.profileId` 答到「用邊個 profile」但答唔到「嗰一刻佢係咩 model」。要真答就要喺 `AgentRun` 存 model snapshot = schema 改動(**H1,未開單**)
-- [ ] F8-4 `BACKLOG.md` 同步(R7)
-- [ ] F8-5 `CLAUDE.md §0` + `SESSION_SUMMARY.md` doc-sync(§14:**佢哋過時 = 下個 session 用錯前提開始**)
+- [x] F8-4 ✅ `BACKLOG.md` 同步(R7)—— `AGENT-TIER2` 行嗰段 W47 由 `status: draft` 更新到收尾實況(四條 OQ 決定 · 交付清單 · test 數 · **6 全收 / 2 半收** · `R26` 實證 · `R28` carry)。⚠️ **刻意冇搬區** —— 本行喺 C 區(blocked on 外部)而 `T2-a` 自己已經唔 blocked,但呢行講緊成個 Tier 2(`T2-b`/`c`/`d` 未開),搬咗會令另外三塊睇落唔再等外部
+- [x] F8-5 ✅ `CLAUDE.md §0` + `SESSION_SUMMARY.md` doc-sync(§14)—— 兩份都加咗 W47 座標,而**最重要嗰句係「`main` 上面冇 W47」**(`main` = `125ab50`,branch 13 個 commit 未 merge)。🔴 **順手掃出 `SESSION_SUMMARY` 自己有兩處 stale,而兩處都會令下手用錯前提**:①仲寫住 **W46「19 條 ✅,淨低兩條卡 Redis」**,而 `CLAUDE.md §0` 一早更新咗做 **21/21**(部署 #9 / #9b 之後 `A1` + `B6` 都收咗)⇒ **兩份文件各講各,正正係 §14 講嗰種** ②仲寫住「**部署 DEV 之前 Redis 要喺度**」做未解決前置,而 `B6` 就係喺 DEV 打嗰個 `POST /agent/runs` 攞到 **201**(冇 Redis 會 503)⇒ Redis 一早通咗。⚠️ **順帶標記(冇下結論)**:infra 信之前寫住「淨係為 Redis 而存在」,而 Redis 已通 ⇒ **封信可能冇存在理由**,但我冇讀過佢而家嘅內容,留畀 owner 掃
