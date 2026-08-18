@@ -121,8 +121,19 @@ OpenAI 嗰種「少一條 live 驗」唔同級別;但**唔好再當佢係部署�
 ⚠️ **merge 之後一定要 `prisma generate`** —— 唔跑就 7 個 api suite 直接開唔到身
 (`hiddenAt` 唔喺 generated type),而錯誤訊息指住 `ai-assist.service.ts` 唔指住 client。
 
-🚧 **W47 淨低三項,而三項係同一件事:一次 DEV 部署**(`F1-6` migration · `F7-2` 列表 ·
-`F7-3` 唔可以睇 revision status 當證據)⇒ ~~merge~~ ✅ 做咗(PR #119) → 部署 #10 → 驗。
+🟢🟢 **W47 acceptance 8/8 全收(2026-08-17),phase `status: closed`** —— merge(PR #119)·
+部署 #10(`dev-df03563`)· `F7-2` / `F7-3` / `F7-4`,三步同日做完。
+
+🔴 **收尾記低一個判斷錯誤,因為佢係一個寫法問題唔係一次意外**:當時把 `G1` 同 `G8` 當成
+**同一個阻塞**,而佢哋唔係 —— `G1` 部署完**自動就收**,`G8` 要**人再做一次對照實驗**
+(部署唔會幫你開 profile)。⇒ **寫「DEV ❌」嗰陣要順手寫低差嘅係咩**:一次部署 / 一次操作 /
+一個未答嘅問題。三者收尾成本差好遠,而「❌」三個都一樣咁樣寫。
+
+🔴 **`R15` 2026-08-17 第一次 live 命中** —— agent 提咗一個 **101 個 catalog row 一個都
+對唔上**嘅幻覺 `skuId`。**唔係缺陷**:proposal payload 明文設計成唔驗,兩道閘住喺 tool body
+而 tool body **approve 之後先行** ⇒ 入得到 proposal、**入唔到 line item**。
+📌 **值得記嘅唔係「有冇擋到」,係「擋喺邊」** —— 操作員 approve 之前睇到嗰個就係未驗版本,
+而畫面**冇任何信號**話畀佢聽個 GUID 係假嘅。product question,**未開單**。
 🔴 **`R28` 一半未答(H1,未開單)**:`Restrict` 擋到**刪**擋唔到**改**,而 profile 係
 mutable ⇒ 今日答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」;要真答就要
 `AgentRun` 存 model snapshot。

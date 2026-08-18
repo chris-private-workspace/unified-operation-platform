@@ -232,7 +232,7 @@ handoff 由頭到尾冇 textarea(兩邊 grep 零命中)⇒ 冇嘢可以對照,�
 |---|---|---|
 | 日數 | 3 日(D1 schema+CRUD / D2 揀 profile+列表 / D3 UI+live) | **code 側 1 日做晒**,DEV 嗰半未做 |
 | Effort | F1 3h + F2 4h + F3 3h + F4 4h + F5 6h = **20h** | 一日 |
-| Acceptance | 8 條 | **6 全收 · 2 半收**(`G1` / `G8`,兩條都係缺一次 DEV 部署) |
+| Acceptance | 8 條 | **8/8 全收** —— ⚠️ 呢格寫 retro 嗰刻係「6 全收 · 2 半收」,而兩條同日就由部署 #10(`G1`)同 `F7-4`(`G8`)收埋 |
 | test | — | api **1362 → 1410 / 92 → 94** · web **439 → 453 / 43 → 44** |
 | ADR | 預咗可能要 | **零份** —— schema 改動喺已 approve plan 範圍內,唔係新架構決定 |
 
@@ -290,7 +290,7 @@ Dialog 截圖顯示面板半透明、45% scrim 完全唔見,`fullPage` 同 viewp
 
 | 項 | 狀態 | 缺咩 |
 |---|---|---|
-| `F1-6` · `F7-2` · `F7-3` | ❌ | **一次 DEV 部署**(~~merge~~ ✅ 2026-08-17 做咗(PR #119) → 部署 #10 → 驗)。⚠️ **Redis 唔係阻塞**:W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201** ⇒ 一早通咗 |
+| `F1-6` · `F7-2` · `F7-3` | ✅ **2026-08-17 全收** | ~~一次 DEV 部署~~ —— merge(PR #119)· 部署 #10(`dev-df03563`)· 驗,三步同日做完。➕ `F7-4`(`G8` DEV 對照實驗)亦收 ⇒ **8/8**。⚠️ **Redis 由頭到尾唔係阻塞**:W46 `B6` 喺 DEV 實測 `POST /agent/runs` **201** ⇒ 一早通咗 |
 | `R28` 一半 | 🔴 未答 | `onDelete: Restrict` 擋到**刪**擋唔到**改** ⇒ `AgentRun.profileId` 答到「用邊個 profile」,答唔到「**嗰一刻佢係咩 model**」。要真答 = `AgentRun` 存 model snapshot = **schema 改動(H1),未開單** |
 | `F5-9` 兩件 | 🚧 唔喺本單 | header primary 掣位置(**`/audit` 一模一樣** ⇒ 既有樣式,唔單方面改)· dark 之下 `IconButton` 對比偏弱(既有 primitive) |
 
@@ -350,3 +350,64 @@ api **1430 / 94** · web **464 / 44** · lint 0 · build 0。
 **W47 1410 + CH-031 19 + merge 新加 1 = 1430** · **453 + 11 = 464** ⇒ **兩邊冇一條 test
 喺 merge 入面蒸發**。順帶:`permissions.spec.ts.snap` 個順序我 resolve 嗰陣係**猜**嘅
 (route 註冊次序決定),實測啱,唔使 `-u`。
+
+---
+
+## Day 2 — 2026-08-18 · closeout(獨立覆核)
+
+部署 #10 同 `G8` 係 **main worktree 嗰個 session** 做嘅。呢個 session 落手嗰陣**唔知佢做過乜**,
+所以做咗一次獨立覆核 —— 而個做法本身有一件值得記低嘅嘢。
+
+### 🟢🟢 331 條 audit 入面,8 條就重建到成個 `G8` 嘅時序
+
+冇問人、冇睇佢個 commit,淨係查 `GET /admin/audit?targetType=AgentRun`:
+
+```
+14:43:11  hide ×2       ← §0 講嗰兩個舊測試 run(CH-031 開單起因)
+14:59:35  create ×2     ← dev-g8-baseline(prompt null)+ dev-g8-powerbi-only(141 字元)
+14:59:52  run started   ← 同一個 model gpt-5.6-luna
+15:01:20  run started   ← 唯一變數係 prompt
+15:04:25  hide ×2 + active:true→false ×2   ← 收拾
+```
+
+逐項同佢 commit message 寫嘅對得上。📌 **ADR-0009 設計 audit 嗰陣冇聲稱過呢個用途** ——
+「一個第三者可以由 audit 重建一次驗證做過乜」係一個附帶得嚟嘅性質,而佢比「有紀錄」強:
+**有紀錄只答到「有人做過」,呢個答到「做咗咩、順序點、收唔收得成」**。
+
+### 🔴 覆核途中撞到兩件事,兩件都係我自己個 query 唔啱
+
+1. **`/admin/audit` 個 response 係 `{total, limit, offset, entries}`,唔係 `{items}`。**
+   我第一次讀成 `items` ⇒ 攞到空陣列 ⇒ **差啲寫低「audit 係空嘅」**。真相係 `total: 331`。
+2. **`/agent/profiles` 個 param 係 `includeInactive`,唔係 `active`。**
+   打 `?active=false` 返 `[]`,而佢**唔係 bug** —— `active` 唔係宣告過嘅 param,
+   `ValidationPipe({whitelist:true})` 剝走咗,等同冇 filter ⇒ 走預設(只返 active)。
+   用 `?includeInactive=true` 就見到兩個 `active=false` 嘅 profile。
+
+📌 兩件同一個形狀,而佢就係本 phase `F3-7` 嗰個教訓喺**驗證側**嘅版本:**一個返空嘅 query,
+同一個「真係冇嘢」嘅事實,喺畫面上一模一樣。** 分別只能靠去查佢個 contract,唔能靠睇個結果。
+
+### ✅ 覆核結論
+
+`AgentProfile` 有真 row(`dev-g8-*`,`model` 欄有值)⇒ migration 真跑咗;
+hidden run 打 `GET /agent/runs/{id}` **200 兼 `steps: 7` / `proposals: 1` 一件冇少**,
+而 `GET /agent/runs` 返 **0 items** ⇒ **ADR-0040 D3 個唔對稱喺真環境成立**,
+兼且**我喺 merge 度加嗰行 `hiddenAt: null` 第一次真生效**(冇佢,`/agent` 會列出 4 個已經
+移除咗嘅 run)。
+
+### 收尾改咗嘅嘢
+
+- `plan.md` §2 `F7` 個 acceptance 仲寫住「DEV ❌ 未做」,而同一份 plan §3 已經寫住全收
+  ⇒ **同一份文件內部兩處各講各**,W46 教訓(plan vs checklist)嘅新變種
+- `progress.md` carry-over 表同 `CLAUDE.md §0` 亦各有一處 stale
+- `checklist.md` `F7-5` 由 `[ ]` 改勾 —— **刻意唔刪原文**(PROCESS sacred rule),因為佢記錄住
+  嗰一刻「未做」係一個**有成本、要人拍板**嘅狀態,唔係漏做
+- `plan.md` `status: active → closed`
+
+🔴 **而收尾掃嗰陣,我自己即刻又踩多次同一個坑** —— 我改咗 `plan.md` §2 個 `F7` acceptance,
+**漏咗同一節嘅 `F1`**(佢一樣寫住「DEV ❌,卡部署」),要最後 grep 一次 `卡部署|半收|status: active`
+先揾返。
+
+📌 **所以真正嘅教訓唔係「記住更新」** —— 我上一句先講完呢個形狀,下一分鐘就再犯。
+**係「收尾一定要用 grep 掃 stale 講法,唔可以靠記憶行一次」**:掃 `卡部署` / `半收` /
+`status: active` / `未做` 呢類**當時嘅狀態詞**,佢哋就係會過期嗰批字。
+同一次掃亦揾到 `checklist.md` 個 header 仲寫住 `plan status: active`,而嗰行**冇人會諗起去改**。
