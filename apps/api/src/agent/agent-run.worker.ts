@@ -13,6 +13,7 @@ import {
   type AgentRunJobData,
 } from './agent-run.queue';
 import { AiAssistService } from './ai-assist.service';
+import { AgentConversationService } from './agent-conversation.service';
 
 /**
  * W46 期二 G5-B / ADR-0039 F1 + F3 — the thing that actually runs the agent.
@@ -38,6 +39,20 @@ export class AgentRunWorker implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly aiAssist: AiAssistService,
+    /**
+     * W48 F4 — where a chat's reply gets recorded, and the reason the worker is
+     * the caller rather than `AiAssistService`.
+     *
+     * `AgentConversationService` already depends on `AiAssistService` (a chat
+     * starts an ordinary run), so the reverse edge would be a cycle needing
+     * `forwardRef` — which `agent.module.ts` avoided once already for the queue
+     * and the worker, for the same reason. The worker sits above both and can
+     * see the result, so it is the honest place for the handoff.
+     *
+     * 🔴 The worker still writes nothing itself; it calls the one service that
+     * owns `AgentChatTurn`, which is what `agent.boundary.spec.ts` enforces.
+     */
+    private readonly conversations: AgentConversationService,
     private readonly config: ConfigService,
   ) {
     /**
@@ -59,7 +74,30 @@ export class AgentRunWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<AgentRunJobData>(
       AGENT_RUN_QUEUE,
       async (job: Job<AgentRunJobData>) => {
-        await this.aiAssist.executeRun(job.data.runId);
+        /**
+         * 🔴 W48 F4-2 — the conversation is told either way.
+         *
+         * `recordAssistantTurn` is a no-op for a run with no conversation, so
+         * the request-screen path is unchanged. What the `catch` buys is the
+         * failure case: a thread told only about successes leaves the browser
+         * showing "thinking…" forever, and a person who is waiting does not
+         * retry. The run's own failure was already recorded by `failRun`; this
+         * only makes sure somebody hears about it.
+         *
+         * ⚠️ The original error is rethrown unchanged. Swallowing it would take
+         * the job out of BullMQ's `failed` handler and out of the log line the
+         * operator reads.
+         */
+        try {
+          const result = await this.aiAssist.executeRun(job.data.runId);
+          await this.conversations.recordAssistantTurn(
+            job.data.runId,
+            result.finalOutput,
+          );
+        } catch (err) {
+          await this.conversations.recordAssistantTurn(job.data.runId);
+          throw err;
+        }
       },
       {
         connection: agentRedisConnection(this.config),

@@ -8,6 +8,7 @@ import type { AppUser } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertOpcoScope } from '../auth/opco-scope';
 import { AiAssistService } from './ai-assist.service';
+import { AgentRunQueue } from './agent-run.queue';
 import type { CreateAgentConversationDto } from './dto/agent-conversation.dto';
 
 /**
@@ -63,7 +64,60 @@ export class AgentConversationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiAssist: AiAssistService,
+    private readonly queue: AgentRunQueue,
   ) {}
+
+  /**
+   * W48 F4 — the agent's side of a turn, recorded once its run has ended.
+   *
+   * 🔴 Called by `AgentRunWorker` with what `executeRun` RETURNED, rather than
+   * reading the answer back out of the database. Two reasons and the second is
+   * the one that decided it:
+   *   1. `finalOutput` is not stored on `AgentRun` at all — it only exists in
+   *      the result.
+   *   2. The other place the agent's words survive is `AgentMessage`, which is
+   *      ADMIN-only and kept forever (ADR-0036 D4/D6). Reading a reply out of
+   *      there to show its owner would quietly turn an admin-only audit table
+   *      into a user-facing one.
+   *
+   * 🔴 `F4-2` — the publish happens in `finally`, for a run that FAILED as much
+   * as one that finished. A thread told only about successes leaves the browser
+   * showing "thinking…" forever, and a person who is waiting does not retry.
+   * That is the failure mode `R16` names in another form: a stall reads as
+   * progress.
+   *
+   * ⚠️ A run with no `finalOutput` (parked at `awaiting_approval`, or failed)
+   * stores no turn. The agent did not say anything, and inventing a line saying
+   * so would be the platform speaking in the agent's voice — into the transcript
+   * a person reads before approving something.
+   */
+  async recordAssistantTurn(runId: string, finalOutput?: string) {
+    const run = await this.prisma.agentRun.findUnique({
+      where: { id: runId },
+      select: { conversationId: true },
+    });
+    if (!run?.conversationId) return;
+
+    const conversationId = run.conversationId;
+    try {
+      const content = finalOutput?.trim();
+      if (!content) return;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.agentChatTurn.create({
+          data: { conversationId, role: 'assistant', content },
+          select: { id: true },
+        });
+        await tx.agentConversation.update({
+          where: { id: conversationId },
+          data: { updatedAt: new Date() },
+          select: { id: true },
+        });
+      });
+    } finally {
+      await this.queue.publishConversationChanged(conversationId);
+    }
+  }
 
   /**
    * Open a thread.

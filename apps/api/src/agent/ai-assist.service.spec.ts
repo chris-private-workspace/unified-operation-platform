@@ -9,7 +9,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AppUser } from '@prisma/client';
-import { AiAssistService } from './ai-assist.service';
+import {
+  AiAssistService,
+  MAX_HISTORY_CHARS,
+  MAX_HISTORY_TURNS,
+} from './ai-assist.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AgentRuntimeProvider,
@@ -98,7 +102,7 @@ describe('AiAssistService', () => {
     agentMessage: { createMany: jest.Mock };
     agentProposal: { create: jest.Mock; updateMany: jest.Mock };
     /** W48 F3 — READ only. `agent-conversation.service` is the sole writer. */
-    agentChatTurn: { findFirst: jest.Mock };
+    agentChatTurn: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let audit: { log: jest.Mock };
@@ -150,7 +154,7 @@ describe('AiAssistService', () => {
       agentStep: { create: jest.fn() },
       agentMessage: { createMany: jest.fn() },
       agentProposal: { create: jest.fn(), updateMany: jest.fn() },
-      agentChatTurn: { findFirst: jest.fn() },
+      agentChatTurn: { findMany: jest.fn() },
       /**
        * The interactive form, with a flag around the callback.
        *
@@ -286,17 +290,84 @@ describe('AiAssistService', () => {
       return service.executeRun(started.runId);
     };
 
+    /** newest-first, the order `inputFor`'s query asks for. */
+    const history = (...turns: Array<[string, string]>) =>
+      prisma.agentChatTurn.findMany.mockResolvedValue(
+        turns.map(([role, content]) => ({ role, content })),
+      );
+
     it('asks the model the person’s own words, not the request sentence', async () => {
-      prisma.agentChatTurn.findFirst.mockResolvedValue({
-        content: 'which licences does a new finance hire need?',
-      });
+      history(['user', 'which licences does a new finance hire need?']);
 
       await conversationRun(null);
 
       expect(runtime.start).toHaveBeenCalledWith(
         expect.anything(),
-        'which licences does a new finance hire need?',
+        'Person: which licences does a new finance hire need?',
       );
+    });
+
+    /**
+     * 🔴 W48 F4 — without this the "conversation" is a row of unrelated
+     * questions: every turn queues its own run, and a run that saw only the
+     * latest line could not answer "and what about the second one?".
+     *
+     * ⚠️ Oldest-first in the prompt, because that is reading order — the query
+     * returns newest-first so it can stop early against the budget.
+     */
+    it('gives the run the whole thread, oldest first', async () => {
+      history(
+        ['user', 'and the add-ons?'],
+        ['assistant', 'SPE_E3.'],
+        ['user', 'what does a finance hire need?'],
+      );
+
+      await conversationRun(null);
+
+      expect(runtime.start).toHaveBeenCalledWith(
+        expect.anything(),
+        [
+          'Person: what does a finance hire need?',
+          'You: SPE_E3.',
+          'Person: and the add-ons?',
+        ].join('\n\n'),
+      );
+    });
+
+    /**
+     * 🔴 D9 / F4-3 — the ceiling, and the fact that it ANNOUNCES itself.
+     *
+     * A model handed a silently shortened history answers "as discussed
+     * earlier" about turns it cannot see, and the person reading that has no
+     * way to tell. Truncating is acceptable; hiding that you truncated is not.
+     */
+    it('caps the history by turn count and says so', async () => {
+      history(
+        ...Array.from(
+          { length: MAX_HISTORY_TURNS + 1 },
+          (_, i) => ['user', `turn ${i}`] as [string, string],
+        ),
+      );
+
+      await conversationRun(null);
+
+      const input = runtime.start.mock.calls[0][1] as string;
+      expect(input).toContain('1 earlier turn(s) omitted');
+      expect(input.split('\n\n')).toHaveLength(MAX_HISTORY_TURNS + 1);
+    });
+
+    it('caps the history by size, keeping the newest turn whatever it costs', async () => {
+      const huge = 'x'.repeat(MAX_HISTORY_CHARS);
+      history(['user', huge], ['user', 'an older question']);
+
+      await conversationRun(null);
+
+      const input = runtime.start.mock.calls[0][1] as string;
+      expect(input).toContain(huge);
+      // The older turn did not fit, and the omission is stated rather than
+      // leaving the model to assume it has the whole thread.
+      expect(input).not.toContain('an older question');
+      expect(input).toContain('1 earlier turn(s) omitted');
     });
 
     /**
@@ -306,7 +377,7 @@ describe('AiAssistService', () => {
      * D3 closes, with every tool test still green.
      */
     it('gives a context-free conversation a null request in the tool context', async () => {
-      prisma.agentChatTurn.findFirst.mockResolvedValue({ content: 'hello' });
+      history(['user', 'hello']);
       let captured: AgentSetup | undefined;
       runtime.start.mockImplementation(async (setup: AgentSetup) => {
         captured = setup;
@@ -319,7 +390,7 @@ describe('AiAssistService', () => {
     });
 
     it('keeps the request in context when the conversation has one', async () => {
-      prisma.agentChatTurn.findFirst.mockResolvedValue({ content: 'hello' });
+      history(['user', 'hello']);
       let captured: AgentSetup | undefined;
       runtime.start.mockImplementation(async (setup: AgentSetup) => {
         captured = setup;
@@ -337,7 +408,7 @@ describe('AiAssistService', () => {
      * R16's rule for unreadable saved state, applied to the same class of fact.
      */
     it('refuses rather than inventing a question when there is no turn', async () => {
-      prisma.agentChatTurn.findFirst.mockResolvedValue(null);
+      prisma.agentChatTurn.findMany.mockResolvedValue([]);
 
       await expect(conversationRun(null)).rejects.toBeInstanceOf(
         ServiceUnavailableException,
@@ -353,7 +424,7 @@ describe('AiAssistService', () => {
      * still thinking.
      */
     it('does not apply the one-open-run-per-request rule', async () => {
-      prisma.agentChatTurn.findFirst.mockResolvedValue({ content: 'hi' });
+      history(['user', 'hi']);
       prisma.agentRun.findFirst.mockResolvedValue({ id: 'run-open' });
 
       await expect(

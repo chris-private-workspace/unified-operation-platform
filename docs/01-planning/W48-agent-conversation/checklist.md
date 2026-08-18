@@ -47,10 +47,13 @@
 
 ## `F4` — Streaming(送真內容)
 
-- [ ] F4-1 per-conversation token 流(SSE,`OQ-E`)—— ⚠️ **唔可以重用 `agent-run.queue.ts` 個 `changes()`**(queue-wide BullMQ 事件,payload 明文冇 content)
-- [ ] F4-2 🔴 斷線 **fail loud**,唔可以靜靜當完成(跟 `R16` 同一條規矩)
-- [ ] F4-3 **turn 上限或 history 截斷**(`R3` —— 每個 turn 帶住成段 history,成本非線性升,而今日 blast-radius 係 per-run 唔係 per-conversation)
-- [ ] F4-4 falsification:拆走 fail-loud → 要紅
+- [x] F4-1 ✅ **per-conversation SSE** —— 新 event `AGENT_CONVERSATION_CHANGED` + `publishConversationChanged()` + `conversationChanges()` + `GET /agent/conversations/:id/events`。**冇重用 `changes()`**(佢按 runId 過濾,而一條 thread 每個 turn 開一個新 run ⇒ 過濾唔到)。🔴 **但唔係 token 流 —— Chris 2026-08-18 揀咗 turn-level notify,而 plan 寫嘅係 token-by-token ⇒ `plan.md §8` 有 deviation 記錄(R3)**
+- [x] F4-2 ✅ **fail loud 落咗兩層**:①`recordAssistantTurn` 個 publish 喺 **`finally`** ⇒ 寫 turn 掟咗都照通知 ②worker 個 `catch` 一樣 call 佢再 rethrow ⇒ **run failed 都會通知對話**。🔴 **點解呢個先係「fail loud」嘅實質**:一條只收到成功消息嘅 thread,個畫面會**永遠顯示「思考緊」**,而**等緊嘅人唔會 retry** —— 呢個比一個明顯錯誤差
+- [x] F4-3 ✅ **兩個上限一齊**(`MAX_HISTORY_TURNS = 20` + `MAX_HISTORY_CHARS = 20_000`)—— 兩個都要,因為**任何一個單獨都喺對方蓋住嗰個 case 失效**:20 個一字 turn 唔使錢,兩個 4000 字 turn 就要。🔴 **截斷會自己出聲**(`[N earlier turn(s) omitted]`)—— 一個收到靜靜縮短版 history 嘅 model,會就住佢睇唔到嘅 turn 講「as discussed earlier」,而讀嗰個人分唔出
+- [x] F4-4 ✅ **falsification 恰好 4 條紅零誤傷**(3 條「冇嘢講都要通知」+ 1 條「寫失敗都要通知」),424 綠
+- [x] F4-5 ✅ **assistant turn 寫返落 `AgentChatTurn`**(F3 刻意留低嗰半)—— 由 **worker** 拎住 `executeRun` **返嘅** `finalOutput` 交畀 conversation service。🔴 **點解唔喺 DB 讀返**:①`finalOutput` **根本冇存落 `AgentRun`** ②另一個存 agent 講過嘅嘢嘅地方係 `AgentMessage`,而佢 **ADMIN-only + 永久保留**(`ADR-0036 D4/D6`)⇒ 由嗰度讀個回覆出嚟畀 owner 睇,就係**靜靜把一張 admin-only 審計表變成 user-facing**
+- [x] F4-6 ✅ **history**(plan 冇獨立列,但佢先係 `F4` 真核心)—— 之前 `inputFor` 只送最後一句 ⇒ 條「對話」實際上係**一串互不相干嘅問答**。⚠️ **flatten 成文字**(`Person:` / `You:`),因為 seam 收 `input: string`;送結構化 message list 要**擴 seam = H1**,而本 phase 個 streaming 決定啱啱行咗相反方向。**代價寫咗落 code**:model 讀嘅係一份**轉述**,而早前 turn 嘅 tool call 唔喺入面
+- [x] F4-7 ✅ **W28 drift 第二次紅,一樣係逐行對過先更新** —— `+1` row(`GET /agent/conversations/:id/events → [ADMIN,REGIONAL]`),零移除
 
 ## `F5` — 最小 UI(**H6**)
 

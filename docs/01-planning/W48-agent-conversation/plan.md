@@ -296,8 +296,15 @@ model AgentTurn {
 | 2026-08-18 | 🟢 **七條 OQ 全部答齊(Chris),`draft → active`;補返 Effort(≈23h)、`end_date`、§5 day-by-day** | 兩條最貴嘅分支都答咗細嗰邊:`OQ-B` **新 model** ⇒ `ADR-0036 D6` 唔使郁 · migration 純 additive;`OQ-E` **SSE** ⇒ 零新 dep、唔觸發 H2、唔使第二份 ADR。⇒ 由「可能兩份 ADR + 改一張既有表」變成「一份 ADR + 純 additive schema」 | Chris Lai |
 | 2026-08-18 | 🔴 **新增 `OQ-H`(未答)** —— 「清掉」= hard delete 定 soft? | `OQ-G` 答「一直存在,**直至清掉**」,而「清」嘅語意冇定。呢條唔可以順手決定,因為 **`ADR-0040`(2026-08-17 Accepted)喺隔籬一個 model 上面啱啱先揀咗 soft**,而**同一份 ADR 又明文把 GDPR-style 徹底移除推咗畀 `agent-tier2-scope.md OQ-4`** —— 即係推咗嚟本 phase。兩個答案代價唔同(H4 做唔做得到 vs 同 ADR-0040 一唔一致),而且直接決定兩個 `onDelete`。⚠️ **只 block `F2` 個 `onDelete` 同 `F3` 一條 endpoint,唔 block `F1` 開始** | AI(提出,待 owner) |
 
+| 2026-08-18 | 🔴 **`F3-4` 嘅實作機制同 `ADR-0041 D3` 嘅字面唔同(收窄唔係推翻)** —— tool **由 list 消失**,而唔係「收唔到 request id」 | `D3` 寫「`get_request` 呢類 tool 收唔到一個 request id」,而**實況相反**:`tool-registry.ts:283-290` 個 `requestId` 一直係 **model 自己填嘅參數**,唯一嘅閘係 `assertOpcoScope` ⇒ 一條冇 context 嘅對話可以 `list_pending_requests` 攞晒 OpCo 內所有 request 再逐張開。**照字面實作達唔到 `D3` 要嘅性質**;忠於佢意圖(`ADR-0036 D2`「見唔到」)嘅唯一路,係 `registry.list(ctx)` 按 scope 過濾。📌 **形狀**:一份 ADR 可以完全正確噉描述**要達到嘅性質**,同時錯噉描述**達到佢嘅機制**,而兩者喺文字上分唔開 | Chris Lai(兩條都批:registry 過濾 · 四個 tool 算 request-scoped) |
+| 2026-08-18 | 🔴 **`F4` streaming 由「token-by-token」收窄做「turn-level notify」** —— `§2 F4` 同 `§5` 寫嘅係 token 流,實際交付係 `{conversationId}` 通知 + refetch | 真 token 流要**擴 `AgentRuntimeProvider` seam(H1,要另一份 ADR)**:OpenAI 側實查有 `StreamedRunResult`(`run.d.ts:223`)但 **Claude 側未確認**,而 `ADR-0036 D1` 要求兩個 runtime 行為一致 ⇒ 要新造一個「streaming 係 optional capability」嘅概念。⚠️ 而且 **token 未經 `scrubPii` 就落 wire** —— 今日所有 model 輸出都係 scrub 之後先入庫,呢條會係**第一條繞過佢嘅路**,正正係 `ADR-0039 F10` 個 H4 論據要避開嗰樣。**`F4` 兩條真 acceptance(斷線 fail loud · DEV 真通)照樣驗得到**,而 `ADR-0039 F2` 個先例成立:契約唔變 ⇒ 將來加 token 流係純 transport 升級 | Chris Lai |
+
 ---
 
 **Lifecycle reminder**:呢份 plan **而家係 draft** —— 按 PROCESS **R1**,
 multi-day implementation 開始之前必須有 approved pre-doc。**未 approve 唔可以寫 code。**
 `status` 轉 `active` 之後先 derive `checklist.md`。
+
+⚠️ **2026-08-18 更正**:上面呢段 lifecycle reminder 係初稿寫嘅,而 plan **同日已經
+`draft → active`**(見 changelog 第二行)。保留原文做記錄,但**佢講嘅狀態唔再係今日嘅狀態** ——
+呢個正正係 `CLAUDE.md §14` 講「一份文件兩處各講各」嗰個形狀。

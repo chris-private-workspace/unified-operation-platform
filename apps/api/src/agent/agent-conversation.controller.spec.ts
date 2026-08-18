@@ -1,4 +1,6 @@
+import { firstValueFrom, of } from 'rxjs';
 import { AgentConversationController } from './agent-conversation.controller';
+import type { AgentRunQueue } from './agent-run.queue';
 import {
   AgentConversationService,
   CONVERSATION_SELECT,
@@ -40,10 +42,14 @@ describe('AgentConversationController (F3-7)', () => {
       archive: jest.fn().mockResolvedValue(row),
       unarchive: jest.fn().mockResolvedValue(row),
     };
+    const queue = {
+      conversationChanges: jest.fn().mockReturnValue(of({})),
+    };
     const controller = new AgentConversationController(
       service as unknown as AgentConversationService,
+      queue as unknown as AgentRunQueue,
     );
-    return { controller, service };
+    return { controller, service, queue };
   };
 
   // ── the query string seam ─────────────────────────────────────
@@ -115,6 +121,39 @@ describe('AgentConversationController (F3-7)', () => {
       'conv_1',
       'what licences does this need?',
     );
+  });
+
+  // ── W48 F4 — the SSE endpoint ─────────────────────────────────
+
+  /**
+   * 🔴 `defer`, not an `async` handler, and this is the assertion that tells
+   * them apart.
+   *
+   * An `async` handler would resolve the ownership check ONCE, when Nest set the
+   * route up. `defer` re-runs it on every subscribe, so a stranger opening an
+   * EventSource on somebody else's thread fails as a stream error rather than
+   * being waved through by a decision made earlier for someone else.
+   */
+  it('checks ownership on every subscribe, not once at route setup', async () => {
+    const { controller, service } = build();
+
+    const stream = controller.events('conv_1', actor);
+    expect(service.get).not.toHaveBeenCalled();
+
+    await firstValueFrom(stream);
+
+    expect(service.get).toHaveBeenCalledWith(actor, 'conv_1');
+  });
+
+  it('subscribes to the conversation channel, not the run one', async () => {
+    const { controller, queue } = build();
+
+    await firstValueFrom(controller.events('conv_1', actor));
+
+    // A run-shaped subscription would deliver nothing for a thread whose runs
+    // change id every turn — the failure would look like "streaming is broken"
+    // rather than "wrong channel".
+    expect(queue.conversationChanges).toHaveBeenCalledWith('conv_1');
   });
 
   // ── the documented shape vs the real one (F3-5) ───────────────

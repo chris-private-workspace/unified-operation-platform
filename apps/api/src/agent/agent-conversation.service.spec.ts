@@ -7,6 +7,7 @@ import type { AppUser } from '@prisma/client';
 import { AgentConversationService } from './agent-conversation.service';
 import type { AiAssistService } from './ai-assist.service';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { AgentRunQueue } from './agent-run.queue';
 
 /**
  * W48 F3 / ADR-0041 — what a conversation may do, and to whom.
@@ -52,6 +53,12 @@ describe('AgentConversationService (W48 F3)', () => {
       },
       agentProfile: { findUnique: jest.fn() },
       request: { findUnique: jest.fn() },
+      // W48 F4 — READ only: `recordAssistantTurn` looks up which thread a run
+      // belongs to. `agent.boundary.spec.ts` enforces that this service never
+      // WRITES AgentRun.
+      agentRun: {
+        findUnique: jest.fn().mockResolvedValue({ conversationId: 'conv_1' }),
+      },
       $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
     };
 
@@ -63,11 +70,16 @@ describe('AgentConversationService (W48 F3)', () => {
       }),
     };
 
+    const queue = {
+      publishConversationChanged: jest.fn().mockResolvedValue(undefined),
+    };
+
     const service = new AgentConversationService(
       prisma as unknown as PrismaService,
       aiAssist as unknown as AiAssistService,
+      queue as unknown as AgentRunQueue,
     );
-    return { service, prisma, aiAssist, chatTurnCreate };
+    return { service, prisma, aiAssist, chatTurnCreate, queue };
   };
 
   // ── ownership ─────────────────────────────────────────────────
@@ -196,6 +208,70 @@ describe('AgentConversationService (W48 F3)', () => {
     expect(prisma.agentConversation.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { archivedAt: null } }),
     );
+  });
+
+  // ── W48 F4 — the agent's side of a turn ───────────────────────
+
+  it('stores the agent’s reply as an assistant turn', async () => {
+    const { service, chatTurnCreate } = build();
+
+    await service.recordAssistantTurn('run_1', 'You need SPE_E3 and P2.');
+
+    expect(chatTurnCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          conversationId: 'conv_1',
+          role: 'assistant',
+          content: 'You need SPE_E3 and P2.',
+        },
+      }),
+    );
+  });
+
+  it('does nothing for a run that belongs to no conversation', async () => {
+    const { service, prisma, chatTurnCreate, queue } = build();
+    prisma.agentRun.findUnique.mockResolvedValue({ conversationId: null });
+
+    await service.recordAssistantTurn('run_1', 'hello');
+
+    expect(chatTurnCreate).not.toHaveBeenCalled();
+    // And publishes nothing either: there is no thread to notify, and a stray
+    // event would be a channel nobody is listening on.
+    expect(queue.publishConversationChanged).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 🔴 `F4-2` — fail loud, and this is the shape it takes on the server.
+   *
+   * A run that ended with nothing to say (parked at `awaiting_approval`, or
+   * failed) stores no turn — the agent did not speak, and writing a line saying
+   * so would be the platform talking in its voice. But the thread MUST still be
+   * notified: a browser told only about successes shows "thinking…" forever,
+   * and a person who is waiting does not retry.
+   */
+  it.each([[undefined], [''], ['   ']])(
+    'notifies the thread even when there is nothing to say (%p)',
+    async (output) => {
+      const { service, chatTurnCreate, queue } = build();
+
+      await service.recordAssistantTurn('run_1', output);
+
+      expect(chatTurnCreate).not.toHaveBeenCalled();
+      expect(queue.publishConversationChanged).toHaveBeenCalledWith('conv_1');
+    },
+  );
+
+  it('notifies the thread even when storing the reply throws', async () => {
+    const { service, prisma, queue } = build();
+    prisma.$transaction.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      service.recordAssistantTurn('run_1', 'a reply'),
+    ).rejects.toThrow('db down');
+
+    // The `finally` is the assertion: a storage failure that also silenced the
+    // channel would leave the browser waiting on a turn that will never arrive.
+    expect(queue.publishConversationChanged).toHaveBeenCalledWith('conv_1');
   });
 
   // ── creating with context ─────────────────────────────────────

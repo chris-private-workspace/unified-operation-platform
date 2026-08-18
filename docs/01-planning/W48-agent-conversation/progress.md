@@ -373,3 +373,69 @@ run 背景執行係 `ADR-0039 F1` 由 W46 起就有嘅形狀;而「run 講嘅嘢
   `agent-conversation.service` —— `F3-9` 條 boundary test 會捉)
 - `F4-3` **turn 上限 / history 截斷**(`D9` 要求有,唔指定形狀)
 - `F2-6` DEV migration 等部署
+
+---
+
+## Day 2(續)— 2026-08-18 · `F4` Streaming + history
+
+api **1469 → 1480**(suites 唔變 97 —— F4 冇新 spec file)· web 44 · lint / build **0**。
+
+### 🔴🔴 開工先查到兩件事,而第二件令 `F4` 個 scope 要 owner 決定
+
+**① 今日 conversation run 完全冇 history。** `executeRun` → `runtime.start(setup, latest.content)`
+—— **只送最後一句**。即係話 `F3` 交付嗰條「對話」,實際上係**一串互不相干嘅問答**。
+而 `D9`/`R3` 講「每個 turn 帶住成段 history ⇒ 成本非線性升」**正正假設咗有 history** ⇒
+呢個唔使問,`F4` 一定要加。
+
+**② 真 token 流要擴 seam。** `AgentRuntimeProvider.start()` 返一個完整 `AgentTurn`,**冇
+streaming 面**。實查 `node_modules`:`@openai/agents` 有 `StreamedRunResult`(`run.d.ts:223`)
+⇒ OpenAI 側做得到;**Claude 側 grep 唔到**(未確認),而 `ADR-0036 D1` 要求兩個 runtime 行為
+一致、`agent-runtime.contract.spec.ts` 就係守呢條。
+
+⚠️ **仲有一個 `ADR-0039 F10` 冇預料到嘅後果**:今日**所有** model 輸出都經 `scrubPii` 先落
+`AgentMessage`。一條 token 流會係**第一條繞過佢嘅路**。
+
+⇒ **Chris 2026-08-18 揀 turn-level notify**,`plan.md §8` 有 deviation 記錄(R3)。
+
+### `F4-2` 個 fail loud,實質係「唔好令人等」
+
+落咗兩層:`recordAssistantTurn` 個 publish 喺 **`finally`**;worker 個 `catch` 一樣 call 佢
+再 rethrow。
+
+📌 **點解呢個先係重點**:一條**只收到成功消息**嘅 thread,個畫面會**永遠顯示「思考緊」**,而
+**等緊嘅人唔會 retry**。⇒ **一個停滯讀落去似進行中** —— 同 `R16` 講嗰個「一個睇落完成咗嘅失敗」
+係同一族,方向相反。
+
+### `F4-5` 個問題係「個回覆由邊度攞」,而兩條路都唔啱
+
+| 路 | 點解唔得 |
+|---|---|
+| 由 `AgentRun` 讀返 | **`finalOutput` 根本冇存落 DB**,佢只喺 `executeRun` 個 return value |
+| 由 `AgentMessage` 讀返 | 佢 **ADMIN-only + 永久保留**(`ADR-0036 D4/D6`)⇒ 由嗰度攞個回覆畀 owner 睇,就係**靜靜把一張 admin-only 審計表變成 user-facing** |
+
+⇒ **worker 拎住 `executeRun` 返嘅 result 交畀 conversation service**。而 worker 做 caller
+(唔係 `AiAssistService`)係因為 `AgentConversationService` 已經依賴 `AiAssistService`
+⇒ 反向邊就係一個要 `forwardRef` 嘅循環,而 `agent.module.ts` **為咗同一個理由已經避過一次**
+(queue 同 worker)。
+
+### `F4-3` 兩個上限一齊,因為單獨一個都會喺對方蓋住嗰個 case 失效
+
+`MAX_HISTORY_TURNS = 20` + `MAX_HISTORY_CHARS = 20_000`:20 個一字 turn 唔使錢,
+兩個 `MAX_TURN_LENGTH` 嘅 turn 就 8000 字。
+
+🔴 **截斷會自己出聲**(`[N earlier turn(s) omitted]`)—— 一個收到**靜靜縮短版** history 嘅 model,
+會就住佢睇唔到嘅 turn 講「as discussed earlier」,而讀嗰個人**分唔出**。
+
+### ⚠️ history flatten 成文字係一個有代價嘅取捨
+
+seam 收 `input: string`,送結構化 message list 要**擴 seam = H1** —— 而本 phase 個 streaming
+決定啱啱行咗相反方向。⇒ 用 `Person:` / `You:` 拼一段文字。
+
+**代價寫咗落 code**:model 讀嘅係一份**轉述**而唔係參與一場對話,而**早前 turn 嘅 tool call
+唔喺入面**(只有 agent 最後講嗰句)。
+
+### 🚧 下一步
+
+- **`F5`** 最小 UI(**H6**)—— ⚠️ chat 氣泡 / streaming 游標 handoff 冇 ⇒ **開工前先跑
+  `ui-design`**,唔好等 render 先知要 STOP(`R6`)
+- `F2-6` DEV migration 等部署 · `F7` live 驗

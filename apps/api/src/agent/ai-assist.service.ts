@@ -58,6 +58,23 @@ import { ConnectorConfigService } from '../integration/connector-config.service'
  * of every id (R15 / ADR-0020), so a model that ignores this paragraph gets a
  * 400, not a wrong licence.
  */
+/**
+ * W48 F4-3 / ADR-0041 D9 — how much of a conversation a run is given.
+ *
+ * 🔴 D9 requires a ceiling and deliberately does not say which, because the
+ * right number needs token data nobody has yet. These are a STARTING POINT, and
+ * the two exist together because either alone fails where the other holds:
+ * twenty one-word turns cost nothing, and two turns at `MAX_TURN_LENGTH` each
+ * are 8000 characters.
+ *
+ * ⚠️ What this bounds is COST, not damage — a Tier 1 agent cannot write (D3), so
+ * a long history buys a bigger bill, not a bigger blast radius. Calling it a
+ * safety limit would overstate it, the same distinction
+ * `MAX_AUTONOMOUS_TOOL_CALLS` draws.
+ */
+export const MAX_HISTORY_TURNS = 20;
+export const MAX_HISTORY_CHARS = 20_000;
+
 const INSTRUCTIONS = `You are AI-Assist inside an IT licence fulfilment platform.
 
 A colleague has received a request for Microsoft 365 licences, written in free text by a real person. Your job is to work out which catalogue SKUs that text is asking for, and to propose them for a human to approve.
@@ -423,17 +440,65 @@ export class AiAssistService {
       return `Work out the licence line items for request ${run.requestId}.`;
     }
 
-    const latest = await this.prisma.agentChatTurn.findFirst({
-      where: { conversationId: run.conversationId, role: 'user' },
+    /**
+     * One more than the cap, so "were there older turns?" is answered by the
+     * read rather than guessed from whether the page came back full.
+     */
+    const rows = await this.prisma.agentChatTurn.findMany({
+      where: { conversationId: run.conversationId },
       orderBy: { createdAt: 'desc' },
-      select: { content: true },
+      take: MAX_HISTORY_TURNS + 1,
+      select: { role: true, content: true },
     });
-    if (!latest) {
+    if (!rows.some((row) => row.role === 'user')) {
       throw new ServiceUnavailableException(
         `Conversation ${run.conversationId} has no question for run ${run.id} to answer`,
       );
     }
-    return latest.content;
+
+    /**
+     * 🔴 D9 / R3 — the cost limit, and it is TWO limits because either alone
+     * fails in the case the other covers: twenty one-word turns are cheap, and
+     * two turns of 4000 characters each are not.
+     *
+     * Walked newest-first so the budget is spent on what was said most
+     * recently. The newest turn is always kept even if it alone exceeds the
+     * budget — a run with no question is not a cheaper run, it is a broken one.
+     */
+    const kept: typeof rows = [];
+    let budget = MAX_HISTORY_CHARS;
+    for (const row of rows.slice(0, MAX_HISTORY_TURNS)) {
+      if (kept.length > 0 && budget - row.content.length < 0) break;
+      kept.push(row);
+      budget -= row.content.length;
+    }
+    const dropped = rows.length - kept.length;
+    kept.reverse();
+
+    /**
+     * ⚠️ The history is FLATTENED INTO TEXT, and that is a real limitation
+     * rather than a formatting choice.
+     *
+     * The seam takes `input: string` (`AgentRuntimeProvider.start`). Passing a
+     * structured message list would mean widening it — an H1 change to
+     * ADR-0036's seam — for a phase whose streaming decision deliberately went
+     * the other way. What it costs: the model reads a TRANSCRIPT of the
+     * conversation rather than participating in one, and tool calls from
+     * earlier turns are not in it (only what the agent finally said).
+     *
+     * 🔴 Truncation is announced. A model handed a silently shortened history
+     * would answer "as discussed earlier" about turns it cannot see, and the
+     * person reading that has no way to tell.
+     */
+    const lines = kept.map(
+      (row) => `${row.role === 'user' ? 'Person' : 'You'}: ${row.content}`,
+    );
+    if (dropped > 0) {
+      lines.unshift(
+        `[${dropped} earlier turn(s) omitted — say so if you need them.]`,
+      );
+    }
+    return lines.join('\n\n');
   }
 
   /**
