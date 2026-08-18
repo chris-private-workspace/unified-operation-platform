@@ -30,6 +30,7 @@ exports[`permission matrix (derived from @Roles + the tool registry) matches the
   "GET /agent/profiles → roles [ADMIN]",
   "POST /agent/profiles → roles [ADMIN]",
   "PATCH /agent/profiles/:id → roles [ADMIN]",
+  "GET /agent/profiles/options → roles [ADMIN,REGIONAL]",
   "POST /agent/proposals/:id/approve → roles [ADMIN,REGIONAL]",
   "POST /agent/proposals/:id/reject → roles [ADMIN,REGIONAL]",
   "GET /agent/review-stats → roles [ADMIN]",

@@ -19,12 +19,13 @@ import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
 import { AgentProfileService } from './agent-profile.service';
 import {
   AgentProfileDto,
+  AgentProfileOptionDto,
   CreateAgentProfileDto,
   UpdateAgentProfileDto,
 } from './dto/agent-profile.dto';
 
 /**
- * W47 F2 / `OQ-A` — the agent registry, **ADMIN only**.
+ * W47 F2 / `OQ-A` — the agent registry. **Managing profiles is ADMIN only.**
  *
  * 🔴 Narrower than `AgentRunController` (ADMIN + REGIONAL), and deliberately so.
  * Starting a run costs a model call; editing a profile changes what EVERY future
@@ -35,6 +36,13 @@ import {
  *
  * 🔴 No DELETE. A profile is retired with `active: false`, because historical
  * runs point at it to say what they ran on.
+ *
+ * 🔴 W48 `F5-8` — ONE route here is wider (`GET options`, ADMIN + REGIONAL), and
+ * the split is deliberate. `OQ-A`'s argument is about CHANGING what every future
+ * run does; being unable to see which agents exist is a different thing, and it
+ * had a real cost: with two active profiles and no default (by design), every
+ * REGIONAL conversation refused at its first turn with no way to answer the
+ * refusal. Reading three columns is not managing a registry.
  */
 @ApiTags('agent')
 @ApiBearerAuth()
@@ -51,6 +59,29 @@ export class AgentProfileController {
   })
   list(@Query('includeInactive') includeInactive?: string) {
     return this.profiles.list(includeInactive === 'true');
+  }
+
+  /**
+   * W48 `F5-8` — the profiles a person can start a conversation on.
+   *
+   * 🔴 `@Roles` here OVERRIDES the class (`RolesGuard` reads
+   * `getAllAndOverride([handler, class])`), so this is ADMIN + REGIONAL while
+   * everything else on this controller stays ADMIN. Matches
+   * `AgentConversationController` exactly — the people who may talk are the
+   * people who need to know who they are talking to.
+   *
+   * ⚠️ Route order: this must stay ABOVE any future `@Get(':id')`, or the param
+   * route swallows `/options`.
+   */
+  @Get('options')
+  @Roles(Role.ADMIN, Role.REGIONAL)
+  @ApiOkResponse({ type: [AgentProfileOptionDto] })
+  @ApiOperation({
+    summary:
+      'Active profiles, with just enough to pick one. Carries no prompt (G5).',
+  })
+  options() {
+    return this.profiles.listOptions();
   }
 
   @Post()

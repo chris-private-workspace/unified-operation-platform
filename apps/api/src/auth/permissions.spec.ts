@@ -128,6 +128,15 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         // 🔴 And again the matrix demanded this line rather than review noticing
         // — third time an agent write surface has been caught here. That is the
         // test working, not the test being annoying.
+        //
+        // ⚠️ W48 `F5-8` — ONE route on this controller is wider:
+        // `GET /agent/profiles/options → [ADMIN,REGIONAL]`, three columns and no
+        // `prompt`. The paragraph above is about CHANGING what every future run
+        // does; being unable to SEE which agents exist is a different thing, and
+        // it cost something real — with two active profiles and no default (by
+        // design), every REGIONAL conversation refused at its first turn with no
+        // way to answer the refusal. The snapshot carries both lines, which is
+        // the point of listing routes rather than controllers.
         'AgentProfileController',
         /**
          * W48 F3 / ADR-0041 D6 — /agent/conversations, @Roles(ADMIN,REGIONAL),

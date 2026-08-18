@@ -7,6 +7,7 @@ import type {
   AgentKillSwitchStatus,
   AgentConversation,
   AgentProfile,
+  AgentProfileOption,
   AgentReviewStats,
   AgentRun,
   AgentRunPage,
@@ -368,6 +369,26 @@ export function useAgentProfiles() {
     queryKey: ['agent', 'profiles'],
     queryFn: () =>
       apiGet<AgentProfile[]>('/agent/profiles?includeInactive=true'),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * W48 `F5-8` — the profiles somebody can start a conversation ON.
+ *
+ * 🔴 A different endpoint from `useAgentProfiles`, not a filter of it, and the
+ * difference is a permission: this one is ADMIN + REGIONAL and carries no
+ * prompt. A REGIONAL calling `/agent/profiles` gets a 403, which is why the
+ * assistant screen could not simply reuse the registry query.
+ *
+ * ⚠️ Active only, and no `includeInactive`. A retired profile is not something
+ * to pick — choosing one would be refused at the first turn instead of at the
+ * pick.
+ */
+export function useAgentProfileOptions() {
+  return useQuery({
+    queryKey: ['agent', 'profile-options'],
+    queryFn: () => apiGet<AgentProfileOption[]>('/agent/profiles/options'),
     retry: retryUnless403,
   });
 }

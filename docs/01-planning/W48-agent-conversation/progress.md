@@ -587,3 +587,48 @@ did」⇒ **orphan turn 唔使修**。
 - **`F5-8`** 等 Chris 揀 A / B / C(B 會推翻 W47「冇 default profile」= H1)
 - `F7-3` / `F7-4` DEV live · `F2-6` DEV migration —— **兩條都等同一次部署,但收法唔同**
 - `F8` 收尾(`F8-3` 要入 `R1`–`R7` + 今日新揾嘅兩條)
+
+---
+
+## Day 3(再續)— 2026-08-18 · `F5-8` Option A 落地
+
+Chris 揀 **A**(畫面顯示 + 揀 profile)。api **1480 → 1484** · web **474 → 480**
+· tsc / lint / build 全 0。
+
+### 四個決定,而第一個先係關鍵
+
+| 決定 | 點解 |
+|---|---|
+| **獨立 endpoint**(`GET /agent/profiles/options`)唔係放寬現有嗰條 | 「同一條 route 按 role 返唔同 shape」**正正係 W46 / W47 兩次 leak 嘅形狀**。兩個 select 分開寫,**結構上唔可能漂埋一齊**,代價只係一個常數 |
+| `@Roles` 落 **method** 層覆蓋 class | 管理仍然 ADMIN-only,**只有「睇下有邊個 agent」變寬**。`OQ-A` 講嘅係「改咗會影響每一個未來嘅 run」——「見唔見到有咩揀」唔同一件事,而後者有真代價 |
+| 揀嗰陣**一律送 `profileId`**,即使得一個 | conversation 永遠答得出「跑緊邊個」。而 picker **得一個 agent 就唔顯示** —— 一個選擇唔算選擇 |
+| retired profile 顯示 **「Retired agent」** | 靜靜唔顯示就係 `OQ-A` 嗰個「睇唔到嘅 default」換件衫:答案由一個畫面上冇人叫得出名嘅 model 出 |
+
+### W28 drift test 第三次紅,而佢每次都係啱嘅
+
+`+1` row(`GET /agent/profiles/options → [ADMIN,REGIONAL]`),**`- Snapshot - 0`**
+⇒ 零移除。逐行對過先 `-u`。
+
+### falsification 兩道,兩道都用「保持結構」嘅拆法
+
+| 拆走咩 | 結果 |
+|---|---|
+| `listOptions` 個 select 加返 `prompt` | **1 紅 28 綠**,紅因 `Expected path: not "prompt"` |
+| `assistant.tsx` 唔送 `profileId` | **1 紅 15 綠**,紅嘅就係缺陷本身 |
+
+📌 **刻意唔用「改 `PROFILE_OPTION_SELECT` 常數」嗰種拆法** —— 兩個 `Record<keyof …>`
+會即刻 compile error,而嗰種紅**唔係我想證嗰個**(W47 `F3-6` 同族)。
+
+### ⚠️ 我自己跑錯咗一次 test,而個錯誤形狀值得認得
+
+`npx jest --rootDir apps/api` ⇒ **3 個 suite「failed to run」**,錯誤係
+`Unexpected token, expected "from"` 指住 `import type`。**唔係真紅** —— 係 jest 冇載到
+項目個 ts transform,用咗 babel 當 TS 檔解。**分辨方法**:真紅會講邊條 assert 唔啱,
+呢種紅講嘅係「份檔解唔到」。正確跑法 = `npm test -w @uop/api -- <pattern>`。
+
+### 🚧 下一步
+
+- **`F5-10`** `Select` + purple `Badge` 要再 render 一次 —— 兩個都係**既有 primitive /
+  既有 tone**(DS-8 AI → purple)所以**唔觸發 H6 STOP**,但 `F5-3` 嗰次 render
+  **蓋唔到今日棵樹**。⚠️ 要**再借一次 5433**
+- `F7-3` / `F7-4` DEV live · `F2-6` DEV migration · `F8` 收尾

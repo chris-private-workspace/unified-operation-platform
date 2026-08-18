@@ -909,6 +909,22 @@ export interface AgentProfile {
   principal?: { name: string } | null;
 }
 
+/**
+ * W48 `F5-8` — one line of the "which agent am I talking to" picker.
+ *
+ * 🔴 A separate type rather than `Pick<AgentProfile, …>`, because it comes from
+ * a separate endpoint with a separate role (`GET /agent/profiles/options`,
+ * ADMIN + REGIONAL) and carries **no prompt**. Deriving it would say the two
+ * shapes are one shape that happens to be narrower here — and the next person to
+ * widen `AgentProfile` would widen this too, which is exactly what `G5` forbids.
+ */
+export interface AgentProfileOption {
+  id: string;
+  name: string;
+  /** The Azure DEPLOYMENT name, not a model family (ADR-0037 E3). */
+  model: string;
+}
+
 /** The profile a run used, as both the run detail and the run list carry it. */
 export interface AgentRunProfileRef {
   id: string;

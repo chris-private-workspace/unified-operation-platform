@@ -8,7 +8,11 @@ import {
   Send,
   ShieldAlert,
 } from 'lucide-react';
-import { useAgentConversation, useAgentConversations } from '@/hooks/queries';
+import {
+  useAgentConversation,
+  useAgentConversations,
+  useAgentProfileOptions,
+} from '@/hooks/queries';
 import {
   useAddConversationTurn,
   useArchiveConversation,
@@ -29,6 +33,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadError, Loading } from '@/components/ui/feedback-states';
 import { IconButton } from '@/components/ui/icon-button';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
 const NUM = 'font-mono text-[12px]'; // DS-5 — identifiers and figures are mono
@@ -63,8 +68,11 @@ export function Assistant() {
   const [selected, setSelected] = useState<string | undefined>();
   const [draft, setDraft] = useState('');
 
+  const [pickedProfile, setPickedProfile] = useState<string | undefined>();
+
   const list = useAgentConversations();
   const thread = useAgentConversation(selected);
+  const profiles = useAgentProfileOptions();
   const create = useCreateConversation();
   const archive = useArchiveConversation();
   const send = useAddConversationTurn(selected ?? '');
@@ -89,6 +97,24 @@ export function Assistant() {
 
   const conversations = list.data ?? [];
   const open = thread.data;
+
+  /**
+   * 🔴 `F5-8` — which agent a new thread runs on, sent EXPLICITLY.
+   *
+   * There is deliberately no default profile (W47 `OQ-A`): with more than one
+   * active and none named, the server refuses and says how many there are. Live
+   * on 2026-08-18 that produced a screen where every new conversation failed at
+   * its first turn with nothing to click. So the picker names one, always — and
+   * when there is only one to name it stays off screen, because a choice of one
+   * is not a choice.
+   */
+  const agents = profiles.data ?? [];
+  const agentId = pickedProfile ?? agents[0]?.id;
+  const agentName = (id: string) =>
+    agents.find((a) => a.id === id)?.name ??
+    // Not "unknown": a thread pinned to a switched-off profile still runs, and
+    // saying nothing would be the silent-default problem in another costume.
+    (profiles.isLoading ? null : 'Retired agent');
   const thinking = isThinking(open?.runs);
   const awaiting = runAwaitingDecision(open?.runs);
   const tooLong = draft.length > TURN_MAX_LENGTH;
@@ -111,19 +137,42 @@ export function Assistant() {
             person on the request itself.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          onClick={() =>
-            create.mutate(
-              { requestId: null },
-              { onSuccess: (row) => setSelected(row.id) },
-            )
-          }
-          disabled={create.isPending}
-        >
-          <Plus size={14} strokeWidth={2} />
-          New conversation
-        </Button>
+        <div className="flex flex-wrap items-center gap-[10px]">
+          {/* Only when there is a choice to make. One agent needs no picker. */}
+          {agents.length > 1 && (
+            <div className="w-[190px]">
+              <Select
+                value={agentId ?? ''}
+                onChange={(e) => setPickedProfile(e.target.value)}
+                aria-label="Agent"
+              >
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {!profiles.isLoading && agents.length === 0 && (
+            <span className="text-[12.5px] text-fg-muted">
+              No agent is switched on.
+            </span>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() =>
+              create.mutate(
+                { requestId: null, profileId: agentId },
+                { onSuccess: (row) => setSelected(row.id) },
+              )
+            }
+            disabled={create.isPending || agents.length === 0}
+          >
+            <Plus size={14} strokeWidth={2} />
+            New conversation
+          </Button>
+        </div>
       </Card>
 
       <div className="grid gap-[18px] lg:grid-cols-[260px_1fr]">
@@ -185,6 +234,12 @@ export function Assistant() {
                   <Badge tone="info">On a request</Badge>
                 ) : (
                   <Badge tone="neutral">No request context</Badge>
+                )}
+                {/* 🔴 Which agent this thread runs on. `OQ-A` refused a default
+                    nobody can see; a thread that never says who answered it is
+                    the same blind spot one step later. */}
+                {open.profileId && agentName(open.profileId) && (
+                  <Badge tone="purple">{agentName(open.profileId)}</Badge>
                 )}
                 <span className={`${NUM} text-fg-subtle`}>
                   {formatDateTime(open.createdAt)}

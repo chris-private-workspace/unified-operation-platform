@@ -1,10 +1,14 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Assistant } from './assistant';
-import { useAgentConversation, useAgentConversations } from '@/hooks/queries';
+import {
+  useAgentConversation,
+  useAgentConversations,
+  useAgentProfileOptions,
+} from '@/hooks/queries';
 import {
   useAddConversationTurn,
   useArchiveConversation,
@@ -12,7 +16,7 @@ import {
 } from '@/hooks/mutations';
 import { useAgentConversationEvents } from '@/hooks/agent-conversation-events';
 import { ApiError } from '@/lib/api';
-import type { AgentConversation } from '@/lib/api-types';
+import type { AgentConversation, AgentProfileOption } from '@/lib/api-types';
 
 /**
  * W48 F5 — the assistant screen.
@@ -32,6 +36,7 @@ import type { AgentConversation } from '@/lib/api-types';
 vi.mock('@/hooks/queries', () => ({
   useAgentConversations: vi.fn(),
   useAgentConversation: vi.fn(),
+  useAgentProfileOptions: vi.fn(),
 }));
 vi.mock('@/hooks/mutations', () => ({
   useCreateConversation: vi.fn(),
@@ -66,6 +71,12 @@ const query = <T,>(data: T, over: Record<string, unknown> = {}) => ({
 const mutation = () =>
   ({ mutate: vi.fn(), isPending: false, isError: false, error: null }) as never;
 
+const AGENTS: AgentProfileOption[] = [
+  { id: 'p-1', name: 'ai-assist (gpt-4o)', model: 'gpt-4o' },
+  { id: 'p-2', name: 'power-bi-only', model: 'gpt-4o' },
+];
+const NO_AGENTS: AgentProfileOption[] = [];
+
 const renderScreen = () =>
   render(
     <MemoryRouter>
@@ -79,6 +90,9 @@ beforeEach(() => {
   );
   vi.mocked(useAgentConversation).mockReturnValue(
     query(THREAD()) as ReturnType<typeof useAgentConversation>,
+  );
+  vi.mocked(useAgentProfileOptions).mockReturnValue(
+    query(AGENTS) as ReturnType<typeof useAgentProfileOptions>,
   );
   vi.mocked(useCreateConversation).mockReturnValue(mutation());
   vi.mocked(useAddConversationTurn).mockReturnValue(mutation());
@@ -272,6 +286,100 @@ describe('Assistant (W48 F5)', () => {
 
     expect(screen.getByText('Open the request')).toBeInTheDocument();
     expect(screen.queryByText('Thinking…')).toBeNull();
+  });
+
+  // ── F5-8 — which agent, said out loud ─────────────────────────
+
+  /**
+   * 🔴 The one that matters, and it was found in LIVE use rather than here.
+   *
+   * There is no default profile by design (W47 `OQ-A`): with more than one
+   * active and none named, the server refuses. Opening a thread without naming
+   * one therefore produced a screen where every first turn 400'd, with nothing
+   * on screen to click — the picker did not exist and `/agent/profiles` is
+   * ADMIN-only, so a REGIONAL could not even find out what the choices were.
+   */
+  it('names an agent when opening a thread, instead of letting the server refuse', () => {
+    const mutate = vi.fn();
+    vi.mocked(useCreateConversation).mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+      error: null,
+    } as never);
+
+    renderScreen();
+    fireEvent.click(screen.getByRole('button', { name: /new conversation/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { requestId: null, profileId: 'p-1' },
+      expect.anything(),
+    );
+  });
+
+  it('offers the picker only when there is a choice to make', () => {
+    renderScreen();
+    expect(screen.getByLabelText('Agent')).toBeInTheDocument();
+  });
+
+  it('hides the picker when there is only one agent', () => {
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query([AGENTS[0]]) as ReturnType<typeof useAgentProfileOptions>,
+    );
+
+    renderScreen();
+
+    expect(screen.queryByLabelText('Agent')).toBeNull();
+  });
+
+  /**
+   * ⚠️ A switched-off registry must not look like a working one. Without this,
+   * the button opens threads that can never be spoken to.
+   */
+  it('will not open a thread when no agent is switched on', () => {
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query(NO_AGENTS) as ReturnType<typeof useAgentProfileOptions>,
+    );
+
+    renderScreen();
+
+    expect(
+      screen.getByRole('button', { name: /new conversation/i }),
+    ).toBeDisabled();
+    expect(screen.getByText('No agent is switched on.')).toBeInTheDocument();
+  });
+
+  it('says which agent an open thread runs on', () => {
+    // One agent, so the name below can only have come from the badge.
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query([AGENTS[1]]) as ReturnType<typeof useAgentProfileOptions>,
+    );
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(THREAD({ profileId: 'p-2' })) as ReturnType<
+        typeof useAgentConversation
+      >,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText('power-bi-only')).toBeInTheDocument();
+  });
+
+  /**
+   * 🔴 A thread pinned to a retired profile still runs. Showing nothing would
+   * be `OQ-A`'s invisible default in another costume — the answer would come
+   * from a model nobody on screen could name.
+   */
+  it('still says something when the agent has since been retired', () => {
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(THREAD({ profileId: 'gone' })) as ReturnType<
+        typeof useAgentConversation
+      >,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText('Retired agent')).toBeInTheDocument();
   });
 
   // ── a 403 explains itself ─────────────────────────────────────

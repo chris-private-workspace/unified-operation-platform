@@ -61,6 +61,27 @@ export const PROFILE_SELECT = {
   updatedAt: true,
 } satisfies Prisma.AgentProfileSelect;
 
+/**
+ * W48 `F5-8` — just enough to CHOOSE a profile, for people who may not manage
+ * them.
+ *
+ * 🔴 A SEPARATE constant rather than a subset picked at the call site, and
+ * `prompt` is absent by construction. `G5` says no prompt leaves through a new
+ * endpoint, and the way both W46 and W47 leaked a field was by widening a
+ * shared select and not noticing which readers inherited it. Two selects that
+ * cannot drift into each other cost one constant.
+ *
+ * ⚠️ `model` IS here. It is not sensitive — it is the deployment name that
+ * already appears on every run — and showing it is what makes "which agent am I
+ * talking to" answerable on screen, which is the whole reason `OQ-A` refused a
+ * default nobody can see.
+ */
+export const PROFILE_OPTION_SELECT = {
+  id: true,
+  name: true,
+  model: true,
+} satisfies Prisma.AgentProfileSelect;
+
 @Injectable()
 export class AgentProfileService {
   private readonly logger = new Logger(AgentProfileService.name);
@@ -74,6 +95,22 @@ export class AgentProfileService {
     return this.prisma.agentProfile.findMany({
       where: includeInactive ? {} : { active: true },
       select: { ...PROFILE_SELECT, principal: { select: { name: true } } },
+      orderBy: [{ principalId: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  /**
+   * The profiles somebody can start a conversation on — `F5-8`.
+   *
+   * 🔴 ACTIVE only, with no `includeInactive` escape hatch. `list()` offers one
+   * because `/agent` is the only place a retired profile can be brought back;
+   * here a retired profile is not a choice, and offering it would produce a
+   * refusal (`resolveForRun`) at the first turn instead of at the pick.
+   */
+  async listOptions() {
+    return this.prisma.agentProfile.findMany({
+      where: { active: true },
+      select: PROFILE_OPTION_SELECT,
       orderBy: [{ principalId: 'asc' }, { createdAt: 'asc' }],
     });
   }

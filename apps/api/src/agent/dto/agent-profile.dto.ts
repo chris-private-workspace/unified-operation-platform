@@ -98,6 +98,21 @@ export class UpdateAgentProfileDto {
   active?: boolean;
 }
 
+/**
+ * W48 `F5-8` — one line of the "which agent am I talking to" picker.
+ *
+ * 🔴 Three fields, and the absence of `prompt` is the point. This is the shape
+ * `PROFILE_OPTION_SELECT` produces, and the pair is pinned by a spec so a later
+ * widening of one without the other cannot make the OpenAPI document describe a
+ * response the API does not send — the gap BUG-011 fell through.
+ */
+export class AgentProfileOptionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ example: 'ai-assist (gpt-4o)' }) name!: string;
+  @ApiProperty({ description: 'Azure deployment name (ADR-0037 E3).' })
+  model!: string;
+}
+
 /** The owning agent, as `list()` joins it — name only, never the runtime. */
 export class AgentProfilePrincipalDto {
   @ApiProperty({ example: 'ai-assist' }) name!: string;
