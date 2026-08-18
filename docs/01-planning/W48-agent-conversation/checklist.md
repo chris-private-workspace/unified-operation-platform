@@ -59,23 +59,29 @@
 
 - [x] F5-1 ✅ **`/assistant`**(thread 列表 · transcript · 輸入)—— **唔係 `Drawer`**(`T2-d`)。🔴 **一定要新畫面而唔係 `/agent` 加個 tab**:`/agent` 係 **ADMIN-only**(`canManageAgentProfiles`)而對話係 **ADMIN + REGIONAL**(`D6`)⇒ 塞入去 REGIONAL 就入唔到。Chris 2026-08-18 批 route + sidebar entry,已登記 `design-system.md §6`
 - [x] F5-2 ✅ **`ui-design` DS-1…DS-12 開工前對咗** —— 🟢🟢 **兩個 plan 預咗會觸發 H6 STOP 嘅位,實際上都唔使開新 primitive**:①chat 氣泡 = `Card` 層 token(1px border + surface tint,DS-7)⇒ **組合既有 primitive**(§5 明文「直接做」)②**streaming 游標消失咗** —— `F4` 揀咗 turn-level notify,冇 token 流就冇游標。📌 **一個 transport 決定順手清走一個 UI 風險**。DS-11 係唯一 ❌(prototype 冇 chat 畫面),而 **§6 登記處就係為呢件事存在**
-- [ ] F5-3 🚧 light + dark 真 render(`render-check.mjs`)· 零橫向溢出 —— **要起本機 stack ⇒ 要批停 `ai-doc-extraction-db` 交還 5433**。⚠️ **「一個 view 一個 primary」呢半唔使等 render**,已有 test 釘住(數 `button.bg-accent` = 1 兼且係 `Send`)
+- [x] F5-3 ✅ **light + dark 真 render**(2026-08-18,Chris 批咗借 5433)—— token swap 真發生(`--bg` `#f5f5f6` → `#08080a` · `--card` `#ffffff` → `#141417` · `--accent` `#E60027` → `#ff3355`)· **零橫向溢出**(`scrollWidth` = `clientWidth` = 1440,兩個 theme)· live 實測 `button.bg-accent` = `["Send"]` 一個。⚠️ **`render-check.mjs` 影唔到 transcript**:佢冇 click 邏輯,而揀邊條 thread 係 `useState` 冇入 URL ⇒ 佢見到嘅永遠係「Nothing open」。氣泡嗰半用 **Playwright MCP** 驅動(切 thread → 每個 theme 各一次 `getComputedStyle` probe + 截圖)。🔴 **兩半證據來源唔同,分開寫**(沿用 `CH-015` / `F9-8` 先例):可重現嗰半 = committed script,thread 嗰半 = session 工具
 - [x] F5-4 ✅ **`G4` 喺 UI 側:全個畫面冇任何 approve 掣** —— run 泊喺 proposal 嗰陣,thread **link 去嗰張 request**。🔴 **兩條 test,而第二條先係持久嗰條**:①behavioural(有 link · 冇 `/approve|reject/i` 掣)②**source scan**(`assistant.tsx` 唔可以出現 `useDecideProposal` / `useApprove` / `/proposals`)—— 因為第一條**只擋到一個串「Approve」嘅掣**,將來一個叫 `Accept` 嘅一樣過。同 `ADR-0036 D2` 同一個論據:**absence beats instruction**
 - [x] F5-5 ✅ **OPERATIONS section 第一次帶 role predicate** —— 之前只有 ADMIN section 有(W31)。Assistant 係**營運工具唔係 admin 功能**,擺入 Administration 去借嗰個 gating 就會把一個日常工具歸錯類 ⇒ `NavEntry` 加 optional `visible`,冇寫就係「登入咗就見到」(= 每個 prototype entry 嘅現狀)
 - [x] F5-6 🔴 **更正 `F3-2` 講錯咗一半嘅嘢**:`canUseAgent` **web 側一早存在**(`lib/roles.ts:61`,W46 F8 加,ADMIN + REGIONAL,語意逐字啱)—— 我當時只 grep 過 **api** 側就講「code 入面唔存在」。⇒ **`D6` 講「跟 `canUseAgent`」喺 web 側係字面成立嘅**,而我差啲就加咗第二個同名 function(tsc `TS2323` 捉到)
 
+- [x] F5-7 🔴🔴 **render 即刻捉到一個六條 test 全綠都捉唔到嘅缺陷,而佢係本次 live 驗最值錢嗰件事** —— 畫面**同時**出 `Thinking…`(spinner)同「AI-Assist has proposed something」。成因:`LIVE_STATUSES` 包 `awaiting_approval`,所以**同一個 run** 令 `isThinking` 同 `runAwaitingDecision` 一齊為真。📌 **點解 test 冚唔到**:五條 assert 每條都問「某樣嘢喺唔喺畫面」,而呢個缺陷係**兩樣嘢一齊喺畫面** —— 同 `CH-030` 嗰個 `items-center`(test 問「字喺唔喺度」,缺陷係「佢喺邊」)**同族**。🔴 **後果唔止難睇**:spinner 叫人**等**,而喺 parked 狀態下冇嘢會再發生 —— 佢要自己去撳。呢個係 `R16`「stall reads as progress」嘅**鏡像**:progress reads as stall,令人唔去做應做嘅事。**修法**改最窄嗰層(`isThinking` 剔走 `awaiting_approval`,`isLiveRun` 語意唔郁 —— 佢講「run 未完」係啱嘅),新 test **assert 個 PAIR**(有 link 兼且冇 spinner),因為任何一半單獨 assert 都會繼續綠
+
+- [ ] F5-8 🚧🔴🔴 **live 揭到一個「平台狀態令功能完全用唔到」嘅缺口 —— 等 Chris 決定,唔可以自己揀** ⇒ 三層事實逐條實測:①`assistant.tsx:117` 開新對話 `create.mutate({ requestId: null })`,**冇 `profileId` 呢個概念** ②`AgentProfile` **冇 default**(W47 刻意決定:多過一個 active 而冇指名 ⇒ **400 兼講明有幾多個**)③本機**兩個 active profile** ⇒ **每條新對話第一句都 400**。⚠️ **`send.isError` 有顯示個 message**(即 fail loud,唔係靜靜死),但用戶**冇出路** —— 畫面冇地方揀,而 **`GET /agent/profiles` 係 `@Roles(ADMIN)`** ⇒ REGIONAL 連列表都攞唔到。🔴 **順帶驗到一個刻意設計唔係 bug**:400 嗰刻 **user turn 已經寫咗落 DB 而 run 冇**(`agent-conversation.service.ts:202-206` 明文「what they said is a fact, and losing it to roll back a queue error would be the platform forgetting something a person did」)⇒ **orphan turn 係設計,唔使修**。**三條路各有代價**:**A** 前端加 profile 揀 ⇒ 要開一條 REGIONAL 讀得到嘅 profile 列表(郁 role 邊界)· **B** 後端揀一個 default ⇒ **直接推翻 W47「冇 default profile」**(H1,而嗰條決定嘅理由係「一個睇唔到嘅 default 就係將來用錯 model 都冇人發現嗰個位」)· **C** 只改文案叫人去 `/agent` ⇒ 最平,但 REGIONAL 入唔到 `/agent`
+
 ## `F6` — Gate
 
-- [ ] F6-1 root `npm test` exit 0 —— ⚠️ **收尾要重跑**(W47 教訓:`F6` 之後仲入咗 code commit,勾咗嘅 gate 唔等於蓋住今日棵樹)
-- [ ] F6-2 root `npm run lint` exit 0
-- [ ] F6-3 root `npm run build` exit 0
-- [ ] F6-4 `agent.boundary.spec.ts` 全綠(新 service 唔可以直接 import vendor SDK)
-- [ ] F6-5 falsification 每道新閘一次,真紅**零誤傷** —— ⚠️ W47 `F3-6` 有一次 33 紅但**紅嘅原因唔啱**,所以要問「紅嗰個原因係咪我想證嗰個」
+- [x] F6-1 ✅ root `npm test` exit 0 —— api **97 suites / 1480** · web **45 files / 474**(+1 = `F5-7` 嗰條)。⚠️ **收尾仲要再跑一次**(W47 教訓:`F6` 之後仲入咗 code commit,勾咗嘅 gate 唔等於蓋住今日棵樹)
+- [x] F6-2 ✅ root `npm run lint` exit 0
+- [x] F6-3 ✅ root `npm run build` exit 0(順帶 `tsc --noEmit` web 側 exit 0)
+- [x] F6-4 ✅ `agent.boundary.spec.ts` 全綠(含 W48 加嘅 `writersOf('agentConversation')` / `writersOf('agentChatTurn')`)
+- [x] F6-5 ✅ falsification —— `F5-7` 嗰道閘拆走 `if (latest.status === 'awaiting_approval') return false;` ⇒ **恰好 1 紅 9 綠零誤傷**,而且紅嘅原因**就係我想證嗰個**(`expected <div><svg…></div> to be null` = spinner 真出咗嚟),唔係 compile error。⚠️ W47 `F3-6` 有一次 33 紅但**紅嘅原因唔啱**,所以每次都要問多一句
 
 ## `F7` — Live 驗
 
-- [ ] F7-1 本機:真傾一段對話 · 中途叫佢提 SKU(產生 proposal)· 斷線重連
-- [ ] F7-2 🔴 **`OQ-D` live**:開一條**冇 request context** 嘅對話,叫 agent 攞 request 資料 —— **佢應該攞唔到**。呢個係本 phase 唯一一條安全邊界嘅 live 證據
+- [x] F7-1 ✅ **本機三項全收**(2026-08-18)—— ①**真傾一段對話**:11 個 turn,`inputFor` 個 history flatten **跨 run 真生效**(run #2 個 user message 逐字見到 `Person: … You: … Person: …`)②**proposal**:`awaiting_approval` · `proposals: 1` · payload `skuId` = `f8a1db68…`(`POWER_BI_PRO` 正確),reasoning 自己講「rather than the distinct POWER_BI_PRO_DEPT variant」③**斷線重連**見 `F7-5`
+- [x] F7-2 ✅🔴 **`OQ-D` live 收咗,而且係對照實驗唔係單邊觀察** —— **唯一變數 = `requestId` 在唔在**,同一句說話 · 同一個 profile:**冇** request context ⇒ agent 答「**I can't access pending requests or REQ0044067 with the available tools**」兼且 `steps` 只有一個 `start`(`detail` 明文 `with no request context`)= **零 tool call**;**有** request context ⇒ 真叫 `list_pending_requests` 並列出兩張單。🔴 **點解要做對照**:單睇前者,「filter 生效」同「model 純粹唔想叫」**睇落一模一樣** —— 呢個就係 W47 `G8` 嗰個教訓(部署唔會幫你做對照,要人再做一次)
+- [x] F7-5 ✅ **斷線重連,行為問到底** —— 殺 api 鏈(保住 web + 個頁面)~140 秒再起返。①斷線期間送 turn ⇒ 畫面**唔郁**(7 個氣泡,而 DB 已經 9 個)②切走一條 thread 再切返 ⇒ **即刻 9 個** ⇒ 資料一直喺度,**唔通嘅係 SSE 唔係 read** ③remount 之後再送 ⇒ **自動變 11 個,冇 click 過** ⇒ 重連真通。📌 **成因唔係 bug 係一個有名有姓嘅 bound**:`MAX_CONSECUTIVE_FAILURES = 3`,而佢寫落去係為咗擋 403(`EventSource` 唔畀睇 status code)。🔴 **但 W48 把佢放大咗**:hook 自己個 doc 講「a thread has no terminal state — it is idle between questions」⇒ **一條 thread 活得遠耐過一個 run**,撞正一次 api 重啟(= 一次部署)嘅機會高好多,而**畫面唔會講**。⇒ 登 `F8-3`
+- [x] F7-6 ✅ **順帶三個 live 發現(唔喺原 checklist,但唔記低就會失去)** —— ①🟢 **`scrubPii` 真生效**:`list_pending_requests` 個 tool_result 入面 `targetUpn` 係 `[redacted-email]`(H4)②🔴 **`D3` 收窄咗「見唔到」,收窄唔到「填錯」**:model 攞人講嘅 `REQ0044067` 當 `requestId` 去叫 `get_request` ⇒ `Request not found`。**失敗方向係安全嘅**(唔存在就 404),但「填一個存在而屬於第二個 OpCo 嘅 id」呢條路**本次冇驗** ⇒ 登 `F8-3` ③🔴 **`search_catalog("Power BI Pro")` 返 `[]`** —— catalog 得 `POWER_BI_PRO` 而 **101 個 SKU 個 `businessAlias` 全部 `null``**,即人話講法對唔到。agent 冇亂估,明文答「can't propose the licence without guessing」(**好行為**),但代價係佢幫唔到手。⇒ catalog curation 缺口,**唔喺 W48 scope**(同 `CH-026 G-7` 同族),登 `BACKLOG`
 - [ ] F7-3 DEV:migration + 一條真對話 + **一次真 token stream**(⚠️ **唔可以引用 `B6`** —— 佢證嘅係 heartbeat + 短事件)
 - [ ] F7-4 ⚠️ **唔可以睇 revision status 當證據**(entrypoint 令 migrate 失敗 NON-FATAL)
 

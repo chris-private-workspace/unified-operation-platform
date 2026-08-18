@@ -496,3 +496,94 @@ web **44 → 45 files / 464 → 473 tests** · api 唔變(97 / 1480)· lint / bu
   `ai-doc-extraction-db` 交還 5433**。⚠️ 「一個 view 一個 primary」嗰半**唔使等 render**,
   已有 test 數 `button.bg-accent` = 1 兼且係 `Send`
 - `F6` gate 收尾 · `F7` live 驗 · `F2-6` DEV migration 等部署
+
+---
+
+## Day 3(續)— 2026-08-18 · `F5-3` render + `F6` gate + `F7` 本機 live
+
+Chris 批咗借 5433。**一氣呵成做完**(CLAUDE.md 記低 5433 揸唔穩,唔好中途停)。
+web **473 → 474**(+1)· api 唔變(97 / 1480)· lint / build / tsc-web **全 0**。
+
+### 🔴🔴 render 捉到一個六條 test 全綠都捉唔到嘅缺陷 —— 本次最值錢嗰件事
+
+畫面**同時**出 `Thinking…`(spinner)同「AI-Assist has proposed something」。
+成因:`LIVE_STATUSES` 包 `awaiting_approval` ⇒ **同一個 run** 令 `isThinking` 同
+`runAwaitingDecision` 一齊為真。
+
+📌 **點解五條 assert 全部漏咗佢**:每一條都問「**某樣嘢**喺唔喺畫面」,而呢個缺陷係
+「**兩樣嘢一齊**喺畫面」。同 `CH-030` 嗰個 `items-center` 同族 —— 嗰次 test 問「字喺唔喺度」,
+缺陷係「佢喺邊」。**一個畫面級嘅缺陷,住喺每條 assert 嘅縫之間。**
+
+🔴 **後果唔止難睇**:spinner 叫人**等**,而 parked 狀態下冇嘢會再發生 —— 佢要自己去撳。
+呢個係 `R16`「stall reads as progress」嘅**鏡像**:**progress reads as stall**,
+令人唔去做應做嘅事。
+
+**修法**改最窄嗰層(`isThinking` 剔走 `awaiting_approval`;`isLiveRun` 一個字唔郁,因為佢講
+「run 未完」本身係啱嘅)。新 test **assert 個 PAIR**(有 link **兼且** 冇 spinner)——
+任何一半單獨 assert 都會繼續綠。falsification:拆走嗰行 ⇒ **1 紅 9 綠**,紅嘅原因
+(`expected <div><svg…></div> to be null`)**就係我想證嗰個**。
+
+### 🟢🟢 `OQ-D` live:對照實驗,唔係單邊觀察
+
+**唯一變數 = `requestId` 在唔在**,同一句說話 · 同一個 profile:
+
+| | 冇 request context | 有 request context |
+|---|---|---|
+| agent 答 | 「I can't access pending requests or REQ0044067 **with the available tools**」 | 真叫 `list_pending_requests`,列出兩張單 |
+| `steps` | 只有 `start`(`detail` = `with no request context`)= **零 tool call** | `start` + `list_pending_requests` **ok** + `get_request` |
+
+🔴 **點解一定要做對照**:單睇左邊,「filter 生效」同「model 純粹唔想叫呢個 tool」
+**睇落一模一樣**。呢個就係 W47 `G8` 嗰個教訓 —— 部署唔會幫你做對照,要人再做一次。
+
+### 斷線重連:問到底之後,答案有三段
+
+殺 api 鏈(保住 web 同個頁面)~140 秒再起返:
+
+1. 斷線期間送 turn ⇒ 畫面**唔郁**(7 個氣泡,DB 已經 9 個)
+2. 切走一條 thread 再切返 ⇒ **即刻 9 個** ⇒ **資料一直喺度,唔通嘅係 SSE 唔係 read**
+3. remount 之後再送 ⇒ **自動變 11,冇 click 過** ⇒ 重連真通
+
+📌 成因唔係 bug,係一個有名有姓嘅 bound:`MAX_CONSECUTIVE_FAILURES = 3`,寫落去係為咗擋
+403(`EventSource` 唔畀睇 status code)。🔴 **但 W48 把佢放大咗** —— hook 自己個 doc 寫住
+「a thread has no terminal state: it is idle between questions」⇒ **一條 thread 活得遠耐過
+一個 run**,撞正一次 api 重啟(= 一次部署)嘅機會高好多,而**畫面唔會講**。
+
+### 🔴 一個要 owner 決定嘅缺口(`F5-8`)
+
+三層事實逐條實測:①`assistant.tsx:117` 開新對話**冇 `profileId` 呢個概念**
+②`AgentProfile` **冇 default**(W47 刻意決定)⇒ 多過一個 active 就 400
+③本機**兩個 active profile** ⇒ **每條新對話第一句都 400**。
+
+⚠️ `send.isError` **有顯示**個 message(fail loud,唔係靜靜死),但用戶**冇出路** ——
+畫面冇地方揀,而 `GET /agent/profiles` 係 `@Roles(ADMIN)` ⇒ **REGIONAL 連列表都攞唔到**。
+
+🔴 **順帶驗到一個刻意設計唔係 bug**:400 嗰刻 **user turn 已經寫咗落 DB 而 run 冇**。
+`agent-conversation.service.ts:202-206` 明文講咗點解 ——「what they said is a fact, and
+losing it to roll back a queue error would be the platform forgetting something a person
+did」⇒ **orphan turn 唔使修**。
+
+### 三個順帶 live 發現
+
+- 🟢 **`scrubPii` 真生效** —— tool_result 入面 `targetUpn` 係 `[redacted-email]`(H4)
+- 🔴 **`D3` 收窄咗「見唔到」,收窄唔到「填錯」** —— model 攞人講嘅 `REQ0044067` 當
+  `requestId` 叫 `get_request` ⇒ 404。**失敗方向安全**,但「填一個存在而屬於第二個 OpCo
+  嘅 id」**本次冇驗**
+- 🔴 **`search_catalog("Power BI Pro")` 返 `[]`** —— catalog 得 `POWER_BI_PRO` 而
+  **101 個 SKU 個 `businessAlias` 全部 `null`**。agent 冇亂估,明文答「can't propose the
+  licence without guessing」(**好行為**),但代價係佢幫唔到手 ⇒ catalog curation 缺口,
+  同 `CH-026 G-7` 同族,**唔喺 W48 scope**
+
+### ⚠️ 兩個自己踩返嘅坑,兩個都同「一句會講大話嘅 log」有關
+
+1. `Start-Process ... -ArgumentList '...$env:NODE_OPTIONS="..."'` 個引號畀 PowerShell 食咗
+   ⇒ process 即刻死。而我條 poll loop **跑完就印「up after 125s」,冇 assert 過** ——
+   同 CLAUDE.md 記低嗰啲「summary-level 綠燈」同族,**係我自己寫嗰句**
+2. `taskkill /F` 殺 watch ⇒ `tsbuildinfo` + `dist` 都留低 ⇒ 重起必撞
+   **`Found 0 errors` + `MODULE_NOT_FOUND`**。🟢 但今次 **13 秒解決**,因為一開始就
+   `-RedirectStandardOutput` —— 對照 CLAUDE.md 記低嘅「白等 180/270 秒」,分別淨係有冇 capture
+
+### 🚧 下一步
+
+- **`F5-8`** 等 Chris 揀 A / B / C(B 會推翻 W47「冇 default profile」= H1)
+- `F7-3` / `F7-4` DEV live · `F2-6` DEV migration —— **兩條都等同一次部署,但收法唔同**
+- `F8` 收尾(`F8-3` 要入 `R1`–`R7` + 今日新揾嘅兩條)

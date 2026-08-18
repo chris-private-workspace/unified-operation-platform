@@ -178,20 +178,24 @@ model AgentTurn {
 
 ## 3. Success Criteria(Phase Gate)
 
-| # | Criterion | Target | Block closeout? |
-|---|---|---|---|
-| G1 | ADR `Accepted` | 互動模型寫低咗,七條 OQ 有答案 | **Yes** |
-| G2 | migration 對真 DB | 本機 + DEV 都 applied | **Yes** |
-| G3 | **舊 run 嘅 transcript 讀路零改動** | `GET /agent/runs/:id` 行為一個字唔變 | **Yes** |
-| G4 | chat 唔可以繞過 approval | 產生 proposal 之後**仍然要人批**(`ADR-0036 D3`) | **Yes** |
-| G5 | `runState` / `prompt` 冇經新 endpoint 洩出 | 0 | **Yes** |
-| G6 | falsification 每道新閘一次 | 真紅零誤傷 | **Yes** |
-| G7 | H6 light + dark | 兩個都 render 過 | **Yes** |
-| G8 | root gate | test / lint / build 三個 exit 0 | **Yes** |
-| G9 | live 驗(本機 + DEV) | 真傾到 + 真 stream 到 | **Yes** |
+| # | Criterion | Target | Block closeout? | 狀態(2026-08-18) |
+|---|---|---|---|---|
+| G1 | ADR `Accepted` | 互動模型寫低咗,七條 OQ 有答案 | **Yes** | ✅ `ADR-0041` D1–D9 + Errata E1 |
+| G2 | migration 對真 DB | 本機 + DEV 都 applied | **Yes** | 🟡 **半收** —— 本機 ✅(`28 migrations found` / `No pending`);**DEV ❌ 差一次部署**(唔差操作,唔差答案) |
+| G3 | **舊 run 嘅 transcript 讀路零改動** | `GET /agent/runs/:id` 行為一個字唔變 | **Yes** | ✅ shape guard spec + live `GET /agent/runs/:id` 照返 `steps`/`messages`/`proposals` |
+| G4 | chat 唔可以繞過 approval | 產生 proposal 之後**仍然要人批**(`ADR-0036 D3`) | **Yes** | ✅ 兩條 test(behavioural + source scan)· **live 實測** run 泊喺 `awaiting_approval`,畫面只有 link 冇掣 |
+| G5 | `runState` / `prompt` 冇經新 endpoint 洩出 | 0 | **Yes** | ✅ `CONVERSATION_SELECT` 一個常數 + spec |
+| G6 | falsification 每道新閘一次 | 真紅零誤傷 | **Yes** | ✅ 最後一道(`F5-7`)= 1 紅 9 綠,紅因對位 |
+| G7 | H6 light + dark | 兩個都 render 過 | **Yes** | ✅ 兩個 theme 真 render + token swap 實測 · 零橫向溢出 · **順帶捉到 `F5-7`** |
+| G8 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ api 97/1480 · web 45/474 · lint 0 · build 0 —— ⚠️ **收尾要重跑**(W47 教訓) |
+| G9 | live 驗(本機 + DEV) | 真傾到 + 真 stream 到 | **Yes** | 🟡 **半收** —— 本機 ✅(11 turn · proposal · SSE 斷線重連 · **`OQ-D` 對照實驗**);**DEV ❌ 差一次部署 + 之後一次真對話**(兩件事,唔係一件) |
 
 > 🔴 **`G3` 同 `G4` 係本 phase 兩條真紅線**,其餘七條係例行。
 > `G3` 防「順手改咗既有表」;`G4` 防「chat 因為感覺輕鬆,就變成一條繞過批准嘅路」。
+>
+> 🔴 **`G2` 同 `G9` 兩條都寫住「DEV ❌」,但佢哋唔係同一個阻塞** —— `G2` 部署完**自動就收**,
+> `G9` 要**部署完再有人做一次對話**。W47 收尾嗰陣把 `G1`/`G8` 當成同一個阻塞而佢哋唔係,
+> 所以呢度逐條寫明差嘅係「一次部署 / 一次操作 / 一個未答嘅問題」邊一種。
 
 ---
 
