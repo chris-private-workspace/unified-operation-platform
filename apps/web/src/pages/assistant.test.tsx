@@ -236,6 +236,44 @@ describe('Assistant (W48 F5)', () => {
     expect(screen.queryByText('Thinking…')).toBeNull();
   });
 
+  /**
+   * 🔴 Found in the `F5-3` render, not by any of the assertions above — every
+   * one of them asks whether ONE thing is on screen, and this defect is two
+   * things being on screen together.
+   *
+   * A run parked on a proposal is "live" (it can still move on) but nobody is
+   * working: it is waiting for a person. The screen showed a spinner saying
+   * "Thinking…" directly above "AI-Assist has proposed something", which tells
+   * somebody to wait for an answer that will never arrive until they go and
+   * decide it. Asserted as the PAIR, because either half alone stays green.
+   */
+  it('does not also say Thinking… while parked on a proposal', () => {
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(
+        THREAD({
+          requestId: 'req-1',
+          runs: [
+            {
+              id: 'run-1',
+              status: 'completed',
+              startedAt: '2026-08-18T09:01:00Z',
+            },
+            {
+              id: 'run-2',
+              status: 'awaiting_approval',
+              startedAt: '2026-08-18T09:02:00Z',
+            },
+          ],
+        }),
+      ) as ReturnType<typeof useAgentConversation>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText('Open the request')).toBeInTheDocument();
+    expect(screen.queryByText('Thinking…')).toBeNull();
+  });
+
   // ── a 403 explains itself ─────────────────────────────────────
 
   it('explains a 403 rather than looking like an empty inbox', () => {

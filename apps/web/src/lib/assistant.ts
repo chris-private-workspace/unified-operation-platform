@@ -39,10 +39,18 @@ export function isLiveRun(status: AgentRunStatus): boolean {
  * 🔴 The LATEST run only. A thread accumulates runs — one per turn — and asking
  * "is any run live" would leave a thread stuck on "Thinking…" because of a run
  * that was abandoned three questions ago.
+ *
+ * 🔴 A run parked on a proposal is live but NOT working — it is waiting for a
+ * PERSON. Found in the `F5-3` render (2026-08-18): the screen showed "Thinking…"
+ * directly above "AI-Assist has proposed something", because one run satisfies
+ * this and `runAwaitingDecision` at the same time. A spinner tells somebody to
+ * wait for an answer that will never arrive until they go and decide — the
+ * mirror of `R16`, where a stall reads as progress.
  */
 export function isThinking(runs: AgentConversationRun[] | undefined): boolean {
   if (!runs || runs.length === 0) return false;
   const latest = runs[runs.length - 1];
+  if (latest.status === 'awaiting_approval') return false;
   return isLiveRun(latest.status);
 }
 
