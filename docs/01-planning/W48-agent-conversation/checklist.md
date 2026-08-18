@@ -35,13 +35,15 @@
 
 ## `F3` — Conversation service + endpoint
 
-- [ ] F3-1 `POST /agent/conversations` · `POST /agent/conversations/:id/turns` · `GET /agent/conversations/:id` · `GET /agent/conversations`
-- [ ] F3-2 `@Roles` 跟 `canUseAgent`(ADMIN + REGIONAL,`OQ-F`)
-- [ ] F3-3 🟢🟢 **W28 drift test 要認得新 endpoint** —— 佢喺 W47 捉到我**兩次**,今次預咗佢會紅,唔好當意外
-- [ ] F3-4 🔴 **`OQ-D` 落喺呢度**:`requestId == null` 嘅對話,tool **攞唔到任何 request-scoped 資料** —— 係「攞唔到」唔係「攞到但唔顯示」。**一條 falsification 釘住**
-- [ ] F3-5 `runState` / `prompt` **唔出 wire**(W46 / W47 兩次都係喺呢度漏,而列表最易漏)
-- [ ] F3-6 ⚠️ **「清」嘅 endpoint 等 `OQ-H`** —— verb 同權限都由嗰個答案決定(`ADR-0040 D2` 先例:唔用 `DELETE`,因為 `DELETE` 會講一個假嘅真相)
-- [ ] F3-7 controller spec —— 釘住 DTO 同 select 兩邊 key(W47 `F2-7` 第一次跑就揾到一個真缺口)
+- [x] F3-1 ✅ **六個 endpoint**(唔止 plan 寫嗰四個 —— `archive`/`unarchive` 係 `F3-6`)。⚠️ **`POST /:id/turns` 返 `{turn, runId}` 唔返 agent 個答覆** —— run 背景執行(`ADR-0039 F1`,`POST /agent/runs` 由 W46 起就係咁);**assistant 嗰半嘅 turn 由 `F4` 寫返落 `AgentChatTurn`**,呢個係刻意切法唔係漏
+- [x] F3-2 ✅ `@Roles(ADMIN, REGIONAL)` class-level,同 `AgentRunController` **逐字一樣**(`OQ-F` / `D6`)。🔴 **順帶更正一個文件同 code 對唔上嘅講法**:`canUseAgent` **喺 code 入面唔存在**,佢係 plan / ADR 嘅講法;真嘢係 controller 個 class-level `@Roles`
+- [x] F3-3 ✅ **如預期紅,而且 diff 逐行對過先更新 snapshot**(唔係 `jest -u` 就算):`+1` controller · **`+6` endpoint 全部 `[ADMIN,REGIONAL]`** · **零 row 移除** ⇒ 冇任何既有權限被郁到。📌 **`+6` 本身就係 `F3-2` 嘅證據**
+- [x] F3-4 ✅ **獨立 commit** —— 🔴 **開工先揾到 `ADR-0041 D3` 個 phrasing 建基於一個唔成立嘅前提**(佢寫「tool 收唔到 request id」,而 `get_request` 個 requestId 一直係 **model 自己填**,唯一嘅閘係 OpCo)⇒ 照字面做唔到,要令 tool **唔出現喺 list**。Chris 2026-08-18 批:registry 按 scope 過濾 · 四個 tool 算 request-scoped。**falsification 恰好 3 條紅零誤傷**
+- [x] F3-5 ✅ `CONVERSATION_SELECT` / `TURN_SELECT` 兩個 exported const,controller spec **兩邊 key 用 typed map 對數**(widening 任何一邊都 compile 唔到)**+ 一條獨立負面 assert** —— 因為兩邊都冇某個欄一樣算「對數」,**對數證明唔到「危險欄唔喺度」**
+- [x] F3-6 ✅ **`POST :id/archive` + `:id/unarchive`**(`OQ-H` = soft),verb 跟 `ADR-0040 D2` **唔用 `DELETE`**。⚠️ **刻意冇寫 audit,理由同 `ADR-0040 D5` 唔同族**:嗰條係 ADMIN 郁**人哋睇得到**嘅嘢;archive 係人收起自己一條**其他人本來就讀唔到**嘅對話,寫 audit 就係記一件冇第二方嘅事
+- [x] F3-7 ✅ `agent-conversation.controller.spec.ts` + `agent-conversation.service.spec.ts`
+- [x] F3-8 ✅ **一個 ADR 冇明文嘅可見性決定,寫咗落 code**:對話 **owner-only,連 ADMIN 都唔見**。理由係平時嗰個 bound 喺度唔存在 —— `getRun` 靠 run 個 **request** 做 OpCo scope,而對話可以**冇 request** ⇒ 剩返唯一誠實嘅 bound 就係 `startedById`。⚠️ **唔等於 agent 活動避開 admin 視線**:對話開嘅 run 係普通 run,照樣出現喺全域 run 列表,transcript 照樣 ADMIN 可讀(`AgentMessage`,`ADR-0036 D6` 永久保留)—— **私隱嘅係 chat 外殼,唔係 agent 做過乜**
+- [x] F3-9 ✅ **`agent.boundary.spec.ts` 加 `writersOf('agentConversation')` + `writersOf('agentChatTurn')`** —— **同表一齊加,唔係等人發現**(CH-031 教訓:`AgentRun` 成個 phase 冇 writer 約束,而**一個缺席嘅守衛同一個批准過嘅行為喺 code 上面一模一樣**)。⚠️ `ai-assist.service.ts` **讀** `agentChatTurn`(`inputFor`)但唔可以出現喺個 list —— 讀同寫係兩種權力
 
 ## `F4` — Streaming(送真內容)
 

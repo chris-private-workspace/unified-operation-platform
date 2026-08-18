@@ -326,9 +326,9 @@ describe('AgentToolRegistry', () => {
      * and false in effect.
      */
     it('drops list_pending_requests, which returns ids even though it takes none', () => {
-      expect(
-        registry.list(ctx(admin, null)).map((t) => t.name),
-      ).not.toContain('list_pending_requests');
+      expect(registry.list(ctx(admin, null)).map((t) => t.name)).not.toContain(
+        'list_pending_requests',
+      );
     });
   });
 

@@ -97,6 +97,8 @@ describe('AiAssistService', () => {
     agentStep: { create: jest.Mock };
     agentMessage: { createMany: jest.Mock };
     agentProposal: { create: jest.Mock; updateMany: jest.Mock };
+    /** W48 F3 — READ only. `agent-conversation.service` is the sole writer. */
+    agentChatTurn: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   };
   let audit: { log: jest.Mock };
@@ -148,6 +150,7 @@ describe('AiAssistService', () => {
       agentStep: { create: jest.fn() },
       agentMessage: { createMany: jest.fn() },
       agentProposal: { create: jest.fn(), updateMany: jest.fn() },
+      agentChatTurn: { findFirst: jest.fn() },
       /**
        * The interactive form, with a flag around the callback.
        *
@@ -253,6 +256,115 @@ describe('AiAssistService', () => {
     });
     return service.executeRun(started.runId);
   };
+
+  // ── W48 F3 — what a run is asked, and what it may see ────────
+
+  /**
+   * 🔴 Two callers, two questions, and conflating them was the easy mistake.
+   *
+   * A run from a request screen is given a job by the platform. A run from a
+   * conversation is answering a PERSON — so its input is that person's words,
+   * read back out of `AgentChatTurn`. Getting this wrong would have been
+   * invisible: the run would still complete, having answered a sentence about a
+   * request id that is `null`.
+   */
+  describe('W48 F3 — conversation runs', () => {
+    const conversationRun = async (requestId: string | null) => {
+      const started = await service.startConversationRun(admin, {
+        id: 'conv-1',
+        requestId,
+        profileId: null,
+      });
+      prisma.agentRun.findUnique.mockResolvedValueOnce({
+        id: started.runId,
+        status: 'running',
+        requestId,
+        conversationId: 'conv-1',
+        startedBy: admin,
+        profile: PROFILE,
+      });
+      return service.executeRun(started.runId);
+    };
+
+    it('asks the model the person’s own words, not the request sentence', async () => {
+      prisma.agentChatTurn.findFirst.mockResolvedValue({
+        content: 'which licences does a new finance hire need?',
+      });
+
+      await conversationRun(null);
+
+      expect(runtime.start).toHaveBeenCalledWith(
+        expect.anything(),
+        'which licences does a new finance hire need?',
+      );
+    });
+
+    /**
+     * 🔴 ADR-0041 D3, at the point it becomes real. `ctx.requestId === null` is
+     * what makes `AgentToolRegistry.list` withhold the request tools — so a
+     * conversation that quietly passed a request id here would reopen the hole
+     * D3 closes, with every tool test still green.
+     */
+    it('gives a context-free conversation a null request in the tool context', async () => {
+      prisma.agentChatTurn.findFirst.mockResolvedValue({ content: 'hello' });
+      let captured: AgentSetup | undefined;
+      runtime.start.mockImplementation(async (setup: AgentSetup) => {
+        captured = setup;
+        return completedTurn();
+      });
+
+      await conversationRun(null);
+
+      expect(captured?.ctx.requestId).toBeNull();
+    });
+
+    it('keeps the request in context when the conversation has one', async () => {
+      prisma.agentChatTurn.findFirst.mockResolvedValue({ content: 'hello' });
+      let captured: AgentSetup | undefined;
+      runtime.start.mockImplementation(async (setup: AgentSetup) => {
+        captured = setup;
+        return completedTurn();
+      });
+
+      await conversationRun('req-1');
+
+      expect(captured?.ctx.requestId).toBe('req-1');
+    });
+
+    /**
+     * A run with nothing to answer cannot happen — `addTurn` stores the turn
+     * before queueing — so this fails loudly rather than inventing a prompt.
+     * R16's rule for unreadable saved state, applied to the same class of fact.
+     */
+    it('refuses rather than inventing a question when there is no turn', async () => {
+      prisma.agentChatTurn.findFirst.mockResolvedValue(null);
+
+      await expect(conversationRun(null)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(runtime.start).not.toHaveBeenCalled();
+    });
+
+    /**
+     * ⚠️ The rule `startConversationRun` deliberately does NOT apply: OQ-3's
+     * "one open run per request" is about a request card showing two runs that
+     * disagree. A conversation is a sequence of turns, each with its own run —
+     * applying it here would make the second question fail while the first was
+     * still thinking.
+     */
+    it('does not apply the one-open-run-per-request rule', async () => {
+      prisma.agentChatTurn.findFirst.mockResolvedValue({ content: 'hi' });
+      prisma.agentRun.findFirst.mockResolvedValue({ id: 'run-open' });
+
+      await expect(
+        service.startConversationRun(admin, {
+          id: 'conv-1',
+          requestId: 'req-1',
+          profileId: null,
+        }),
+      ).resolves.toEqual(expect.objectContaining({ status: 'running' }));
+    });
+  });
 
   /**
    * 期二 G3 / plan B5 — the switch is asked BEFORE anything is spent.

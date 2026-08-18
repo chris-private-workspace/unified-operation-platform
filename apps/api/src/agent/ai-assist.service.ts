@@ -133,6 +133,74 @@ export class AiAssistService {
     await this.assertRequestIsUsable(user, requestId);
     await this.assertNoOpenRun(requestId);
 
+    return this.queueRun(user, {
+      requestId,
+      conversationId: null,
+      profileId,
+      startDetail: `Run started for request ${requestId}`,
+    });
+  }
+
+  /**
+   * W48 F3 / ADR-0041 D4 — a run started by a CONVERSATION rather than by a
+   * request screen.
+   *
+   * 🔴 Deliberately the same machinery as `startRun`, down to the principal, the
+   * audit action and the queue. D8 says a chat cannot bypass approval, and the
+   * cheapest way to keep that true is for a chat's run to be an ordinary run:
+   * same table, same proposals, same `agent-approval` path. A second execution
+   * path would be a second place for the approval gate to not quite apply.
+   *
+   * ⚠️ The two request-shaped guards `startRun` runs first are absent here, and
+   * neither is an oversight:
+   *   - `assertRequestIsUsable` — the CONVERSATION already checked its request
+   *     when it was created, and a conversation with no request has nothing to
+   *     check. `ctx.requestId` then removes the tools rather than a guard
+   *     refusing them (D3).
+   *   - `assertNoOpenRun` — that rule is "one open run per REQUEST" (OQ-3), and
+   *     it exists so a request card cannot show two runs disagreeing. A
+   *     conversation is a sequence of turns, each with its own run; applying
+   *     the request rule here would make the second question in a conversation
+   *     fail while the first was still thinking.
+   */
+  async startConversationRun(
+    user: AppUser,
+    conversation: {
+      id: string;
+      requestId: string | null;
+      profileId: string | null;
+    },
+  ): Promise<AiAssistRunResult> {
+    await this.killSwitch.assertEnabled();
+
+    return this.queueRun(user, {
+      requestId: conversation.requestId,
+      conversationId: conversation.id,
+      profileId: conversation.profileId ?? undefined,
+      startDetail: conversation.requestId
+        ? `Run started from conversation ${conversation.id} on request ${conversation.requestId}`
+        : `Run started from conversation ${conversation.id} with no request context`,
+    });
+  }
+
+  /**
+   * Everything both entry points do once their own guards have passed: settle
+   * the principal and the profile, write the row and its audit entry together,
+   * record the opening step, and queue the work.
+   *
+   * Extracted rather than copied when W48 added the second caller — the
+   * alternative was two transactions writing the same table with the same audit
+   * action, which drift apart one fix at a time.
+   */
+  private async queueRun(
+    user: AppUser,
+    opts: {
+      requestId: string | null;
+      conversationId: string | null;
+      profileId?: string;
+      startDetail: string;
+    },
+  ): Promise<AiAssistRunResult> {
     const principal = await this.prisma.agentPrincipal.upsert({
       where: { name: AI_ASSIST_PRINCIPAL },
       // The EFFECTIVE runtime, read off the provider that actually booted —
@@ -170,7 +238,10 @@ export class AiAssistService {
      * OQ-3 then counts against the request, blocking it from ever getting
      * another run. Same permanent-block shape 期二 G5-A found twice already.
      */
-    const profile = await this.profiles.resolveForRun(profileId, principal.id);
+    const profile = await this.profiles.resolveForRun(
+      opts.profileId,
+      principal.id,
+    );
 
     /**
      * Run row and audit row in ONE transaction (ADR-0009 D8.1: "done but
@@ -189,7 +260,13 @@ export class AiAssistService {
         data: {
           principalId: principal.id,
           startedById: user.id,
-          requestId,
+          requestId: opts.requestId,
+          // W48 F3 / ADR-0041 D4 — null for a run started from a request
+          // screen. It is what makes "which sentence produced this proposal"
+          // answerable, and a column rather than an inference for the reason
+          // `AgentRun.requestId` gives: a link nobody wrote down holds only as
+          // long as somebody remembers it.
+          conversationId: opts.conversationId,
           status: 'running',
           profileId: profile.id,
         },
@@ -215,7 +292,7 @@ export class AiAssistService {
     await this.writeStep(run.id, {
       key: 'start',
       status: 'ok',
-      detail: `Run started for request ${requestId}`,
+      detail: opts.startDetail,
     });
 
     /**
@@ -257,6 +334,8 @@ export class AiAssistService {
         id: true,
         status: true,
         requestId: true,
+        // W48 F3 — decides what this run is being asked (`inputFor`).
+        conversationId: true,
         startedBy: true,
         // W47 F3 — the run's own profile, not whatever is configured now. A
         // queued job can execute long after an admin edited the registry.
@@ -308,13 +387,53 @@ export class AiAssistService {
       await this.killSwitch.assertEnabled();
       const turn: AgentTurn = await this.runtime.start(
         setup,
-        `Work out the licence line items for request ${run.requestId}.`,
+        await this.inputFor(run),
       );
       return await this.persistTurn(run.id, turn);
     } catch (err) {
       await this.failRun(run.id, err);
       throw err;
     }
+  }
+
+  /**
+   * What this run is being asked to do — W48 F3.
+   *
+   * 🔴 Two callers, two sentences, and the difference is not cosmetic. A run
+   * started from a request screen has one job stated by the platform; a run
+   * started from a conversation is answering a PERSON, and the words are
+   * theirs.
+   *
+   * ⚠️ This READS `AgentChatTurn`, a table `agent-conversation.service` owns
+   * and is the only writer of. That split is deliberate and the boundary spec
+   * enforces the writing half: an agent may read what it was asked, and must
+   * not be able to write the record of what was asked.
+   *
+   * A conversation run with no turn to answer would be a run with nothing to
+   * say. It cannot happen — `addTurn` writes the turn and queues the run in one
+   * transaction — so it throws rather than inventing a prompt, which is the
+   * rule R16 states for saved state and this is the same class of fact.
+   */
+  private async inputFor(run: {
+    id: string;
+    requestId: string | null;
+    conversationId: string | null;
+  }): Promise<string> {
+    if (!run.conversationId) {
+      return `Work out the licence line items for request ${run.requestId}.`;
+    }
+
+    const latest = await this.prisma.agentChatTurn.findFirst({
+      where: { conversationId: run.conversationId, role: 'user' },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true },
+    });
+    if (!latest) {
+      throw new ServiceUnavailableException(
+        `Conversation ${run.conversationId} has no question for run ${run.id} to answer`,
+      );
+    }
+    return latest.content;
   }
 
   /**

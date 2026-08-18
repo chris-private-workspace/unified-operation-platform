@@ -285,3 +285,91 @@ TABLE "AgentRun"      … ON DELETE RESTRICT
 
 - **`F3`**(conversation service + endpoint)—— 唔使真 DB(Prisma client 已 generate,test 行 mock)
 - `F2-6` DEV migration 等部署
+
+---
+
+## Day 2 — 2026-08-18 · `F3` Conversation service + endpoint
+
+api **94 → 97 suites / 1430 → 1469** · web **44 files** 唔變(F3 冇 UI)· test / lint / build **三個 exit 0**。
+
+### 🔴🔴 開工 grounding 揾到一件會令成個 `F3-4` 做錯嘅事
+
+`ADR-0041 D3` 逐字寫:「`requestId == null` 嘅對話,`get_request` 呢類 tool **收唔到一個
+request id**」。**呢句假設咗 requestId 係平台傳落 tool 嘅 context。實況相反**:
+
+```ts
+// tool-registry.ts:283-290
+parameters: { properties: { requestId: {…} }, required: ['requestId'] }
+execute: async (args, ctx) => {
+  const requestId = requireString(asRecord(args), 'requestId');   // ← model 自己填
+  assertOpcoScope(ctx.user, request.opcoId);                       // ← 唯一嘅閘
+}
+```
+
+`AgentToolContext` 由頭到尾得 `{ runId, user }` ⇒ **「一條對話睇到咩」完全由 OpCo scope 決定,
+同 run 掛住邊張 request 零關係**。一條冇 context 嘅對話可以 `list_pending_requests` 攞晒
+OpCo 內所有 request,再 `get_request` 逐張睇。
+
+⇒ **照字面實作 `D3` 係做唔到嘅**。忠於佢意圖(`ADR-0036 D2`「見唔到」比「叫佢唔好用」強一個
+數量級)嘅唯一路,係令嗰啲 tool **唔出現喺 tool list** —— 而咁就要郁 registry 個 contract。
+
+📌 **形狀**:一份 ADR 可以完全正確噉描述**要達到嘅性質**,同時錯噉描述**達到佢嘅機制** ——
+而兩者喺文字上分唔開。`D3` 個「攞唔到」係啱嘅,「收唔到 request id」係錯嘅,而如果我照住第二句
+寫 code,寫出嚟嘅嘢會**睇落完全符合 ADR**。
+
+### 🟢🟢 `list()` 收 required 參數,tsc 即刻兌現咗個決定
+
+`list(ctx)` 加 **required** 參數(唔用 optional fail-open),`all()` 返全部。理由:
+一個 provider call `all()` 係**一眼睇得出佢跨咗界**,一個 provider 唔記得傳參數係 **compile error**。
+
+⇒ tsc 捉到 **兩個我完全冇預料嘅 production caller**:
+
+| 位置 | 我點知都唔知 |
+|---|---|
+| `claude-tool-runner.provider.ts:340` | 我改咗 `:272` 同 `:414`,**第三處喺 resume 入面執行已批准嘅 tool** |
+| `auth/permissions.controller.ts:57` | **權限矩陣讀 tool list**,而佢住喺 **另一個 module** |
+
+📌 **如果用 optional 參數,呢兩個位會靜靜保持舊行為** —— 而其中一個(權限矩陣)一旦用咗
+filtered list,W28 個 locked snapshot 就會**隨住邊個 run 被問而變**。
+
+### 三個 call site 唔對稱,而唔對稱本身係決定
+
+| call site | 用邊個 | 點解 |
+|---|---|---|
+| openai `:439` · claude `:414`(畀 tool 落 SDK) | `list(ctx)` | 呢度就係「model 見到咩」 |
+| claude `:272`(認返 saved state 嘅 pause) | **`all()`** | filter 咗會令一個 pause **消失**,而消失嘅 pause 係 `undecided` **數唔到**嗰個 ⇒ 靜靜放行 |
+| claude `:340`(執行已批准嗰個) | `list(ctx)` | 最後一道閘,揾唔到就 **fail loud** |
+| permissions matrix | **`all()`** | 佢描述平台建咗咩,唔係邊個 run 用得咩 |
+
+### 🔴 falsification 第一次做錯咗,而錯法正正係 W47 記低嗰個
+
+拆 `inputFor` 嗰陣我寫 `if (!run.conversationId || true)` ⇒ 後面 code unreachable ⇒
+**六個 suite compile error**。「有嘢紅」但**紅嘅原因唔係我想證嗰個**(W47 `F3-6`:33 紅但原因唔啱)。
+
+改成**保持結構**嘅拆法(照行 query、照 throw,只係 return 錯嘢)⇒ **恰好 1 條紅,零誤傷**。
+
+📌 **教訓具體化**:falsification 要拆嘅係「**呢個決定**」,唔係「呢一行」。一個令 file 編譯唔到
+嘅改動,證明嘅係「file 存在」。
+
+### 兩個 ADR 冇明文、而我要自己決定嘅位(都寫咗落 code)
+
+**① 對話 owner-only,連 ADMIN 都唔見。** 平時嗰個 bound 喺度**唔存在** —— `getRun` 靠 run 個
+**request** 做 OpCo scope,而對話可以冇 request。剩返唯一誠實嘅 bound 就係 `startedById`。
+⚠️ **唔等於 agent 活動避開 admin 視線**:對話開嘅 run 係普通 run,照樣出現喺全域 run 列表,
+transcript 照樣 ADMIN 可讀 —— **私隱嘅係 chat 外殼,唔係 agent 做過乜**。
+
+**② archive 唔寫 audit,而理由同 `ADR-0040 D5` 唔同族。** 嗰條存在係因為 hide 係 **ADMIN 郁
+人哋睇得到嘅嘢**;archive 係人收起自己一條**其他人本來就讀唔到**嘅對話 ⇒ 寫 audit 就係記一件
+**冇第二方**嘅事。
+
+### `F3` 刻意留咗一半畀 `F4`
+
+`POST /:id/turns` 返 `{turn, runId}`,**唔返 agent 個答覆**,亦**未寫 assistant turn**。
+run 背景執行係 `ADR-0039 F1` 由 W46 起就有嘅形狀;而「run 講嘅嘢點樣返到對話」**就係 `F4` 本身**。
+
+### 🚧 下一步
+
+- **`F4`** streaming + assistant turn 寫返落 `AgentChatTurn`(⚠️ writer 仍然只可以係
+  `agent-conversation.service` —— `F3-9` 條 boundary test 會捉)
+- `F4-3` **turn 上限 / history 截斷**(`D9` 要求有,唔指定形狀)
+- `F2-6` DEV migration 等部署

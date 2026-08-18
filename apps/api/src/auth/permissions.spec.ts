@@ -129,6 +129,19 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         // — third time an agent write surface has been caught here. That is the
         // test working, not the test being annoying.
         'AgentProfileController',
+        /**
+         * W48 F3 / ADR-0041 D6 — /agent/conversations, @Roles(ADMIN,REGIONAL),
+         * the same width as AgentRunController and for the same reason: a chat
+         * runs the same tools through the same approval gate (D8), so it is not
+         * a more dangerous surface — only a lighter-feeling one.
+         *
+         * 🔴 The matrix cannot show the bound that actually applies here. A
+         * conversation may have NO request, so there is no OpCo to scope by,
+         * and the service checks OWNERSHIP instead — a row-level fact, invisible
+         * to this table exactly like the OpCo caveat the endpoint description
+         * already carries.
+         */
+        'AgentConversationController',
         // W46 F8 — /agent/runs (start, read, abort), @Roles(ADMIN,REGIONAL).
         // Neither ADR-0036 nor the plan settles who may START a run, so this
         // matches the approval surface: a run costs a model call and creates
