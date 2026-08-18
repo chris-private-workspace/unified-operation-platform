@@ -57,10 +57,31 @@ describe('W48 G3 — chat does not move into the run transcript', () => {
     expect(block).not.toContain('AgentMessage');
   });
 
-  it('AgentTurn and AgentMessage are separate tables', () => {
+  it('AgentChatTurn and AgentMessage are separate tables', () => {
     // Guards the guard: if either model were renamed away, the three
     // assertions above would still hold vacuously.
-    expect(schema).toContain('model AgentTurn {');
+    expect(schema).toContain('model AgentChatTurn {');
     expect(schema).toContain('model AgentMessage {');
+  });
+
+  /**
+   * Errata to ADR-0041 D1 (Chris 2026-08-18): the model is `AgentChatTurn`
+   * because `AgentTurn` was already taken — `agent-runtime.provider.ts` exports
+   * it as the seam's normalised result of one runtime round-trip.
+   *
+   * Pinned rather than left as a comment because the ADR still says `AgentTurn`
+   * in its Decision block, so the next person implementing from the ADR will
+   * reach for exactly this name. A Prisma model and a TypeScript interface can
+   * collide silently: both are importable types, and the file that needs both
+   * (F3's conversation service) would just alias one and move on.
+   */
+  it('the seam keeps sole ownership of the name AgentTurn', () => {
+    expect(schema).not.toContain('model AgentTurn {');
+
+    const seam = readFileSync(
+      join(__dirname, 'agent-runtime.provider.ts'),
+      'utf8',
+    );
+    expect(seam).toContain('export interface AgentTurn {');
   });
 });

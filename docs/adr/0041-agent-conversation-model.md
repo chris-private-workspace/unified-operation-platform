@@ -251,6 +251,44 @@ Context ⑤ 講嘅成本形狀,喺 chat 之下第一次出現。本 ADR **要求
 
 ---
 
+## Errata
+
+> §6:`Accepted` 之後唔改內容。以下係**落地時發現嘅事實**,原文一個字唔改。
+
+### E1 — `D1` 個 model 實際叫 `AgentChatTurn`,唔叫 `AgentTurn`(Chris 2026-08-18)
+
+寫 schema 嗰陣先發現 **`AgentTurn` 呢個名一早有人用咗**,而且**喺同一個 module 入面**:
+
+```ts
+// apps/api/src/agent/agent-runtime.provider.ts:115
+export interface AgentTurn { … }   // seam:一次 runtime round-trip 嘅正規化結果
+```
+
+⇒ 同一個名兩個完全唔同嘅意思:
+
+| | `AgentTurn`(seam,W46 已存在) | `D1` 個新 model |
+|---|---|---|
+| 係咩 | 一次 LLM round-trip 嘅結果(`status` / `state` / `pendingApprovals` / `providerItems`) | **一句對話** |
+| 出處 | `agent-runtime.provider.ts` | `@prisma/client` |
+| `ADR-0017 D2` 點形容 | 「the core design work of a seam」 | —— |
+
+🔴 **唔係理論上會撞**:`F3` 個 conversation service **同時要兩個**(開 run 用 seam 嗰個、
+寫對話用 Prisma 嗰個),嗰刻一定要 alias 其中一個 —— 而兩個都係 importable type,
+**alias 完就冇任何嘢提醒下一個讀 code 嘅人佢哋唔係同一件事**。呢個正正係 `schema.prisma`
+一路反對嘅「a difference that holds only as long as someone remembers it」。
+
+**⇒ Prisma 側改名 `AgentChatTurn`**(seam 嗰個一個字唔郁 —— 佢有 6 個 file import,
+而且「runtime 嘅 turn」本身就係佢應得嘅名)。
+
+📌 **點解喺呢一刻改**:migration **未生成**、零 code 用緊佢 ⇒ 成本 = schema 兩處 + 本段。
+落咗 migration 之後改,就要多一個 migration。
+
+⚠️ **`D1` 個 code block 仍然寫住 `AgentTurn`,刻意唔改** —— 所以下一個照 ADR 落實嘅人
+會伸手攞返呢個名。**`agent-conversation.schema.spec.ts` 有一條 test 釘住**
+(`model AgentTurn {` 唔可以出現喺 schema,而 seam 嗰個必須仍然喺度)。
+
+---
+
 ## References
 - `docs/01-planning/W48-agent-conversation/plan.md`(本 ADR = `F1`)
 - `docs/02-architecture/agent-tier2-scope.md` §3 `G4` · §4 `T2-c` · §5.1 `OQ-2` · §5.3 `OQ-4`

@@ -714,16 +714,25 @@ model AgentConversation {
   /// still has no answer here. "Until cleared" means "until hidden".
   archivedAt DateTime?
 
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  turns     AgentTurn[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  turns     AgentChatTurn[]
   runs      AgentRun[] // D4
 
   @@index([startedById, updatedAt])
   @@index([requestId])
 }
 
-/// One line of the dialogue. `user` and `assistant` only — thinking and tool
+/// One line of the dialogue.
+///
+/// 🔴 Named `AgentChatTurn`, not `AgentTurn` as ADR-0041 D1 wrote it (errata,
+/// Chris 2026-08-18). `AgentTurn` was already taken, in this same module, by
+/// `agent-runtime.provider.ts` — the seam's normalised result of ONE runtime
+/// round-trip, which ADR-0017 D2 calls the core design work of a seam. Two
+/// unrelated meanings under one name, in the one service (F3) that needs both,
+/// is the kind of difference that holds only as long as someone remembers it.
+///
+/// `user` and `assistant` only — thinking and tool
 /// traffic stay in AgentStep (the platform-written action ledger) and
 /// AgentMessage (the run transcript), because an agent narrating "I did X" is a
 /// claim, not evidence (INC-001), and this table is the part a person reads.
@@ -738,7 +747,7 @@ model AgentConversation {
 /// started a run is refused; one that never did takes its turns with it. There
 /// is no endpoint for either (D7) — this is what the database does if someone
 /// goes around it.
-model AgentTurn {
+model AgentChatTurn {
   id             String            @id @default(cuid())
   conversationId String
   conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

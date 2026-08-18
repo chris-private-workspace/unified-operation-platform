@@ -234,9 +234,54 @@ migration。**已寫入下面「等 Chris 決定」,schema 暫時照 ADR 用 `Ag
 
 ⇒ 兩輪都答到 W47 `F3-6` 嗰條問題(「紅嗰個原因係咪我想證嗰個」),而唔止係「有嘢紅」。
 
-### 🚧 卡住
+### 兩條都即日答咗 ⇒ `F2` 全收(`F2-6` DEV 除外)
 
-- **`F2-4` migration 卡 `F0-6`** —— 實測 `docker ps`:**`ai-doc-extraction-db` 揸住 5433
-  (Up 17 hours)**,`uop-postgres` **`Exited (0)`**。⚠️ **Prisma 生成 migration SQL 結構上要一個
-  DB**(`migrate diff --from-migrations` 要 shadow database)⇒ 呢條唔係「唔記得做」,係做唔到
-- **`AgentTurn` 改唔改名等 Chris 一句話**(見上)
+**Chris 2026-08-18 兩個都跟建議**:①Prisma 側改名 **`AgentChatTurn`** ②批停 `ai-doc-extraction-db`。
+
+**改名**:schema 兩處 + `ADR-0041` 加 **`Errata E1`**(**`D1` 個 code block 一個字唔改** —— §6
+「`Accepted` 唔改內容」)+ **一條新 test 釘住**(`model AgentTurn {` 唔可以出現喺 schema,
+而 seam 嗰個必須仍然喺度)。
+
+📌 **點解要一條 test 而唔係一句註釋**:`D1` 仍然寫住 `AgentTurn`,所以**下一個照 ADR 落實嘅人
+會伸手攞返呢個名**;而 Prisma model 同 TS interface 撞名係**靜靜**撞 —— 兩個都係 importable
+type,要兩個嘅嗰份 file alias 一下就行得通,冇任何嘢會紅。
+
+### 🔴 借 5433 揭到一個掛咗兩日嘅過時前提
+
+`F0-6` 寫住「本機 DB 欠 apply 兩個 migration」。**實際上一早 apply 咗** ——
+`prisma migrate status` 返 **`27 migrations found` + `Database schema is up to date!`**。
+
+📌 **成因**:本機 DB **兩個 worktree 共用**,而嗰兩個 migration 係另一邊做嘅 ⇒
+**「我呢邊未做」推論唔到「DB 未做」**。而查一次 `migrate status` 就答到,成本 = 一條命令。
+
+⚠️ 同族:呢個同 §9 一路記低嘅「有設定 ≠ 設定啱」、「revision `Healthy` ≠ DB 通」一樣 ——
+**一個本地觀察被當成一個全域事實**。
+
+### `F2-4` 收貨標準係落 DB 對真結構,唔係睇 `migrate deploy` exit 0
+
+`20260818055347_w48_agent_conversation` —— `ADD COLUMN` ×1 · `CREATE TABLE` ×2 ·
+`CREATE INDEX` ×4 · `ADD FOREIGN KEY` ×5,**零 DROP**。
+
+`\d "AgentConversation"` 對返嚟嘅嘢入面,最值得留意嘅係 **`Referenced by` 兩條**:
+
+```
+TABLE "AgentChatTurn" … ON DELETE CASCADE
+TABLE "AgentRun"      … ON DELETE RESTRICT
+```
+
+⇒ 嗰個**刻意唔對稱**嘅設計喺真 DB 兌現咗:一條開過 run 嘅對話,DB 層面**刪唔到**;
+冇開過 run 嗰啲刪得,連 turn 一齊走。兩者都冇 endpoint(`D7`)—— 呢個純粹係「有人繞過平台
+直接落 DB」嗰陣 DB 做嘅嘢。
+
+### `G3` 補咗 DB 層證據,而嗰 36 行係重點
+
+`information_schema.columns` 實查:`AgentMessage.runId` **`is_nullable = NO`** ·
+`AgentMessage` **冇 `conversationId`** · `AgentRun.conversationId` **`YES`**。
+
+⚠️ 而 **`AgentMessage` 有 36 行真資料** ⇒ `G3` 唔係喺一張空表上面講嘢。`Alternative A`
+要改語意嘅,就係嗰 36 行 —— 而佢哋每一行都係 `ADR-0036 D6`「永久保留」講緊嗰啲。
+
+### 🚧 下一步
+
+- **`F3`**(conversation service + endpoint)—— 唔使真 DB(Prisma client 已 generate,test 行 mock)
+- `F2-6` DEV migration 等部署
