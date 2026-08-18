@@ -439,3 +439,60 @@ seam 收 `input: string`,送結構化 message list 要**擴 seam = H1** —— �
 - **`F5`** 最小 UI(**H6**)—— ⚠️ chat 氣泡 / streaming 游標 handoff 冇 ⇒ **開工前先跑
   `ui-design`**,唔好等 render 先知要 STOP(`R6`)
 - `F2-6` DEV migration 等部署 · `F7` live 驗
+
+---
+
+## Day 3 — 2026-08-18 · `F5` 最小 UI(`/assistant`)
+
+web **44 → 45 files / 464 → 473 tests** · api 唔變(97 / 1480)· lint / build / tsc **全 0**。
+
+### 🟢🟢 兩個 plan 預咗會 STOP 嘅 H6 風險,實際上都冇發生
+
+| plan 預咗 | 實況 |
+|---|---|
+| chat 氣泡要新 primitive | `Card` 層 token 砌得到(1px border + surface tint,DS-7)⇒ **組合既有 primitive**,`§5` 明文「直接做」 |
+| streaming 游標要新 pattern | **消失咗** —— `F4` 揀咗 turn-level notify,**冇 token 流就冇游標** |
+
+📌 **第二行值得記低**:一個 **transport 層**嘅決定,順手清走咗一個 **UI 層**嘅 H6 風險。
+兩件事喺 plan 入面分開兩格(`F4-1` / `F5-2`),而佢哋實際上係同一個決定嘅兩面。
+
+### 🔴 但有一件 plan 冇講,而佢一定要 owner 落
+
+`/agent` 係 **ADMIN-only**(`canManageAgentProfiles`),而對話係 **ADMIN + REGIONAL**(`D6`)
+⇒ **chat 塞唔入去**,一定係新 route + 新 sidebar entry,而 `design-system.md §6` 明文要求
+新畫面登記「邊個批 / 幾時」。Chris 2026-08-18 批 `/assistant` + sidebar。
+
+⇒ 順帶做成 **OPERATIONS section 第一次帶 role predicate**(之前只有 ADMIN section 有,W31)。
+**點解唔擺 Administration 借佢個 gating**:Assistant 係營運工具唔係 admin 功能,擺錯 section
+就係把一個日常工具歸錯類。
+
+### 🔴 我講錯咗一半嘅嘢,tsc 捉到
+
+`F3-2` 我寫「`canUseAgent` **喺 code 入面唔存在**」—— **只對 api 側成立**。
+`apps/web/src/lib/roles.ts:61` **W46 F8 就已經有**,ADMIN + REGIONAL,語意逐字啱。
+
+我差啲加咗第二個同名 function,靠 **`tsc TS2323`(Cannot redeclare)** 捉到。
+
+📌 **形狀**:一個 monorepo 入面,「grep 唔到」只係「喺我 grep 嗰半 grep 唔到」。而我當時
+**確實只 grep 過 `apps/api/src`** —— 個結論本身冇錯,錯喺我把佢講成一個關於「code」嘅陳述。
+
+### `F5-4` 兩條 test,而第二條先係持久嗰條
+
+①behavioural:有 link 去 request · **冇** `/approve|reject/i` 掣
+②**source scan**:`assistant.tsx` 唔可以出現 `useDecideProposal` / `useApprove` / `/proposals`
+
+🔴 **點解要第二條**:第一條**只擋到一個串住「Approve」嘅掣**,將來一個叫 `Accept` 嘅一樣過。
+同 `ADR-0036 D2` 同一個論據 —— **absence beats instruction**。
+
+### falsification:拆走 `isThinking` 個「只睇最新」
+
+⇒ **恰好 1 條紅**(`does not show Thinking… when only an older run is unfinished`),8 綠。
+呢個閘釘住嘅係一個真實 failure:一個三條問題之前就 abort 咗嘅 run,會令成條 thread
+**永遠**顯示「Thinking…」。
+
+### 🚧 下一步
+
+- **`F5-3`** light + dark 真 render(`render-check.mjs`)—— **要起本機 stack ⇒ 要批停
+  `ai-doc-extraction-db` 交還 5433**。⚠️ 「一個 view 一個 primary」嗰半**唔使等 render**,
+  已有 test 數 `button.bg-accent` = 1 兼且係 `Send`
+- `F6` gate 收尾 · `F7` live 驗 · `F2-6` DEV migration 等部署

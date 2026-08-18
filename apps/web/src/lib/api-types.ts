@@ -975,6 +975,54 @@ export interface AgentRunPage {
   nextCursor: string | null;
 }
 
+/* ── W48 / ADR-0041 — conversations ───────────────────────────
+ *
+ * A run is one task; a conversation is one relationship. They coexist — every
+ * turn queues an ordinary run — but neither impersonates the other, which is
+ * why these are their own types rather than fields on `AgentRun`.
+ */
+
+export interface AgentChatTurn {
+  id: string;
+  /** Who said it. The server sets this — a client never sends it. */
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+/** A run a conversation started — enough to show its state, never its content. */
+export interface AgentConversationRun {
+  id: string;
+  status: AgentRunStatus;
+  startedAt: string;
+}
+
+export interface AgentConversation {
+  id: string;
+  startedById: string;
+  /**
+   * 🔴 `null` means this thread has NO request context, and the consequence is
+   * structural: its runs get no request-scoped tools at all (ADR-0041 D3).
+   * The screen has to say so, because "the agent cannot see your requests" and
+   * "the agent found nothing" look identical in an answer.
+   */
+  requestId?: string | null;
+  profileId?: string | null;
+  /** Set when archived. Nothing is deleted (D7). */
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** `GET /:id` only — a list carries no transcript. */
+  turns?: AgentChatTurn[];
+  runs?: AgentConversationRun[];
+}
+
+/** What `POST /:id/turns` answers with: the line stored, and the run queued. */
+export interface AddAgentTurnResult {
+  turn: AgentChatTurn;
+  runId: string;
+}
+
 /** An operational-history event (detail view). */
 export interface RequestEvent {
   id: string;

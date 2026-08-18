@@ -5,6 +5,7 @@ import type {
   AdminOpco,
   AdminUser,
   AgentKillSwitchStatus,
+  AgentConversation,
   AgentProfile,
   AgentReviewStats,
   AgentRun,
@@ -384,6 +385,34 @@ export function useAgentRuns(filters: AgentRunFilters) {
     queryKey: ['agent', 'runs', 'all', filters],
     queryFn: () =>
       apiGet<AgentRunPage>(`/agent/runs${agentRunsQueryString(filters)}`),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * W48 F5 — this person's threads.
+ *
+ * ⚠️ Archived ones are NOT fetched. `/assistant` is a place to talk, not to
+ * manage a history: an archived thread is one somebody put away, and the way
+ * back is to unarchive it deliberately rather than to scroll past it. That
+ * differs from `useAgentProfiles`, which DOES ask for retired rows — because
+ * that screen is the only place a retired profile can be brought back, and
+ * hiding it there would strand it.
+ */
+export function useAgentConversations() {
+  return useQuery({
+    queryKey: ['agent', 'conversations'],
+    queryFn: () => apiGet<AgentConversation[]>('/agent/conversations'),
+    retry: retryUnless403,
+  });
+}
+
+/** One thread, with its turns and the runs it started. */
+export function useAgentConversation(id: string | undefined) {
+  return useQuery({
+    queryKey: ['agent', 'conversations', id],
+    queryFn: () => apiGet<AgentConversation>(`/agent/conversations/${id}`),
+    enabled: Boolean(id),
     retry: retryUnless403,
   });
 }

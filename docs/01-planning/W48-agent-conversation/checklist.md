@@ -57,10 +57,12 @@
 
 ## `F5` — 最小 UI(**H6**)
 
-- [ ] F5-1 一版夠驗證互動模型。**唔起 `Drawer`**(`T2-d`)
-- [ ] F5-2 ⚠️ **chat 氣泡 / streaming 游標 handoff 冇** ⇒ **開工前先跑 `ui-design` 對一次**(`R6`:唔好等 render 先知要 STOP)
-- [ ] F5-3 light + dark 真 render(`render-check.mjs`)· 零橫向溢出 · 一個 view 一個 primary
-- [ ] F5-4 🔴 **`G4` 喺 UI 側**:chat 產生嘅 proposal **仍然要行返同一條 approval 路** —— 唔可以喺 chat 側另開一個「快速批准」
+- [x] F5-1 ✅ **`/assistant`**(thread 列表 · transcript · 輸入)—— **唔係 `Drawer`**(`T2-d`)。🔴 **一定要新畫面而唔係 `/agent` 加個 tab**:`/agent` 係 **ADMIN-only**(`canManageAgentProfiles`)而對話係 **ADMIN + REGIONAL**(`D6`)⇒ 塞入去 REGIONAL 就入唔到。Chris 2026-08-18 批 route + sidebar entry,已登記 `design-system.md §6`
+- [x] F5-2 ✅ **`ui-design` DS-1…DS-12 開工前對咗** —— 🟢🟢 **兩個 plan 預咗會觸發 H6 STOP 嘅位,實際上都唔使開新 primitive**:①chat 氣泡 = `Card` 層 token(1px border + surface tint,DS-7)⇒ **組合既有 primitive**(§5 明文「直接做」)②**streaming 游標消失咗** —— `F4` 揀咗 turn-level notify,冇 token 流就冇游標。📌 **一個 transport 決定順手清走一個 UI 風險**。DS-11 係唯一 ❌(prototype 冇 chat 畫面),而 **§6 登記處就係為呢件事存在**
+- [ ] F5-3 🚧 light + dark 真 render(`render-check.mjs`)· 零橫向溢出 —— **要起本機 stack ⇒ 要批停 `ai-doc-extraction-db` 交還 5433**。⚠️ **「一個 view 一個 primary」呢半唔使等 render**,已有 test 釘住(數 `button.bg-accent` = 1 兼且係 `Send`)
+- [x] F5-4 ✅ **`G4` 喺 UI 側:全個畫面冇任何 approve 掣** —— run 泊喺 proposal 嗰陣,thread **link 去嗰張 request**。🔴 **兩條 test,而第二條先係持久嗰條**:①behavioural(有 link · 冇 `/approve|reject/i` 掣)②**source scan**(`assistant.tsx` 唔可以出現 `useDecideProposal` / `useApprove` / `/proposals`)—— 因為第一條**只擋到一個串「Approve」嘅掣**,將來一個叫 `Accept` 嘅一樣過。同 `ADR-0036 D2` 同一個論據:**absence beats instruction**
+- [x] F5-5 ✅ **OPERATIONS section 第一次帶 role predicate** —— 之前只有 ADMIN section 有(W31)。Assistant 係**營運工具唔係 admin 功能**,擺入 Administration 去借嗰個 gating 就會把一個日常工具歸錯類 ⇒ `NavEntry` 加 optional `visible`,冇寫就係「登入咗就見到」(= 每個 prototype entry 嘅現狀)
+- [x] F5-6 🔴 **更正 `F3-2` 講錯咗一半嘅嘢**:`canUseAgent` **web 側一早存在**(`lib/roles.ts:61`,W46 F8 加,ADMIN + REGIONAL,語意逐字啱)—— 我當時只 grep 過 **api** 側就講「code 入面唔存在」。⇒ **`D6` 講「跟 `canUseAgent`」喺 web 側係字面成立嘅**,而我差啲就加咗第二個同名 function(tsc `TS2323` 捉到)
 
 ## `F6` — Gate
 

@@ -3,6 +3,8 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import type {
   AddLineItemBody,
   AdminUser,
+  AddAgentTurnResult,
+  AgentConversation,
   AgentKillSwitchStatus,
   AgentProfile,
   AgentRun,
@@ -644,6 +646,71 @@ export function useServiceNowImport() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['requests'] });
       qc.invalidateQueries({ queryKey: ['fulfilment', 'activity'] });
+    },
+  });
+}
+
+/* ── W48 F5 / ADR-0041 — conversations ──────────────────────── */
+
+/**
+ * POST /agent/conversations — open a thread.
+ *
+ * ⚠️ `requestId` is optional and omitting it is a real choice, not a default:
+ * a thread with no request gets no request-scoped tools at all (D3). The screen
+ * says so rather than letting the difference show up only as an agent that
+ * cannot answer.
+ */
+export function useCreateConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { requestId?: string | null; profileId?: string }) =>
+      apiPost<AgentConversation>('/agent/conversations', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agent', 'conversations'] });
+    },
+  });
+}
+
+/**
+ * POST /agent/conversations/:id/turns — say something.
+ *
+ * 🔴 The reply is NOT in the response. The run is queued and answers later
+ * (ADR-0039 F1), so what comes back is the stored line plus a run id — and the
+ * answer arrives by refetch, driven by the SSE channel. A caller that awaited
+ * this expecting the agent's words would be waiting for something the endpoint
+ * never promised.
+ */
+export function useAddConversationTurn(conversationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) =>
+      apiPost<AddAgentTurnResult>(
+        `/agent/conversations/${conversationId}/turns`,
+        { content },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ['agent', 'conversations', conversationId],
+      });
+      qc.invalidateQueries({ queryKey: ['agent', 'conversations'] });
+    },
+  });
+}
+
+/**
+ * POST /agent/conversations/:id/archive — put a thread away.
+ *
+ * 🔴 Not a DELETE, and the verb matters at this layer too: nothing is removed,
+ * so a client method called `deleteConversation` would be teaching every reader
+ * of this file something untrue (ADR-0040 D2, applied to the frontend).
+ */
+export function useArchiveConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiPost<AgentConversation>(`/agent/conversations/${id}/archive`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agent', 'conversations'] });
     },
   });
 }
