@@ -10,15 +10,16 @@
 - [x] F0-2 由 `origin/main`(`3bb21fd`)開 `feat/w48-agent-conversation`
 - [x] F0-3 Grounding —— 兩個發現寫咗入 `progress.md` Day 0:①`AgentMessage` **綁死 `runId`**,佢係 run transcript 唔係 chat,而「放寬佢」會改動 `ADR-0036 D6` 嘅覆蓋範圍 ②今日條 SSE 個 payload **明文冇 content**(`refetch the run`),而 `B6` 證嘅係 heartbeat 唔係 token 流
 - [x] F0-4 🟢 **七條 OQ 2026-08-18 答齊,plan `draft → active`** —— `OQ-A` 綁人 · `OQ-B` 新 model · `OQ-C` FK · `OQ-D` 窄嗰邊 · `OQ-E` SSE · `OQ-F` 跟 `canUseAgent` · `OQ-G` 一直存在直至清掉
-- [ ] F0-5 🔴 **`OQ-H` 待答**:「清掉」= **hard delete** 定 **soft**?—— `ADR-0040` 喺隔籬 model 揀咗 soft,而佢**自己把 GDPR-style 徹底移除推咗嚟本 phase**。⚠️ **答案直接決定兩個 `onDelete`**
+- [x] F0-5 ✅ **`OQ-H` 2026-08-18 答咗:soft(`archivedAt`)** —— ⇒ 同 `ADR-0040` 一致,平台喺兩個相鄰 model 唔會有兩個相反答案;verb 亦跟佢先例**唔用 `DELETE`**。⚠️ **AI 建議過「soft 為主 + 一條明文 hard 路留畀 H4」,冇被取納** ⇒ **GDPR-style 徹底移除仍然冇答案**,`OQ-G` 個「直至清掉」實際語意係「直至隱藏」。**已寫入 `ADR-0041` Consequences 做知情取捨,唔係未發現嘅缺口**
 - [ ] F0-6 ⚠️ 本機 DB apply 兩個 pending migration(`ch031_agent_run_hidden_at` · `w47_agent_profile`)—— 要停 `ai-doc-extraction-db` 交還 5433(**要 Chris 批**);🔴 **一定要 `prisma migrate deploy`,唔可以 `dev`**(本機 DB 兩個 worktree 共用,`dev` 見到 drift 會提議 reset)
 
 ## `F1` — ADR:互動模型(**H1**,排第一)
 
-- [ ] F1-1 寫 ADR draft —— 七條 OQ 嘅答案寫成可引用嘅決定
-- [ ] F1-2 🔴 **正面答 `OQ-H`** —— 唔可以由 migration / `onDelete` default 靜靜定咗
-- [ ] F1-3 🔴 **明文寫清楚同 `ADR-0040` 嘅關係** —— 佢喺 `AgentRun` 揀咗 soft(理由:三張子表 cascade,而佢哋係 audit 真相),而佢**明文把 GDPR-style 徹底移除推咗嚟呢度**。兩個答案唔一致嘅話,要講得出點解今次唔同
-- [ ] F1-4 明文寫清楚**點解 chat 唔重用 `AgentMessage`** —— `ADR-0036 D6`「永久保留」原本只係講 run transcript
+- [x] F1-1 ✅ **`ADR-0041` 寫咗(`Proposed`)** —— 八條 OQ 寫成 **D1–D9**,五個 alternative 逐個講點解 reject。🔴 **`Alternative A`(放寬 `AgentMessage`)個 reject 理由值得留意**:佢嘅**吸引力正正係佢嘅危險** —— 睇落係「慳一張表」,實際係改一條 Accepted 決定嘅覆蓋範圍,**而且冇任何 test 會紅**
+- [x] F1-2 ✅ **`OQ-H` 正面答咗(`D7`)** —— `archivedAt` soft,唔用 hard delete;🔴 **`archivedAt` 同 `AgentRun.hiddenAt` 明文唔可以合併**(一條 archived 對話入面可以有一個**冇被 hide** 嘅 run,嗰個 run 仍然應該出現喺全域 run 列表)
+- [x] F1-3 ✅ **同 `ADR-0040` 嘅關係寫咗兩層** —— ①`D7` 跟佢揀 soft ⇒ 一致 ②Context ③ 記低咗**佢自己把 GDPR 嗰半推咗嚟**,而本 ADR **再推一次**。📌 寫低咗個形狀:**一條冇人拒絕、但每次都排喺後面嘅問題,同一條被否決咗嘅問題,喺文件上睇落一模一樣**
+- [x] F1-4 ✅ **`D1` + Context ① 寫咗點解唔重用 `AgentMessage`** —— 佢綁死 `runId`,而 `ADR-0036 D6`「永久保留」原本只係講 run transcript;放寬佢係**改覆蓋範圍**唔係加欄(同 `ADR-0035`「收窄 vs 推翻」判斷同族)
+- [x] F1-6 ✅ 更新 `docs/adr/README.md` index(0041 一行)
 - [ ] F1-5 ADR `Accepted`(owner)⇒ 先可以落 `F2` migration
 
 ## `F2` — 對話 schema + migration(**H1**)

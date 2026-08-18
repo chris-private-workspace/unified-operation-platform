@@ -123,3 +123,56 @@ Effort 估得返 **≈23h / 4 日**。
 叫人 refetch,同送 token 流係兩件事,而 `B6`(SSE 喺 DEV 真通)證嘅係 **heartbeat + 短事件**。
 
 ⇒ **`F4` 最可能爆,而佢爆嘅話 `F5` 一定跟住爆**(UI 冇嘢 stream)。已寫入 `plan.md §5`。
+
+---
+
+## Day 1 — 2026-08-18 · `F1` ADR-0041(`Proposed`)
+
+`OQ-H` 答咗 **soft** ⇒ 八條 OQ 齊,寫成 `ADR-0041` 嘅 **D1–D9**。
+
+### 🔴 寫嘅過程揾到一個 alternative,而佢嘅吸引力正正係佢嘅危險
+
+`Alternative A`(放寬 `AgentMessage`:加 `conversationId`、`runId` 改 nullable)——
+**佢係最省事嗰個**:唔使開新表、唔使諗兩張表點分工。
+
+而佢實際上係:
+
+| 睇落 | 實際 |
+|---|---|
+| 慳一張表 | **改一條 Accepted 決定嘅覆蓋範圍**(`ADR-0036 D6`「永久保留」原本只係講 run transcript) |
+| 一個 migration | `NOT NULL → NULL`,**唔可逆** |
+| 冇風險 | 靜靜令一批**含 PII、量級唔同**嘅資料變成「永久保留」 |
+| —— | 🔴 **而且冇任何一條 test 會紅** |
+
+📌 **形狀**:一個 alternative 之所以危險,唔係因為佢明顯咁差,係因為佢**喺 diff 上面睇落
+好細**。呢個同 `ADR-0040` 當時否決 hard delete 嘅理由結構一樣 —— 嗰次都係「一行 code,
+而後果喺三張別嘅表」。
+
+### 🔴 `OQ-G` + `OQ-H` 嘅淨效果,誠實寫咗落 Consequences
+
+`OQ-G` 答「一直存在,**直至清掉**」;`OQ-H` 把「清」定義成 **soft** ⇒
+**實際語意係「直至隱藏」**,而一條含 PII 嘅對話喺平台側**冇任何路徑真正移除**。
+
+⚠️ 我建議過「soft 為主 + 一條明文 hard 路留畀 H4」,**冇被取納** ——
+所以 ADR 寫成**知情取捨**,唔係一個未發現嘅缺口。
+
+📌 **順帶記低一個形狀,因為佢會再出現**:
+**`ADR-0040` 明文把 GDPR-style 徹底移除推咗畀 `agent-tier2-scope.md OQ-4`,而 `OQ-4` 就係
+本 phase 個 `OQ-G` —— 然後本 ADR 又推多一次。**
+⇒ **一條冇人拒絕、但每次都排喺後面嘅問題,同一條被否決咗嘅問題,喺文件上睇落一模一樣。**
+分別只喺於前者每次都留低一句「本 ADR 明文唔碰佢」,而嗰句就係佢仲存在嘅唯一證據。
+
+### 兩個決定係「唔可以合併」而唔係「加咗啲嘢」
+
+- **`archivedAt` ≠ `AgentRun.hiddenAt`**(D7)—— 一條 archived 對話入面可以有一個
+  **冇被 hide** 嘅 run,而嗰個 run 仍然應該出現喺全域 run 列表
+- **chat 個 SSE ≠ `agent-run.queue.changes()`**(D5)—— 後者 payload 明文冇 content
+  (`ADR-0039 F10`),合併就等於推翻 F10
+
+⚠️ 兩個都係「睇落可以共用,實際上共用就會靜靜改咗一條既有決定」——
+同上面 `Alternative A` 同一族,**一日之內第三次**。
+
+### 🚧 下一步
+
+- **`F1-5` 等 owner `Accepted`** ⇒ 先可以落 `F2` migration(plan `F1-5` 就係咁寫)
+- `F0-6` 本機 DB 兩個 pending migration 仲未 apply(要批停 `ai-doc-extraction-db`)
