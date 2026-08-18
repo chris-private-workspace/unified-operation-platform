@@ -281,7 +281,12 @@ export class AiAssistService {
       );
     }
 
-    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
+    const setup = await this.buildSetup(
+      run.id,
+      run.startedBy,
+      run.profile,
+      run.requestId,
+    );
 
     /**
      * 🔴 The kill switch is INSIDE the try, and 期二 G5-A is why.
@@ -349,6 +354,11 @@ export class AiAssistService {
         status: true,
         runState: true,
         startedBy: true,
+        // W48 F3-4 — the resume has to rebuild the SAME tool set the run
+        // started with, and `list(ctx)` decides that from this column. Missing
+        // it here would silently widen a resumed chat, which is the direction
+        // that never announces itself.
+        requestId: true,
         // The SAME profile the run started on — an approval can land overnight,
         // and by then the registry may say something different.
         profile: {
@@ -391,7 +401,12 @@ export class AiAssistService {
       );
     }
 
-    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
+    const setup = await this.buildSetup(
+      run.id,
+      run.startedBy,
+      run.profile,
+      run.requestId,
+    );
 
     try {
       const turn = await this.runtime.resume(setup, run.runState, decisions);
@@ -426,6 +441,16 @@ export class AiAssistService {
       model: string;
       prompt: string | null;
     } | null,
+    /**
+     * 🔴 W48 F3-4 — required, and it takes `null` rather than being optional.
+     *
+     * `requestId?: string` would let a caller that simply forgot produce a run
+     * with no request tools, which is a silent narrowing on the run path and a
+     * silent widening on nothing — but the same shape one refactor later, with
+     * the default flipped, is a chat seeing every request in the OpCo. An
+     * argument you cannot omit has neither failure.
+     */
+    requestId: string | null,
   ): Promise<AgentSetup> {
     return {
       /**
@@ -442,7 +467,7 @@ export class AiAssistService {
        */
       instructions: profile?.prompt?.trim() || INSTRUCTIONS,
       model: profile?.model ?? (await this.modelForLegacyRun(runId)),
-      ctx: { runId, user },
+      ctx: { runId, user, requestId },
       onToolExecuted: (record) => this.recordToolExecution(runId, record),
     };
   }

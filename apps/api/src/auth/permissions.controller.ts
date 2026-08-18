@@ -54,6 +54,16 @@ export class PermissionsController {
       .getControllers()
       .map((wrapper) => wrapper.metatype)
       .filter(Boolean);
-    return derivePermissions(controllers, this.tools.list());
+    /**
+     * 🔴 W48 F3-4 — `all()`, deliberately, and this is the one caller where the
+     * WIDER list is the correct answer.
+     *
+     * The matrix describes what the platform has built, not what one run may
+     * reach. Handing it a context-filtered list would make the answer depend on
+     * whose run happened to be asked about — and W28's drift test compares this
+     * matrix against a locked snapshot, so tools would silently drop out of the
+     * permission record without a single assertion moving.
+     */
+    return derivePermissions(controllers, this.tools.all());
   }
 }

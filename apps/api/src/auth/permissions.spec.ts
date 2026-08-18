@@ -64,7 +64,10 @@ function loadControllers(): unknown[] {
  * meant a second source — the exact thing W28 exists to prevent.
  */
 function loadAgentTools() {
-  return new AgentToolRegistry(undefined as unknown as PrismaService).list();
+  // W48 F3-4 — `all()`, matching `PermissionsController`. The matrix describes
+  // what the platform has built; filtering it by a run's context would make the
+  // locked snapshot depend on whose run was asked about.
+  return new AgentToolRegistry(undefined as unknown as PrismaService).all();
 }
 
 describe('permission matrix (derived from @Roles + the tool registry)', () => {

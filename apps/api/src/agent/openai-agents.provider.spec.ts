@@ -28,6 +28,10 @@ import type { AgentTool, AgentToolContext } from './agent-tool';
 const ctx: AgentToolContext = {
   runId: 'run-1',
   user: { id: 'u-admin', opcoScopeId: null } as unknown as AppUser,
+  // W48 F3-4 — a run on a request, which is what every case in this file is
+  // about. The context-free variant is exercised in `tool-registry.spec.ts`,
+  // where the filtering decision actually lives.
+  requestId: 'req-1',
 };
 
 /** The SDK's sentinel id for a trace that was never really created. */
@@ -50,6 +54,9 @@ const fakeTool = (
     additionalProperties: false,
   },
   needsApproval,
+  // Not request-scoped: these fakes exist to exercise the adapter's shape
+  // conversion, and W48's filter is the registry's decision, not the adapter's.
+  requestScoped: false,
   execute,
 });
 
@@ -242,13 +249,15 @@ describe('OpenAiAgentsProvider', () => {
      * build time rather than on somebody's first run.
      */
     it('accepts every tool the real registry exposes, under strict mode', () => {
-      const sdk = toSdkTools(registry.list(), ctx);
-      expect(sdk).toHaveLength(registry.list().length);
+      // `all()` — the claim is that EVERY schema the platform ships survives
+      // strict mode, including the ones a context-free chat never sees.
+      const sdk = toSdkTools(registry.all(), ctx);
+      expect(sdk).toHaveLength(registry.all().length);
       expect(sdk.every((t) => t.strict)).toBe(true);
     });
 
     it('asks the model for approval on exactly the registry tools that require it', async () => {
-      const sdk = toSdkTools(registry.list(), ctx);
+      const sdk = toSdkTools(registry.all(), ctx);
       const needing: string[] = [];
       for (const t of sdk) {
         if (await approvalPolicyOf(t)()) needing.push(t.name);

@@ -49,6 +49,9 @@ const {
 const CTX: AgentToolContext = {
   runId: 'run_1',
   user: { id: 'u_1', opcoId: 'opco_1' } as unknown as AppUser,
+  // W48 F3-4 — a run on a request. The filtering decision belongs to the
+  // registry and is tested there.
+  requestId: 'req_1',
 };
 
 const READ_TOOL: AgentTool = {
@@ -61,6 +64,7 @@ const READ_TOOL: AgentTool = {
     additionalProperties: false,
   },
   needsApproval: false,
+  requestScoped: true,
   execute: jest.fn().mockResolvedValue({ id: 'req_1' }),
 };
 
@@ -74,6 +78,7 @@ const WRITE_TOOL: AgentTool = {
     additionalProperties: false,
   },
   needsApproval: true,
+  requestScoped: true,
   execute: jest.fn().mockResolvedValue({ proposed: true }),
 };
 
@@ -115,7 +120,7 @@ const fakeRunner = (turns: unknown[], finalMessages: unknown[] = []) => ({
 });
 
 describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
-  let registry: { list: jest.Mock };
+  let registry: { list: jest.Mock; all: jest.Mock };
   let config: { get: jest.Mock };
   let provider: InstanceType<typeof ClaudeToolRunnerProvider>;
   let recorded: ToolExecution[];
@@ -123,7 +128,14 @@ describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    registry = { list: jest.fn().mockReturnValue(TOOLS) };
+    // W48 F3-4 — the adapter uses both: `list(ctx)` for what this run may use,
+    // `all()` for recognising a pause in saved state. Same fixture here, since
+    // `CTX` carries a request; `tool-registry.spec.ts` is where the two lists
+    // are made to differ.
+    registry = {
+      list: jest.fn().mockReturnValue(TOOLS),
+      all: jest.fn().mockReturnValue(TOOLS),
+    };
     config = { get: jest.fn().mockReturnValue('sk-ant-fake') };
     recorded = [];
     setup = {
@@ -505,7 +517,17 @@ describe('ClaudeToolRunnerProvider (期二 G4 / ADR-0038)', () => {
     });
 
     it('refuses loudly when the approved tool is no longer registered', async () => {
-      registry.list.mockReturnValueOnce(TOOLS).mockReturnValue([READ_TOOL]);
+      /**
+       * 🔴 W48 F3-4 made this test sharper rather than merely different.
+       *
+       * It used to lean on call ORDER (`mockReturnValueOnce` for the recognise
+       * pass, then a narrower list for the execute pass) — one mock standing
+       * for two questions. Now the two questions have two methods: `all()`
+       * still recognises the pause, `list(ctx)` no longer offers the tool. The
+       * fixture says which is which instead of counting calls.
+       */
+      registry.all.mockReturnValue(TOOLS);
+      registry.list.mockReturnValue([READ_TOOL]);
 
       await expect(
         provider.resume(setup, parked(), [{ ref: 'toolu_1', approved: true }]),

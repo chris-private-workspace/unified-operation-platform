@@ -619,7 +619,15 @@ describe('AiAssistService', () => {
 
       await runFully(opcoIt, 'req-1');
 
-      expect(captured?.ctx).toEqual({ runId: 'run-1', user: opcoIt });
+      // W48 F3-4 — `requestId` joins the context, and `toEqual` (not
+      // `objectContaining`) is what made this test notice. That is the point:
+      // the shape a run hands its tools decides which tools exist, so a silent
+      // addition to it is exactly what should fail here.
+      expect(captured?.ctx).toEqual({
+        runId: 'run-1',
+        user: opcoIt,
+        requestId: 'req-1',
+      });
     });
 
     it('records the runtime that is actually running on the principal', async () => {

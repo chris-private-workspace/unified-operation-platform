@@ -46,6 +46,28 @@ export interface AgentToolSchema {
 export interface AgentToolContext {
   runId: string;
   user: AppUser;
+  /**
+   * 🔴 W48 F3-4 / ADR-0041 D3 — the request this run is reasoning about, or
+   * `null` when there is none (a chat started from no particular request).
+   *
+   * ⚠️ Read what this is NOT. It is not a filter applied inside a tool, and no
+   * tool reads it: `AgentToolRegistry.list()` uses it to decide which tools
+   * EXIST for this run at all. D3 says request-scoped data must be
+   * unreachable rather than refused, and refusing inside `execute` would be
+   * the "told not to use it" shape ADR-0036 D2 rejects.
+   *
+   * 🔴 D3's own wording ("the tool receives no request id") describes a
+   * mechanism this codebase does not have — `get_request` takes `requestId`
+   * as a MODEL-SUPPLIED argument, bounded only by OpCo scope, so a chat with
+   * no context could otherwise list every request in scope and open each one.
+   * Absence from the tool list is what actually delivers what D3 asked for.
+   * (Chris 2026-08-18, both halves.)
+   *
+   * `string | null`, not `string | undefined`: a missing property and a
+   * deliberate "there is no request" are different facts, and only one of them
+   * should be expressible.
+   */
+  requestId: string | null;
 }
 
 /**
@@ -89,6 +111,23 @@ export interface AgentTool {
    * needs approval is a tool nobody can state the rule for. Split it in two.
    */
   needsApproval: boolean;
+  /**
+   * 🔴 W48 F3-4 / ADR-0041 D3 — does this tool read or write anything belonging
+   * to a licence request? If so it does not exist for a run with
+   * `ctx.requestId === null`.
+   *
+   * Declared BY THE TOOL rather than as a name list inside the registry, for
+   * the reason `autonomousNames` already gives one screen down: a hand-written
+   * list is a second place to remember, and the failure it produces is silent
+   * in the worst direction — a new request-reading tool missing from the list
+   * would be reachable from a chat that is supposed to have no request at all.
+   *
+   * ⚠️ `list_pending_requests` counts, even though it takes no request id. It
+   * RETURNS request ids, so leaving it in would hand a context-free chat the
+   * starting point for every other request tool, and D3 would hold in wording
+   * only.
+   */
+  requestScoped: boolean;
   /**
    * `args` is `unknown` on purpose. It arrives from a language model, so the
    * schema above is a request, not a guarantee — every tool re-validates.
