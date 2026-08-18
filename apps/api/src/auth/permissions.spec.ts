@@ -341,9 +341,17 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         join(__dirname, '..', '..', 'prisma', 'schema.prisma'),
         'utf8',
       );
+      /**
+       * ⚠️ W48 F2 — the end marker was `model AgentRun {`, which stopped being
+       * the next model the moment W47 inserted `AgentProfile` between the two
+       * (and W48 then inserted two more). The slice silently grew to cover
+       * models this assertion says nothing about; it stayed green by luck, not
+       * by design. Anchored on the model that actually follows instead, so the
+       * block is what the test name claims it is.
+       */
       const block = schema.slice(
         schema.indexOf('model AgentPrincipal {'),
-        schema.indexOf('model AgentRun {'),
+        schema.indexOf('model AgentProfile {'),
       );
       expect(block).toContain('model AgentPrincipal {');
       expect(block).not.toContain('Role');

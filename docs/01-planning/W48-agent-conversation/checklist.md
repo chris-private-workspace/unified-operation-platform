@@ -20,15 +20,16 @@
 - [x] F1-3 ✅ **同 `ADR-0040` 嘅關係寫咗兩層** —— ①`D7` 跟佢揀 soft ⇒ 一致 ②Context ③ 記低咗**佢自己把 GDPR 嗰半推咗嚟**,而本 ADR **再推一次**。📌 寫低咗個形狀:**一條冇人拒絕、但每次都排喺後面嘅問題,同一條被否決咗嘅問題,喺文件上睇落一模一樣**
 - [x] F1-4 ✅ **`D1` + Context ① 寫咗點解唔重用 `AgentMessage`** —— 佢綁死 `runId`,而 `ADR-0036 D6`「永久保留」原本只係講 run transcript;放寬佢係**改覆蓋範圍**唔係加欄(同 `ADR-0035`「收窄 vs 推翻」判斷同族)
 - [x] F1-6 ✅ 更新 `docs/adr/README.md` index(0041 一行)
-- [ ] F1-5 ADR `Accepted`(owner)⇒ 先可以落 `F2` migration
+- [x] F1-5 ✅ **`ADR-0041` `Accepted`(Chris 2026-08-18 —— D1–D9 連 Consequences 一併批)** ⇒ `F2` 開得工。📌 `Proposed` 嗰一步存在嘅唯一理由,係 `D3`(安全邊界)同 `D7`(retention)兩條嘅**後果**佢未見過逐條寫出嚟嘅版本(跟 `ADR-0037` 先例)
 
 ## `F2` — 對話 schema + migration(**H1**)
 
-- [ ] F2-1 `AgentConversation`(`startedById` required · `requestId?` · `profileId?`)
-- [ ] F2-2 `AgentTurn`(`conversationId` · `role` · `content` · `@@index([conversationId, createdAt])`)
-- [ ] F2-3 🔴 **`AgentRun.conversationId String?` + relation**(`OQ-C` FK)—— ⚠️ **兩個 `onDelete` 等 `OQ-H`**;Prisma optional relation 預設 `SetNull`,即一個 delete 會把「呢個 run 由邊條對話開」**一次過**變 unknown(W47 `F1-3` 撞過同一件事)
-- [ ] F2-4 migration **純 additive,零 DROP**;本機真 DB 跑得過,落 DB 對真結構
-- [ ] F2-5 🔴 **`G3` 嘅 test**:舊 run 嘅 `AgentMessage` 讀路**一個字唔變**(falsification 釘住 —— 拆走要紅)
+- [x] F2-1 ✅ `AgentConversation`(`startedById` required + FK · `requestId?` + FK · `profileId?` **`onDelete: Restrict`** · `archivedAt?` · `@@index([startedById, updatedAt])` + `@@index([requestId])`)—— `prisma validate` **exit 0**
+- [x] F2-2 ✅ `AgentTurn`(`conversationId` **`onDelete: Cascade`** · `role` · `content` · `@@index([conversationId, createdAt])`)。🔴 **`onDelete` 刻意唔對稱兼寫咗落 schema 註釋**:turn `Cascade`(跟 `AgentStep`/`AgentMessage`/`AgentProposal` 先例)而 `AgentRun.conversationId` `Restrict` ⇒ **淨效果 = 一條開過 run 嘅對話 DB 層面刪唔到,冇開過嗰啲刪得兼帶走 turn**;兩者都冇 endpoint(D7),呢個純粹係「有人繞過平台直接落 DB」嗰陣 DB 做嘅嘢
+- [x] F2-3 ✅ **`AgentRun.conversationId String?` + relation + `@@index([conversationId])`**(`OQ-C` / D4)—— **`onDelete: Restrict`**,理由同 W47 `profileId` 一字不差:Prisma optional relation 預設 `SetNull` 會令一個直接落 DB 嘅 delete **一次過**把「呢個 run 由邊條對話開」變 unknown 兼**零錯誤**
+- [ ] F2-4 🚧 migration **純 additive,零 DROP** —— **卡 `F0-6`**(5433 畀 `ai-doc-extraction-db` 揸住,`uop-postgres` `Exited`)。⚠️ Prisma 生成 migration SQL **結構上要一個 DB**(`migrate diff --from-migrations` 要 shadow DB),所以呢條唔係「順手做埋」
+- [x] F2-5 ✅ **`G3` 嘅 test 寫咗**(`agent-conversation.schema.spec.ts`,4 條)—— 🔴 **佢係 source scan 唔係 behaviour test,而呢個係本條嘅重點**:`Alternative A` 落地之後**行為完全一樣**,所以任何一條 behaviour test 都會照綠;要捉到佢就要釘 **shape**。**falsification 兩輪,零誤傷**:①`runId String?` ⇒ **恰好第 1 條紅** ②`AgentMessage` 加 `conversationId` + `AgentConversation` 加 `messages` ⇒ **恰好第 2、3 條紅**,兩輪紅嘅原因逐字都係想證嗰個(W47 `F3-6`「33 紅但原因唔啱」嘅反面)
+- [x] F2-7 ✅ **順手修咗一條被我擴大咗嘅既有 test**(`permissions.spec.ts` 「AgentPrincipal carries no Role」)—— 佢個 slice 終點寫死 `model AgentRun {`,而 **W47 插 `AgentProfile`、W48 再插兩個 model** 之後,佢已經靜靜檢查緊四個 model。🔴 **一直綠係彩數唔係設計**(我新加嘅 `AgentTurn.role` 係細楷,而 assert 係 `toContain('Role')` 大楷)⇒ 終點改成 `model AgentProfile {`,令佢真係只檢查佢名寫住嗰個 model
 - [ ] F2-6 DEV migration(部署之後)
 
 ## `F3` — Conversation service + endpoint

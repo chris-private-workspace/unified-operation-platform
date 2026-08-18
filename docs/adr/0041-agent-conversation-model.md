@@ -1,7 +1,7 @@
 # ADR-0041: Agent conversation —— 一條綁人嘅對話線,同 run 並存但唔互相冒充
 
 **Date**: 2026-08-18
-**Status**: **Proposed**(W48 `F1`;八條 OQ 已由 Chris 2026-08-18 答齊,本 ADR 把答案寫成可引用嘅決定 + 逐條列出佢哋嘅後果)
+**Status**: **Accepted**(Chris 2026-08-18 —— **D1–D9 九條連 Consequences 一併批**。八條 OQ 佢喺同日答齊,本 ADR 把答案寫成可引用嘅決定;`Proposed` 嗰一步存在嘅唯一原因,係 `D3`[安全邊界]同 `D7`[retention]兩條嘅**後果**佢未見過逐條寫出嚟嘅版本 —— 跟 `ADR-0037` 先例)
 **Approver**: Chris Lai
 
 ---

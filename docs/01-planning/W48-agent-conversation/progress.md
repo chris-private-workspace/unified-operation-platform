@@ -176,3 +176,67 @@ Effort 估得返 **≈23h / 4 日**。
 
 - **`F1-5` 等 owner `Accepted`** ⇒ 先可以落 `F2` migration(plan `F1-5` 就係咁寫)
 - `F0-6` 本機 DB 兩個 pending migration 仲未 apply(要批停 `ai-doc-extraction-db`)
+
+---
+
+## Day 1(續)— 2026-08-18 · `ADR-0041` Accepted + `F2` schema
+
+**Chris 2026-08-18 批 `D1–D9` 連 Consequences** ⇒ `F1-5` 收,`F2` 開工。
+schema 三格落齊,`prisma validate` **exit 0**,`prisma generate` **exit 0**。
+
+### 🔴 落 schema 嗰陣撞到一個名字碰撞,而佢要 owner 一句話
+
+`ADR-0041 D1` 個新 model 叫 **`AgentTurn`**。而 `agent-runtime.provider.ts:115` **一早已經有**
+`export interface AgentTurn` —— 佢係 **seam 嘅 turn**:一次 runtime round-trip 嘅正規化結果
+(`status` / `state` / `pendingApprovals` / `providerItems`),`ADR-0017 D2` 叫呢套詞彙
+「the core design work of a seam」。
+
+⇒ **同一個 module 入面,同一個名,兩個完全唔同嘅意思**:
+
+| | `AgentTurn`(seam,今日已存在) | `AgentTurn`(Prisma,ADR-0041 D1) |
+|---|---|---|
+| 係咩 | 一次 LLM round-trip 嘅結果 | 一句對話 |
+| 住喺 | `agent-runtime.provider.ts` | `@prisma/client` |
+| 已經有邊個 import | `ai-assist.service.ts` · 兩個 provider · 兩份 spec | (未有) |
+
+⚠️ **佢唔係理論上會撞** —— `F3` 個 conversation service 要**同時**用兩個(開 run 要 seam 嗰個、
+寫對話要 Prisma 嗰個),嗰刻一定要 alias 其中一個。
+
+📌 **而家係最平嘅時刻**:migration 未生成、零 code 用緊佢。落咗 migration 之後改名就要另一個
+migration。**已寫入下面「等 Chris 決定」,schema 暫時照 ADR 用 `AgentTurn`(spec wins)。**
+
+### 🔴 順手揾到一條「一直綠係彩數」嘅既有 test
+
+`permissions.spec.ts` 嗰條 `AgentPrincipal carries no Role in the schema`,個 slice 係
+`indexOf('model AgentPrincipal {')` → `indexOf('model AgentRun {')`。
+
+**而 `AgentRun` 早就唔再係下一個 model** —— W47 插咗 `AgentProfile`,W48 再插兩個 ⇒ 佢**今日
+檢查緊四個 model**,而佢個名同註釋都只講一個。
+
+🔴 **佢一直冇紅唔係因為設計啱** —— 係因為 assert 係 `not.toContain('Role')` **大楷**,而我新加
+嘅 `AgentTurn.role` **啱好係細楷**。⇒ 終點改成 `model AgentProfile {`。
+
+📌 **形狀**:一個用「下一個 X 喺邊」做邊界嘅 test,佢嘅覆蓋範圍會**隨住有人插嘢入中間而靜靜擴大**,
+而擴大方向係**多檢查咗嘢**(睇落更安全)⇒ 冇人會因為佢紅而發現。同 W46 `B3`(兩個 provider spec
+各自正確,而「兩個實作一致」冇一個單一 spec 講得到)一樣,係**test 嘅覆蓋面同佢聲稱嘅嘢唔對數**。
+
+### `F2-5` 個 test 刻意唔係 behaviour test
+
+`Alternative A` 落地之後,**平台行為一模一樣** ⇒ 任何 behaviour test 都會照綠。要捉到佢,
+就只可以釘 **shape**(schema source scan)。
+
+**falsification 兩輪,零誤傷**:
+
+| 輪 | 拆走乜 | 結果 |
+|---|---|---|
+| 1 | `AgentMessage.runId` → `String?` | **恰好第 1 條紅**,錯誤訊息逐字印住 `runId String?` |
+| 2 | `AgentMessage` 加 `conversationId` + `AgentConversation` 加 `messages` | **恰好第 2、3 條紅** |
+
+⇒ 兩輪都答到 W47 `F3-6` 嗰條問題(「紅嗰個原因係咪我想證嗰個」),而唔止係「有嘢紅」。
+
+### 🚧 卡住
+
+- **`F2-4` migration 卡 `F0-6`** —— 實測 `docker ps`:**`ai-doc-extraction-db` 揸住 5433
+  (Up 17 hours)**,`uop-postgres` **`Exited (0)`**。⚠️ **Prisma 生成 migration SQL 結構上要一個
+  DB**(`migrate diff --from-migrations` 要 shadow database)⇒ 呢條唔係「唔記得做」,係做唔到
+- **`AgentTurn` 改唔改名等 Chris 一句話**(見上)
