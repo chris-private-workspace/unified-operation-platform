@@ -3,8 +3,8 @@ phase: W48-agent-conversation
 name: "Conversation session —— chat model + streaming(Tier 2 第二塊)"
 sprint_week: W48
 start_date: 2026-08-18
-end_date: TBD                 # 等 §7 OQ 答完先估得到,見 §5
-status: draft                 # draft | active | closed
+end_date: 2026-08-21          # 七條 OQ 答完之後先填得出,見 §5
+status: active                # draft | active | closed
 spec_refs:
   - docs/02-architecture/agent-tier2-scope.md §3 G4 / §4 T2-c / §5.3 OQ-4
   - docs/adr/0036-*.md(D3 human-in-the-loop · D6 AgentMessage 永久保留 · D0)
@@ -14,7 +14,9 @@ prior_phase: W47-agent-registry
 
 # Phase W48 — Conversation session(Tier 2 · `T2-c`)
 
-> **Plan version**:0.1(**draft —— 未 approve,唔可以開始寫 code**)
+> **Plan version**:1.0
+> **Approved by**:**Chris Lai(2026-08-18)** —— 七條 OQ 全部照建議拍板,plan `draft → active`
+> ⚠️ **但 `OQ-G` 個答案開咗一條新 OQ(`OQ-H`)**,而佢 block `F2` 一個 `onDelete` 決定,見 §7
 > **Owner**:Chris Lai
 > **決策來源**:`docs/02-architecture/agent-tier2-scope.md`(scope approved 2026-08-17)
 > **前置**:W47 `T2-a` **closed**(acceptance 8/8,部署 #10 上咗 DEV)
@@ -34,11 +36,14 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
 > (chat 入面可以開 run),但**唔可以互相冒充**。
 
 ⇒ **本 phase 觸發 H1,而且 scope report §4 明文寫住佢要一份新 ADR。**
-呢份 plan **唔會**自己拍板嗰份 ADR 嘅內容 —— §7 有 **七條 OQ**,而其中至少三條
-(`OQ-A` / `OQ-B` / `OQ-E`)**答案唔同,交付物就唔同**,唔係「實作細節」。
 
-⚠️ **所以本 plan 刻意冇寫 Effort 同 end_date** —— 寫咗就係假裝 scope 已經定咗。
-`§5` 解釋咗點解。
+🟢🟢 **2026-08-18 更新:七條 OQ 答完之後,本 phase 細咗一截,而且冇咗兩個最貴嘅分支** ——
+`OQ-B` 答**新 model** ⇒ **`ADR-0036 D6` 一個字唔使郁**、migration **純 additive**;
+`OQ-E` 答 **SSE** ⇒ **零新 runtime dependency,唔觸發 H2,唔使第二份 ADR**。
+⇒ 由「可能要兩份 ADR + 改一張既有表」變成「**一份 ADR + 純 additive schema**」。
+
+⚠️ **但唔好把「細咗」讀成「淺咗」** —— §0 開頭嗰句仍然成立:呢個係一個**新嘅互動模型**,
+而唔係一個新 endpoint。`G4`(chat 唔可以繞過 approval)同 `R1` 就係為咗呢點存在。
 
 ---
 
@@ -75,37 +80,77 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
   講咗佢永久保留**。一個「順手放寬 `runId` 做 nullable」嘅改動,會令**一張表同時係 run
   transcript 同 chat 紀錄**,而 D6 嗰句「永久保留」原本只係講前者。呢個唔係加欄,係改咗
   一條已 Accepted 決定嘅覆蓋範圍 —— 同 `ADR-0035` 嗰個「收窄範圍 vs 推翻」判斷同族
-- **Acceptance**:ADR `Accepted` + `§7` 七條 OQ 全部有答案(或者明文 defer 兼講明後果)
+- 🟢 **七條 OQ 2026-08-18 答齊** ⇒ ADR 而家要答嘅**淨返 `OQ-H`**(「清掉」= hard 定 soft)
+  同埋把七條答案寫成一份可以引用嘅決定
+- **Acceptance**:ADR `Accepted` · **`OQ-H` 有明文答案**(唔可以由 migration 靜靜定咗)·
+  明文講清楚**同 `ADR-0040` 嘅關係**(佢喺隔籬 model 揀咗 soft,而佢自己把 GDPR 嗰半推咗過嚟)
+- **Effort**:3h · **Owner**:AI
 
 ### F2 — 對話 schema + migration(**H1**)
 
-- **形狀待 `OQ-B`**。兩個候選,代價唔同:
+- 🟢 **`OQ-B` 揀咗新 model** ⇒ **`AgentMessage` 一個字唔郁**,`ADR-0036 D6` 覆蓋範圍
+  維持原狀,migration **純 additive**
+- **形狀**(草稿,`F1` 嗰份 ADR lock):
 
-| | A:新 `AgentConversation` + `AgentTurn` | B:放寬 `AgentMessage`(加 `conversationId`,`runId` 變 nullable) |
-|---|---|---|
-| 改既有表 | ❌ 唔使 | ✅ 要(而佢有 `onDelete: Cascade` 三處同 D6 保證) |
-| 「一張表兩個意思」 | 冇 | **有** —— 讀嗰個要自己分 |
-| migration | 純 additive | `runId` NOT NULL → NULL,**唔可逆** |
-| D6 覆蓋範圍 | 一個字唔使郁 | 要喺 ADR 明文重新界定 |
+```prisma
+model AgentConversation {
+  id          String   @id @default(cuid())
+  // OQ-A:綁人。required —— 一條冇主人嘅對話,就係一條冇 scope 起點嘅對話(OQ-D)
+  startedById String
+  startedBy   AppUser  @relation(fields: [startedById], references: [id])
+  // 可選 context,唔係擁有者。null = OQ-D 嗰個窄狀態
+  requestId   String?
+  request     Request? @relation(fields: [requestId], references: [id])
+  profileId   String?  // 用邊個 profile 傾(W47 registry)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  turns       AgentTurn[]
+  runs        AgentRun[]   // OQ-C:FK
+}
 
-- **Acceptance**:migration 純 additive(若揀 A)· 本機 + DEV 都 applied ·
-  **舊 run 嘅 `AgentMessage` 讀路一個字唔變**(falsification 釘住)
+model AgentTurn {
+  id             String            @id @default(cuid())
+  conversationId String
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id])
+  role           String            // user | assistant
+  content        String
+  createdAt      DateTime          @default(now())
+  @@index([conversationId, createdAt])
+}
+```
+
+  加 `AgentRun.conversationId String?` + relation(`OQ-C`)。
+
+- 🔴 **兩個 `onDelete` 刻意留空,等 `OQ-H`** —— `AgentTurn → AgentConversation` 同
+  `AgentRun → AgentConversation`。**唔可以由 Prisma default 靜靜定咗**:optional relation
+  預設 `SetNull`,即係話一個 delete 會把「呢個 run 由邊條對話開」一次過變 unknown,
+  而 W47 `F1-3` 就係喺呢個位撞過同一件事
+- **Acceptance**:migration **純 additive,零 DROP** · 本機 + DEV 都 applied ·
+  🔴 **舊 run 嘅 `AgentMessage` 讀路一個字唔變**(`G3`,falsification 釘住)
+- **Effort**:3h · **Owner**:AI
 
 ### F3 — Conversation service + endpoint
 
 - `POST /agent/conversations`(開一條)· `POST /agent/conversations/:id/turns`(講一句)·
   `GET /agent/conversations/:id`· `GET /agent/conversations`(列表)
-- **權限**:跟 `canUseAgent`(ADMIN + REGIONAL,今日已存在)—— ⚠️ 但 `OQ-F` 要確認
+- **權限**:🟢 `OQ-F` 答**跟 `canUseAgent`**(ADMIN + REGIONAL)—— 唔加新 predicate
+- 🔴 **`OQ-D` 落喺呢度**:`requestId == null` 嘅對話,**tool 攞唔到任何 request-scoped 資料**
+  —— 係「攞唔到」唔係「攞到但唔顯示」。呢個要一條 falsification 釘住(拆走就要紅)
 - **Acceptance**:`@Roles` 覆蓋 + **W28 drift test 認得新 endpoint**(佢喺 W47 捉到我兩次)·
   `runState` / `prompt` **唔出 wire**(W46/W47 兩次都係喺呢度漏)
+- **Effort**:5h · **Owner**:AI
 
 ### F4 — Streaming(送真內容)
 
 - 🔴 **今日條 SSE 送唔到** —— `agent-run.queue.ts` 個 `changes()` 送 `{runId, type}`,
   明文「Payload carries no content — refetch the run」。chat 要 token-by-token
-- **待 `OQ-E`**:①另開一條 SSE(**零新 dependency**)②WebSocket(**H2,要新 dep + ADR**)
+- 🟢 **`OQ-E` 揀咗 SSE** ⇒ **零新 runtime dependency,唔觸發 H2**
+- ⚠️ **唔可以重用 `agent-run.queue.ts` 個 `changes()`** —— 佢係 queue-wide BullMQ 事件流,
+  per-run 過濾,payload 明文冇 content。chat 要嘅係**per-conversation 嘅 token 流**
 - **Acceptance**:斷線唔可以靜靜當完成(**fail loud**,跟 `R16` 同一條規矩)·
-  **DEV 真通**(W46 `B6` 證咗 ACA ingress 過到 SSE,但嗰條係 heartbeat 唔係長流)
+  **DEV 真通** —— ⚠️ `B6` 證嘅係 **heartbeat + 短事件**,**唔係長 token stream**,
+  所以呢條要自己驗,唔可以引用 `B6`
+- **Effort**:5h · **Owner**:AI
 
 ### F5 — 最小 UI(**H6**)
 
@@ -114,6 +159,7 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
   **一個 view 一個 primary**
 - ⚠️ **chat 氣泡 / streaming 游標呢類 pattern,handoff 冇** ⇒ **可能觸發 H6 STOP**。
   W47 個 `Textarea` 就係咁 —— 要 owner approve 先做得
+- **Effort**:5h · **Owner**:AI
 
 ### F6 — Test + falsification(**H5**)
 
@@ -122,8 +168,11 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
 ### F7 — Live 驗
 
 - 本機:真傾一段對話 · 中途叫佢提 SKU(產生 proposal)· 斷線重連
-- DEV:migration + 一條真對話
+- **DEV**:migration + 一條真對話 + **一次真 token stream**(唔可以引用 `B6`)
 - ⚠️ **唔可以睇 revision status 當證據**
+- 🔴 **`OQ-D` 要有一條 live**:開一條**冇 request context** 嘅對話,叫 agent 攞 request 資料,
+  **佢應該攞唔到** —— 呢個係本 phase 唯一一條安全邊界嘅 live 證據
+- **Effort**:2h · **Owner**:AI
 
 ---
 
@@ -151,7 +200,7 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
 | # | Risk | L | I | Mitigation |
 |---|---|---|---|---|
 | **R1** | 🔴🔴 **chat 變成一條繞過 approval 嘅路** —— 對話介面令「叫佢做嘢」感覺好輕,而 `ADR-0036 D3` 個 human-in-the-loop 係 **Tier 1 成個安全論據** | **Med-High** | 🔴 **High** | ①`G4` 釘住 ②proposal 一定經返同一條 `agent-approval` 路,**唔可以喺 chat 側另開一個「快速批准」** ③falsification:拆走 approval 要紅 |
-| **R2** | 🔴 **`AgentMessage` 一表兩用** —— 若 `OQ-B` 揀 B,`ADR-0036 D6`「永久保留」嘅覆蓋範圍靜靜擴大到 chat,而 chat **含 PII 而且量級唔同** | Med | 🔴 High(H4) | ①ADR 明文重新界定 D6 範圍(唔可以靠推論)②`OQ-D` retention 一定要有答案先落 migration |
+| **R2** | 🟢 ~~`AgentMessage` 一表兩用~~ —— **`OQ-B` 答「新 model」之後呢條唔再成立**:`AgentMessage` 一個字唔郁,`ADR-0036 D6` 覆蓋範圍原封不動。⚠️ **但 H4 嗰半冇消失,只係搬咗位** —— chat 一樣含 PII,而 `OQ-G` 答「一直存在,直至清掉」⇒ **「清」嗰條路本身就變成 H4 嘅唯一防線**,而佢仲未定形狀 | Med | 🔴 High(H4) | ①**`OQ-H` 要有明文答案先落 migration** ②`F1` ADR 要正面寫「清」嘅語意 —— **唔可以由 Prisma `onDelete` default 靜靜定咗**(W47 `F1-3` 就係喺呢個位撞過) |
 | **R3** | 🔴 **對話成本冇上限** —— 每個 turn 帶住成段 history ⇒ token 成本隨對話長度**非線性**升,而今日 blast-radius 係 **per-run** 唔係 per-conversation | **High** | Med | ①本 phase 至少要有**一個 turn 上限或 history 截斷**②per-agent 上限係 `T2-e`,但 chat 一開就有成本 ⇒ 唔可以等 |
 | **R4** | **Streaming 斷線靜靜當完成** —— 同 `R16`(SDK resume)同族:一個「睇落完成咗」嘅失敗 | Med | Med | fail loud;`F4` acceptance 釘住 |
 | **R5** | **chat 冇 request context 嗰陣,agent 睇到咩?** —— `OQ-2` 答咗「唔可以大過啟動者」,但嗰句假設咗有一個 request 做起點 | Med | 🔴 High(安全) | `OQ-D`(§7)要答;**default 一定係窄嗰邊**(冇 context = 見唔到 request 資料) |
@@ -160,15 +209,23 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
 
 ---
 
-## 5. Day-by-Day —— ⚠️ **本節刻意留空**
+## 5. Day-by-Day(rough)
 
-**點解**:`OQ-B` 答 A 定 B,`OQ-E` 答 SSE 定 WebSocket,兩條夾埋可以差一倍工作量
-(B 要改既有表 + 重新界定一條 Accepted 決定;WebSocket 係 **H2 新 dependency** 要另一份 ADR)。
+> 🟢 **2026-08-18 填得返** —— 本節之前刻意留空,因為 `OQ-B` / `OQ-E` 兩條夾埋可以差一倍
+> 工作量。而家兩條都答咗**細嗰邊**(新 model · SSE)⇒ 估得出。
 
-⇒ **`§7` 答完之後,喺 §8 changelog 補返一個 breakdown,同時填 `end_date`。**
+| Day | Date | Focus | Deliverables |
+|---|---|---|---|
+| D1 | 2026-08-18 | ADR(含 `OQ-H`)+ schema + migration | `F1` · `F2` |
+| D2 | 2026-08-19 | conversation service + endpoint + test | `F3` · `F6` |
+| D3 | 2026-08-20 | streaming(SSE token 流)+ test | `F4` · `F6` |
+| D4 | 2026-08-21 | 最小 UI + H6 render + live 驗 | `F5` · `F7` |
 
-📌 W46 個 plan 估 21 條 acceptance 用咗接近估算;W47 估 20h / 3 日而 code 側 1 日做完 ——
-**兩次都係喺 scope 已經定死之後先估得準**。本 phase 而家未到嗰步。
+**Effort 合計 ≈ 23h**(`F1` 3 + `F2` 3 + `F3` 5 + `F4` 5 + `F5` 5 + `F7` 2;`F6` 含喺各項)。
+
+⚠️ **呢個估算有一個已知嘅弱點**:W46 / W47 兩次都係**後端快、UI 同 live 驗慢**,而本 phase
+`F4`(streaming)係**唯一一件平台完全冇做過嘅嘢** —— 今日條 SSE 送 `{runId}`,同送 token 流
+係兩件事。⇒ **`F4` 最可能爆,而佢爆嘅話 `F5` 一定跟住爆**(UI 冇嘢 stream)。
 
 ---
 
@@ -187,20 +244,47 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
 
 ---
 
-## 7. Open Questions —— 🔴 **七條全部未答,而且唔係細節**
+## 7. Open Questions —— 🟢 **七條 2026-08-18 全部答齊(Chris)⇒ plan `draft → active`**
 
-| # | 問題 | 點解佢改變交付物 | 建議 |
+| # | 問題 | **決定** | 影響 |
 |---|---|---|---|
-| **OQ-A** | 一條對話**綁邊度**?①一張 request ②一個人(跨 request)③完全獨立 | ①最窄兼天然有 scope;③最貼 `R-E`(「任何頁面都彈得出」)但**冇 scope 起點**(見 `OQ-D`) | 傾向 **②**,而 request 做**可選** context |
-| **OQ-B** | schema:**新 model** 定**放寬 `AgentMessage`**? | 見 `F2` 張表 —— 後者要重新界定 `ADR-0036 D6` | 傾向 **A(新 model)**;理由係 D6 |
-| **OQ-C** | chat 入面開嘅 run,**點樣關聯**返條對話? | 冇 link 就答唔到「呢個 proposal 由邊句話嚟」;有 link 就要決定係 FK 定 soft ref | 傾向 **FK**(跟 `AgentRun.requestId` 先例) |
-| **OQ-D** | 🔴 **chat 冇 request context 嗰陣,agent 睇到咩?** | `OQ-2`(scope 綁啟動者)假設咗有起點。冇起點 = 要決定 default | 🔴 **窄嗰邊**:冇 context 就見唔到任何 request 資料 |
-| **OQ-E** | Streaming:**另開 SSE** 定 **WebSocket**? | WebSocket = **H2 新 dependency** + 另一份 ADR + ACA ingress 未驗 | 傾向 **SSE**(零新 dep,而 `B6` 證咗 ingress 過到 SSE) |
-| **OQ-F** | 邊個 chat 得?跟 `canUseAgent`(ADMIN+REGIONAL)定收窄? | 關 W28 drift test 同 `OQ-A` | 傾向 **跟 `canUseAgent`**,收窄容易放寬難 |
-| **OQ-G** | 🔴 **`OQ-4`(scope report §5.3)—— 對話 persist 幾耐?** | **H4** —— 對話含 PII,而 `audit-retention` 一直未做。**唔答就唔應該落 migration** | 要 owner 答;**唔建議由 AI 拍板** |
+| **OQ-A** | 一條對話**綁邊度**? | 🟢 **綁人**(跨 request) | request 變成一個**可選 context**,唔係對話嘅擁有者。⇒ `AgentConversation.startedById` required、`requestId` nullable |
+| **OQ-B** | schema:新 model 定放寬 `AgentMessage`? | 🟢 **新 model** | 🟢🟢 **`ADR-0036 D6` 一個字唔使郁** —— `AgentMessage` 維持「run transcript,永久保留」,而 chat 有自己嘅 retention 故事(`OQ-G`)。migration **純 additive** |
+| **OQ-C** | chat 開嘅 run 點關聯返? | 🟢 **FK**(跟 `AgentRun.requestId` 先例) | `AgentRun.conversationId String?` + relation。⚠️ **`onDelete` 要諗**,見 `OQ-H` |
+| **OQ-D** | 🔴 chat 冇 request context 嗰陣,agent 睇到咩? | 🟢 **窄嗰邊 —— 見唔到任何 request 資料** | **安全邊界,唔係 UX**。冇 context = tool 攞唔到 request-scoped 資料,而唔係「攞到但唔顯示」。要 falsification 釘住 |
+| **OQ-E** | Streaming:SSE 定 WebSocket? | 🟢 **SSE** | 🟢 **零新 runtime dependency ⇒ 唔觸發 H2,唔使第二份 ADR**。⚠️ 但 `B6` 證嘅係 heartbeat + 短事件,**唔係長 token stream** ⇒ `F4` 仍然要自己驗 |
+| **OQ-F** | 邊個 chat 得? | 🟢 **跟 `canUseAgent`**(ADMIN + REGIONAL) | 唔加新 predicate;W28 drift test 要認得新 endpoint |
+| **OQ-G** | 🔴 對話 persist 幾耐?(= scope report `OQ-4`) | 🟢 **一直存在,直至清掉** | 🔴 **冇自動 retention,但要有一條「清」嘅路** ⇒ **開咗 `OQ-H`**,見下 |
 
-> 🔴 **`OQ-G` 同 `OQ-D` 兩條係 blocking** —— 一條係 H4,一條係安全邊界。
-> 其餘五條答唔到可以用建議值行,但要喺 §8 log。
+### 🔴 `OQ-H` —— 由 `OQ-G` 衍生,而佢撞正上星期先答完嘅嘢
+
+> **「清掉」係 hard delete,定係 soft(hidden / archived)?**
+
+**點解呢條唔可以順手決定**:
+
+1. **`ADR-0040`(CH-031,2026-08-17 Accepted)喺隔籬一個 model 上面啱啱先揀咗 soft** ——
+   agent run **唔准 hard delete**,理由係三張子表 `onDelete: Cascade` 而佢哋係 audit 真相。
+   如果對話揀 hard delete,平台就會有**兩個相反嘅答案**喺兩個相鄰嘅 model 上面,
+   而 `ADR-0022 D1` → `ADR-0040` 呢條線一直係「**同樣效果,單邊代價 ⇒ 唔取**」。
+2. **但 `ADR-0040` 自己明文把呢條問題推咗畀我哋**,逐字:
+   > **唔解決 GDPR-style 徹底移除**。嗰個屬 `audit-retention`……而佢同
+   > `agent-tier2-scope.md` **OQ-4**(「對話要唔要 persist?留幾耐?」)係同一條問題。
+   > **本 ADR 明文唔碰佢。**
+
+   ⇒ `OQ-G` 個答案**正正就係 ADR-0040 推走嗰條問題**,而家輪到本 phase 答。
+3. **兩個答案代價唔同**:
+
+| | Hard delete | Soft(跟 ADR-0040) |
+|---|---|---|
+| H4 / GDPR「真係冇咗」 | ✅ 做得到 | ❌ 做唔到(row 仲喺度) |
+| 同 `ADR-0040` 一致 | ❌ 相反 | ✅ |
+| chat 入面開過嘅 run | ⚠️ `AgentRun.conversationId` 要 `SetNull` 定 `Restrict`?**`Restrict` = 有 run 就刪唔到**,`SetNull` = 靜靜失去「呢個 run 由邊條對話開」 | 冇呢個問題 |
+| 「清咗」之後個 UI | 真係空 | 要決定睇唔睇得返 |
+
+**建議**:**soft 為主 + 一條明文 hard-delete 路留畀 H4**,兩者唔同 verb、唔同權限 ——
+但呢個係 owner 決定,**`F1` 嗰份 ADR 要正面寫,唔可以由 migration 靜靜定咗**。
+
+⚠️ **`OQ-H` block 嘅只係 `F2` 個 `onDelete` 同 `F3` 一條 endpoint**,唔 block `F1` 開始寫。
 
 ---
 
@@ -209,6 +293,8 @@ W47 把一個 seed 出嚟嘅 agent 變成可管理嘅 registry。兩者嘅互動
 | Date | Change | Reason | Approver |
 |---|---|---|---|
 | 2026-08-18 | Initial draft(`status: draft`) | Tier 2 `T2-c`,W47 closed 之後嘅下一塊。**七條 OQ 未答 ⇒ 冇 Effort / 冇 end_date / 冇 day-by-day**,見 §0 同 §5 | AI(未 approve) |
+| 2026-08-18 | 🟢 **七條 OQ 全部答齊(Chris),`draft → active`;補返 Effort(≈23h)、`end_date`、§5 day-by-day** | 兩條最貴嘅分支都答咗細嗰邊:`OQ-B` **新 model** ⇒ `ADR-0036 D6` 唔使郁 · migration 純 additive;`OQ-E` **SSE** ⇒ 零新 dep、唔觸發 H2、唔使第二份 ADR。⇒ 由「可能兩份 ADR + 改一張既有表」變成「一份 ADR + 純 additive schema」 | Chris Lai |
+| 2026-08-18 | 🔴 **新增 `OQ-H`(未答)** —— 「清掉」= hard delete 定 soft? | `OQ-G` 答「一直存在,**直至清掉**」,而「清」嘅語意冇定。呢條唔可以順手決定,因為 **`ADR-0040`(2026-08-17 Accepted)喺隔籬一個 model 上面啱啱先揀咗 soft**,而**同一份 ADR 又明文把 GDPR-style 徹底移除推咗畀 `agent-tier2-scope.md OQ-4`** —— 即係推咗嚟本 phase。兩個答案代價唔同(H4 做唔做得到 vs 同 ADR-0040 一唔一致),而且直接決定兩個 `onDelete`。⚠️ **只 block `F2` 個 `onDelete` 同 `F3` 一條 endpoint,唔 block `F1` 開始** | AI(提出,待 owner) |
 
 ---
 
