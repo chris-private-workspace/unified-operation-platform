@@ -4,7 +4,7 @@ name: "Agent Registry — 多 profile + 揀 agent + run 列表(Tier 2 第一塊)
 sprint_week: W47
 start_date: 2026-08-17
 end_date: 2026-08-19          # planned, may slip with changelog log
-status: active                # draft | active | closed
+status: closed                # draft | active | closed
 spec_refs:
   - docs/02-architecture/agent-tier2-scope.md §3 G1 / §4 T2-a / §5.4
   - docs/adr/0036-*.md(D1 / D4 / D0)
@@ -67,7 +67,9 @@ model AgentProfile {
   而變**),同時令「**當時用咩跑**」變成一個查得返嘅事實(`AgentRun.profileId`)。
   A 要一份 ADR 推翻嗰句,兼要答「model 升級 = 改現有定建新」——**兩個答案都有代價**。
 - **Acceptance**(`F8-1` 掃 2026-08-17):
-  - 🟡 migration 對真 DB 跑得過(本機 + DEV)—— **本機 ✅ · DEV ❌**(`F1-6`,卡部署)
+  - ✅ migration 對真 DB 跑得過(本機 + DEV)—— **本機 `F1-3`**(落 DB 對過真結構)·
+    **DEV `F1-6`**(部署 #10 `dev-df03563`;證據唔靠 migrate summary,靠
+    `GET /agent/profiles` **200 唔係 500** + 後來真見到 `dev-g8-*` 兩個 row)
   - ✅ **舊 run(`profileId = null`)全部仍然讀得到**,`GET /agent/runs/:id` 唔 500(test + `F7-1b` live 三個都顯示)
   - ⚠️ ~~seed 建一個 default profile 掛落現有 `ai-assist` principal~~ —— **呢條 acceptance 本身寫錯咗,落唔到手**,改成一次性遷移(§8 changelog 第 4 條)
 - **Effort**:3h · **Owner**:AI
@@ -131,8 +133,11 @@ model AgentProfile {
 
 - ⚠️ ~~本機:建兩個 profile(**唔同 model**)→ 各跑一個 run → run 列表分得開~~
   **✅ 收咗,但唔係照呢句做** —— 呢條 acceptance 本身證唔到嘢(§8 changelog 第 6 條)
-- ❌ DEV:migration 跑得過 + 列表出得到 —— **未做**(`F7-2`,卡部署)
-- ⚠️ **唔可以睇 revision status 當證據**(entrypoint 令 migrate 失敗 NON-FATAL)
+- ✅ DEV:migration 跑得過 + 列表出得到 —— **部署 #10(`dev-df03563`)收咗**(`F7-2`),
+  而 `G8` 個對照實驗喺 DEV 亦做齊(`F7-4`)
+- ⚠️ **唔可以睇 revision status 當證據**(entrypoint 令 migrate 失敗 NON-FATAL)——
+  **守住咗**(`F7-3`):用嘅係 agent route **8 → 13** 條 · OpenAPI **66,893 → 84,518 B** ·
+  舊 web bundle **404**(排除 CDN cache)· `200 唔係 500` 嘅推理
 
 ---
 
@@ -158,6 +163,11 @@ model AgentProfile {
 
 🔴 **2026-08-17 部署 #10 之後更正:下面呢句只啱一半。** `G1` 確實係「缺一次 DEV 部署」,部署完就收咗。**但 `G8` 唔係** —— 部署完之後 DEV `/agent/profiles` 仍然係 `[]`,因為 `G8` 要求嘅係**開兩個 profile 各跑一次再比對**,而部署唔會幫你開 profile。⇒ **`F8-1` 嗰次掃把兩條當成同一個阻塞,係一個誤判**;而佢之所以睇落合理,係因為兩條當時都寫住「DEV ❌」,而**「DEV ❌」冇講到係差部署定係差一次操作**。以下原文保留。
 
+🟢🟢 **2026-08-18 收工補一句:8 條全部收齊,phase `status: closed`。** `G1` 由部署 #10 收,
+`G8` 由部署之後嗰次對照實驗收(`F7-4`)—— 即係話上面嗰個誤判**冇造成損失**。但佢值得留住,
+因為佢指出咗一個寫法上嘅缺陷:**寫「DEV ❌」嗰陣要順手寫低差嘅係咩**(一次部署 / 一次操作 /
+一個未答嘅問題),否則收尾嗰刻冇人分得出邊條係按個掣就收,邊條要人再做一次實驗。
+
 **8 條入面 6 條全收,2 條半收 —— 而兩條半收(`G1` / `G8`)缺嘅係同一件事:一次 DEV 部署。**
 兩條都係 `Block closeout: Yes` ⇒ **本 phase 今日 closeable 唔到**,而唔 closeable 嘅理由
 **唔係技術阻塞**:
@@ -165,7 +175,8 @@ model AgentProfile {
 - ⚠️ **Redis 唔係阻塞** —— W46 `B6` 喺 DEV 實測過 `POST /agent/runs` **201**(冇 Redis 佢會直接
   503,ADR-0039 F1),即 DEV 側 Redis 一早通咗。呢句要寫低,因為 `CLAUDE.md §0` 仲留住
   「部署 DEV 之前 Redis 要喺度」嗰句警告,佢**對 W46 嗰刻啱,對今日唔再係未解決事項**。
-- ⇒ 缺嘅係 **~~merge~~ ✅ 2026-08-17 做咗(PR #119) → 部署 #10 → 驗**,三步。
+- ⇒ 缺嘅係 ~~merge → 部署 #10 → 驗~~ —— **三步 2026-08-17 全部做完**(PR #119 · 部署
+  `dev-df03563` · `F7-2`/`F7-3`/`F7-4`)。
 
 **兩條 acceptance 掃出嚟嘅額外發現(唔喺原表)**:
 
