@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
+import { AgentDock } from './agent-dock';
 
 // App shell = sidebar (248) + main (top bar 56 + scrollable outlet).
 // Surfaces/colors come from tokens; light/dark swap via <html class="dark">.
@@ -14,6 +15,18 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      {/*
+       * W49 `F2` — the dock mounts ONCE here, not per page: a screen that
+       * mounted its own would close it on every navigation, and the ones that
+       * forgot would be the pages where the dock silently does not exist.
+       *
+       * 🔴 It is a sibling of the layout, not a column in it (`OQ-D` = overlay,
+       * Chris 2026-08-19). Making it a flex child would push the main column
+       * narrower, which turns every table on every screen into a second
+       * breakpoint to verify. Being `fixed`, its position in this tree is
+       * irrelevant — it sits last because that is where it reads.
+       */}
+      <AgentDock />
     </div>
   );
 }
