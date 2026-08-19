@@ -7,8 +7,12 @@
 
 ## 🔴 **先講一件會令你用錯前提嘅事(2026-08-19 · W48 進行中)**
 
-**🔵🔵 W48 `agent-conversation`(Tier 2 `T2-c`)喺 branch `feat/w48-agent-conversation`
-—— `main` 上面一個字都冇。** 唔好用「W47 = 最新」開工。
+**🔵🔵 W48 `agent-conversation`(Tier 2 `T2-c`)2026-08-19 已經 merge 落 `main`
+(PR #124,tip `3a9dd66`),branch 兩邊都刪咗。**
+⚠️ **但 phase 仲係 `active` 唔係 closed** —— `F2-6` / `F7-3` / `F7-4` 三條等一次 DEV 部署。
+🔴 **「已 merge」逐個驗過**:15 個 commit 全部 `--is-ancestor` = `IN`,未入數 = 0。
+🟢 **今次冇 W47 嗰種 merge 風險**:開 PR 前實測 `HEAD..origin/main` = **0**(`main` 零 commit
+行前)⇒ 冇 auto-merge 靜靜出事嘅位。
 
 | | |
 |---|---|
