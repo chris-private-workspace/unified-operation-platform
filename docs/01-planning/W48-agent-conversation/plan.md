@@ -185,10 +185,10 @@ model AgentTurn {
 | G3 | **舊 run 嘅 transcript 讀路零改動** | `GET /agent/runs/:id` 行為一個字唔變 | **Yes** | ✅ shape guard spec + live `GET /agent/runs/:id` 照返 `steps`/`messages`/`proposals` |
 | G4 | chat 唔可以繞過 approval | 產生 proposal 之後**仍然要人批**(`ADR-0036 D3`) | **Yes** | ✅ 兩條 test(behavioural + source scan)· **live 實測** run 泊喺 `awaiting_approval`,畫面只有 link 冇掣 |
 | G5 | `runState` / `prompt` 冇經新 endpoint 洩出 | 0 | **Yes** | ✅ `CONVERSATION_SELECT` 一個常數 + spec |
-| G6 | falsification 每道新閘一次 | 真紅零誤傷 | **Yes** | ✅ 最後一道(`F5-7`)= 1 紅 9 綠,紅因對位 |
-| G7 | H6 light + dark | 兩個都 render 過 | **Yes** | ✅ 兩個 theme 真 render + token swap 實測 · 零橫向溢出 · **順帶捉到 `F5-7`** |
-| G8 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ api 97/1480 · web 45/474 · lint 0 · build 0 —— ⚠️ **收尾要重跑**(W47 教訓) |
-| G9 | live 驗(本機 + DEV) | 真傾到 + 真 stream 到 | **Yes** | 🟡 **半收** —— 本機 ✅(11 turn · proposal · SSE 斷線重連 · **`OQ-D` 對照實驗**);**DEV ❌ 差一次部署 + 之後一次真對話**(兩件事,唔係一件) |
+| G6 | falsification 每道新閘一次 | 真紅零誤傷 | **Yes** | ✅ 四道:`F5-7` 1 紅 9 綠 · `F5-9` 兩道(select 洩 `prompt` 1 紅 28 綠 · 唔送 `profileId` 1 紅 15 綠)· `F5-12` label 1 紅。**每道都問過「紅嗰個原因係咪我想證嗰個」** |
+| G7 | H6 light + dark | 兩個都 render 過 | **Yes** | ✅ **render 咗兩次**:`F5-3`(氣泡 · 三個 badge)· `F5-10`(picker · purple badge,因為中間入咗 code)。token swap 實測 · 零橫向溢出 · **`F5-3` 嗰次順帶捉到 `F5-7`** |
+| G8 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ api **97 / 1484** · web **45 / 480** · tsc / lint / build 0 —— ⚠️ **`F5-12` 之後要再跑一次**(W47 教訓:勾咗嘅 gate 唔等於蓋住之後入嘅 commit) |
+| G9 | live 驗(本機 + DEV) | 真傾到 + **SSE 真通到**(⚠️ 唔係 token stream,見 §8 2026-08-18 deviation) | **Yes** | 🟡 **半收** —— 本機 ✅(11 turn · proposal · **斷線重連問到底** · **`OQ-D` 對照實驗** · `F5-11` 揀 profile 揀到行為);**DEV ❌ 差一次部署 + 之後一次真對話**(兩件事,唔係一件) |
 
 > 🔴 **`G3` 同 `G4` 係本 phase 兩條真紅線**,其餘七條係例行。
 > `G3` 防「順手改咗既有表」;`G4` 防「chat 因為感覺輕鬆,就變成一條繞過批准嘅路」。

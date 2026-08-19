@@ -87,14 +87,14 @@
 - [x] F7-2 ✅🔴 **`OQ-D` live 收咗,而且係對照實驗唔係單邊觀察** —— **唯一變數 = `requestId` 在唔在**,同一句說話 · 同一個 profile:**冇** request context ⇒ agent 答「**I can't access pending requests or REQ0044067 with the available tools**」兼且 `steps` 只有一個 `start`(`detail` 明文 `with no request context`)= **零 tool call**;**有** request context ⇒ 真叫 `list_pending_requests` 並列出兩張單。🔴 **點解要做對照**:單睇前者,「filter 生效」同「model 純粹唔想叫」**睇落一模一樣** —— 呢個就係 W47 `G8` 嗰個教訓(部署唔會幫你做對照,要人再做一次)
 - [x] F7-5 ✅ **斷線重連,行為問到底** —— 殺 api 鏈(保住 web + 個頁面)~140 秒再起返。①斷線期間送 turn ⇒ 畫面**唔郁**(7 個氣泡,而 DB 已經 9 個)②切走一條 thread 再切返 ⇒ **即刻 9 個** ⇒ 資料一直喺度,**唔通嘅係 SSE 唔係 read** ③remount 之後再送 ⇒ **自動變 11 個,冇 click 過** ⇒ 重連真通。📌 **成因唔係 bug 係一個有名有姓嘅 bound**:`MAX_CONSECUTIVE_FAILURES = 3`,而佢寫落去係為咗擋 403(`EventSource` 唔畀睇 status code)。🔴 **但 W48 把佢放大咗**:hook 自己個 doc 講「a thread has no terminal state — it is idle between questions」⇒ **一條 thread 活得遠耐過一個 run**,撞正一次 api 重啟(= 一次部署)嘅機會高好多,而**畫面唔會講**。⇒ 登 `F8-3`
 - [x] F7-6 ✅ **順帶三個 live 發現(唔喺原 checklist,但唔記低就會失去)** —— ①🟢 **`scrubPii` 真生效**:`list_pending_requests` 個 tool_result 入面 `targetUpn` 係 `[redacted-email]`(H4)②🔴 **`D3` 收窄咗「見唔到」,收窄唔到「填錯」**:model 攞人講嘅 `REQ0044067` 當 `requestId` 去叫 `get_request` ⇒ `Request not found`。**失敗方向係安全嘅**(唔存在就 404),但「填一個存在而屬於第二個 OpCo 嘅 id」呢條路**本次冇驗** ⇒ 登 `F8-3` ③🔴🔴 **`search_catalog("Power BI Pro")` 返 `[]`,而 2026-08-19 再撞一次之後多咗一層要記** —— tool step **status = `ok`** 返空陣列(即「**搵唔到**」),而 agent 對用戶講「I **couldn't retrieve** the active catalogue」(即「**攞唔到**」)。**呢兩句對用戶意思完全唔同**:一個係「冇呢件貨」,一個係「系統壞咗」,而後者會令人去搵 IT。⇒ **平台冇 bug,但個 catalog 缺口被 model 措辭放大咗**。原文如下: —— catalog 得 `POWER_BI_PRO` 而 **101 個 SKU 個 `businessAlias` 全部 `null``**,即人話講法對唔到。agent 冇亂估,明文答「can't propose the licence without guessing」(**好行為**),但代價係佢幫唔到手。⇒ catalog curation 缺口,**唔喺 W48 scope**(同 `CH-026 G-7` 同族),登 `BACKLOG`
-- [ ] F7-3 DEV:migration + 一條真對話 + **一次真 token stream**(⚠️ **唔可以引用 `B6`** —— 佢證嘅係 heartbeat + 短事件)
+- [ ] F7-3 🚧 DEV:migration + 一條真對話 + **一次真 SSE 通知 + refetch**(⚠️ **唔可以引用 `B6`** —— 佢證嘅係 heartbeat + 短事件)。🔴 **本條 2026-08-19 `F8-1` 掃出寫錯咗兼更正**:原文寫「一次真 **token stream**」,而 `F4` 08-18 已經由 token-by-token 收窄做 **turn-level notify**(plan §8 有記,理由係真 token 流要擴 seam = H1,兼且 token 未經 `scrubPii` 就落 wire)⇒ **驗嘅嘢由頭到尾唔應該係 token**。📌 呢個就係 W47 教落「`F8-1` 要逐條掃 acceptance 句」嘅原因 —— plan §2 個 `F4` acceptance 其實**冇**寫 token(佢寫「DEV 真通」),stale 嘅只有 checklist 同 `G9` 兩處措辭
 - [ ] F7-4 ⚠️ **唔可以睇 revision status 當證據**(entrypoint 令 migrate 失敗 NON-FATAL)
 
 ## `F8` — 收尾
 
-- [ ] F8-1 `plan.md` acceptance 逐條掃 + 填狀態欄(W47 做過,而嗰次仲掃出兩條 acceptance 自己寫錯咗)
-- [ ] F8-2 progress retro
-- [ ] F8-3 risk 入 `RISK_REGISTER.md`
-- [ ] F8-4 `BACKLOG.md` 同步(R7)
-- [ ] F8-5 `CLAUDE.md §0` + `SESSION_SUMMARY.md` doc-sync(§14)
-- [ ] F8-6 🔴 **收尾用 grep 掃狀態詞**(`卡部署` / `半收` / `status: active` / `未做`)—— W47 收尾嗰次,我一邊寫「同一份文件兩處各講各」一邊自己漏咗一處,靠 grep 先揾返
+- [x] F8-1 ✅ **`plan.md` acceptance 逐條掃 + 狀態欄** —— §3 九條全部填咗,而 **`G2` / `G9` 兩條「DEV ❌」逐條寫明差嘅係邊種**(`G2` 部署完自動收 · `G9` 要部署完再做一次對話),因為 W47 收尾把 `G1`/`G8` 當成同一個阻塞而佢哋唔係。🔴 **順帶掃出兩處 stale,而 W47 就係話呢一步會掃到嘢**:`checklist F7-3` 同 `§3 G9` 都仲寫住「一次真 **token stream**」,而 `F4` 08-18 已經收窄做 **turn-level notify**(plan §8 有記)⇒ 兩處措辭更正咗。⚠️ **plan §2 個 `F4` acceptance 本身冇錯**(佢寫「DEV 真通」)—— 錯嘅只有兩處引用佢嘅地方,**所以逐條掃唔可以只掃 §3 個表**
+- [x] F8-2 ✅ progress retro —— 含**估算 vs 實際**(最貴嗰件 `F4` 反而最平;`F5-8` 整條唔喺 plan 入面)· **四件最值錢嘅事冇一件係 test 揾出嚟**(兩件係「test 結構上睇唔到」唔係「漏咗寫」)· 三個方法論教訓
+- [x] F8-3 ✅ risk 入 `RISK_REGISTER.md` —— **六條 `R32`–`R37`**(chat 繞過 approval · chat PII 冇清除路徑 · 對話成本 · **SSE 斷 3 次永久靜默** · **`D3` 擋唔到「填錯」** · **`businessAlias` 全 null**)。順帶更新 `last_updated`(佢一直停喺 2026-07-31,連 W47 加 `R28`–`R31` 嗰次都冇郁)
+- [x] F8-4 ✅ `BACKLOG.md` 同步(R7)—— W48 行改咗狀態 + 下一步(**三條 DEV 條目逐條寫明收法唔同**)· 新增 **`CATALOG-ALIAS`**(同 `CH-026 G-7` 同族,本機同 DEV 各要做一次,因為 curate 係 DB 資料唔跟部署走)
+- [x] F8-5 ✅ `CLAUDE.md §0` + `SESSION_SUMMARY.md` doc-sync(§14)—— 兩份都加咗 W48 座標,而**第一句就講「`main` 上面一個字都冇,唔好用 W47 = 最新開工」**。順帶修 `SESSION_SUMMARY` 一處會直接害到下手嘅 stale:佢寫住「本機 DB …… 佢開緊 W47」,而 DB 一早 apply 咗 W48 個 migration
+- [x] F8-6 ✅ **grep 掃狀態詞**(`卡部署` / `半收` / `status:` / `未做` / `🚧` / `等 Chris`)—— 掃出 **`progress.md` Day 3(續) 個「下一步」三行已經過時**(`F5-8` 同日揀咗 A 兼落咗地、`F8-3` 做咗)。**保留原文做日誌 + 加一句講明**,因為由上而下讀嘅人會信咗佢。📌 **一份日誌入面,每個「下一步」都係一個會過期嘅斷言**

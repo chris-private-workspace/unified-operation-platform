@@ -5,7 +5,45 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-17 · W47 收尾後)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-19 · W48 進行中)**
+
+**🔵🔵 W48 `agent-conversation`(Tier 2 `T2-c`)喺 branch `feat/w48-agent-conversation`
+—— `main` 上面一個字都冇。** 唔好用「W47 = 最新」開工。
+
+| | |
+|---|---|
+| 交付 | `AgentConversation` + **`AgentChatTurn`**(⚠️ **唔叫 `AgentTurn`** —— seam 一早有 `export interface AgentTurn`,`ADR-0041 Errata E1`)· `POST/GET /agent/conversations` + `@Sse(:id/events)` · 新 route **`/assistant`**(ADMIN + REGIONAL)· 新 **`GET /agent/profiles/options`**(ADMIN + **REGIONAL**,三個欄冇 `prompt`) |
+| ADR | **`0041` Accepted**(D1–D9 + Errata E1) |
+| test | api **1484 / 97 suites** · web **480 / 45** |
+| 剩低 | `F0`–`F7` 本機全收,`F8` 收尾中。**三條全部等同一次 DEV 部署,但收法唔同**:`F2-6` 部署完**自動**收 · `F7-3` 要部署完**再做一次對話** · `F7-4` = 唔可以睇 revision status 當證據 |
+| risk | 六條入咗 `RISK_REGISTER.md` **`R32`–`R37`** |
+
+🔴🔴 **本 phase 最值錢嘅四件事,冇一件係 test 揾出嚟:**
+
+1. **`Thinking…` 同「已提出建議」同時出**(render 揾到)—— 五條 assert 每條問「**某樣嘢**
+   喺唔喺畫面」,而缺陷係「**兩樣嘢一齊**喺畫面」。同 CH-030 個 `items-center` 同族。
+2. **兩個 active profile ⇒ 每條新對話第一句都 400,而用戶冇出路**(live 揾到)——
+   UI test **mock 咗 mutation**,所以「送咩 body 落後端」嗰層根本冇人睇。⇒ Chris 批
+   Option A:加 picker + 新 options endpoint。
+3. **SSE 連斷 3 次就永久靜默** —— `MAX_CONSECUTIVE_FAILURES = 3` 本身啱(`EventSource`
+   唔畀睇 status code),但 **thread 活得遠耐過一個 run** ⇒ 一次 api 重啟(= 一次部署)
+   就中,而畫面唔會講。切走 thread 再切返(remount)就補得返。
+4. **`businessAlias` 101 個 SKU 全部 `null`** ⇒ agent 收人話 SKU 名 search 唔到,
+   **兼且把「搵唔到」講成「攞唔到」**(用戶會當系統故障去搵 IT)。
+
+🟢🟢 **`OQ-D` 做成對照實驗唔係單邊觀察**:同一句、同一 profile,**唯一變數係 `requestId`
+在唔在** ⇒ 冇 context 嗰條答「with the available tools」做唔到兼且**零 tool call**,
+有 context 嗰條真叫 `list_pending_requests`。**單睇前者,「filter 生效」同「model 唔想叫」
+睇落一模一樣。**
+
+🟢 **`R26` 喺新路上重現**:揀 `power-bi-only` 開對話,agent 自己答
+「I can only suggest Power BI licences」⇒ **揀 profile 揀嘅係行為,唔係一個 id。**
+
+⚠️ **5433 而家喺 `ai-doc-extraction-db` 手上**(W48 借咗兩次,兩次都還原兼真 TCP 驗過)。
+
+---
+
+## W47 / CH-031 座標(2026-08-17,仍然有效)
 
 **🟢🟢 W47 `agent-registry`(Tier 2 `T2-a`)2026-08-17 已經 merge 落 `main`(PR #119),
 branch 兩邊都刪咗。**
@@ -42,10 +80,13 @@ DEV 嗰兩個測試 run hide 走咗,`G1`/`G2` 收咗,**兩半都驗**:唔再喺�
 + falsification 撐住** ②`agent.boundary.spec.ts` 個 verb list **仍然冇 `deleteMany`**
 (BACKLOG `agent-boundary-gaps`)。
 
-🔴🔴 **本機 DB 同 `orca/…/ai-agent` worktree 共用,而佢開緊 W47**(branch
-`feat/w47-agent-registry`;DB 有 `20260817093556_w47_agent_profile`,`AgentRun` 已經有
-`profileId` 欄)⇒ **喺本機 DB 上面絕對唔可以 `prisma migrate dev`** —— 佢見到 drift 會提議
+🔴🔴 **本機 DB 同 `orca/…/ai-agent` worktree 共用,而佢開緊 W48**(branch
+`feat/w48-agent-conversation`;DB **已經 apply 咗 `20260818055347_w48_agent_conversation`**,
+即 `AgentConversation` / `AgentChatTurn` 兩張表同 `AgentRun.conversationId` 都喺度)
+⇒ **喺本機 DB 上面絕對唔可以 `prisma migrate dev`** —— 佢見到 drift 會提議
 **reset 成個 DB**,毀咗人哋啲嘢。一律用 **`prisma migrate deploy`**(只 apply pending,永遠唔 reset)。
+⚠️ **順帶一個推論陷阱**(W48 `F0-6` 實犯):**「我呢個 worktree 未做過 migration」推論唔到
+「DB 未做」** —— 兩邊共用一個 DB,`migrate status` 打一次就知,唔好靠估。
 ⚠️ **W47 merge 之後兩個 migration 都要喺本機 DB**:`20260817090000_ch031_agent_run_hidden_at`
 (CH-031)排喺 `20260817093556_w47_agent_profile`(W47)**之前**,但兩個都係獨立
 `ADD COLUMN`,**次序點都冇所謂** —— `deploy` 只 apply 未 apply 嗰啲,唔會因為「遲咗嚟嘅

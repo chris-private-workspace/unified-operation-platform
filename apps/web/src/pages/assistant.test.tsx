@@ -77,6 +77,9 @@ const AGENTS: AgentProfileOption[] = [
 ];
 const NO_AGENTS: AgentProfileOption[] = [];
 
+/** `F5-12` — one constant, so a rename cannot make one assertion vacuous. */
+const PICKER = 'Agent for new conversations';
+
 const renderScreen = () =>
   render(
     <MemoryRouter>
@@ -317,9 +320,18 @@ describe('Assistant (W48 F5)', () => {
     );
   });
 
+  /**
+   * 🔴 `F5-12` — the label says which QUESTION this answers.
+   *
+   * The picker chooses what the next thread runs on; the badge in the thread
+   * header says what the open one runs on. Live they sat one card apart showing
+   * different names, which reads as a contradiction rather than as two separate
+   * questions. Asserted on the full string, so shortening it back to "Agent"
+   * fails here rather than quietly in a screen reader.
+   */
   it('offers the picker only when there is a choice to make', () => {
     renderScreen();
-    expect(screen.getByLabelText('Agent')).toBeInTheDocument();
+    expect(screen.getByLabelText(PICKER)).toBeInTheDocument();
   });
 
   it('hides the picker when there is only one agent', () => {
@@ -329,7 +341,10 @@ describe('Assistant (W48 F5)', () => {
 
     renderScreen();
 
-    expect(screen.queryByLabelText('Agent')).toBeNull();
+    // ⚠️ Against the SAME constant as the assertion above. A hard-coded string
+    // here would keep passing after a label rename — green because the query
+    // matches nothing, not because the picker is gone.
+    expect(screen.queryByLabelText(PICKER)).toBeNull();
   });
 
   /**

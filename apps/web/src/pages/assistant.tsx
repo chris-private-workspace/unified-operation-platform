@@ -144,7 +144,12 @@ export function Assistant() {
               <Select
                 value={agentId ?? ''}
                 onChange={(e) => setPickedProfile(e.target.value)}
-                aria-label="Agent"
+                /* 🔴 `F5-12` — not just "Agent". This picker chooses what the
+                   NEXT thread runs on, while the badge in the thread header
+                   says what the OPEN one runs on. Live on 2026-08-19 the two
+                   sat one card apart showing different names, which reads as a
+                   contradiction rather than as two different questions. */
+                aria-label="Agent for new conversations"
               >
                 {agents.map((agent) => (
                   <option key={agent.id} value={agent.id}>

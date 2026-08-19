@@ -588,6 +588,10 @@ did」⇒ **orphan turn 唔使修**。
 - `F7-3` / `F7-4` DEV live · `F2-6` DEV migration —— **兩條都等同一次部署,但收法唔同**
 - `F8` 收尾(`F8-3` 要入 `R1`–`R7` + 今日新揾嘅兩條)
 
+> ⚠️ **上面呢三行已經過時**(`F8-6` grep 掃出)——`F5-8` 同日揀咗 **Option A** 兼落咗地,
+> `F8-3` 亦做咗(`R32`–`R37`)。**保留原文做日誌**,但由上而下讀嘅人會信咗佢,所以喺度講明。
+> 📌 呢個就係 `F8-6` 存在嘅理由:**一份日誌入面,每個「下一步」都係一個會過期嘅斷言。**
+
 ---
 
 ## Day 3(再續)— 2026-08-18 · `F5-8` Option A 落地
@@ -673,7 +677,7 @@ purple badge `#6d28d9` → **`#a982f0`**(DS-8 AI → purple)· picker `--card`
 **呢兩句意思完全唔同**:一個係「冇呢件貨」,一個係「系統壞咗」,而後者會令人去搵 IT。
 ⇒ **平台冇 bug**,但個 catalog 缺口**被 model 措辭放大咗**。
 
-### 🚧 `F5-12` — render 揭到一個「可能誤解」,今日刻意唔改
+### 🚧 `F5-12` — render 揭到一個「可能誤解」,當日刻意唔改
 
 同一屏入面:picker 顯示 `power-bi-only`(= **開新對話**會用邊個),而 thread header
 顯示 `gpt-5.6-luna`(= **呢條**用緊邊個)。兩者意思唔同,視覺上都係「一個 agent 名」。
@@ -682,3 +686,70 @@ purple badge `#6d28d9` → **`#a982f0`**(DS-8 AI → purple)· picker `--card`
 💡 最平嘅修法係 label 由 `Agent` 變 `Agent for new conversations`(純文字、零視覺
 改動,但要一併改 test)。**留畀 Chris 睇截圖判斷**,而 **`T2-d` dock 重用呢個 pattern
 之前一定要答**。
+
+---
+
+## Day 4(續)— 2026-08-19 · `F5-12` label + `F8` 收尾
+
+### `F5-12`:改咗 `aria-label`,而**視覺嗰半仲喺度**(要講清楚)
+
+`aria-label` 由 `Agent` → `Agent for new conversations`。⚠️ **呢個只幫讀屏用戶**,
+而我當初提出嗰個問題係**視覺**嘅(picker 同 badge 一屏之隔顯示唔同名)。⇒ 睇得見嘅
+用戶今日仍然見到同一個畫面。要解決視覺嗰半就要一個**可見** label,而嗰個係另一個決定。
+
+🔴 **順帶撞返 CLAUDE.md 記低嗰個形狀**:改完 label,`getByLabelText('Agent')` 果然紅
+(好信號 —— 證明條 assert 真係對住個 label),**但同一份 test 入面
+`queryByLabelText('Agent')` 照樣綠** —— 而佢綠嘅原因由「picker 唔喺度」變成
+「**個 label 唔叫呢個名**」。⇒ 抽咗一個 `PICKER` 常數,兩條 assert 共用:
+**一個 rename 唔應該令其中一條變成永遠綠。**
+
+---
+
+## Retro(`F8-2`)
+
+### 估算 vs 實際
+
+| | 估 | 實際 |
+|---|---|---|
+| Effort | ≈23h / 4 日(D1–D4) | 本機部分 **2 日**(08-18 / 08-19)做齊 `F0`–`F7` |
+| 最貴嗰件 | **`F4` streaming**(「平台完全冇做過嘅嘢」) | 🟢 **反而最平** —— `OQ-E` 揀 SSE + Chris 揀 turn-level notify,一個 transport 決定就令佢由「擴 seam + 第二份 ADR」變成「一個新 event type」 |
+| 冇估到嘅 | — | 🔴 **`F5-8`**(picker)整條唔喺 plan 入面。佢係 **live 驗揾出嚟嘅**,而唔係設計時諗到嘅 |
+
+📌 **`F4` 縮細仲有一個冇人預到嘅副作用**:`F5` 本來預咗 streaming 游標可能要開新
+primitive(H6 STOP),而**冇 token 流就冇游標** ⇒ 一個 transport 決定順手清走一個
+UI 風險。兩件事喺 plan 分開兩格,實際係同一個決定嘅兩面。
+
+### 🔴 本 phase 最值錢嘅四件事,冇一件係 test 揾出嚟
+
+| 揾到嘅嘢 | 邊度揾到 |
+|---|---|
+| `Thinking…` 同「已提出建議」同時出(`F5-7`) | **render** |
+| 兩個 active profile ⇒ 每條新對話第一句 400(`F5-8`) | **live** |
+| SSE 斷 3 次就永久靜默(`F7-5`) | **live** |
+| `businessAlias` 全 `null` ⇒ agent 幫唔到手兼且措辭似故障(`F7-6`) | **live** |
+
+而四件之中,**兩件係「test 結構上睇唔到」而唔係「漏咗寫 test」**:
+
+- `F5-7` — 五條 assert 每條都問「**某樣嘢**喺唔喺畫面」,缺陷係「**兩樣嘢一齊**喺畫面」
+- `F5-8` — UI test **mock 咗 mutation**,所以「送咩 body 落後端」呢件事喺嗰層根本冇人睇
+
+⇒ 同 W46 `B3`(兩個 provider spec 各自正確,而「兩個實作一致」冇一個單一 spec 講得到)
+**同族**。
+
+### 三個方法論教訓
+
+1. **一條 assert 綠,可以係因為佢瞄準嗰樣嘢改咗名** —— `F5-12` 個
+   `queryByLabelText('Agent')`。同 W47 嗰個「瞄準嘅嘢唔存在」同族,但今次係**我自己
+   一改 label 就即刻製造咗一條**。修法唔係加 assert,係抽一個共用常數。
+2. **一句會講大話嘅 log,同一個講大話嘅 gate 一樣危險** —— 我條 poll loop 跑完就印
+   `up after 125s`,而 process 早就死咗。**係我自己寫嗰句。**
+3. **跑錯 test 嘅紅,同真紅要分得出** —— `npx jest --rootDir apps/api` 出
+   `Unexpected token, expected "from"` 指住 `import type`,係 jest 冇載到 ts
+   transform。**真紅講邊條 assert 唔啱,呢種紅講「份檔解唔到」。**
+
+### 做得啱嘅
+
+- **開工前七條 OQ 全部答齊**,而其中兩條答咗細嗰邊,直接令 scope 由「兩份 ADR + 改既有表」
+  變成「一份 ADR + 純 additive schema」。⇒ **問夠問題嘅回報唔係「少啲返工」,係「少咗一整塊嘢要做」**
+- **`OQ-D` 做成對照實驗** —— 單邊觀察嗰陣,「filter 生效」同「model 唔想叫」睇落一模一樣
+- **W28 drift test 三次紅三次都啱**,每次都係 `+N` 零移除,逐行對過先 `-u`
