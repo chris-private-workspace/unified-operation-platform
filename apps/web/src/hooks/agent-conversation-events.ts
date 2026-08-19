@@ -34,6 +34,24 @@ import { API_BASE } from '@/lib/api';
  */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
+/**
+ * `EventSource.CLOSED`, written as the literal because jsdom does not define
+ * `EventSource` at all — see the guard in the effect.
+ *
+ * 🔴 W49 `F4-3`, found live on 2026-08-19 and not by reasoning. Killing the api
+ * and watching a real `EventSource` gave: **one** error event, `readyState` 2 at
+ * that moment, and still 2 twelve seconds later. The spec is explicit — a
+ * connection that fails with an HTTP error response (a dead api, a 403) is
+ * "failed" and is NOT reopened; only a dropped/interrupted connection is
+ * retried.
+ *
+ * ⇒ Counting to three would never have happened in the most common case, so the
+ * banner this whole feature exists for would never have appeared. `RISK R35`'s
+ * wording ("gives up after 3 consecutive failures") describes only the retrying
+ * path.
+ */
+const EVENT_SOURCE_CLOSED = 2;
+
 export interface ConversationEventsState {
   /**
    * True once this hook has stopped listening for good.
@@ -92,12 +110,24 @@ export function useAgentConversationEvents(
       void qc.invalidateQueries({ queryKey: ['agent', 'conversations', id] });
     };
     source.onerror = () => {
+      /**
+       * Two different failures arrive through this one handler, and they need
+       * opposite treatment:
+       *
+       *   CLOSED      — the browser has already given up and will not retry.
+       *                 Counting is pointless; say so now.
+       *   CONNECTING  — an ordinary blip, being retried. Saying anything here
+       *                 would flicker a banner on every reconnect, and a banner
+       *                 that cries wolf is one nobody reads.
+       */
+      if (source.readyState === EVENT_SOURCE_CLOSED) {
+        setDisconnected(true);
+        return;
+      }
+
       failures += 1;
       if (failures >= MAX_CONSECUTIVE_FAILURES) {
         source.close();
-        // ⚠️ Set only when giving up, not on every error. `EventSource` fires
-        // `onerror` for ordinary reconnects too, and a banner that flickered on
-        // each of those would train people to ignore it.
         setDisconnected(true);
       }
     };
