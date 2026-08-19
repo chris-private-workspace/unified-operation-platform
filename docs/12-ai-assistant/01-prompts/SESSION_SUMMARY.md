@@ -5,11 +5,13 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-19 · W48 進行中)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-19 · W48 已收)**
 
 **🔵🔵 W48 `agent-conversation`(Tier 2 `T2-c`)2026-08-19 已經 merge 落 `main`
 (PR #124,tip `3a9dd66`),branch 兩邊都刪咗。**
-⚠️ **但 phase 仲係 `active` 唔係 closed** —— `F2-6` / `F7-3` / `F7-4` 三條等一次 DEV 部署。
+🟢🟢 **同日再做咗部署 #11(`dev-b4915e9`)⇒ `F2-6` / `F7-3` / `F7-4` 三條一次過收晒,
+九條 G 全 ✅,phase `closed`。** ⚠️ 呢格上一版寫住「phase 仲係 `active`,三條等一次
+DEV 部署」—— **而家唔啱**,唔好照用。
 🔴 **「已 merge」逐個驗過**:15 個 commit 全部 `--is-ancestor` = `IN`,未入數 = 0。
 🟢 **今次冇 W47 嗰種 merge 風險**:開 PR 前實測 `HEAD..origin/main` = **0**(`main` 零 commit
 行前)⇒ 冇 auto-merge 靜靜出事嘅位。
@@ -19,8 +21,22 @@
 | 交付 | `AgentConversation` + **`AgentChatTurn`**(⚠️ **唔叫 `AgentTurn`** —— seam 一早有 `export interface AgentTurn`,`ADR-0041 Errata E1`)· `POST/GET /agent/conversations` + `@Sse(:id/events)` · 新 route **`/assistant`**(ADMIN + REGIONAL)· 新 **`GET /agent/profiles/options`**(ADMIN + **REGIONAL**,三個欄冇 `prompt`) |
 | ADR | **`0041` Accepted**(D1–D9 + Errata E1) |
 | test | api **1484 / 97 suites** · web **480 / 45** |
-| 剩低 | `F0`–`F7` 本機全收,`F8` 收尾中。**三條全部等同一次 DEV 部署,但收法唔同**:`F2-6` 部署完**自動**收 · `F7-3` 要部署完**再做一次對話** · `F7-4` = 唔可以睇 revision status 當證據 |
+| DEV | 🟢 **部署 #11 `dev-b4915e9`(2026-08-19)** —— `F2-6` `GET /agent/conversations` **200 `[]`**(🔴 **`200 唔係 500` 先係佐證**)· `F7-3` 4 turn 真對話 + **SSE 真通**(連線喺送 turn **之前**開好 ⇒ `changed` @ **79 ms**、`ping` 每 25 秒、**逐個即時到 ⇒ proxy 冇 buffer**;⚠️ 回應**冇** `x-accel-buffering` header ⇒ 唔 buffer 唔係靠佢擋,改 `nginx.conf.template` 就冇咗而**冇 test 會紅**)· `F7-4` 全程冇睇 revision status |
+| 剩低 | 🚧 **`F5-12` 一條**(picker 顯示「開新對話用邊個」vs thread header 顯示「呢條用緊邊個」,視覺上都係一個 agent 名。`aria-label` 已改,**視覺嗰半留畀 Chris 睇截圖判斷**)。🆕 部署順帶揭到 **`AGENT-RUN-CONVERSATION-ID`**(見下) |
 | risk | 六條入咗 `RISK_REGISTER.md` **`R32`–`R37`** |
+
+🔴 **部署 #11 順帶揭到兩件唔部署就唔會知嘅事:**
+
+- **DEV 零 profile**(連 inactive 都冇)⇒ 而 W47 **刻意冇 default profile**,所以 `/assistant`
+  **一句都問唔到**,要先建一個先驗得到 `F7-3`。**profile 係 DB 資料,唔跟部署走**(同
+  `CH-026 G-7` curate 同族;部署 #10 個 `G8` 撞過同一件事)。📌 plan 寫住「`F7-3` 差一次
+  操作」,實際係**四個**操作 ⇒ **「差一次操作」本身仲可以再拆**。
+- **`AgentRun.conversationId` 寫得入 DB,但 `GET /agent/runs` 同 `:id` 兩邊都冇暴露佢。**
+  🟢 **而唔可以由此推「DB 冇寫」** —— `agent-conversation.service.ts:97-99` 靠佢攞值先寫得到
+  assistant turn,而 turn **真係寫咗** ⇒ 個欄一定有值(**唔使查 DB 就成立**)。缺嘅係 read
+  model:W48 加個欄,而 W47 個全域 run 列表 select 喺自己嗰條 branch 上面唔知有佢 ⇒
+  **同 `CH-031` × `W47` auto-merge 縫隙同族,兩邊各自完全正確**。已登 `BACKLOG`
+  `AGENT-RUN-CONVERSATION-ID`;**本次刻意冇修**(郁 API contract)。
 
 🔴🔴 **本 phase 最值錢嘅四件事,冇一件係 test 揾出嚟:**
 
