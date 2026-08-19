@@ -58,6 +58,9 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
   - 🔴 **2026-08-19 更正咗個閘嘅內容,而更正嘅係我自己講過嘅嘢**。`F3` 收尾嗰陣我寫「`F7-3` 差嘅係**一次部署 + 一次對話**」—— **部署嗰半唔啱**。實測(同日兩次,`/api/docs/api-json` **逐 byte 一致 90341**):DEV **一早有 W48 code**(`/agent/conversations` · `/agent/profiles/options` · `AgentChatTurn` 全部喺 OpenAPI),兼且兩條新 route 返 **401 唔係 404** ⇒ 真喺 wire。
   - ⇒ **W48 三條(`F2-6` / `F7-3` / `F7-4`)全部卡同一樣嘢:一組 DEV 憑證**,唔係一次部署。**401 喺 guard 度擋住,由頭到尾未掂過 DB** ⇒ `F2-6`(migration)要一個**成功讀到新表**嘅 response 先證得到,而嗰個要登入。
   - 📌 **點解值得記**:「部署完自動收」同「要人做一次」係兩種唔同嘅等待,而 W47 收尾就係把 `G1`/`G8` 當成同一個阻塞先出事。今次我自己**又**混咗一次 —— 分別係今次係喺 checklist 度混,唔係喺收尾度
+  - 🟢🟢 **2026-08-19 呢道閘開咗 —— W48 `F7-3` 收咗**(SSE 喺 DEV 真通:送完一句之後冇 reload / 冇 navigate / 冇撳掣,`Thinking…` 自己消失兼答案自己出;落 API 對數 2 個 turn + run `completed`)。**`F2-6` 同 `F7-4` 同一次收埋** ⇒ **W48 三條清晒**。
+  - 🔴 **一直卡住嘅根因唔係部署,係 DEV 三個 `AgentProfile` 全部 `active: false`** ⇒ `/agent/profiles/options` 返 `[]` ⇒ 個 `New conversation` 掣 disabled。⚠️ **`GET /agent/profiles` 預設一樣只返 active**(`list(includeInactive = false)`)⇒ 第一次打嗰個 `[]` **差啲令我斷錯症做「一個 profile 都冇」**。
+  - 🔴 **方法論(要記住)**:我用咗幾個來回叫用戶睇畫面同貼 URL,而**一次 `browser_navigate` 就答晒** —— Playwright 用緊嗰個 browser **本身就有佢個 session**。⇒ **凡涉及一個用戶登入咗嘅網站,第一件事係試 Playwright,唔係問。**
   - 🟢 **Chris 2026-08-19 揀咗次序:先驗 DEV → 做 `F4` → 先 merge** ⇒ **W49 完整先入 `main`**(同 W47/W48 一致)。代價 = 要登 DEV **兩次**(一次收 W48 三條、一次收 `F5-4`)。**呢道閘唔喺 AI 度** —— DEV 要真人過 Entra MFA(沿用 `CH-015` / W44 `F9-8` 先例:SSO 嗰半結構上只有人做得到)
 - [ ] F4-1 重用 W48 嘅 hook(`useAgentConversation` / `useAddConversationTurn` / SSE),**唔另開一份 local state**(`R4`)
 - [ ] F4-2 🔴 **冇 approve 掣,兩條 test** —— behavioural + **source scan**。W48 `F5-4` 個教訓:第一條**只擋到一個串「Approve」嘅掣**,將來叫 `Accept` 嗰個一樣過

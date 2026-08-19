@@ -31,7 +31,7 @@
 - [x] F2-8 ✅ **`G3` 補咗 DB 層證據**(唔止 schema source scan)—— `information_schema.columns` 實查:`AgentMessage.runId` **`is_nullable = NO`** · `AgentMessage` **冇 `conversationId`**(query 三個欄只返兩行)· `AgentRun.conversationId` **`YES`**。⚠️ **而 `AgentMessage` 有 36 行真資料** ⇒ `G3` 唔係喺一張空表上面講嘢,`Alternative A` 要改語意嘅就係嗰 36 行
 - [x] F2-5 ✅ **`G3` 嘅 test 寫咗**(`agent-conversation.schema.spec.ts`,4 條)—— 🔴 **佢係 source scan 唔係 behaviour test,而呢個係本條嘅重點**:`Alternative A` 落地之後**行為完全一樣**,所以任何一條 behaviour test 都會照綠;要捉到佢就要釘 **shape**。**falsification 兩輪,零誤傷**:①`runId String?` ⇒ **恰好第 1 條紅** ②`AgentMessage` 加 `conversationId` + `AgentConversation` 加 `messages` ⇒ **恰好第 2、3 條紅**,兩輪紅嘅原因逐字都係想證嗰個(W47 `F3-6`「33 紅但原因唔啱」嘅反面)
 - [x] F2-7 ✅ **順手修咗一條被我擴大咗嘅既有 test**(`permissions.spec.ts` 「AgentPrincipal carries no Role」)—— 佢個 slice 終點寫死 `model AgentRun {`,而 **W47 插 `AgentProfile`、W48 再插兩個 model** 之後,佢已經靜靜檢查緊四個 model。🔴 **一直綠係彩數唔係設計**(我新加嘅 `AgentTurn.role` 係細楷,而 assert 係 `toContain('Role')` 大楷)⇒ 終點改成 `model AgentProfile {`,令佢真係只檢查佢名寫住嗰個 model
-- [ ] F2-6 DEV migration(部署之後)
+- [x] F2-6 ✅ **DEV migration 收咗(2026-08-19)** —— 🔴 **證據唔係「部署成功」,係兩個真 response**:`GET /api/agent/conversations` **200 `[]`**(表唔存在嘅話 Prisma 會 throw ⇒ 500)· 之後真開一條對話 ⇒ conversation detail **兩個 `turn`(user + assistant)** ⇒ **`AgentChatTurn` 唔止存在,仲寫得入** —— 呢個比單靠 `AgentConversation` 完整。⚠️ **全程冇睇 revision status**(即 `F7-4` 嗰條約束)
 
 ## `F3` — Conversation service + endpoint
 
@@ -87,8 +87,12 @@
 - [x] F7-2 ✅🔴 **`OQ-D` live 收咗,而且係對照實驗唔係單邊觀察** —— **唯一變數 = `requestId` 在唔在**,同一句說話 · 同一個 profile:**冇** request context ⇒ agent 答「**I can't access pending requests or REQ0044067 with the available tools**」兼且 `steps` 只有一個 `start`(`detail` 明文 `with no request context`)= **零 tool call**;**有** request context ⇒ 真叫 `list_pending_requests` 並列出兩張單。🔴 **點解要做對照**:單睇前者,「filter 生效」同「model 純粹唔想叫」**睇落一模一樣** —— 呢個就係 W47 `G8` 嗰個教訓(部署唔會幫你做對照,要人再做一次)
 - [x] F7-5 ✅ **斷線重連,行為問到底** —— 殺 api 鏈(保住 web + 個頁面)~140 秒再起返。①斷線期間送 turn ⇒ 畫面**唔郁**(7 個氣泡,而 DB 已經 9 個)②切走一條 thread 再切返 ⇒ **即刻 9 個** ⇒ 資料一直喺度,**唔通嘅係 SSE 唔係 read** ③remount 之後再送 ⇒ **自動變 11 個,冇 click 過** ⇒ 重連真通。📌 **成因唔係 bug 係一個有名有姓嘅 bound**:`MAX_CONSECUTIVE_FAILURES = 3`,而佢寫落去係為咗擋 403(`EventSource` 唔畀睇 status code)。🔴 **但 W48 把佢放大咗**:hook 自己個 doc 講「a thread has no terminal state — it is idle between questions」⇒ **一條 thread 活得遠耐過一個 run**,撞正一次 api 重啟(= 一次部署)嘅機會高好多,而**畫面唔會講**。⇒ 登 `F8-3`
 - [x] F7-6 ✅ **順帶三個 live 發現(唔喺原 checklist,但唔記低就會失去)** —— ①🟢 **`scrubPii` 真生效**:`list_pending_requests` 個 tool_result 入面 `targetUpn` 係 `[redacted-email]`(H4)②🔴 **`D3` 收窄咗「見唔到」,收窄唔到「填錯」**:model 攞人講嘅 `REQ0044067` 當 `requestId` 去叫 `get_request` ⇒ `Request not found`。**失敗方向係安全嘅**(唔存在就 404),但「填一個存在而屬於第二個 OpCo 嘅 id」呢條路**本次冇驗** ⇒ 登 `F8-3` ③🔴🔴 **`search_catalog("Power BI Pro")` 返 `[]`,而 2026-08-19 再撞一次之後多咗一層要記** —— tool step **status = `ok`** 返空陣列(即「**搵唔到**」),而 agent 對用戶講「I **couldn't retrieve** the active catalogue」(即「**攞唔到**」)。**呢兩句對用戶意思完全唔同**:一個係「冇呢件貨」,一個係「系統壞咗」,而後者會令人去搵 IT。⇒ **平台冇 bug,但個 catalog 缺口被 model 措辭放大咗**。原文如下: —— catalog 得 `POWER_BI_PRO` 而 **101 個 SKU 個 `businessAlias` 全部 `null``**,即人話講法對唔到。agent 冇亂估,明文答「can't propose the licence without guessing」(**好行為**),但代價係佢幫唔到手。⇒ catalog curation 缺口,**唔喺 W48 scope**(同 `CH-026 G-7` 同族),登 `BACKLOG`
-- [ ] F7-3 🚧 DEV:migration + 一條真對話 + **一次真 SSE 通知 + refetch**(⚠️ **唔可以引用 `B6`** —— 佢證嘅係 heartbeat + 短事件)。🔴 **本條 2026-08-19 `F8-1` 掃出寫錯咗兼更正**:原文寫「一次真 **token stream**」,而 `F4` 08-18 已經由 token-by-token 收窄做 **turn-level notify**(plan §8 有記,理由係真 token 流要擴 seam = H1,兼且 token 未經 `scrubPii` 就落 wire)⇒ **驗嘅嘢由頭到尾唔應該係 token**。📌 呢個就係 W47 教落「`F8-1` 要逐條掃 acceptance 句」嘅原因 —— plan §2 個 `F4` acceptance 其實**冇**寫 token(佢寫「DEV 真通」),stale 嘅只有 checklist 同 `G9` 兩處措辭
-- [ ] F7-4 ⚠️ **唔可以睇 revision status 當證據**(entrypoint 令 migrate 失敗 NON-FATAL)
+- [x] F7-3 ✅ **2026-08-19 收咗,而收貨標準係「我冇撳過任何嘢」** —— 送出 `What licence SKUs are available in the catalogue?` 之後**冇 reload · 冇 navigate · 冇撳掣**,`Thinking…` **自己消失**,agent 答案**自己出喺畫面** ⇒ **SSE 喺 DEV 真通**。落 API 對數:2 個 turn(user + assistant)· run `completed` · `profileId` = `w48-deploy-check`。
+  🔴 **點解一直做唔到,而佢唔係「未部署」**:DEV **三個 `AgentProfile` 全部 `active: false`** ⇒ `/agent/profiles/options` 返 `[]` ⇒ `/assistant` 個 `New conversation` **disabled**。⚠️ **`GET /agent/profiles` 預設都係只返 active**(`list(includeInactive = false)`),所以第一次打嗰個 `[]` **差啲令我斷錯症做「一個 profile 都冇」** —— 要 `?includeInactive=true` 先見到三個。
+  🟢 **順帶兩個一直未知嘅事實**:**Azure OpenAI 喺 DEV 通**(`w48-deploy-check` 2026-08-19 02:25/02:26 兩個 run 都 `completed`,啟動者係 **`admin@uop.local` break-glass** 唔係 SSO 帳號)· **deployment name = `gpt-5.6-luna`**。
+  ⚠️ **做完把 profile 停返 `active: false`**,三個 flag 同做之前逐個一致;留低一條測試 conversation(`AgentConversation` 冇 `DELETE`,`ADR-0041 D7`)
+(⚠️ **唔可以引用 `B6`** —— 佢證嘅係 heartbeat + 短事件)。🔴 **本條 2026-08-19 `F8-1` 掃出寫錯咗兼更正**:原文寫「一次真 **token stream**」,而 `F4` 08-18 已經由 token-by-token 收窄做 **turn-level notify**(plan §8 有記,理由係真 token 流要擴 seam = H1,兼且 token 未經 `scrubPii` 就落 wire)⇒ **驗嘅嘢由頭到尾唔應該係 token**。📌 呢個就係 W47 教落「`F8-1` 要逐條掃 acceptance 句」嘅原因 —— plan §2 個 `F4` acceptance 其實**冇**寫 token(佢寫「DEV 真通」),stale 嘅只有 checklist 同 `G9` 兩處措辭
+- [x] F7-4 ✅ **由頭到尾冇睇過 revision status** —— 全部結論來自真 response(`200 []` · 兩個 turn · `Thinking…` 自己消失)。呢條唔係一件工作,係一條約束,而佢**滿足咗**
 
 > 🔴 **2026-08-19(W49 Day 4)實測補一個座標,因為佢改變咗「仲差咩」嘅答案**:
 > **DEV 一早有 W48 code,唔使再部署。**`/api/docs/api-json` 同日兩次 **逐 byte 一致
@@ -96,7 +100,12 @@
 > web bundle 有 `/assistant` · `Agent for new conversations`(picker)· `New conversation`;
 > `/api/auth/sso/status` = `{"enabled":true}`。兩條新 route 返 **401 唔係 404** ⇒ 真喺 wire。
 >
-> ⇒ **三條全部卡同一樣嘢:一次真人登入**,唔係一次部署。
+> 🟢🟢 **同日稍後三條全部收咗** —— 而收佢哋嘅唔係「真人登入」,係 **Playwright 用緊嘅
+> browser 本身就有 Chris 個 session** ⇒ AI 做得到。呢個推翻咗下面嗰句同埋我一直嘅假設。
+> 📌 **教訓**:我用咗幾個來回問用戶睇畫面 / 貼 URL,而**一次 `browser_navigate` 就答晒**。
+> 用戶要提我先諗到。⇒ **凡涉及一個「用戶登入咗」嘅網站,第一件事係試 Playwright,唔係問。**
+>
+> ⇒ ~~三條全部卡同一樣嘢:一次真人登入~~,唔係一次部署。
 > **401 喺 guard 度擋住,由頭到尾未掂過 DB** ⇒ `F2-6`(migration)要一個**成功讀到新表**
 > 嘅 response 先證得到 —— 而「一入到 `/assistant` 見到對話列表而唔係 500」就係嗰個 response。
 >
