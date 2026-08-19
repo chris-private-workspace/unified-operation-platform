@@ -26,7 +26,8 @@ import {
   runAwaitingDecision,
 } from '@/lib/assistant';
 import { formatDateTime } from '@/lib/format';
-import type { AgentChatTurn, AgentConversation } from '@/lib/api-types';
+import type { AgentConversation } from '@/lib/api-types';
+import { TurnBubble } from '@/components/agent/turn-bubble';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -403,17 +404,3 @@ function ThreadRow({
  * Depth comes from a 1px border and a surface tint, never a shadow or a
  * gradient (DS-7).
  */
-function TurnBubble({ turn }: { turn: AgentChatTurn }) {
-  const mine = turn.role === 'user';
-  return (
-    <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-lg border px-[13px] py-[9px] text-[12.5px] leading-[1.55] ${
-          mine ? 'border-border bg-panel' : 'border-border bg-card'
-        }`}
-      >
-        {turn.content}
-      </div>
-    </div>
-  );
-}

@@ -100,7 +100,19 @@ beforeEach(() => {
   vi.mocked(useCreateConversation).mockReturnValue(mutation());
   vi.mocked(useAddConversationTurn).mockReturnValue(mutation());
   vi.mocked(useArchiveConversation).mockReturnValue(mutation());
-  vi.mocked(useAgentConversationEvents).mockReturnValue(undefined);
+  /**
+   * ⚠️ W49 `F4-3` gave this hook a return value. `/assistant` still ignores it,
+   * so nothing here behaves differently — but the mock has to satisfy the type,
+   * and tsc is what noticed: every test in this file stayed green.
+   *
+   * 🔴 That the screen ignores `disconnected` is a real gap, not a decision —
+   * `R35` applies to `/assistant` too, just less often than to a dock somebody
+   * leaves open all day. Logged rather than fixed here (not this phase's file).
+   */
+  vi.mocked(useAgentConversationEvents).mockReturnValue({
+    disconnected: false,
+    reconnect: vi.fn(),
+  });
 });
 
 describe('Assistant (W48 F5)', () => {

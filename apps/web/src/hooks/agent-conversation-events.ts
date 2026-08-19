@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { API_BASE } from '@/lib/api';
 
@@ -34,8 +34,40 @@ import { API_BASE } from '@/lib/api';
  */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-export function useAgentConversationEvents(id: string | undefined): void {
+export interface ConversationEventsState {
+  /**
+   * True once this hook has stopped listening for good.
+   *
+   * 🔴 W49 `F4-3` / `RISK R35`. The bound above is right, but until now nothing
+   * could SEE it fire: the hook returned void, so a thread that had gone silent
+   * looked exactly like a thread nobody had written to. That is survivable on
+   * `/assistant`, which a person opens deliberately and leaves; the dock is open
+   * across a whole session, so it will meet an api restart — one deploy is
+   * enough — far more often, and the screen said nothing.
+   */
+  disconnected: boolean;
+  /**
+   * Resubscribe after giving up.
+   *
+   * Before this existed the only cure was remounting the hook — in practice
+   * "switch to another thread and switch back", which W48 `F7-5` found by
+   * accident and no user would ever guess.
+   */
+  reconnect: () => void;
+}
+
+export function useAgentConversationEvents(
+  id: string | undefined,
+): ConversationEventsState {
   const qc = useQueryClient();
+  const [disconnected, setDisconnected] = useState(false);
+  /** Bumping this re-runs the effect, which is what "resubscribe" means here. */
+  const [attempt, setAttempt] = useState(0);
+
+  const reconnect = useCallback(() => {
+    setDisconnected(false);
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     // Missing in jsdom and in any SSR pass. Absence must mean "no live
@@ -53,6 +85,7 @@ export function useAgentConversationEvents(id: string | undefined): void {
     let failures = 0;
     source.onopen = () => {
       failures = 0;
+      setDisconnected(false);
     };
     source.onmessage = () => {
       // The payload is not read. See the file header.
@@ -60,9 +93,17 @@ export function useAgentConversationEvents(id: string | undefined): void {
     };
     source.onerror = () => {
       failures += 1;
-      if (failures >= MAX_CONSECUTIVE_FAILURES) source.close();
+      if (failures >= MAX_CONSECUTIVE_FAILURES) {
+        source.close();
+        // ⚠️ Set only when giving up, not on every error. `EventSource` fires
+        // `onerror` for ordinary reconnects too, and a banner that flickered on
+        // each of those would train people to ignore it.
+        setDisconnected(true);
+      }
     };
 
     return () => source.close();
-  }, [id, qc]);
+  }, [id, qc, attempt]);
+
+  return { disconnected, reconnect };
 }
