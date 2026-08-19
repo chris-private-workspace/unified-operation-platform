@@ -5,6 +5,7 @@ import {
   Building2,
   Cable,
   Inbox,
+  MessageSquare,
   Layers,
   LayoutDashboard,
   LineChart,
@@ -29,6 +30,7 @@ import {
   canManageAgentProfiles,
   canRepairOutbound,
   canSeeAdminNav,
+  canUseAgent,
 } from '@/lib/roles';
 import type { Role } from '@/lib/api-types';
 import { roleLabel, roleTone } from '@/lib/user-admin';
@@ -39,6 +41,15 @@ interface NavEntry {
   Icon: LucideIcon;
   count?: number;
   countTone?: 'neutral' | 'danger';
+  /**
+   * W48 F5 — optional role gate, mirroring what `ADMIN` entries already carry.
+   *
+   * Absent means "everyone signed in", which is what every prototype entry is.
+   * Added because Assistant is an OPERATIONS tool that OPCO_IT may not use
+   * (ADR-0041 D6) — and putting it under Administration to borrow that
+   * section's gating would have filed a daily working tool under admin.
+   */
+  visible?: (role: Role | undefined) => boolean;
 }
 
 // OPERATIONS nav (design_handoff full-console). Counts are placeholder until the
@@ -52,6 +63,20 @@ const OPERATIONS: NavEntry[] = [
     label: 'Drift Alerts',
     Icon: TriangleAlert,
     countTone: 'danger',
+  },
+  // W48 F5 — Assistant (Tier 2 `T2-c`). An operations tool, not an admin one:
+  // it is where a person asks the agent about a request, and the answer still
+  // goes through the same approval gate as any run (ADR-0041 D8).
+  //
+  // 🔴 Its own predicate (`canUseAgent`), not `canManageAgentProfiles`: "may I
+  // ask the agent a question?" and "may I change which model every future run
+  // uses?" are different questions, and one moving must not silently move the
+  // other — the same reasoning `/agent` recorded for itself one phase earlier.
+  {
+    path: '/assistant',
+    label: 'Assistant',
+    Icon: MessageSquare,
+    visible: canUseAgent,
   },
 ];
 
@@ -157,21 +182,26 @@ export function Sidebar() {
     pathname === path || (path !== '/' && pathname.startsWith(`${path}/`));
 
   const renderNav = (entries: NavEntry[]) =>
-    entries.map(({ path, label, Icon, count, countTone }) => {
-      const badge = path === '/drift' ? driftCount || null : (count ?? null);
-      return (
-        <NavItem
-          key={path}
-          icon={<Icon size={16} strokeWidth={2} />}
-          label={label}
-          collapsed={collapsed}
-          active={isActive(path)}
-          count={badge}
-          countTone={countTone}
-          onClick={() => navigate(path)}
-        />
-      );
-    });
+    entries
+      // W48 F5 — an entry with no predicate is visible to everyone signed in,
+      // which is what every prototype entry is. The server's 403 stays the
+      // authority; this only decides what the nav offers.
+      .filter(({ visible }) => (visible ? visible(user.role) : true))
+      .map(({ path, label, Icon, count, countTone }) => {
+        const badge = path === '/drift' ? driftCount || null : (count ?? null);
+        return (
+          <NavItem
+            key={path}
+            icon={<Icon size={16} strokeWidth={2} />}
+            label={label}
+            collapsed={collapsed}
+            active={isActive(path)}
+            count={badge}
+            countTone={countTone}
+            onClick={() => navigate(path)}
+          />
+        );
+      });
 
   return (
     <aside

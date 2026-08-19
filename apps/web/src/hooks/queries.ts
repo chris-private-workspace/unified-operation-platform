@@ -5,7 +5,9 @@ import type {
   AdminOpco,
   AdminUser,
   AgentKillSwitchStatus,
+  AgentConversation,
   AgentProfile,
+  AgentProfileOption,
   AgentReviewStats,
   AgentRun,
   AgentRunPage,
@@ -372,6 +374,26 @@ export function useAgentProfiles() {
 }
 
 /**
+ * W48 `F5-8` — the profiles somebody can start a conversation ON.
+ *
+ * 🔴 A different endpoint from `useAgentProfiles`, not a filter of it, and the
+ * difference is a permission: this one is ADMIN + REGIONAL and carries no
+ * prompt. A REGIONAL calling `/agent/profiles` gets a 403, which is why the
+ * assistant screen could not simply reuse the registry query.
+ *
+ * ⚠️ Active only, and no `includeInactive`. A retired profile is not something
+ * to pick — choosing one would be refused at the first turn instead of at the
+ * pick.
+ */
+export function useAgentProfileOptions() {
+  return useQuery({
+    queryKey: ['agent', 'profile-options'],
+    queryFn: () => apiGet<AgentProfileOption[]>('/agent/profiles/options'),
+    retry: retryUnless403,
+  });
+}
+
+/**
  * W47 F5 — the global run list, cursor-paged.
  *
  * ⚠️ The filters are part of the query key, so each combination caches
@@ -384,6 +406,34 @@ export function useAgentRuns(filters: AgentRunFilters) {
     queryKey: ['agent', 'runs', 'all', filters],
     queryFn: () =>
       apiGet<AgentRunPage>(`/agent/runs${agentRunsQueryString(filters)}`),
+    retry: retryUnless403,
+  });
+}
+
+/**
+ * W48 F5 — this person's threads.
+ *
+ * ⚠️ Archived ones are NOT fetched. `/assistant` is a place to talk, not to
+ * manage a history: an archived thread is one somebody put away, and the way
+ * back is to unarchive it deliberately rather than to scroll past it. That
+ * differs from `useAgentProfiles`, which DOES ask for retired rows — because
+ * that screen is the only place a retired profile can be brought back, and
+ * hiding it there would strand it.
+ */
+export function useAgentConversations() {
+  return useQuery({
+    queryKey: ['agent', 'conversations'],
+    queryFn: () => apiGet<AgentConversation[]>('/agent/conversations'),
+    retry: retryUnless403,
+  });
+}
+
+/** One thread, with its turns and the runs it started. */
+export function useAgentConversation(id: string | undefined) {
+  return useQuery({
+    queryKey: ['agent', 'conversations', id],
+    queryFn: () => apiGet<AgentConversation>(`/agent/conversations/${id}`),
+    enabled: Boolean(id),
     retry: retryUnless403,
   });
 }

@@ -1,8 +1,15 @@
 import type { Prisma } from '@prisma/client';
 import { AgentProfileController } from './agent-profile.controller';
-import { AgentProfileService, PROFILE_SELECT } from './agent-profile.service';
+import {
+  AgentProfileService,
+  PROFILE_OPTION_SELECT,
+  PROFILE_SELECT,
+} from './agent-profile.service';
 import type { AuthUser } from '../auth/current-user.decorator';
-import { AgentProfileDto } from './dto/agent-profile.dto';
+import {
+  AgentProfileDto,
+  AgentProfileOptionDto,
+} from './dto/agent-profile.dto';
 
 /**
  * W47 `F2-7` — the layer BUG-011 fell through, tested before it can.
@@ -35,6 +42,11 @@ describe('AgentProfileController (F2-7)', () => {
   const build = () => {
     const service = {
       list: jest.fn().mockResolvedValue([profileRow]),
+      listOptions: jest
+        .fn()
+        .mockResolvedValue([
+          { id: profileRow.id, name: profileRow.name, model: profileRow.model },
+        ]),
       create: jest.fn().mockResolvedValue(profileRow),
       update: jest.fn().mockResolvedValue(profileRow),
     };
@@ -151,6 +163,52 @@ describe('AgentProfileController (F2-7)', () => {
     expect(Object.keys(documented)).toEqual(
       expect.arrayContaining(Object.keys(selected)),
     );
+  });
+
+  // ── F5-8 — the picker's narrower read ─────────────────────────
+
+  it('documents exactly the fields the picker selects', () => {
+    const selected: Record<keyof typeof PROFILE_OPTION_SELECT, true> = {
+      id: true,
+      name: true,
+      model: true,
+    };
+    const documented: Record<keyof AgentProfileOptionDto, true> = {
+      id: true,
+      name: true,
+      model: true,
+    };
+
+    expect(Object.keys(documented).sort()).toEqual(
+      Object.keys(selected).sort(),
+    );
+  });
+
+  /**
+   * 🔴 The load-bearing assertion here is an ABSENCE, which is why it is
+   * asserted two ways.
+   *
+   * `G5` says `prompt` does not leave through a new endpoint, and this endpoint
+   * is ADMIN + REGIONAL — wider than anything else that touches profiles. A
+   * missing key and a key set to `undefined` are different things to
+   * `toHaveProperty` in only one direction, so the count is asserted as well:
+   * that is the lesson from BUG-011's `toHaveProperty(key)` passing against an
+   * `undefined` value.
+   */
+  it('never selects the prompt for the picker', () => {
+    expect(PROFILE_OPTION_SELECT).not.toHaveProperty('prompt');
+    expect(Object.keys(PROFILE_OPTION_SELECT)).toHaveLength(3);
+  });
+
+  it('serves the picker from listOptions, not from the registry list', async () => {
+    const { controller, service } = build();
+
+    await controller.options();
+
+    expect(service.listOptions).toHaveBeenCalled();
+    // The registry list carries `prompt` and is ADMIN-only. Reaching for it
+    // here would hand a REGIONAL every prompt on the platform.
+    expect(service.list).not.toHaveBeenCalled();
   });
 
   /**

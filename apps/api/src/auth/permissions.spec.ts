@@ -64,7 +64,10 @@ function loadControllers(): unknown[] {
  * meant a second source — the exact thing W28 exists to prevent.
  */
 function loadAgentTools() {
-  return new AgentToolRegistry(undefined as unknown as PrismaService).list();
+  // W48 F3-4 — `all()`, matching `PermissionsController`. The matrix describes
+  // what the platform has built; filtering it by a run's context would make the
+  // locked snapshot depend on whose run was asked about.
+  return new AgentToolRegistry(undefined as unknown as PrismaService).all();
 }
 
 describe('permission matrix (derived from @Roles + the tool registry)', () => {
@@ -125,7 +128,29 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         // 🔴 And again the matrix demanded this line rather than review noticing
         // — third time an agent write surface has been caught here. That is the
         // test working, not the test being annoying.
+        //
+        // ⚠️ W48 `F5-8` — ONE route on this controller is wider:
+        // `GET /agent/profiles/options → [ADMIN,REGIONAL]`, three columns and no
+        // `prompt`. The paragraph above is about CHANGING what every future run
+        // does; being unable to SEE which agents exist is a different thing, and
+        // it cost something real — with two active profiles and no default (by
+        // design), every REGIONAL conversation refused at its first turn with no
+        // way to answer the refusal. The snapshot carries both lines, which is
+        // the point of listing routes rather than controllers.
         'AgentProfileController',
+        /**
+         * W48 F3 / ADR-0041 D6 — /agent/conversations, @Roles(ADMIN,REGIONAL),
+         * the same width as AgentRunController and for the same reason: a chat
+         * runs the same tools through the same approval gate (D8), so it is not
+         * a more dangerous surface — only a lighter-feeling one.
+         *
+         * 🔴 The matrix cannot show the bound that actually applies here. A
+         * conversation may have NO request, so there is no OpCo to scope by,
+         * and the service checks OWNERSHIP instead — a row-level fact, invisible
+         * to this table exactly like the OpCo caveat the endpoint description
+         * already carries.
+         */
+        'AgentConversationController',
         // W46 F8 — /agent/runs (start, read, abort), @Roles(ADMIN,REGIONAL).
         // Neither ADR-0036 nor the plan settles who may START a run, so this
         // matches the approval surface: a run costs a model call and creates
@@ -341,9 +366,17 @@ describe('permission matrix (derived from @Roles + the tool registry)', () => {
         join(__dirname, '..', '..', 'prisma', 'schema.prisma'),
         'utf8',
       );
+      /**
+       * ⚠️ W48 F2 — the end marker was `model AgentRun {`, which stopped being
+       * the next model the moment W47 inserted `AgentProfile` between the two
+       * (and W48 then inserted two more). The slice silently grew to cover
+       * models this assertion says nothing about; it stayed green by luck, not
+       * by design. Anchored on the model that actually follows instead, so the
+       * block is what the test name claims it is.
+       */
       const block = schema.slice(
         schema.indexOf('model AgentPrincipal {'),
-        schema.indexOf('model AgentRun {'),
+        schema.indexOf('model AgentProfile {'),
       );
       expect(block).toContain('model AgentPrincipal {');
       expect(block).not.toContain('Role');

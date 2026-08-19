@@ -69,10 +69,33 @@ export const AGENT_RUN_JOB = 'execute';
  */
 export const AGENT_RUN_CHANGED = 'agent-run-changed';
 
+/**
+ * W48 F4 / ADR-0041 D5 — the same channel, for a conversation.
+ *
+ * 🔴 A SECOND event rather than reusing `AGENT_RUN_CHANGED`, because the two
+ * answer different questions: one browser is watching a run's steps, another is
+ * watching a thread that may start many runs. Filtering run events by
+ * conversation would need the run's row to know which thread it belongs to —
+ * i.e. a database read inside a transport that is deliberately ignorant
+ * (see this file's opening note).
+ *
+ * 🔴 And it carries `conversationId` and NOTHING else, exactly as F10 rules for
+ * runs. Chris 2026-08-18 chose turn-level notify over a token stream, and this
+ * is the half of that decision that survives in code: the reply arrives by
+ * refetch, so this transport never carries model output — which means it never
+ * becomes a second place `scrubPii` has to be remembered.
+ */
+export const AGENT_CONVERSATION_CHANGED = 'agent-conversation-changed';
+
 /** What `publishEvent` sends and `QueueEvents` hands back. */
 interface AgentRunChangedEvent {
   eventName: typeof AGENT_RUN_CHANGED;
   runId: string;
+}
+
+interface AgentConversationChangedEvent {
+  eventName: typeof AGENT_CONVERSATION_CHANGED;
+  conversationId: string;
 }
 
 /**
@@ -85,9 +108,20 @@ interface AgentRunEventsListener extends QueueEventsListener {
   'agent-run-changed': (args: AgentRunChangedEvent, id: string) => void;
 }
 
+interface AgentConversationEventsListener extends QueueEventsListener {
+  'agent-conversation-changed': (
+    args: AgentConversationChangedEvent,
+    id: string,
+  ) => void;
+}
+
 /** What an SSE subscriber receives. `data` is what lands in the browser. */
 export interface AgentRunChangeMessage {
   data: { runId: string; type: 'changed' | 'ping' };
+}
+
+export interface AgentConversationChangeMessage {
+  data: { conversationId: string; type: 'changed' | 'ping' };
 }
 
 /** What the worker's job payload carries. One id — see F10. */
@@ -259,6 +293,78 @@ export class AgentRunQueue implements OnModuleInit, OnModuleDestroy {
         `Agent run ${runId} changed, but the change could not be published: ${message}`,
       );
     }
+  }
+
+  /**
+   * W48 F4 — the same notification, for a thread.
+   *
+   * 🔴 Never throws, for the reason `publishChanged` gives above: the truth is
+   * the row, and a failed publish must not undo a turn that really was stored.
+   *
+   * ⚠️ `F4-2` — this is called for a FAILED run as well as a finished one, and
+   * that is the whole of "fail loud" on this side. A conversation that is only
+   * told about successes leaves the browser showing "thinking…" forever, which
+   * is the one outcome worse than an error: the person waits instead of
+   * retrying. `agent-conversation.service.spec.ts` pins it.
+   */
+  async publishConversationChanged(conversationId: string): Promise<void> {
+    if (!this.producer) return;
+    try {
+      const event: AgentConversationChangedEvent = {
+        eventName: AGENT_CONVERSATION_CHANGED,
+        conversationId,
+      };
+      await this.producer.publishEvent(event);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Conversation ${conversationId} changed, but the change could not be published: ${message}`,
+      );
+    }
+  }
+
+  /**
+   * A stream of "this thread changed" for one conversation.
+   *
+   * Same shape as `changes` below, including the opening tick — a turn can be
+   * answered between the POST returning and the browser opening its
+   * EventSource, and without that tick the browser waits for an event that has
+   * already happened.
+   */
+  conversationChanges(
+    conversationId: string,
+  ): Observable<AgentConversationChangeMessage> {
+    const changed$ = new Observable<AgentConversationChangeMessage>(
+      (subscriber) => {
+        const events = this.events;
+        const listener = (args: AgentConversationChangedEvent) => {
+          if (args.conversationId === conversationId) {
+            subscriber.next({ data: { conversationId, type: 'changed' } });
+          }
+        };
+
+        subscriber.next({ data: { conversationId, type: 'changed' } });
+        events?.on<AgentConversationEventsListener>(
+          AGENT_CONVERSATION_CHANGED,
+          listener,
+        );
+
+        return () => {
+          events?.off<AgentConversationEventsListener>(
+            AGENT_CONVERSATION_CHANGED,
+            listener,
+          );
+        };
+      },
+    );
+
+    const heartbeat$ = interval(this.heartbeatMs).pipe(
+      map((): AgentConversationChangeMessage => ({
+        data: { conversationId, type: 'ping' },
+      })),
+    );
+
+    return merge(changed$, heartbeat$);
   }
 
   /**

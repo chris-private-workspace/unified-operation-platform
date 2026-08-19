@@ -157,9 +157,43 @@ export class AgentToolRegistry {
     this.tools = Object.freeze(defined.map((tool) => this.capped(tool)));
   }
 
-  /** Every tool an agent has. There is no second source. */
-  list(): readonly AgentTool[] {
+  /**
+   * The allow-list itself — every tool that exists, regardless of who asks.
+   *
+   * ⚠️ This is NOT what a runtime should hand to a model. It answers "what has
+   * the platform built", which is what a spec asserts and what a resume needs
+   * in order to recognise a pause it is being asked to decide. `list(ctx)`
+   * below answers "what may THIS run use", and that is the one a provider
+   * wants.
+   *
+   * 🔴 The split is why `list` kept the shorter name and gained a required
+   * argument: a provider that calls `all()` is visibly reaching past a
+   * boundary, and a provider that forgets `list`'s argument does not compile.
+   * The alternative — an optional argument defaulting to "everything" — fails
+   * open, and W48 F3-4 is a boundary where failing open means a chat with no
+   * request reading every request in the operator's OpCo.
+   */
+  all(): readonly AgentTool[] {
     return this.tools;
+  }
+
+  /**
+   * W48 F3-4 / ADR-0041 D3 — the tools THIS run may use.
+   *
+   * A run with no request (`ctx.requestId === null`) does not get the
+   * request-scoped tools. Not "gets them and is refused" — they are absent
+   * from what the model is shown, which is ADR-0036 D2's whole argument
+   * applied to a narrower question than it was written for.
+   *
+   * ⚠️ What this deliberately does NOT do is narrow OpCo scope. That still
+   * comes from `ctx.user`, inside each tool, unchanged. A chat WITH a request
+   * gets exactly the tools a run has always had — including the ability to
+   * name a different request in the same OpCo, which is a pre-existing
+   * property of `get_request` and not something this phase decided.
+   */
+  list(ctx: AgentToolContext): readonly AgentTool[] {
+    if (ctx.requestId !== null) return this.tools;
+    return this.tools.filter((tool) => !tool.requestScoped);
   }
 
   get(name: string): AgentTool | undefined {
@@ -238,6 +272,10 @@ export class AgentToolRegistry {
         additionalProperties: false,
       },
       needsApproval: false,
+      // Takes no request id and still counts (W48 F3-4): it RETURNS them, so a
+      // context-free chat that kept this would have the starting point for
+      // every other request tool.
+      requestScoped: true,
       execute: async (_args: unknown, ctx: AgentToolContext) => {
         const rows = await this.prisma.request.findMany({
           where: {
@@ -286,6 +324,7 @@ export class AgentToolRegistry {
         additionalProperties: false,
       },
       needsApproval: false,
+      requestScoped: true,
       execute: async (args: unknown, ctx: AgentToolContext) => {
         const requestId = requireString(asRecord(args), 'requestId');
 
@@ -373,6 +412,10 @@ export class AgentToolRegistry {
         additionalProperties: false,
       },
       needsApproval: false,
+      // The catalogue belongs to nobody's request. A chat with no context can
+      // still answer "what is the GUID for E5", and that is the kind of
+      // question D3 was never trying to stop.
+      requestScoped: false,
       execute: async (args: unknown) => {
         const query = optionalString(asRecord(args), 'query').trim();
         const match = query
@@ -440,6 +483,9 @@ export class AgentToolRegistry {
         additionalProperties: false,
       },
       needsApproval: false,
+      // Keyed by OpCo and SKU, never by a request — and already bounded by
+      // `assertOpcoScope` below.
+      requestScoped: false,
       execute: async (args: unknown, ctx: AgentToolContext) => {
         const record = asRecord(args);
         const opcoId = requireString(record, 'opcoId');
@@ -519,6 +565,7 @@ export class AgentToolRegistry {
        * be read as "what happens after a human said yes".
        */
       needsApproval: true,
+      requestScoped: true,
       execute: async (args: unknown, ctx: AgentToolContext) => {
         const record = asRecord(args);
         const requestId = requireString(record, 'requestId');
@@ -657,6 +704,9 @@ export class AgentToolRegistry {
         additionalProperties: false,
       },
       needsApproval: true,
+      // A line item only exists inside a request, so this is request-scoped
+      // even though the word does not appear in its schema.
+      requestScoped: true,
       execute: async (args: unknown, ctx: AgentToolContext) => {
         const record = asRecord(args);
         const lineItemId = requireString(record, 'lineItemId');

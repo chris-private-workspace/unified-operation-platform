@@ -909,6 +909,22 @@ export interface AgentProfile {
   principal?: { name: string } | null;
 }
 
+/**
+ * W48 `F5-8` — one line of the "which agent am I talking to" picker.
+ *
+ * 🔴 A separate type rather than `Pick<AgentProfile, …>`, because it comes from
+ * a separate endpoint with a separate role (`GET /agent/profiles/options`,
+ * ADMIN + REGIONAL) and carries **no prompt**. Deriving it would say the two
+ * shapes are one shape that happens to be narrower here — and the next person to
+ * widen `AgentProfile` would widen this too, which is exactly what `G5` forbids.
+ */
+export interface AgentProfileOption {
+  id: string;
+  name: string;
+  /** The Azure DEPLOYMENT name, not a model family (ADR-0037 E3). */
+  model: string;
+}
+
 /** The profile a run used, as both the run detail and the run list carry it. */
 export interface AgentRunProfileRef {
   id: string;
@@ -973,6 +989,54 @@ export interface AgentRunPage {
   items: AgentRunSummary[];
   /** Pass back as `cursor`. `null` means this is the last page. */
   nextCursor: string | null;
+}
+
+/* ── W48 / ADR-0041 — conversations ───────────────────────────
+ *
+ * A run is one task; a conversation is one relationship. They coexist — every
+ * turn queues an ordinary run — but neither impersonates the other, which is
+ * why these are their own types rather than fields on `AgentRun`.
+ */
+
+export interface AgentChatTurn {
+  id: string;
+  /** Who said it. The server sets this — a client never sends it. */
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+/** A run a conversation started — enough to show its state, never its content. */
+export interface AgentConversationRun {
+  id: string;
+  status: AgentRunStatus;
+  startedAt: string;
+}
+
+export interface AgentConversation {
+  id: string;
+  startedById: string;
+  /**
+   * 🔴 `null` means this thread has NO request context, and the consequence is
+   * structural: its runs get no request-scoped tools at all (ADR-0041 D3).
+   * The screen has to say so, because "the agent cannot see your requests" and
+   * "the agent found nothing" look identical in an answer.
+   */
+  requestId?: string | null;
+  profileId?: string | null;
+  /** Set when archived. Nothing is deleted (D7). */
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** `GET /:id` only — a list carries no transcript. */
+  turns?: AgentChatTurn[];
+  runs?: AgentConversationRun[];
+}
+
+/** What `POST /:id/turns` answers with: the line stored, and the run queued. */
+export interface AddAgentTurnResult {
+  turn: AgentChatTurn;
+  runId: string;
 }
 
 /** An operational-history event (detail view). */

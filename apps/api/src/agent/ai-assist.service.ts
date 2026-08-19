@@ -58,6 +58,23 @@ import { ConnectorConfigService } from '../integration/connector-config.service'
  * of every id (R15 / ADR-0020), so a model that ignores this paragraph gets a
  * 400, not a wrong licence.
  */
+/**
+ * W48 F4-3 / ADR-0041 D9 — how much of a conversation a run is given.
+ *
+ * 🔴 D9 requires a ceiling and deliberately does not say which, because the
+ * right number needs token data nobody has yet. These are a STARTING POINT, and
+ * the two exist together because either alone fails where the other holds:
+ * twenty one-word turns cost nothing, and two turns at `MAX_TURN_LENGTH` each
+ * are 8000 characters.
+ *
+ * ⚠️ What this bounds is COST, not damage — a Tier 1 agent cannot write (D3), so
+ * a long history buys a bigger bill, not a bigger blast radius. Calling it a
+ * safety limit would overstate it, the same distinction
+ * `MAX_AUTONOMOUS_TOOL_CALLS` draws.
+ */
+export const MAX_HISTORY_TURNS = 20;
+export const MAX_HISTORY_CHARS = 20_000;
+
 const INSTRUCTIONS = `You are AI-Assist inside an IT licence fulfilment platform.
 
 A colleague has received a request for Microsoft 365 licences, written in free text by a real person. Your job is to work out which catalogue SKUs that text is asking for, and to propose them for a human to approve.
@@ -133,6 +150,74 @@ export class AiAssistService {
     await this.assertRequestIsUsable(user, requestId);
     await this.assertNoOpenRun(requestId);
 
+    return this.queueRun(user, {
+      requestId,
+      conversationId: null,
+      profileId,
+      startDetail: `Run started for request ${requestId}`,
+    });
+  }
+
+  /**
+   * W48 F3 / ADR-0041 D4 — a run started by a CONVERSATION rather than by a
+   * request screen.
+   *
+   * 🔴 Deliberately the same machinery as `startRun`, down to the principal, the
+   * audit action and the queue. D8 says a chat cannot bypass approval, and the
+   * cheapest way to keep that true is for a chat's run to be an ordinary run:
+   * same table, same proposals, same `agent-approval` path. A second execution
+   * path would be a second place for the approval gate to not quite apply.
+   *
+   * ⚠️ The two request-shaped guards `startRun` runs first are absent here, and
+   * neither is an oversight:
+   *   - `assertRequestIsUsable` — the CONVERSATION already checked its request
+   *     when it was created, and a conversation with no request has nothing to
+   *     check. `ctx.requestId` then removes the tools rather than a guard
+   *     refusing them (D3).
+   *   - `assertNoOpenRun` — that rule is "one open run per REQUEST" (OQ-3), and
+   *     it exists so a request card cannot show two runs disagreeing. A
+   *     conversation is a sequence of turns, each with its own run; applying
+   *     the request rule here would make the second question in a conversation
+   *     fail while the first was still thinking.
+   */
+  async startConversationRun(
+    user: AppUser,
+    conversation: {
+      id: string;
+      requestId: string | null;
+      profileId: string | null;
+    },
+  ): Promise<AiAssistRunResult> {
+    await this.killSwitch.assertEnabled();
+
+    return this.queueRun(user, {
+      requestId: conversation.requestId,
+      conversationId: conversation.id,
+      profileId: conversation.profileId ?? undefined,
+      startDetail: conversation.requestId
+        ? `Run started from conversation ${conversation.id} on request ${conversation.requestId}`
+        : `Run started from conversation ${conversation.id} with no request context`,
+    });
+  }
+
+  /**
+   * Everything both entry points do once their own guards have passed: settle
+   * the principal and the profile, write the row and its audit entry together,
+   * record the opening step, and queue the work.
+   *
+   * Extracted rather than copied when W48 added the second caller — the
+   * alternative was two transactions writing the same table with the same audit
+   * action, which drift apart one fix at a time.
+   */
+  private async queueRun(
+    user: AppUser,
+    opts: {
+      requestId: string | null;
+      conversationId: string | null;
+      profileId?: string;
+      startDetail: string;
+    },
+  ): Promise<AiAssistRunResult> {
     const principal = await this.prisma.agentPrincipal.upsert({
       where: { name: AI_ASSIST_PRINCIPAL },
       // The EFFECTIVE runtime, read off the provider that actually booted —
@@ -170,7 +255,10 @@ export class AiAssistService {
      * OQ-3 then counts against the request, blocking it from ever getting
      * another run. Same permanent-block shape 期二 G5-A found twice already.
      */
-    const profile = await this.profiles.resolveForRun(profileId, principal.id);
+    const profile = await this.profiles.resolveForRun(
+      opts.profileId,
+      principal.id,
+    );
 
     /**
      * Run row and audit row in ONE transaction (ADR-0009 D8.1: "done but
@@ -189,7 +277,13 @@ export class AiAssistService {
         data: {
           principalId: principal.id,
           startedById: user.id,
-          requestId,
+          requestId: opts.requestId,
+          // W48 F3 / ADR-0041 D4 — null for a run started from a request
+          // screen. It is what makes "which sentence produced this proposal"
+          // answerable, and a column rather than an inference for the reason
+          // `AgentRun.requestId` gives: a link nobody wrote down holds only as
+          // long as somebody remembers it.
+          conversationId: opts.conversationId,
           status: 'running',
           profileId: profile.id,
         },
@@ -215,7 +309,7 @@ export class AiAssistService {
     await this.writeStep(run.id, {
       key: 'start',
       status: 'ok',
-      detail: `Run started for request ${requestId}`,
+      detail: opts.startDetail,
     });
 
     /**
@@ -257,6 +351,8 @@ export class AiAssistService {
         id: true,
         status: true,
         requestId: true,
+        // W48 F3 — decides what this run is being asked (`inputFor`).
+        conversationId: true,
         startedBy: true,
         // W47 F3 — the run's own profile, not whatever is configured now. A
         // queued job can execute long after an admin edited the registry.
@@ -281,7 +377,12 @@ export class AiAssistService {
       );
     }
 
-    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
+    const setup = await this.buildSetup(
+      run.id,
+      run.startedBy,
+      run.profile,
+      run.requestId,
+    );
 
     /**
      * 🔴 The kill switch is INSIDE the try, and 期二 G5-A is why.
@@ -303,13 +404,101 @@ export class AiAssistService {
       await this.killSwitch.assertEnabled();
       const turn: AgentTurn = await this.runtime.start(
         setup,
-        `Work out the licence line items for request ${run.requestId}.`,
+        await this.inputFor(run),
       );
       return await this.persistTurn(run.id, turn);
     } catch (err) {
       await this.failRun(run.id, err);
       throw err;
     }
+  }
+
+  /**
+   * What this run is being asked to do — W48 F3.
+   *
+   * 🔴 Two callers, two sentences, and the difference is not cosmetic. A run
+   * started from a request screen has one job stated by the platform; a run
+   * started from a conversation is answering a PERSON, and the words are
+   * theirs.
+   *
+   * ⚠️ This READS `AgentChatTurn`, a table `agent-conversation.service` owns
+   * and is the only writer of. That split is deliberate and the boundary spec
+   * enforces the writing half: an agent may read what it was asked, and must
+   * not be able to write the record of what was asked.
+   *
+   * A conversation run with no turn to answer would be a run with nothing to
+   * say. It cannot happen — `addTurn` writes the turn and queues the run in one
+   * transaction — so it throws rather than inventing a prompt, which is the
+   * rule R16 states for saved state and this is the same class of fact.
+   */
+  private async inputFor(run: {
+    id: string;
+    requestId: string | null;
+    conversationId: string | null;
+  }): Promise<string> {
+    if (!run.conversationId) {
+      return `Work out the licence line items for request ${run.requestId}.`;
+    }
+
+    /**
+     * One more than the cap, so "were there older turns?" is answered by the
+     * read rather than guessed from whether the page came back full.
+     */
+    const rows = await this.prisma.agentChatTurn.findMany({
+      where: { conversationId: run.conversationId },
+      orderBy: { createdAt: 'desc' },
+      take: MAX_HISTORY_TURNS + 1,
+      select: { role: true, content: true },
+    });
+    if (!rows.some((row) => row.role === 'user')) {
+      throw new ServiceUnavailableException(
+        `Conversation ${run.conversationId} has no question for run ${run.id} to answer`,
+      );
+    }
+
+    /**
+     * 🔴 D9 / R3 — the cost limit, and it is TWO limits because either alone
+     * fails in the case the other covers: twenty one-word turns are cheap, and
+     * two turns of 4000 characters each are not.
+     *
+     * Walked newest-first so the budget is spent on what was said most
+     * recently. The newest turn is always kept even if it alone exceeds the
+     * budget — a run with no question is not a cheaper run, it is a broken one.
+     */
+    const kept: typeof rows = [];
+    let budget = MAX_HISTORY_CHARS;
+    for (const row of rows.slice(0, MAX_HISTORY_TURNS)) {
+      if (kept.length > 0 && budget - row.content.length < 0) break;
+      kept.push(row);
+      budget -= row.content.length;
+    }
+    const dropped = rows.length - kept.length;
+    kept.reverse();
+
+    /**
+     * ⚠️ The history is FLATTENED INTO TEXT, and that is a real limitation
+     * rather than a formatting choice.
+     *
+     * The seam takes `input: string` (`AgentRuntimeProvider.start`). Passing a
+     * structured message list would mean widening it — an H1 change to
+     * ADR-0036's seam — for a phase whose streaming decision deliberately went
+     * the other way. What it costs: the model reads a TRANSCRIPT of the
+     * conversation rather than participating in one, and tool calls from
+     * earlier turns are not in it (only what the agent finally said).
+     *
+     * 🔴 Truncation is announced. A model handed a silently shortened history
+     * would answer "as discussed earlier" about turns it cannot see, and the
+     * person reading that has no way to tell.
+     */
+    const lines = kept.map(
+      (row) => `${row.role === 'user' ? 'Person' : 'You'}: ${row.content}`,
+    );
+    if (dropped > 0) {
+      lines.unshift(
+        `[${dropped} earlier turn(s) omitted — say so if you need them.]`,
+      );
+    }
+    return lines.join('\n\n');
   }
 
   /**
@@ -349,6 +538,11 @@ export class AiAssistService {
         status: true,
         runState: true,
         startedBy: true,
+        // W48 F3-4 — the resume has to rebuild the SAME tool set the run
+        // started with, and `list(ctx)` decides that from this column. Missing
+        // it here would silently widen a resumed chat, which is the direction
+        // that never announces itself.
+        requestId: true,
         // The SAME profile the run started on — an approval can land overnight,
         // and by then the registry may say something different.
         profile: {
@@ -391,7 +585,12 @@ export class AiAssistService {
       );
     }
 
-    const setup = await this.buildSetup(run.id, run.startedBy, run.profile);
+    const setup = await this.buildSetup(
+      run.id,
+      run.startedBy,
+      run.profile,
+      run.requestId,
+    );
 
     try {
       const turn = await this.runtime.resume(setup, run.runState, decisions);
@@ -426,6 +625,16 @@ export class AiAssistService {
       model: string;
       prompt: string | null;
     } | null,
+    /**
+     * 🔴 W48 F3-4 — required, and it takes `null` rather than being optional.
+     *
+     * `requestId?: string` would let a caller that simply forgot produce a run
+     * with no request tools, which is a silent narrowing on the run path and a
+     * silent widening on nothing — but the same shape one refactor later, with
+     * the default flipped, is a chat seeing every request in the OpCo. An
+     * argument you cannot omit has neither failure.
+     */
+    requestId: string | null,
   ): Promise<AgentSetup> {
     return {
       /**
@@ -442,7 +651,7 @@ export class AiAssistService {
        */
       instructions: profile?.prompt?.trim() || INSTRUCTIONS,
       model: profile?.model ?? (await this.modelForLegacyRun(runId)),
-      ctx: { runId, user },
+      ctx: { runId, user, requestId },
       onToolExecuted: (record) => this.recordToolExecution(runId, record),
     };
   }

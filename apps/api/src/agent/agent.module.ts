@@ -14,6 +14,8 @@ import { AgentRunExpiryService } from './run-expiry.service';
 import { AgentKillSwitchService } from './kill-switch.service';
 import { AgentReviewStatsService } from './review-stats.service';
 import { AgentProfileService } from './agent-profile.service';
+import { AgentConversationService } from './agent-conversation.service';
+import { AgentConversationController } from './agent-conversation.controller';
 import { AgentRunController } from './agent-run.controller';
 import { AgentKillSwitchController } from './kill-switch.controller';
 import { AgentReviewStatsController } from './review-stats.controller';
@@ -104,9 +106,21 @@ import { AgentProfileController } from './agent-profile.controller';
      * both, and this provider is where that settlement is easiest to erode.
      */
     AgentProfileService,
+    /**
+     * W48 F3 / ADR-0041 — conversations. Not exported, for the same reason as
+     * the queue: the only thing outside this module that should be able to make
+     * an agent do something is a person, through a controller in it.
+     *
+     * 🔴 It depends on `AiAssistService` and never the reverse. A chat queues an
+     * ORDINARY run (D4/D8) rather than owning a second execution path, and
+     * `AiAssistService` reads `AgentChatTurn` directly to learn what it was
+     * asked — a read, while this service stays the table's only writer.
+     */
+    AgentConversationService,
   ],
   controllers: [
     AgentRunController,
+    AgentConversationController,
     AgentKillSwitchController,
     AgentReviewStatsController,
     AgentProfileController,

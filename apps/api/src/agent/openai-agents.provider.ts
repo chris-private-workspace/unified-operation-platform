@@ -436,7 +436,13 @@ export class OpenAiAgentsProvider extends AgentRuntimeProvider {
        * adapters holding that opinion separately is how they drift.
        */
       model: setup.model,
-      tools: toSdkTools(this.registry.list(), setup.ctx, setup.onToolExecuted),
+      // W48 F3-4 — `list(ctx)`, never `all()`: a run with no request is shown
+      // no request tools, and "shown" is the boundary (ADR-0041 D3).
+      tools: toSdkTools(
+        this.registry.list(setup.ctx),
+        setup.ctx,
+        setup.onToolExecuted,
+      ),
     });
   }
 }

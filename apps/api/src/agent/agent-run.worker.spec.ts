@@ -2,6 +2,7 @@ import type { ConfigService } from '@nestjs/config';
 import { AGENT_RUN_QUEUE } from './agent-run.queue';
 import { AgentRunWorker } from './agent-run.worker';
 import type { AiAssistService } from './ai-assist.service';
+import type { AgentConversationService } from './agent-conversation.service';
 
 /**
  * W46 期二 G5-B / ADR-0039 F3 — the in-process worker.
@@ -43,13 +44,21 @@ describe('AgentRunWorker (G5-B)', () => {
   beforeEach(() => jest.clearAllMocks());
 
   const build = (values: Record<string, string> = {}) => {
-    const aiAssist = { executeRun: jest.fn().mockResolvedValue(undefined) };
+    const aiAssist = {
+      executeRun: jest.fn().mockResolvedValue({ runId: 'run-1' }),
+    };
+    // W48 F4 — the worker hands a chat's reply to the one service that owns
+    // AgentChatTurn. It is a no-op for a run with no conversation.
+    const conversations = {
+      recordAssistantTurn: jest.fn().mockResolvedValue(undefined),
+    };
     const worker = new AgentRunWorker(
       aiAssist as unknown as AiAssistService,
+      conversations as unknown as AgentConversationService,
       configOf(values),
     );
     worker.onModuleInit();
-    return { worker, aiAssist };
+    return { worker, aiAssist, conversations };
   };
 
   it('drains the queue the API enqueues to', () => {

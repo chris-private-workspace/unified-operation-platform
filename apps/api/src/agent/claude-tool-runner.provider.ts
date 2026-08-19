@@ -269,7 +269,18 @@ export class ClaudeToolRunnerProvider extends AgentRuntimeProvider {
   ): Promise<AgentTurn> {
     const messages = parseConversation(state);
     const last = messages[messages.length - 1] as ClaudeMessageLike;
-    const pending = pendingApprovalsOf(last, this.registry.list(), this.logger);
+    /**
+     * ⚠️ W48 F3-4 — `all()` here, `list(setup.ctx)` in `drive()`, and the
+     * asymmetry is deliberate.
+     *
+     * This is RECOGNISING a pause that already exists in saved state, not
+     * granting a capability. Filtering the list would make a pause on a
+     * request-scoped tool unrecognisable rather than unreachable — and an
+     * unrecognised pause is the failure mode `undecided` below exists to
+     * prevent. Nothing widens: a run that could not see the tool could never
+     * have paused on it.
+     */
+    const pending = pendingApprovalsOf(last, this.registry.all(), this.logger);
 
     /**
      * 🔴 Every pause must be decided before the run continues — the same rule
@@ -325,8 +336,20 @@ export class ClaudeToolRunnerProvider extends AgentRuntimeProvider {
        * registry function runs, `onToolExecuted` records it the same way, and
        * the model sees the same text.
        */
+      /**
+       * ⚠️ W48 F3-4 — `list(setup.ctx)` here, `all()` twenty lines up, and the
+       * two are opposite on purpose.
+       *
+       * Recognising a pause must never lose one (a pause that disappears is a
+       * pause `undecided` cannot count, i.e. silent passage). EXECUTING one is
+       * the last point anything happens, so it takes the narrower list: if a
+       * tool is not available to this run, the `if (!tool)` below refuses
+       * loudly instead of running it. Today the two lists agree — a run that
+       * cannot see a tool never paused on it — and this is what keeps that
+       * true if `requestId` ever becomes mutable.
+       */
       const tool = this.registry
-        .list()
+        .list(setup.ctx)
         .find((entry) => entry.name === paused.toolName);
       if (!tool) {
         // Registered when the run parked, absent now: the allow-list changed
@@ -411,7 +434,8 @@ export class ClaudeToolRunnerProvider extends AgentRuntimeProvider {
     messages: Conversation,
   ): Promise<AgentTurn> {
     const client = this.buildClient();
-    const registered = this.registry.list();
+    // W48 F3-4 — what this run may use, not what exists (ADR-0041 D3).
+    const registered = this.registry.list(setup.ctx);
 
     const runner = client.beta.messages.toolRunner({
       // W47 F3-5 — from the caller (the run's profile), not resolved here. See

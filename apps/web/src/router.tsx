@@ -16,6 +16,7 @@ import { Assets } from '@/pages/assets';
 import { Audit } from '@/pages/audit';
 import { OutboundFailures } from '@/pages/outbound-failures';
 import { Agent } from '@/pages/agent';
+import { Assistant } from '@/pages/assistant';
 import { NEW_REQUEST_ENABLED } from '@/lib/features';
 
 // One route per screen (design-system.md §3.2). FE-1 → Overview + SKU Catalog;
@@ -63,6 +64,10 @@ export const router = createBrowserRouter([
       // rather than a Settings tab, because the run list does not fit a tab).
       // ADMIN-only at the backend; sidebar-gated by canManageAgentProfiles.
       { path: 'agent', element: <Agent /> },
+      // W48 F5 — Assistant (Tier 2 `T2-c`). ADMIN + REGIONAL at the backend;
+      // sidebar-gated by canUseAgent. Its own route rather than a tab on
+      // `/agent`, because that screen is ADMIN-only and a conversation is not.
+      { path: 'assistant', element: <Assistant /> },
       { path: 'settings', element: <Settings /> },
     ],
   },

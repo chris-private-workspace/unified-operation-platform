@@ -2,7 +2,7 @@
 artifact: risk-register
 version: 1.1
 status: living
-last_updated: 2026-07-31
+last_updated: 2026-08-19
 ---
 
 # Unified Operation Platform — Risk Register(living)
@@ -50,6 +50,12 @@ last_updated: 2026-07-31
 | R29 | 多 profile ⇒ Azure 側成本 / tracing 歸屬散開 | W47 `R4`(2026-08-17) | Med | 🟡 Lower | run 列表出 `profile.name` + 可以按 `profileId` 篩。⚠️ **成本本身唔喺本 phase**(H3);今日平台冇任何成本可見度 | ⚫ **Accepted**(知情) |
 | R30 | run 列表分頁做得求其(`take` 一個大數扮分頁)⇒ run 多咗就爆 | W47 `R5`(2026-08-17) | Med | 🟡 Med | ① cursor + `skip: 1` + `take: limit + 1`;limit 上限 **DTO 同 service 各夾一次**(只夾喺 HTTP 邊緣嗰個,第二個 caller 一出現就唔再成立)② 🔴 orderBy 有 **`id` tiebreak** —— 兩個 run 可以同一毫秒開,order 唔穩定就會喺頁邊界跳行或者重複,而佢**淨係喺有負載嗰陣出現、永遠 reproduce 唔到** ③ 一條 test 釘住 `take` | 🟢 **Resolved** |
 | R31 | ⚠️ **`modelForLegacyRun` 由「相容路」滑成「fallback」** —— 佢係唯一一個仲可以由 env 決定 model 嘅位,而 `resolveForRun` 明文拒絕咁做 | W47 `F3-5`(2026-08-17) | Low-Med | 🟡 Med | ① **結構上到唔到**:`startRun` 每一行都寫 `profileId`,所以只有 W47 之前開嘅 run 行得到 ② 佢**必須**存在 —— 部署嗰刻卡喺 `awaiting_approval` 嘅 run 冇 profile,喺嗰度 refuse 就會令佢永遠 resume 唔到,而 OQ-3 令嗰張 request 再開唔到第二個 run(= 期二 `G5-A` 嗰個 permanent block 第三次由另一道門入嚟)③ 行到就 **warn log** ④ 冇配置一樣 **503,唔會靠估** ⑤ 🟢 `agent.boundary.spec.ts` 釘住**兩個 adapter 都唔准 import `ConnectorConfigService`** ⇒ 呢條路只可以存在喺 service 一個地方 | 🟡 **Mitigating**(有意保留;有閘有 log) |
+| R32 | 🔴🔴 **chat 變成一條繞過 approval 嘅路** —— 對話介面令「叫佢做嘢」感覺輕,而 `ADR-0036 D3` 個 human-in-the-loop 係 **Tier 1 成個安全論據** | W48 `R1`(2026-08-18) | Med-High | 🔴 High | ① chat 開嘅 run **就係普通 `AgentRun`**,行返同一個 tool registry 同一道 approval gate(`ADR-0041 D8`)—— 唔係「小心咗」,係冇第二條路 ② UI 兩條 test,而**第二條先係持久嗰條**:behavioural 只擋到一個串「Approve」嘅掣,**source scan** 擋到將來叫 `Accept` 嗰個(`assistant.tsx` 唔可以出現 `useDecideProposal` / `useApprove` / `/proposals`)③ live 實測 run 泊喺 `awaiting_approval` 時,畫面只有一條去 request 嘅 link | 🟡 **Mitigating**(結構 + 兩層 test) |
+| R33 | ⚠️ **chat transcript 冇「清」嘅路徑,而佢一樣含 PII** —— `OQ-G` 答「一直存在,直至清掉」,但**「清」嘅形狀今日仍然唔存在**:`ADR-0041 D7` 只做 archive(隱藏,零刪除) | W48 `R2`(2026-08-18) | Med | 🔴 High(H4) | ① `AgentChatTurn` 係**新表**,`ADR-0036 D6`(`AgentMessage` 永久保留)覆蓋範圍一個字冇郁 ② 讀路 **owner-only,連 ADMIN 都唔見**(`assertOwner`)⇒ 今日 blast radius = 講嗰個人自己 ③ 🔴 **但「保留幾耐」仍然冇答案** —— archive 唔係刪除,而平台冇任何路徑刪一條對話 | ⚠️ **Open**(retention 未定形狀) |
+| R34 | **對話成本隨長度非線性升** —— 每個 turn 帶住成段 history,而 blast-radius 係 per-run 唔係 per-conversation | W48 `R3`(2026-08-18) | High | 🟡 Med | ① `MAX_HISTORY_TURNS = 20` + `MAX_HISTORY_CHARS = 20_000`,**截斷嗰陣出聲唔係靜靜切** ② `MAX_TURN_LENGTH = 4000` 夾單一 turn ③ ⚠️ **仍然冇 per-conversation 上限**(嗰個係 `T2-e`)⇒ 一條長對話嘅總成本今日冇人睇得到 | 🟡 **Mitigating**(有 cap,冇可見度) |
+| R35 | 🔴 **SSE 連續失敗 3 次就放棄,而畫面唔會講** ⇒ 一次 api 重啟(= 一次部署)可以令一條開住嘅 thread **永久失去 live 更新**,而用戶見到嘅係「agent 唔答我」 | W48 `F7-5` live(2026-08-18) | **Med-High**(每次部署) | 🟡 Med | ① `MAX_CONSECUTIVE_FAILURES = 3` **本身係啱嘅** —— `EventSource` 唔畀睇 status code,冇 bound 就會把一個 403 重試到 tab 閂 ② 實測**資料一直喺度**:切走 thread 再切返(hook remount ⇒ 新 `EventSource`)即刻補齊,之後再送就自動更新 ③ 🔴 **未減嗰半**:`useAgentRunEvents` 同一設計,但 run 幾十秒完、thread 可以開一日 ⇒ **W48 把同一個 bound 嘅曝露面放大咗**,而畫面冇任何「你已經離線」提示 | ⚠️ **Open**(成因清楚,零提示) |
+| R36 | ⚠️ **`ADR-0041 D3` 擋到「見唔到」,擋唔到「填錯」** —— 冇 request context 嘅對話真係攞唔到 request 工具(live 對照實驗證過),但**有** context 嗰條,`get_request` 個 id 仍然係 model 自己填 | W48 `F7-6` live(2026-08-18) | Med | 🟡 Med | ① 實測失敗方向**安全**:model 攞人講嘅 `REQ0044067` 當 cuid ⇒ `Request not found` ② tool 自己行啟動者嘅 OpCo scope(Tier 2 `OQ-2`)③ 🔴 **未驗嗰半**:「填一個**存在而屬於第二個 OpCo**」嘅 id,本次冇做過 live | ⚠️ **Open**(一條未做嘅 live) |
+| R37 | **catalog 全部 SKU 個 `businessAlias` 係 `null`** ⇒ agent 收到人話 SKU 名 search 唔到、幫唔到手;**而佢把「搵唔到」講成「攞唔到」** | W48 `F7-6` live(2026-08-19) | High(已發生 ×2) | 🟡 Med | ① agent **冇亂估**(明文「can't propose the licence without guessing」)= 好行為 ② 🔴 但 tool step **`status: ok` 返 `[]`**(「搵唔到」)而 agent 對用戶講「couldn't **retrieve** the active catalogue」(「攞唔到」)⇒ **用戶會當系統故障去搵 IT** ③ 修法喺 **catalog curation 唔喺 agent**(同 `CH-026 G-7` 同族),已登 `BACKLOG` | ⚠️ **Open**(唔喺 W48 scope) |
 
 <!-- 範例:
 | R1 | 某外部服務單點故障 | BUG-0XX postmortem | Med | High | 加 fallback + 熱切換(ADR-00XX) | 🟡 Mitigating |

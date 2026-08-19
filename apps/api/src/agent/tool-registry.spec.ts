@@ -26,7 +26,17 @@ const OTHER_GUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const admin = { id: 'u-admin', opcoScopeId: null } as unknown as AppUser;
 const opcoIt = { id: 'u-opco', opcoScopeId: 'opco-a' } as unknown as AppUser;
 
-const ctx = (user: AppUser) => ({ runId: 'run-1', user });
+/**
+ * W48 F3-4 — `requestId` defaults to a request, because every test below is
+ * about what a tool DOES once it runs, and a run has always had one. The
+ * context-free case has its own describe at the bottom, where it is the subject
+ * rather than the setup.
+ */
+const ctx = (user: AppUser, requestId: string | null = 'req-1') => ({
+  runId: 'run-1',
+  user,
+  requestId,
+});
 
 describe('AgentToolRegistry', () => {
   let registry: AgentToolRegistry;
@@ -75,19 +85,26 @@ describe('AgentToolRegistry', () => {
      * Name AND approval flag together. Splitting them would let a write tool
      * quietly become `needsApproval: false` while a "the tools are unchanged"
      * test stayed green — which is the failure this pins, not a typo in a name.
+     *
+     * 🔴 W48 F3-4 added `requestScoped` to the same string, for the identical
+     * reason. It decides whether a chat with no request can reach a tool, and a
+     * new tool declaring it wrong is exactly the silent failure this format
+     * exists to catch — `name:needsApproval:requestScoped`.
      */
     const ALLOW_LIST = [
-      'list_pending_requests:false',
-      'get_request:false',
-      'search_catalog:false',
-      'get_ledger:false',
-      'propose_line_items:true',
-      'propose_assign:true',
+      'list_pending_requests:false:true',
+      'get_request:false:true',
+      'search_catalog:false:false',
+      'get_ledger:false:false',
+      'propose_line_items:true:true',
+      'propose_assign:true:true',
     ];
 
-    it('exposes exactly these tools, in this order, with these approval flags', () => {
+    it('exposes exactly these tools, in this order, with these flags', () => {
       expect(
-        registry.list().map((t) => `${t.name}:${t.needsApproval}`),
+        registry
+          .all()
+          .map((t) => `${t.name}:${t.needsApproval}:${t.requestScoped}`),
       ).toEqual(ALLOW_LIST);
     });
 
@@ -237,7 +254,7 @@ describe('AgentToolRegistry', () => {
     });
 
     it('gives every tool a strict-mode-shaped schema', () => {
-      for (const t of registry.list()) {
+      for (const t of registry.all()) {
         expect(t.parameters.type).toBe('object');
         expect(t.parameters.additionalProperties).toBe(false);
         // Every declared property is required — OpenAI strict mode's rule, and
@@ -247,6 +264,71 @@ describe('AgentToolRegistry', () => {
           Object.keys(t.parameters.properties).sort(),
         );
       }
+    });
+  });
+
+  // ── W48 F3-4 / ADR-0041 D3 — no request, no request tools ──
+
+  /**
+   * 🔴 The security boundary of this phase, and the only structural one it has.
+   *
+   * D3 requires that a conversation with no request cannot REACH request data —
+   * not that it asks and is refused. So the assertions below are about what
+   * `list()` returns, because that is what a model is shown, and a tool a model
+   * was never shown is a tool it cannot call.
+   *
+   * ⚠️ Worth stating what is NOT claimed: this does not narrow OpCo scope. A
+   * chat WITH a request keeps every tool a run has always had, including
+   * `get_request` on a different request in the same OpCo — a pre-existing
+   * property of the tool's model-supplied `requestId`, not something W48 chose.
+   */
+  describe('request scope (W48 F3-4 / ADR-0041 D3)', () => {
+    const REQUEST_TOOLS = [
+      'list_pending_requests',
+      'get_request',
+      'propose_line_items',
+      'propose_assign',
+    ];
+
+    it('drops every request tool when there is no request', () => {
+      const names = registry.list(ctx(admin, null)).map((t) => t.name);
+      expect(names).toEqual(['search_catalog', 'get_ledger']);
+    });
+
+    it('keeps every tool when there is a request', () => {
+      expect(registry.list(ctx(admin, 'req-1')).map((t) => t.name)).toEqual(
+        registry.all().map((t) => t.name),
+      );
+    });
+
+    /**
+     * Pins the two lists against each other rather than repeating the names, so
+     * a tool added with `requestScoped: true` is covered here the day it is
+     * declared — the failure being guarded is a NEW tool, not these four.
+     */
+    it('drops exactly the tools that declare themselves request-scoped', () => {
+      const dropped = registry
+        .all()
+        .filter((t) => t.requestScoped)
+        .map((t) => t.name);
+      expect(dropped).toEqual(REQUEST_TOOLS);
+
+      const kept = registry.list(ctx(admin, null)).map((t) => t.name);
+      for (const name of dropped) expect(kept).not.toContain(name);
+    });
+
+    /**
+     * 🔴 `list_pending_requests` gets its own assertion because it is the one a
+     * reasonable person would leave in: it takes no request id, so it looks
+     * unrelated to "this conversation has no request". It RETURNS request ids,
+     * which is the whole starting point — leave it and a context-free chat can
+     * enumerate the OpCo and then open each request, making D3 true in wording
+     * and false in effect.
+     */
+    it('drops list_pending_requests, which returns ids even though it takes none', () => {
+      expect(registry.list(ctx(admin, null)).map((t) => t.name)).not.toContain(
+        'list_pending_requests',
+      );
     });
   });
 

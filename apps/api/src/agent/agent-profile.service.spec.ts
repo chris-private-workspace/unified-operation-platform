@@ -274,4 +274,24 @@ describe('AgentProfileService', () => {
       expect(prisma.agentProfile.findMany.mock.calls[1][0].where).toEqual({});
     });
   });
+
+  /**
+   * W48 `F5-8` — the read behind the "which agent" picker.
+   *
+   * 🔴 Two claims, and they fail in opposite directions. Offering a retired
+   * profile would move the refusal from the pick to the first turn, where it
+   * reads as the chat being broken rather than as a choice being unavailable.
+   * Carrying `prompt` would hand every prompt on the platform to a REGIONAL,
+   * because this is the one profile read they can reach (`G5`).
+   */
+  describe('listOptions', () => {
+    it('offers active profiles only, with no way to ask for retired ones', async () => {
+      await service.listOptions();
+
+      const call = prisma.agentProfile.findMany.mock.calls[0][0];
+      expect(call.where).toEqual({ active: true });
+      expect(call.select).not.toHaveProperty('prompt');
+      expect(Object.keys(call.select)).toEqual(['id', 'name', 'model']);
+    });
+  });
 });

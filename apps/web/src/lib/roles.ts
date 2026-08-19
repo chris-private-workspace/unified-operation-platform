@@ -57,6 +57,15 @@ export function canRepairOutbound(role: Role | undefined): boolean {
  * `/agent/proposals` carry the matching `@Roles`. Hiding alone would be
  * decoration — the guard is the server's; this only stops offering a button
  * that would 403.
+ *
+ * 🟢 W48 / ADR-0041 D6 reuses this UNCHANGED for conversations, which is what
+ * "no new predicate" means in practice: a chat runs the same tools through the
+ * same approval gate (D8), so it is not a wider surface — only a lighter-feeling
+ * one. It gates the `/assistant` sidebar entry.
+ *
+ * ⚠️ It cannot express which THREADS a person may read. A conversation belongs
+ * to whoever started it, which is row-level and invisible to any role gate; the
+ * server's 403 is the authority there.
  */
 export function canUseAgent(role: Role | undefined): boolean {
   return role === 'ADMIN' || role === 'REGIONAL';

@@ -35,6 +35,7 @@ import type { ToolExecution } from './agent-runtime.provider';
 const CTX: AgentToolContext = {
   runId: 'run-1',
   user: { id: 'u-admin', opcoScopeId: null } as unknown as AppUser,
+  requestId: 'req-1',
 };
 
 const ARGS = { requestId: 'req-1' };
@@ -50,6 +51,7 @@ const toolThat = (execute: AgentTool['execute']): AgentTool => ({
     additionalProperties: false,
   },
   needsApproval: false,
+  requestScoped: true,
   execute,
 });
 

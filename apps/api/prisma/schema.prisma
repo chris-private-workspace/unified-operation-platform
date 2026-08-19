@@ -57,6 +57,7 @@ model AppUser {
   ledgerAdjustments   LedgerAdjustment[] // ledger hand-edits made by this operator (ADR-0007)
   auditLogs           AuditLog[] // platform audit trail entries this operator caused (ADR-0009)
   agentRuns           AgentRun[] // AI-Assist runs started under this operator's OpCo scope (ADR-0036)
+  agentConversations  AgentConversation[] // ADR-0041 D2 — chat threads this operator owns
 }
 
 // ── RefreshToken (AUTH-4c-B / ADR-0006 §7) — rotating refresh session for the
@@ -287,13 +288,16 @@ model Request {
   // on every row raised before ADR-0035 and on every failed submission.
   serviceNowLicenceReqNumber String?
 
-  lineItems        RequestLineItem[]
-  events           RequestEvent[]
-  outboundFailures OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
-  agentRuns        AgentRun[] // ADR-0036 — AI-Assist runs reasoning about this request
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  closedAt         DateTime?
+  lineItems          RequestLineItem[]
+  events             RequestEvent[]
+  outboundFailures   OutboundFailure[] // ADR-0011 — null for submit failures (no Request exists yet)
+  agentRuns          AgentRun[] // ADR-0036 — AI-Assist runs reasoning about this request
+  // ADR-0041 D2 — chat threads that OPTED IN to this request as context. A
+  // conversation is not owned by a request and does not end when it closes.
+  agentConversations AgentConversation[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  closedAt           DateTime?
 
   @@index([opcoId, status])
 }
@@ -646,12 +650,113 @@ model AgentProfile {
 
   /// Deactivated, never deleted. Historical runs point here to say what they
   /// ran on, and that answer must survive someone tidying up the list.
-  active    Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  runs      AgentRun[]
+  active        Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  runs          AgentRun[]
+  conversations AgentConversation[] // ADR-0041 D1 — a chat picks a profile too
 
   @@unique([principalId, name])
+}
+
+/// 🔴 W48 F2 / ADR-0041 — a CHAT THREAD. Deliberately NOT AgentMessage.
+///
+/// AgentMessage is bound to one runId and is a run transcript; ADR-0036 D6 keeps
+/// it FOREVER, and that sentence was written about run transcripts. Relaxing it
+/// (conversationId + nullable runId) reads as one migration and is actually a
+/// widening of an accepted decision onto data with different PII, volume and
+/// lifecycle — with no test anywhere that would go red. So: a second pair of
+/// tables, and AgentMessage untouched.
+///
+/// A run is one task; a conversation is one relationship. Both may coexist —
+/// a chat can start runs (see AgentRun.conversationId) — but neither
+/// impersonates the other.
+model AgentConversation {
+  id String @id @default(cuid())
+
+  /// 🔴 D2 — required, and the reason is the same one AgentRun.startedById
+  /// gives: every tool call in this thread is bound to THIS person's OpCo
+  /// scope (Tier 2 OQ-2, "an agent's scope can never exceed its starter's").
+  /// Nullable would make "no owner" reachable, and no scope reads as every
+  /// scope.
+  startedById String
+  startedBy   AppUser @relation(fields: [startedById], references: [id])
+
+  /// 🔴 D3 — OPTIONAL CONTEXT, NOT AN OWNER. Two consequences, and the second
+  /// is a security boundary rather than a UX choice:
+  ///   1. the thread does not end when the request closes, and pointing it at a
+  ///      different request does not make it a different thread
+  ///   2. when this is null, request-scoped tools get NO request id — they
+  ///      cannot answer, rather than answering and being told not to show it.
+  ///      "Cannot see it" beats "told not to use it" by an order of magnitude
+  ///      (ADR-0036 D2), and a falsification test pins it.
+  requestId String?
+  request   Request? @relation(fields: [requestId], references: [id])
+
+  /// Which profile answers in this thread (W47 registry). Restrict, for the
+  /// reason spelled out on AgentRun.profileId: SetNull would turn "this thread
+  /// ran on the 4.1-mini profile" into "unknown" for every thread at once,
+  /// without an error.
+  profileId String?
+  profile   AgentProfile? @relation(fields: [profileId], references: [id], onDelete: Restrict)
+
+  /// 🔴 D7 — soft archive. There is no hard delete and no automatic retention:
+  /// a conversation lives until someone archives it, and archiving hides it
+  /// rather than removing it (same answer ADR-0040 gave for AgentRun one day
+  /// earlier, so the platform does not hold two opposite positions on two
+  /// neighbouring models).
+  ///
+  /// 🔴 This is NOT AgentRun.hiddenAt and the two must never be merged: an
+  /// archived conversation can contain a run that was never hidden, and that
+  /// run still belongs in the global run list.
+  ///
+  /// ⚠️ Known, accepted gap (ADR-0041 Consequences): GDPR-style true erasure
+  /// still has no answer here. "Until cleared" means "until hidden".
+  archivedAt DateTime?
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  turns     AgentChatTurn[]
+  runs      AgentRun[] // D4
+
+  @@index([startedById, updatedAt])
+  @@index([requestId])
+}
+
+/// One line of the dialogue.
+///
+/// 🔴 Named `AgentChatTurn`, not `AgentTurn` as ADR-0041 D1 wrote it (errata,
+/// Chris 2026-08-18). `AgentTurn` was already taken, in this same module, by
+/// `agent-runtime.provider.ts` — the seam's normalised result of ONE runtime
+/// round-trip, which ADR-0017 D2 calls the core design work of a seam. Two
+/// unrelated meanings under one name, in the one service (F3) that needs both,
+/// is the kind of difference that holds only as long as someone remembers it.
+///
+/// `user` and `assistant` only — thinking and tool
+/// traffic stay in AgentStep (the platform-written action ledger) and
+/// AgentMessage (the run transcript), because an agent narrating "I did X" is a
+/// claim, not evidence (INC-001), and this table is the part a person reads.
+///
+/// 🔴 content is scrubPii()'d before it lands — same rule as AgentMessage.content
+/// and AgentStep.detail. With D7 there is no deletion path, so that scrub is the
+/// only line of defence, exactly as it is for AgentMessage.
+///
+/// ⚠️ onDelete asymmetry, deliberate: turns Cascade (following AgentStep /
+/// AgentMessage / AgentProposal), while AgentRun.conversationId is Restrict.
+/// Net effect of a DELETE straight against the database: a conversation that
+/// started a run is refused; one that never did takes its turns with it. There
+/// is no endpoint for either (D7) — this is what the database does if someone
+/// goes around it.
+model AgentChatTurn {
+  id             String            @id @default(cuid())
+  conversationId String
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  role      String // user | assistant
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 model AgentRun {
@@ -686,6 +791,22 @@ model AgentRun {
   /// than discovering it afterwards.
   profileId String?
   profile   AgentProfile? @relation(fields: [profileId], references: [id], onDelete: Restrict)
+
+  /// 🔴 W48 F2 / ADR-0041 D4 — the conversation this run was started from, if
+  /// any. A real foreign key rather than a loose column, for the reason stated
+  /// on requestId below: "one table pointing at another without a key is a
+  /// difference that holds only as long as someone remembers it". It turns
+  /// "which sentence produced this proposal" into a question with an answer.
+  ///
+  /// Nullable and staying that way: every run before W48, and every run started
+  /// from a request page rather than a chat, legitimately has no conversation.
+  ///
+  /// Restrict, not Prisma's SetNull default — the same argument as profileId
+  /// above, and W47 F1-3 hit it first: SetNull means a delete run straight
+  /// against the database quietly turns "this run came from that thread" into
+  /// "unknown", with no error to notice.
+  conversationId String?
+  conversation   AgentConversation? @relation(fields: [conversationId], references: [id], onDelete: Restrict)
 
   // The request an AI-Assist run is reasoning about. Carries a foreign key,
   // the same shape as OutboundFailure.requestId (F1-7, Chris 2026-08-15).
@@ -746,6 +867,8 @@ model AgentRun {
   // W47 F4 — the run list filters by profile, and without this that filter is a
   // sequential scan that only shows up once there are enough runs to matter.
   @@index([profileId])
+  // W48 F2 — a conversation lists the runs it started; same reason as above.
+  @@index([conversationId])
 }
 
 // 🟢 The action ledger — written by the PLATFORM, around a tool actually

@@ -9,7 +9,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { AppUser } from '@prisma/client';
-import { AiAssistService } from './ai-assist.service';
+import {
+  AiAssistService,
+  MAX_HISTORY_CHARS,
+  MAX_HISTORY_TURNS,
+} from './ai-assist.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AgentRuntimeProvider,
@@ -97,6 +101,8 @@ describe('AiAssistService', () => {
     agentStep: { create: jest.Mock };
     agentMessage: { createMany: jest.Mock };
     agentProposal: { create: jest.Mock; updateMany: jest.Mock };
+    /** W48 F3 — READ only. `agent-conversation.service` is the sole writer. */
+    agentChatTurn: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let audit: { log: jest.Mock };
@@ -148,6 +154,7 @@ describe('AiAssistService', () => {
       agentStep: { create: jest.fn() },
       agentMessage: { createMany: jest.fn() },
       agentProposal: { create: jest.fn(), updateMany: jest.fn() },
+      agentChatTurn: { findMany: jest.fn() },
       /**
        * The interactive form, with a flag around the callback.
        *
@@ -253,6 +260,182 @@ describe('AiAssistService', () => {
     });
     return service.executeRun(started.runId);
   };
+
+  // ── W48 F3 — what a run is asked, and what it may see ────────
+
+  /**
+   * 🔴 Two callers, two questions, and conflating them was the easy mistake.
+   *
+   * A run from a request screen is given a job by the platform. A run from a
+   * conversation is answering a PERSON — so its input is that person's words,
+   * read back out of `AgentChatTurn`. Getting this wrong would have been
+   * invisible: the run would still complete, having answered a sentence about a
+   * request id that is `null`.
+   */
+  describe('W48 F3 — conversation runs', () => {
+    const conversationRun = async (requestId: string | null) => {
+      const started = await service.startConversationRun(admin, {
+        id: 'conv-1',
+        requestId,
+        profileId: null,
+      });
+      prisma.agentRun.findUnique.mockResolvedValueOnce({
+        id: started.runId,
+        status: 'running',
+        requestId,
+        conversationId: 'conv-1',
+        startedBy: admin,
+        profile: PROFILE,
+      });
+      return service.executeRun(started.runId);
+    };
+
+    /** newest-first, the order `inputFor`'s query asks for. */
+    const history = (...turns: Array<[string, string]>) =>
+      prisma.agentChatTurn.findMany.mockResolvedValue(
+        turns.map(([role, content]) => ({ role, content })),
+      );
+
+    it('asks the model the person’s own words, not the request sentence', async () => {
+      history(['user', 'which licences does a new finance hire need?']);
+
+      await conversationRun(null);
+
+      expect(runtime.start).toHaveBeenCalledWith(
+        expect.anything(),
+        'Person: which licences does a new finance hire need?',
+      );
+    });
+
+    /**
+     * 🔴 W48 F4 — without this the "conversation" is a row of unrelated
+     * questions: every turn queues its own run, and a run that saw only the
+     * latest line could not answer "and what about the second one?".
+     *
+     * ⚠️ Oldest-first in the prompt, because that is reading order — the query
+     * returns newest-first so it can stop early against the budget.
+     */
+    it('gives the run the whole thread, oldest first', async () => {
+      history(
+        ['user', 'and the add-ons?'],
+        ['assistant', 'SPE_E3.'],
+        ['user', 'what does a finance hire need?'],
+      );
+
+      await conversationRun(null);
+
+      expect(runtime.start).toHaveBeenCalledWith(
+        expect.anything(),
+        [
+          'Person: what does a finance hire need?',
+          'You: SPE_E3.',
+          'Person: and the add-ons?',
+        ].join('\n\n'),
+      );
+    });
+
+    /**
+     * 🔴 D9 / F4-3 — the ceiling, and the fact that it ANNOUNCES itself.
+     *
+     * A model handed a silently shortened history answers "as discussed
+     * earlier" about turns it cannot see, and the person reading that has no
+     * way to tell. Truncating is acceptable; hiding that you truncated is not.
+     */
+    it('caps the history by turn count and says so', async () => {
+      history(
+        ...Array.from(
+          { length: MAX_HISTORY_TURNS + 1 },
+          (_, i) => ['user', `turn ${i}`] as [string, string],
+        ),
+      );
+
+      await conversationRun(null);
+
+      const input = runtime.start.mock.calls[0][1] as string;
+      expect(input).toContain('1 earlier turn(s) omitted');
+      expect(input.split('\n\n')).toHaveLength(MAX_HISTORY_TURNS + 1);
+    });
+
+    it('caps the history by size, keeping the newest turn whatever it costs', async () => {
+      const huge = 'x'.repeat(MAX_HISTORY_CHARS);
+      history(['user', huge], ['user', 'an older question']);
+
+      await conversationRun(null);
+
+      const input = runtime.start.mock.calls[0][1] as string;
+      expect(input).toContain(huge);
+      // The older turn did not fit, and the omission is stated rather than
+      // leaving the model to assume it has the whole thread.
+      expect(input).not.toContain('an older question');
+      expect(input).toContain('1 earlier turn(s) omitted');
+    });
+
+    /**
+     * 🔴 ADR-0041 D3, at the point it becomes real. `ctx.requestId === null` is
+     * what makes `AgentToolRegistry.list` withhold the request tools — so a
+     * conversation that quietly passed a request id here would reopen the hole
+     * D3 closes, with every tool test still green.
+     */
+    it('gives a context-free conversation a null request in the tool context', async () => {
+      history(['user', 'hello']);
+      let captured: AgentSetup | undefined;
+      runtime.start.mockImplementation(async (setup: AgentSetup) => {
+        captured = setup;
+        return completedTurn();
+      });
+
+      await conversationRun(null);
+
+      expect(captured?.ctx.requestId).toBeNull();
+    });
+
+    it('keeps the request in context when the conversation has one', async () => {
+      history(['user', 'hello']);
+      let captured: AgentSetup | undefined;
+      runtime.start.mockImplementation(async (setup: AgentSetup) => {
+        captured = setup;
+        return completedTurn();
+      });
+
+      await conversationRun('req-1');
+
+      expect(captured?.ctx.requestId).toBe('req-1');
+    });
+
+    /**
+     * A run with nothing to answer cannot happen — `addTurn` stores the turn
+     * before queueing — so this fails loudly rather than inventing a prompt.
+     * R16's rule for unreadable saved state, applied to the same class of fact.
+     */
+    it('refuses rather than inventing a question when there is no turn', async () => {
+      prisma.agentChatTurn.findMany.mockResolvedValue([]);
+
+      await expect(conversationRun(null)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(runtime.start).not.toHaveBeenCalled();
+    });
+
+    /**
+     * ⚠️ The rule `startConversationRun` deliberately does NOT apply: OQ-3's
+     * "one open run per request" is about a request card showing two runs that
+     * disagree. A conversation is a sequence of turns, each with its own run —
+     * applying it here would make the second question fail while the first was
+     * still thinking.
+     */
+    it('does not apply the one-open-run-per-request rule', async () => {
+      history(['user', 'hi']);
+      prisma.agentRun.findFirst.mockResolvedValue({ id: 'run-open' });
+
+      await expect(
+        service.startConversationRun(admin, {
+          id: 'conv-1',
+          requestId: 'req-1',
+          profileId: null,
+        }),
+      ).resolves.toEqual(expect.objectContaining({ status: 'running' }));
+    });
+  });
 
   /**
    * 期二 G3 / plan B5 — the switch is asked BEFORE anything is spent.
@@ -619,7 +802,15 @@ describe('AiAssistService', () => {
 
       await runFully(opcoIt, 'req-1');
 
-      expect(captured?.ctx).toEqual({ runId: 'run-1', user: opcoIt });
+      // W48 F3-4 — `requestId` joins the context, and `toEqual` (not
+      // `objectContaining`) is what made this test notice. That is the point:
+      // the shape a run hands its tools decides which tools exist, so a silent
+      // addition to it is exactly what should fail here.
+      expect(captured?.ctx).toEqual({
+        runId: 'run-1',
+        user: opcoIt,
+        requestId: 'req-1',
+      });
     });
 
     it('records the runtime that is actually running on the principal', async () => {

@@ -281,6 +281,33 @@ describe('agent module boundary (ADR-0036 D0)', () => {
       expect(writersOf('agentRun')).toEqual(['agent/ai-assist.service.ts']);
     });
 
+    /**
+     * 🔴 W48 F3 — added WITH the tables, not after somebody noticed.
+     *
+     * CH-031 found `AgentRun` had gone a whole phase with no writer constraint,
+     * and the lesson recorded there was that a missing guard looks exactly like
+     * a permitted action. These two tables arrived in this phase, so the guard
+     * arrives with them.
+     *
+     * What it protects: `AgentChatTurn.role` is set by the service and never by
+     * a caller (`agent-conversation.service.ts`), because a second writer could
+     * store an `assistant` line nobody's agent said — into the transcript a
+     * person reads before approving something. The one-writer rule is what
+     * makes that claim checkable rather than a habit.
+     *
+     * ⚠️ `ai-assist.service.ts` READS `agentChatTurn` (`inputFor`) and must not
+     * appear here. Read and write are different powers, and this asserts the
+     * one that matters.
+     */
+    it('only the conversation service writes AgentConversation and AgentChatTurn', () => {
+      expect(writersOf('agentConversation')).toEqual([
+        'agent/agent-conversation.service.ts',
+      ]);
+      expect(writersOf('agentChatTurn')).toEqual([
+        'agent/agent-conversation.service.ts',
+      ]);
+    });
+
     it('the tool registry writes nothing at all', () => {
       // F2-6, restated from the outside: a tool that could write would be able
       // to cause the side-effect its own approval exists to gate.
