@@ -377,7 +377,73 @@ className **零 accent**。📌 一個 grep 命中唔等於一個 violation,**�
 - 本機 DB 而家有 **3 條測試 conversation**(`F3-3` 兩條 + `F5-3` 一條)。冇刪 ——
   `AgentConversation` **冇 `DELETE` endpoint**(`ADR-0041 D7`)
 
+---
+
+## Day 5 — 2026-08-19 · `F4` dock 入面嘅 chat
+
+api **98 / 1491**(唔變)· web **48 files / 533**(+10)· lint 0 · build 0。
+**`F4-1` … `F4-4` 收晒。**
+
+### 做之前要先改一樣嘢:個 SSE hook 返 `void`
+
+`useAgentConversationEvents` 由頭到尾返 `void` ⇒ **`MAX_CONSECUTIVE_FAILURES`
+觸發咗都冇人睇得到**,而一條靜咗嘅 thread 同一條冇人覆嘅 thread **喺畫面上一模一樣**。
+⇒ 改成返 `{ disconnected, reconnect }`。
+
+⚠️ **`disconnected` 只喺放棄嗰刻設,唔係每次 `onerror`** —— `EventSource` 普通重連都會
+fire `onerror`,一個喺嗰啲時候閃嘅 banner 會**訓練人無視佢**。
+
+### 🔴 `F4-2` 由兩條變三條,而第三條係 falsification 揾出嚟嘅
+
+| 拆走 | 結果 |
+|---|---|
+| 加一個 `Approve` 掣 | behavioural **1 紅** ✅ |
+| **改名做 `Accept proposal`** | **兩條都綠** 🔴 |
+| 拆 disconnected banner | **1 紅** |
+| 把兩句錯誤訊息合併返一句 | **1 紅** |
+
+📌 **第二行先係值錢嗰行。** W48 `F5-4` 講過「behavioural 擋唔到改名,所以要 source
+scan」—— **啱,但唔完整**:source scan 擋嘅係「**reach the mutation**」,而一個叫
+`Accept proposal`、乜都唔做嘅掣**兩條都過**。survive 落嚟嘅係一個**睇落似批准但決定唔到
+任何嘢**嘅控制,而喺一個講緊 approval 嘅畫面上面,呢個本身就係一種錯。
+
+⇒ **補第三條:allow-list 晒 dock 可以有嘅掣**(`['Close', 'Send']`)。重跑 **1 紅**,
+訊息逐字列出多咗嗰個。**新控制要顯式加入 list,而嗰一刻就係有人問「佢做咩」嘅一刻。**
+
+### `F4-1` 重用,而「零 local state」有一個前提值得寫低
+
+dock 只 hold 一個 `threadId`。🔴 **點解 local state 已經夠**:`AgentDock` 掛喺
+`AppShell` **一次**,而 `AppShell` **唔會因為 route 變而 remount**(只有 `<Outlet />` 變)。
+⇒ 內容零本地副本(`R4`),兩邊行同一個 query key。
+
+⚠️ **`TurnBubble` 由 `assistant.tsx` 抽出** —— 兩個氣泡實作一定會漂,而**漂咗冇嘢會紅**。
+
+### DS-3:dock 個 Send 唔可以係 primary
+
+`/assistant` 用 `variant="primary"` 係**啱**嘅 —— 佢係一版一個 job。
+dock 喺**每一版** ⇒ 一個 primary 喺度即係**喺所有版一次過**加多一個。
+⇒ 一條 source scan 釘 `variant="primary"` 同 `text-accent` 兩樣。
+
+### 🔴 tsc 捉到一個 test 捉唔到嘅嘢
+
+改咗 hook 個 return type 之後,`assistant.test.tsx` 個 mock 仍然返 `undefined`
+⇒ **TS2345**,而**所有 test 照綠**(因為 `/assistant` 唔讀 return value)。
+
+📌 **type contract 漂咗而 runtime 冇事** —— 呢個係 `npm run build` 存在嘅理由,
+而佢喺 `npm test` 之後先紅。
+
+⚠️ **順帶記低一個真 gap**:`/assistant` **忽略 `disconnected`** ⇒ `R35` 喺嗰邊仍然
+適用,只係冇 dock 咁頻繁。同 `No agent is switched on.` 蓋兩件事嗰個一齊登記。
+
 ### 🚧 下一步
+
+- **`F5-2b`** —— `F4` 之後個 **render 半邊要再跑一次**(`F5-2` 嗰次喺 `F4` 之前)。
+  📌 **同一個形狀第三次**:勾咗嘅 gate 唔蓋之後入嘅 commit
+- **`F5-4`** DEV live —— 仍然等 merge + 部署
+
+---
+
+## Day 4(續)— 原本嘅下一步
 
 **`F4` 同 `F5-4` 而家係同一個結,而佢要 owner 拆:**
 
