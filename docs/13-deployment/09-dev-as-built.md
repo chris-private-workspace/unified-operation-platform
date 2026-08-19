@@ -514,6 +514,76 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-19 · 部署 #11(`dev-b4915e9`)— **W48 agent conversation 上機 ⇒ SSE 第一次真捱過 proxy**
+
+**點解要有呢次部署**:2026-08-18 merge 咗 **W48 `agent-conversation`(PR #124/#125)**,一個新 migration(`20260818055347_w48_agent_conversation`,**純 additive:`CREATE TABLE` ×2 · `ADD COLUMN` ×1 · `CREATE INDEX` ×4 · FK ×5,零 DROP**)、七條新 route、一個新前端畫面 `/assistant`。W48 三條 acceptance(`F2-6` / `F7-3` / `F7-4`)**結構上要部署先驗得到**。
+
+⚠️ **開工先問「DEV 上面係邊個版本」**(部署 #6 立嘅規矩):`az containerapp list` 實測兩個 app 都係 `dev-df03563`(部署 #10)⇒ 落後成個 W48。
+
+#### 部署本身(七步同 #6 / #7 / #8 / #10 逐步一致)
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…`(部署 SP)· sub `rcitest` · tenant `4f63aaa0-…` —— 同腳本 hardcode 嗰個逐字對上 |
+| 1 `docker login`(params 嗰組,`--password-stdin`) | **`Login Succeeded`** |
+| 2 🔴 **真 pull** `node:20-slim` + `nginx:1.27-alpine`(由 Dockerfile `^FROM` 讀返,唔靠 doc 抄) | 兩個 `exit 0`,都 `Image is up to date` |
+| 3 `docker build` × 2(context = repo root) | 兩個 **`exit 0`** ⇒ BUG-008 個 `RUN test -f dist/main.js` gate 過 |
+| 4 `docker push` × 2 | api `sha256:67d1dba0…7c1c` · web `sha256:8076bc73…ca2c` —— **同本地 manifest list digest 逐字對上** |
+| 5 params tag `dev-df03563` → `dev-b4915e9`(**字串替換,唔 JSON round-trip**) | 2 處 · **`lengthDelta = 0`** · re-parse 仍然 **33** 個 parameter · 舊 tag 殘留 **0** · `git check-ignore` 再驗一次 |
+| 6 dry-run | api secrets **11** / env **30** · web 1 / 1 · **四個 sanity 全 `False`** · 11 個 secret 全部 masked 成 `<len N>` |
+| 7 `-Send` | 兩個 **`PATCH exit = 0`** |
+
+**PATCH 之後對數**:兩個 app 都 `dev-b4915e9`,api revision `--0000014` · web `--0000010`。
+
+#### 驗證 —— 唔睇 revision status(`F7-4`)
+
+**Step 0**(四個 endpoint 真打):`/` **200** 561 B · `/api/docs/api-json` **200 · 90,341 B**(部署 #10 嗰次 84,518 B)· `/api/me` **401**(唔係 502/504)· `/api/agent/conversations` **401 唔係 404** ⇒ route 已註冊。
+
+**OpenAPI 對數**:73 條 path,W48 七條全在 —— `/agent/conversations` · `/{id}` · `/{id}/turns` · `/{id}/events` · `/{id}/archive` · `/{id}/unarchive` · `/agent/profiles/options`。
+
+🟢🟢 **`F2-6` migration 真 apply** —— break-glass 登入後 `GET /api/agent/conversations` → **200 `[]`**。🔴 **`200 唔係 500` 先係佐證**(表唔存在 Prisma 會掟 `PrismaClientValidationError` ⇒ 500);`[]` 只係未有 row。同部署 #10 `w47_agent_profile` 嗰條**同一個判準**。
+
+#### 🟢🟢 `F7-3` — 真對話 + **SSE 真通**
+
+⚠️ **驗嘅唔係 token stream** —— `F4` 08-18 收窄咗做 turn-level notify(plan §8 deviation)。
+
+🔴 **SSE 用直讀 wire 驗,唔用瀏覽器,而呢個係刻意揀嘅**:DEV 側真正未知數係「**SSE 捱唔捱得過 ACA ingress + nginx**」(同 `F6-14` 400 body 嗰條同族),而 buffering 呢種失敗**喺瀏覽器睇落同「agent 未答完」一模一樣**。前端 refetch 嗰半本機 `F5-11` 已經驗過。順帶好處:密碼唔使入瀏覽器。
+
+**連線喺送 turn 之前開好** ⇒ 收到嘅一定係 server push:
+
+| 時間 | 事件 |
+|---|---|
+| 10:26:42.183 | `POST /turns` → **201** `{turn, runId}` |
+| **10:26:42.262** | `data: {"conversationId":"…","type":"changed"}` ← **79 ms**(user turn) |
+| **10:26:44.134** | `changed` ← 1.9 s(assistant turn) |
+| 10:27:06 / :31 / :56 | `type:"ping"` ×3,每 **25 秒** |
+
+`content-type: text/event-stream`,event **逐個即時到**(唔係最後一次過吐出嚟)⇒ **proxy 冇 buffer 住個 stream**。⚠️ 順帶記低:回應**冇** `x-accel-buffering` header ⇒ 唔 buffer **唔係靠嗰個 header 擋**,而係 nginx 配置本身唔 buffer;將來有人改 nginx.conf 就冇咗呢道保險而**冇任何嘢會紅**。
+
+對話最後 **4 個 turn**(兩問兩答),兩個 run 都 `completed` ⇒ Azure OpenAI env(部署 #9b 配)冇被 PATCH 洗走。
+
+#### 🔴 一件唔部署就唔會知嘅事:DEV **零 profile**,W48 開唔到對話
+
+`GET /api/agent/profiles` 返 **`[]`**(連 inactive 都冇)⇒ 而 W47 刻意**冇 default profile**,`/assistant` 每條新對話都會 400。**profile 係 DB 資料唔係 code,唔會跟部署走**(同 `CH-026 G-7` curate 同族,部署 #10 `G8` 亦撞過同一件事)。
+
+⇒ 本次建咗 `w48-deploy-check`(model = `gpt-5.6-luna`,即 `AGENT_MODEL`),驗完 `active=false`(W47 冇 DELETE)。
+
+#### 🔴 `AgentRun.conversationId` 寫得入 DB,但**冇經 API 出去**
+
+`GET /agent/runs` 同 `GET /agent/runs/:id` **兩邊都冇 `conversationId` 鍵**。
+
+🟢 **但唔可以由此推論「DB 冇寫」** —— `agent-conversation.service.ts:97-99` 靠 `agentRun.findUnique({ select: { conversationId: true } })` 攞值,`if (!run?.conversationId) return;`;而 **assistant turn 真係寫咗兩條** ⇒ **`AgentRun.conversationId` 一定有值**,否則嗰兩條 turn 結構上唔會存在。**呢個係一個唔使查 DB 就成立嘅證明。**
+
+⇒ 缺嘅只係 **read model**:W48 加咗個欄,而 W47 個全域 run 列表 select **喺自己嗰條 branch 上面唔知有呢個欄**。**同 `CH-031` × `W47` 嗰個 auto-merge 縫隙同族** —— 兩邊各自完全正確。**後果**:admin 喺全域 run 列表見到對話開嘅 run(`requestId` = null),但**冇任何嘢講佢由對話嚟**。已登 `BACKLOG`,**本次刻意唔喺部署入面修**(郁 API contract)。
+
+#### 順手 live 驗埋 `archive`(唔喺原 acceptance)
+
+`POST /agent/conversations/:id/archive` → **200** `archivedAt` 有值 · list **0 items** · **`GET :id` 仍然 200 兼 4 個 turn 齊** ⇒ soft archive **兩半都驗**(同 CH-031 `G1`/`G2` 一樣嘅雙邊驗法)。
+
+**收工狀態**:profile `active=false` · 對話 archived · **2 個 run 刻意保留**(佢哋係 W48 喺 DEV 第一次真跑嘅證據)。
+
+---
+
 ### 2026-08-17 · 部署 #10(`dev-df03563`)— **W47 agent registry + CH-031 soft-hide 一次過上機**
 
 **點解要有呢次部署**:同日 merge 咗 **W47 `agent-registry`(PR #119/#120)** 同 **CH-031 / ADR-0040(PR #117/#118)**,兩單合共 **31 個 commit、2 個新 migration**;而兩邊都各有 acceptance **結構上要部署先收得到**(W47 `G1` · CH-031 `G1`/`G2`)。

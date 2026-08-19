@@ -4,7 +4,7 @@ name: "Conversation session —— chat model + streaming(Tier 2 第二塊)"
 sprint_week: W48
 start_date: 2026-08-18
 end_date: 2026-08-21          # 七條 OQ 答完之後先填得出,見 §5
-status: active                # draft | active | closed
+status: closed                # draft | active | closed —— 🟢 2026-08-19 部署 #11 收埋 G2/G9 ⇒ 九條全 ✅。carry-over 見 BACKLOG(`F5-12` picker 歧義 · `AGENT-RUN-CONVERSATION-ID`)
 spec_refs:
   - docs/02-architecture/agent-tier2-scope.md §3 G4 / §4 T2-c / §5.3 OQ-4
   - docs/adr/0036-*.md(D3 human-in-the-loop · D6 AgentMessage 永久保留 · D0)
@@ -181,21 +181,28 @@ model AgentTurn {
 | # | Criterion | Target | Block closeout? | 狀態(2026-08-18) |
 |---|---|---|---|---|
 | G1 | ADR `Accepted` | 互動模型寫低咗,七條 OQ 有答案 | **Yes** | ✅ `ADR-0041` D1–D9 + Errata E1 |
-| G2 | migration 對真 DB | 本機 + DEV 都 applied | **Yes** | 🟡 **半收** —— 本機 ✅(`28 migrations found` / `No pending`);**DEV ❌ 差一次部署**(唔差操作,唔差答案) |
+| G2 | migration 對真 DB | 本機 + DEV 都 applied | **Yes** | ✅ **全收(2026-08-19 部署 #11 `dev-b4915e9`)** —— 本機 `28 migrations found` / `No pending`;**DEV** `GET /api/agent/conversations` → **200 `[]`**(🔴 `200 唔係 500` 先係佐證 —— 表唔存在 Prisma 掟 `PrismaClientValidationError` ⇒ 500) |
 | G3 | **舊 run 嘅 transcript 讀路零改動** | `GET /agent/runs/:id` 行為一個字唔變 | **Yes** | ✅ shape guard spec + live `GET /agent/runs/:id` 照返 `steps`/`messages`/`proposals` |
 | G4 | chat 唔可以繞過 approval | 產生 proposal 之後**仍然要人批**(`ADR-0036 D3`) | **Yes** | ✅ 兩條 test(behavioural + source scan)· **live 實測** run 泊喺 `awaiting_approval`,畫面只有 link 冇掣 |
 | G5 | `runState` / `prompt` 冇經新 endpoint 洩出 | 0 | **Yes** | ✅ `CONVERSATION_SELECT` 一個常數 + spec |
 | G6 | falsification 每道新閘一次 | 真紅零誤傷 | **Yes** | ✅ 四道:`F5-7` 1 紅 9 綠 · `F5-9` 兩道(select 洩 `prompt` 1 紅 28 綠 · 唔送 `profileId` 1 紅 15 綠)· `F5-12` label 1 紅。**每道都問過「紅嗰個原因係咪我想證嗰個」** |
 | G7 | H6 light + dark | 兩個都 render 過 | **Yes** | ✅ **render 咗兩次**:`F5-3`(氣泡 · 三個 badge)· `F5-10`(picker · purple badge,因為中間入咗 code)。token swap 實測 · 零橫向溢出 · **`F5-3` 嗰次順帶捉到 `F5-7`** |
 | G8 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ api **97 / 1484** · web **45 / 480** · tsc / lint / build 0 —— ⚠️ **`F5-12` 之後要再跑一次**(W47 教訓:勾咗嘅 gate 唔等於蓋住之後入嘅 commit) |
-| G9 | live 驗(本機 + DEV) | 真傾到 + **SSE 真通到**(⚠️ 唔係 token stream,見 §8 2026-08-18 deviation) | **Yes** | 🟡 **半收** —— 本機 ✅(11 turn · proposal · **斷線重連問到底** · **`OQ-D` 對照實驗** · `F5-11` 揀 profile 揀到行為);**DEV ❌ 差一次部署 + 之後一次真對話**(兩件事,唔係一件) |
+| G9 | live 驗(本機 + DEV) | 真傾到 + **SSE 真通到**(⚠️ 唔係 token stream,見 §8 2026-08-18 deviation) | **Yes** | ✅ **全收(2026-08-19)** —— 本機 ✅(11 turn · proposal · **斷線重連問到底** · **`OQ-D` 對照實驗** · `F5-11` 揀 profile 揀到行為);**DEV** ✅ 4 turn 兩問兩答 · 兩個 run `completed` · **SSE 連線喺送 turn 之前開好** ⇒ `changed` @ **79 ms** + `changed` @ 1.9 s + `ping` ×3 每 25 秒,**逐個即時到 ⇒ proxy 冇 buffer** |
 
 > 🔴 **`G3` 同 `G4` 係本 phase 兩條真紅線**,其餘七條係例行。
 > `G3` 防「順手改咗既有表」;`G4` 防「chat 因為感覺輕鬆,就變成一條繞過批准嘅路」。
 >
-> 🔴 **`G2` 同 `G9` 兩條都寫住「DEV ❌」,但佢哋唔係同一個阻塞** —— `G2` 部署完**自動就收**,
-> `G9` 要**部署完再有人做一次對話**。W47 收尾嗰陣把 `G1`/`G8` 當成同一個阻塞而佢哋唔係,
-> 所以呢度逐條寫明差嘅係「一次部署 / 一次操作 / 一個未答嘅問題」邊一種。
+> 🟢 **`G2` / `G9` 2026-08-19 部署 #11 之後兩條都收咗 ⇒ 九條全 ✅。** 以下原文保留,因為佢
+> 事後**逐字兌現咗**,而嗰個分辨方法先係值得留低嗰樣嘢:
+>
+> > 🔴 **`G2` 同 `G9` 兩條都寫住「DEV ❌」,但佢哋唔係同一個阻塞** —— `G2` 部署完**自動就收**,
+> > `G9` 要**部署完再有人做一次對話**。W47 收尾嗰陣把 `G1`/`G8` 當成同一個阻塞而佢哋唔係,
+> > 所以呢度逐條寫明差嘅係「一次部署 / 一次操作 / 一個未答嘅問題」邊一種。
+>
+> **實際發生**:`G2` 部署完打一條 read 就收;`G9` 要另外建 profile、開對話、送兩個 turn、
+> 開 SSE 連線 —— **四個操作**。⚠️ 而其中「**建 profile**」連本條都冇預到:DEV **零 profile**,
+> 而 W47 刻意冇 default ⇒ **唔建就一句都問唔到**。📌 **「差一次操作」本身仲可以再拆**。
 
 ---
 

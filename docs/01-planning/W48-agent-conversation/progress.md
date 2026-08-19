@@ -705,6 +705,69 @@ purple badge `#6d28d9` → **`#a982f0`**(DS-8 AI → purple)· picker `--card`
 
 ---
 
+## Day 5 — 2026-08-19 · **部署 #11(`dev-b4915e9`)⇒ `F2-6` / `F7-3` / `F7-4` 三條全收,phase `closed`**
+
+**做咗乜**:七步部署(同 #6 / #7 / #8 / #10 逐步一致),然後驗三條 DEV acceptance。全程**零 code 改動** —— 改嘅只有 `aca.params.dev.json` 個 image tag(gitignored)同文件。
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…`(部署 SP)· sub `rcitest` —— **session 仲喺度,唔使 Chris 自己 login** |
+| 1 `docker login`(`--password-stdin`) | `Login Succeeded` |
+| 2 真 pull 兩個 base image | 兩個 `exit 0`(`Image is up to date`) |
+| 3 `docker build` × 2 | 兩個 `exit 0` ⇒ BUG-008 個 gate 過 |
+| 4 `docker push` × 2 | api `sha256:67d1dba0…7c1c` · web `sha256:8076bc73…ca2c`,**同本地 manifest list digest 逐字對上** |
+| 5 params tag 換 | 2 處 · `lengthDelta = 0` · 33 個 parameter · 舊 tag 殘留 0 · `git check-ignore` 再驗 |
+| 6 dry-run | secrets 11 / env 30 · **四個 sanity 全 `False`** · 11 個 secret 全 masked |
+| 7 `-Send` | 兩個 `PATCH exit = 0`,api `--0000014` · web `--0000010` |
+
+### 🟢🟢 收貨 —— 三條都用「只有新 code 先出到」嘅嘢,冇一條睇 revision status(`F7-4`)
+
+- **`F2-6`** `GET /api/agent/conversations` → **200 `[]`**。🔴 **`200 唔係 500` 先係佐證**:表唔存在 Prisma 掟 `PrismaClientValidationError` ⇒ 500;`[]` 只係未有 row。同部署 #10 驗 `w47_agent_profile` **同一個判準**。
+- **`F7-3`** 4 個 turn 兩問兩答 · 兩個 run 都 `completed` ⇒ Azure OpenAI env(部署 #9b 配)冇被 PATCH 洗走。
+- **OpenAPI** 73 條 path,W48 **七條全在**;web bundle `index-Bo38NJHT.js`(277,259 B)新字串全中,負面控制 `No seats enabled` **False**。
+
+### 🔴🔴 一個方法論決定,值得記多過個結果本身:**SSE 用直讀 wire 驗,唔用瀏覽器**
+
+交接建議「最好經瀏覽器做一次」。**冇照做**,理由係兩者答緊唔同問題:
+
+| 驗法 | 答到 |
+|---|---|
+| 瀏覽器 | 前端收到通知之後**真 refetch 到新 turn** —— 本機 `F5-11` 已經驗過 |
+| **直讀 wire** | **SSE 捱唔捱得過 ACA ingress + nginx** —— 呢個先係 DEV 側唯一未知數 |
+
+🔴 **而 buffering 呢種失敗,喺瀏覽器睇落同「agent 未答完」一模一樣** —— turn 會成功、assistant turn 會落 DB、畫面就係唔郁。用瀏覽器驗,分唔開「proxy buffer 咗」同「run 慢」。同 `F6-14`(400 body 捱唔捱得過 proxy)**同族**。順帶好處:密碼唔使入瀏覽器。
+
+**連線喺送 turn 之前開好** ⇒ 收到嘅一定係 server push:
+
+```
+10:26:42.183  POST /turns -> 201 {turn, runId}
+10:26:42.262  data: {"conversationId":"…","type":"changed"}   <- 79 ms(user turn)
+10:26:44.134  data: {"conversationId":"…","type":"changed"}   <- 1.9 s(assistant turn)
+10:27:06/31/56  type:"ping"  x3,每 25 秒
+```
+
+event **逐個即時到**,唔係最後一次過吐 ⇒ **proxy 冇 buffer**。
+⚠️ **順帶一個冇人守住嘅位**:回應**冇** `x-accel-buffering` header ⇒ 唔 buffer **唔係靠嗰個 header 擋**,係 nginx 配置本身。將來有人改 `nginx.conf.template`,呢道保險就冇咗,而**冇任何 test 會紅**。
+
+### 🔴 兩件唔部署就唔會知嘅事
+
+**① DEV 零 profile ⇒ `F7-3` 根本開唔到對話。**
+`GET /agent/profiles` 返 `[]`(**連 inactive 都冇**),而 W47 **刻意冇 default profile** ⇒ `/assistant` 每條新對話都 400。**profile 係 DB 資料,唔跟部署走**(同 `CH-026 G-7` curate 同族;部署 #10 個 `G8` 撞過一模一樣嘅事)。
+📌 **plan §3 寫住「`F7-3` 差一次部署 + 一次操作」,而實際係四個操作** —— 建 profile / 開對話 / 送兩個 turn / 開 SSE 連線。**「差一次操作」本身仲可以再拆**,而嗰個拆法只有真做嗰陣先見到。
+
+**② `AgentRun.conversationId` 寫得入 DB,但兩條 read API 都冇暴露佢。**
+`GET /agent/runs` 同 `GET /agent/runs/:id` **兩邊都冇個鍵**。
+🟢 **但唔可以由此推「DB 冇寫」** —— `agent-conversation.service.ts:97-99` 靠 `agentRun.findUnique({ select: { conversationId: true } })` 攞值,跟住 `if (!run?.conversationId) return;`;而 **assistant turn 真係寫咗兩條** ⇒ 個欄一定有值,否則嗰兩條 turn 結構上唔會存在。**呢個係一個唔使查 DB(到唔到 private endpoint 都無所謂)就成立嘅證明。**
+🔴 **形狀 = `CH-031` × `W47` auto-merge 縫隙同族**:W48 加個欄,而 W47 個全域 run 列表 select **喺自己嗰條 branch 上面唔知有呢個欄**,**兩邊各自完全正確**。後果係 admin 見到對話開嘅 run(`requestId` = null)而冇任何嘢講佢由對話嚟。**本次刻意冇修**(郁 API contract,§1.3)⇒ 登 `BACKLOG` `AGENT-RUN-CONVERSATION-ID`。
+
+### 順手 live 驗埋 `archive`(唔喺原 acceptance)
+
+`POST /agent/conversations/:id/archive` → 200 `archivedAt` 有值 · list **0 items** · **`GET :id` 仍然 200 兼 4 個 turn 齊** ⇒ soft archive **兩半都驗**(同 CH-031 `G1`/`G2` 一樣嘅雙邊驗法)。
+
+**收工**:profile `active=false`(W47 冇 DELETE)· 對話 archived · **2 個 run 刻意保留**,佢哋係 W48 喺 DEV 第一次真跑嘅證據。
+
+---
+
 ## Retro(`F8-2`)
 
 ### 估算 vs 實際
