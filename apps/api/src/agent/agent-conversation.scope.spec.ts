@@ -27,6 +27,37 @@ import { AgentConversationService } from './agent-conversation.service';
  * covers a request that does not EXIST (404), and nothing anywhere covered a
  * request that exists and belongs to somebody else (403). The dangerous id is
  * the one that resolves.
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * ⚠️ **Read this before citing the 403 tests as today's protection.**
+ *
+ * W49 `F3-3` ran the OpCo case live and it never reached `assertOpcoScope`. The
+ * chain, all three links verified rather than assumed:
+ *
+ *   1. `AgentConversationController` is `@Roles(ADMIN, REGIONAL)`.
+ *   2. `user-admin.service.ts` `normaliseScope` starts `if (role !== OPCO_IT)
+ *      return null` — ADMIN and REGIONAL are FORCED to a null scope.
+ *   3. `assertOpcoScope` is `if (user.opcoScopeId && …)`.
+ *
+ * ⇒ Everyone who gets past the role guard has a null scope, so the OpCo check
+ * cannot fire. Live, an OPCO_IT caller got `403 Insufficient role` from the
+ * guard — a refusal, but from a different gate than the one this file exercises.
+ *
+ * 🔴 That does not make these tests worthless, and it does not make the check
+ * dead code — but it does change what they are FOR. They stop being "the thing
+ * that protects the endpoint today" and become the thing that will hold if
+ * `canUseAgent` ever widens to OPCO_IT (the Tier 2 scope report floats per-agent
+ * scoping, so this is not hypothetical). Written down because a check that looks
+ * like it is guarding something, and is not, is the same shape as `R13`: a
+ * reassuring appearance nobody re-examines.
+ *
+ * ⚠️ These call `controller.create(...)` directly, which is BELOW the guard.
+ * That is deliberate — the point is the service's own reasoning — but it means
+ * nothing here says anything about who can reach the route.
+ *
+ * 🟢 Today's real protection for `D-CTX`, live-verified in `F3-3`:
+ * role guard (who may ask) + `findUnique` (an id that resolves to nothing is a
+ * 404, never a thread with no context). Both are covered below.
  */
 
 const OWN_OPCO = 'opco_pfu_hk';

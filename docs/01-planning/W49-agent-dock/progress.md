@@ -232,7 +232,87 @@ top bar 嗰個**連收 dock 個掣都蓋埋** ⇒ **死局**,一定要修;
   **清 `dist/` + 讀返嗰個 `tsbuildinfo` ⇒ skip emit**。dry-run 見到**兩條 `nest start --watch`**。
   🟢 清 cache + 只留一條 ⇒ **20 秒起到**(對照上次白等 200 秒)。
 
+---
+
+## Day 3 — 2026-08-19 · `F3` context passing(`D-CTX`)
+
+api **98 suites / 1491**(+1/+7)· web **48 files / 523**(+1/+19)· lint 0 · build 0。
+**`F3-1` / `F3-2` / `F3-3` 三條收晒。**
+
+### `R2` 講嗰條縫,揾到咗確切位置
+
+開工第一件事係查「今日邊條 test 守住呢件事」,答案係:**冇**。
+`agent-conversation.service.spec.ts` 有 `checks the request exists`(**404**),
+而**全 repo 冇一條驗「request 存在,但屬於第二個 OpCo」(403)**。
+
+📌 **危險嗰個 id 唔係揾唔到嗰個,係揾得到嗰個。**
+
+`R2` 亦明文講咗兩種寫法冇價值,兩種我都避開咗:
+① assert 前端「有送 `requestId`」⇒ 只證明 dock 做咗 dock 做嘅嘢
+② mock 個 service ⇒ `agent-conversation.controller.spec.ts` **正正咁做**(佢啱,佢係講接線),
+   所以 `assertOpcoScope` 喺嗰度**由頭到尾冇行過**
+
+⇒ 新 `agent-conversation.scope.spec.ts`:**真 controller + 真 service,只 mock DB**。
+
+### falsification 四道,而第四道教返一樣嘢
+
+| 拆走 | 結果 | 備註 |
+|---|---|---|
+| `assertOpcoScope`(**後端**,`R2` 指定) | **2 紅 42 綠** | 🔴 **值得記嘅係邊啲冇紅** —— 本來已經存在嘅**三個** `agent-conversation` suite **全部照綠**。拆走一道真安全閘而三份 spec 冇反應,就係嗰條縫嘅實證 |
+| dock 個 query param | **1 紅** | |
+| `routeContext` 個 `/requests/new` 排除 | **2 紅,跨兩個檔** | 一條純函數 unit、一條 dock render —— 兩層各自捉到 |
+| `/assistant` 讀 query param | **1 紅,但紅得唔對位** | 見下 |
+
+🔴 **第四道:紅咗,但唔係我想驗嗰件事紅。** 佢喺「**揾唔到個掣**」嗰層就死咗
+(`Unable to find … button`),根本未行到 `toHaveBeenCalledWith` ⇒ **「body 送錯」同
+「label 改咗」會產生同一個紅**。
+⇒ 拆開兩條:body 嗰條改用**兩個 label 都收**嘅 selector,label 另立一條。
+重跑 ⇒ **2 紅而原因分開**(一條 `expected "spy" to be called with arguments`,一條揾唔到掣)。
+📌 同 Day 2 嗰個「拆出 crash 就唔算數」**同族**:**紅得唔對位 = 冇驗到**。
+
+🟢 **順帶一個 W48 教訓嘅正面結果**:改咗 `assistant.tsx` 個 mutate body 之後
+`assistant.test.tsx` 一條都冇紅,一度以為又中「UI test mock 咗 mutation」——
+查返先知 **`F5-8` 當時已經補咗一條 assert body**,而佢綠係**啱**嘅(冇 query param 就送 null)。
+⇒ 要補嘅係帶 context 嗰條。**呢次冇再犯,係因為上次犯完寫低咗。**
+
+### 🔴🔴 `F3-3` live 推翻咗佢自己嘅前提 ⇒ 新 `R8`
+
+原本要驗:「用一個 scope 唔到嗰張 request 嘅帳號送個 id 上去 ⇒ 應該拒絕」。
+用 seed 個 `opco.it.rhk@rapo.com.hk`(`AUTH_DEV_USER_EMAIL` shell env,**`.env` 唔改**),
+`/me` 確認 `OPCO_IT` / `RHK`,送 PFU-HK 嗰張 ⇒ **403,但係 `Insufficient role`**。
+
+**唔係 `Out of OpCo scope`。** 三條 link 逐條驗:
+
+1. controller `@Roles(ADMIN, REGIONAL)`
+2. `user-admin.service.ts:238 normaliseScope` 第一句 —— `if (role !== OPCO_IT) return null`
+   ⇒ **ADMIN / REGIONAL 被強制 null scope**(DB 實測 `ADMIN 1 users / 0 with_scope`)
+3. `assertOpcoScope` 係 `if (user.opcoScopeId && …)`
+
+⇒ **過得到 role guard 嘅人,一定觸發唔到 `assertOpcoScope`。**
+
+🔴 **但佢唔係 dead code** —— `canUseAgent` 一放寬到 OPCO_IT(Tier 2 scope report 提過
+per-agent 範圍)佢就即刻生效 ⇒ **唔應該刪**。
+🔴 **問題係佢睇落好似喺度守緊** —— 呢個形狀同 **`R13`** 一樣:**一個令人安心、而實際上
+冇被觸發嘅檢查,冇人會再檢視佢**。⇒ 登 `plan §4 R8`,兼且寫入 spec 頂部。
+
+🟢 **改為驗今日真正生效嗰條路**(ADMIN,唯一變數 = `requestId`):
+
+| | 送咩 | 結果 |
+|---|---|---|
+| A | 唔存在嘅 id | **404 `Request not found`** —— 唔會靜靜開一條冇 context 嘅 thread |
+| B | 真 id | **201**,`requestId` **逐字存低** |
+| C | `null` | **201**,`requestId: null` |
+
+📌 **`G4` 嘅意思由此改咗**:今日 `D-CTX` 嘅實際保護 =
+**role guard(邊個可以問)+ `findUnique` 個 404(一個唔 resolve 嘅 id 唔會變成 thread)**。
+
+### ⚠️ 手尾
+
+- **本機 DB 留低咗兩條測試 conversation**(實驗 B / C 開嘅)。冇刪 —— `AgentConversation`
+  **冇 `DELETE` endpoint**(`ADR-0041 D7`),繞過平台直接落 DB 刪唔值得為兩條測試資料做
+- 5433 **借咗第二次,已還原兼驗**(真 TCP `True` · `pg_isready` · 佢個 `ai_document_extraction` 完好)
+
 ### 🚧 下一步
 
-- **`F3`** context passing(`D-CTX`)—— ⚠️ `R2` 明文警告嗰條 test 好易寫成 tautology
-- ⚠️ **`F4` 仍然閂住** 等 W48 `F7-3`(DEV live)
+- **`F4` 仍然閂住** 等 W48 `F7-3`(DEV live)
+- **`F5`** gate + `ui-design` DS-1…12 + 本機/DEV live

@@ -45,9 +45,12 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 
 ## `F3` — Context passing(`D-CTX`)
 
-- [ ] F3-1 由 route 推導 `{ kind, id }`,開對話嗰陣送 `requestId`
-- [ ] F3-2 🔴🔴 **`G4` 嗰條 test 唔可以係 tautology** —— `plan R2` 明文警告:前端 test 自己砌 context、後端 test 自己砌 user,**兩層都綠而縫喺中間**(BUG-011 · W45 `apiPatch` · W48 `F5-8` **三次同族**)。⇒ ①要打**真 controller** ②**falsification 拆嘅係 `assertOpcoScope`,唔係前端**
-- [ ] F3-3 一條 live:用一個 scope 唔到嗰張 request 嘅帳號,由 dock 送個 id 上去 ⇒ **應該拒絕**
+- [x] F3-1 ✅ **新 `lib/route-context.ts`** —— 純函數,由 pathname 推導 `{ kind, id } | null`;dock 顯示佢(request number,攞唔到就退返個 id)兼且把 id 當 **query param** 交畀 `/assistant`,而 `/assistant` 開新對話送上去。🔴 **`OQ-B` 答①整個住喺呢個檔嘅 TYPE 入面** —— 答②會把「冇 scope 概念嘅 UI state」變成 agent 資料來源。⚠️ **`/requests/new` 明文排除**(佢同 detail route 形狀一模一樣,唔排除就會送一個叫 `new` 嘅 request id)
+- [x] F3-2 ✅ **新 `agent-conversation.scope.spec.ts`(7 條,真 controller + 真 service,只 mock DB)**。🔴 **開工先揾到嗰條縫嘅確切位置**:`agent-conversation.service.spec.ts` 有「checks the request exists」(**404**),而**全 repo 冇一條驗「request 存在但屬於第二個 OpCo」(403)** —— 危險嗰個 id 唔係揾唔到嗰個,係**揾得到**嗰個。**falsification 拆 `assertOpcoScope` ⇒ 2 紅 42 綠**,而值得記嘅係邊啲冇紅:**本來已經存在嘅三個 `agent-conversation` suite 全部照綠** ⇒ 拆走一道真安全閘而三份 spec 冇反應,就係 `R2` 講嗰條縫嘅實證
+- [x] F3-3 ✅ **live 做咗,而佢推翻咗本條自己嘅前提 ⇒ 登 `plan §4 R8`**。用 seed 個 `opco.it.rhk@rapo.com.hk`(`AUTH_DEV_USER_EMAIL` shell env,**`.env` 一個字唔改**)⇒ `/me` 確認 `OPCO_IT` scoped `RHK`,送 PFU-HK 嗰張 request 個 id 上去 ⇒ **403,但係 `Insufficient role`(role guard)唔係 `Out of OpCo scope`**。
+  🔴🔴 **三條 link 全部驗過**:①controller `@Roles(ADMIN, REGIONAL)` ②`normaliseScope` 第一句 `if (role !== OPCO_IT) return null` ⇒ **ADMIN / REGIONAL 被強制 null scope**(DB 實測 `ADMIN 1 / 0 with_scope`)③`assertOpcoScope` 係 `if (user.opcoScopeId && …)` ⇒ **過得到 role guard 嘅人一定觸發唔到佢**。
+  🟢 **改為驗今日真正生效嗰條路**(ADMIN 身份,唯一變數 = `requestId`):**A** 唔存在嘅 id ⇒ **404 `Request not found`**(唔會靜靜開一條冇 context 嘅 thread)· **B** 真 id ⇒ **201 兼 `requestId` 逐字存低** · **C** `null` ⇒ **201**。
+  📌 **`G4` 嘅意思由此改咗**:今日 `D-CTX` 嘅實際保護 = **role guard(邊個可以問)+ `findUnique` 個 404(一個唔 resolve 嘅 id 唔會變成 thread)**;`assertOpcoScope` **唔係 dead code,係 defence-in-depth**,但唔可以再當佢係今日嘅保護
 
 ## `F4` — dock 入面嘅 chat
 
