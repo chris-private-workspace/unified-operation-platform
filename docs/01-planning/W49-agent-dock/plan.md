@@ -16,7 +16,8 @@ prior_phase: W48-agent-conversation
 
 > **Plan version**:1.0
 > **Approved by**:**Chris Lai(2026-08-19)** —— `OQ-A` / `OQ-B` 照建議拍板,plan `draft → active`
-> ⚠️ **`OQ-C` / `OQ-D` 仍然未答**,用建議做 default 繼續(見 §7 · §8 changelog)
+> 🟢 **`OQ-D` 2026-08-19 答咗 = overlay**(同 default 一致 ⇒ `F1` 零返工)
+> ⚠️ **淨低 `OQ-C` 未答**,用建議做 default 繼續(見 §7 · §8 changelog)
 > **Owner**:Chris Lai
 > **決策來源**:`docs/02-architecture/agent-tier2-scope.md`(scope approved 2026-08-17)
 > **前置**:W48 `T2-c` —— ⚠️ **merge 咗但 phase 仲係 `active`**,見 §0.2
@@ -200,22 +201,26 @@ layout 行為**嘅嘢(non-modal · 唔可以 trap focus · 要決定 push 定 ov
 
 ---
 
-## 7. Open Questions(🔴 **四條,兩條 blocking**)
+## 7. Open Questions(四條 —— 🟢 **三條答咗**,淨低 `OQ-C`)
 
 | # | 問題 | 建議 | 影響 |
 |---|---|---|---|
 | **OQ-A** 🟢 **答咗** | W48 `F7-3`(conversation SSE 喺 DEV 真通)未做,`T2-d` 開唔開工? | 🟢 **Chris 2026-08-19 揀建議:可以開,但 `F1`/`F2` 行先** —— `Drawer` primitive 同 layout 唔碰 SSE。**`F4`(dock 入面 chat)之前要收到 `F7-3`** | ⇒ `F4` 由「排喺 `F3` 後面」變成「**排喺一個唔喺本 phase 嘅事件後面**」。checklist `F4` 要明文標住呢個閘 |
 | **OQ-B** 🟢 **答咗** | 「當前頁面嘅資料」= ① **route + 主要 entity id**,定 ② **頁面 render 咗嘅嘢**? | 🟢 **Chris 2026-08-19 揀 ①** | 🟢🟢 **零後端改動確立** —— ①今日已經實作咗(§0.1),⇒ 本 phase **零 schema · 零 migration · 零新 endpoint · 零 ADR**,純前端。而②會把冇 scope 概念嘅 UI state 變成 agent 資料來源 |
 | **OQ-C** | dock 同 W48 個 `/assistant` 全頁,關係係? | **兩個都留** —— dock = 隨手問;`/assistant` = 睇返舊對話 / 長篇。兩邊行同一個 query key(`R4`) | 揀「dock 取代」就要拆一個啱啱做完嘅畫面兼且 `design-system.md §6` 要除名 |
-| **OQ-D** | `Drawer` 用 **push**(把內容推窄)定 **overlay**(浮喺上面)? | **overlay + 唔加 scrim** —— push 會令每一版嘅 grid 都要處理一個新斷點,而 `G5` 只要求「唔阻住底下操作」 | 呢條係 `Drawer` primitive 嘅形狀本身,**做完先改 = 重做** |
+| **OQ-D** 🟢 **答咗** | `Drawer` 用 **push**(把內容推窄)定 **overlay**(浮喺上面)? | 🟢 **Chris 2026-08-19 揀 overlay(即建議)** —— push 會令每一版嘅 grid 都要處理一個新斷點,而 `G5` 只要求「唔阻住底下操作」 | 🟢 **`F1` 落地嗰個 default 確認** ⇒ `drawer.tsx` 同 `design-system.md §2` 七條約束**一個字唔使改**;`F2` 個 dock 做 layout **sibling** 唔做 flex child |
 
-🟢 **`OQ-A` / `OQ-B` 2026-08-19 答咗 ⇒ plan `draft → active`。**
-⚠️ **`OQ-C`(dock 同 `/assistant` 關係)· `OQ-D`(push 定 overlay)仍然未答**,用建議做
-default 繼續,已記 changelog。🔴 **但兩條嘅「改動成本」唔同,要分清楚**:
+🟢 **`OQ-A` / `OQ-B` / `OQ-D` 2026-08-19 答咗。**`OQ-A` / `OQ-B` 令 plan `draft → active`;
+`OQ-D` 落喺 `F2` 開工嗰日答,而**答案同 default 一致 ⇒ 零返工**。
+⚠️ **淨低 `OQ-C`(dock 同 `/assistant` 關係)仍然未答**,用建議做 default 繼續。
+
+🔴 **兩條嘅「改動成本」唔同,而呢個分別今次真係換到嘢**:
 
 - **`OQ-D` 遲答會貴** —— 佢係 `Drawer` primitive **形狀本身**,做完先改等於重做。
   ⇒ `F1` 用 default(**overlay,唔加 scrim**)落地,而**約束寫入 `design-system.md §2`**,
-  即係話改佢嗰陣會撞返 H6 一次(呢個係好事,唔係阻礙)
+  即係話改佢嗰陣會撞返 H6 一次(呢個係好事,唔係阻礙)。**2026-08-19 答案 = overlay,
+  所以嗰道 H6 唔使撞。**📌 但要記住:令佢平嘅唔係「估中咗」,係「估錯都只係撞返一次
+  H6 而唔係靜靜漂走」
 - **`OQ-C` 遲答唔貴** —— 佢只影響 `F4`,而 `F4` 本身已經被 `OQ-A` 閂住等 `F7-3`
 
 ---
@@ -228,6 +233,7 @@ default 繼續,已記 changelog。🔴 **但兩條嘅「改動成本」唔同,�
 | 2026-08-19 | 🟢 **`OQ-A` / `OQ-B` 照建議拍板,`draft → active`** | `OQ-B` 揀①令「零後端改動」確立 ⇒ **純前端 phase**。`OQ-A` 令 `F4` 排喺一個**唔喺本 phase 嘅事件**(W48 `F7-3`)後面 | Chris Lai |
 | 2026-08-19 | ⚠️ **`OQ-C` / `OQ-D` 未答,用建議做 default 開工** | `OQ-D`(overlay,唔加 scrim)**遲答會貴**,因為佢係 primitive 形狀本身 ⇒ 落地兼且把約束寫入 `design-system.md §2`,將來改就會再撞一次 H6(呢個係設計上想要嘅)。`OQ-C` 遲答唔貴,佢只影響已經被 `OQ-A` 閂住嘅 `F4` | AI(記錄,待 owner) |
 | 2026-08-19 | 🚧 **`F1` acceptance 個「light/dark 真 render」押後到 `F2`** | `Drawer` 未掛載到任何頁面之前 **render 唔到佢** —— 佢係一個 `fixed` 面板,冇 caller 就冇嘢喺畫面。⇒ 併入 `F2-5`(而且嗰度先影得到「開」同「收」兩個狀態)。⚠️ **acceptance 冇被刪,只係搬咗位** | AI |
+| 2026-08-19 | 🟢 **`OQ-D` 答咗 = overlay(同 default 一致)** | `F1` 已經照 default 落地 ⇒ **零返工**,`drawer.tsx` 同 `design-system.md §2` 一個字唔使改。⚠️ **唔好把「零返工」記成「估中咗所以慳咗」** —— 慳到嘅原因係嗰個 default **寫入咗 design-system**,即係話估錯嘅代價本來就只係撞返一次 H6,唔係靜靜漂走 | Chris Lai |
 | 2026-08-19 | 🔴 **更正 §0.3 一個前提:`Dialog` 冇 focus trap** | 讀實作揾到:`dialog.tsx` **冇任何 focus trap code**,只有 `aria-modal="true"` 聲明。令底下撳唔到嘅係 **`fixed inset-0` + 45% scrim 攔截 click**。⇒ `Drawer` 要避開嘅係**三樣具體嘢**(`inset-0` · scrim · `aria-modal`),唔係一個叫「focus trap」嘅籠統概念 —— 而呢三樣**逐樣都 assert 得到**,籠統概念 assert 唔到 | AI |
 
 ---

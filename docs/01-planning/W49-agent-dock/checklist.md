@@ -13,7 +13,7 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 - [x] F0-1 ✅ `OQ-A` / `OQ-B` **Chris 2026-08-19 照建議拍板** ⇒ plan `draft → active`
 - [x] F0-2 ✅ **`OQ-B` 揀①令「零後端改動」確立** —— 本 phase **零 schema · 零 migration · 零新 endpoint · 零 ADR**,純前端。🔴 **點解成立**:`D-CTX` 嘅後端半邊 W48 已經做咗(`agent-conversation.service.ts` `create()` 對 `requestId` 行 `findUnique` + `assertOpcoScope`,兼且 doc 逐字寫住「a HINT, never an authorisation」)⇒ dock 送咩上嚟都好,過唔到嗰道閘就係過唔到
 - [x] F0-3 ✅ 🔴 **更正咗一個 plan 寫錯咗嘅前提** —— `§0.3` 同 scope report 都寫住「`Dialog` 會 trap focus」,而**實測 `dialog.tsx` 冇任何 focus trap code**,只有 `aria-modal="true"` 聲明。真正令底下撳唔到嘅係 **`fixed inset-0` + 45% scrim 攔截 click**。📌 **點解呢個更正重要**:「唔好 trap focus」assert 唔到,而「冇 `inset-0` · 冇 scrim · 冇 `aria-modal`」**逐樣都 assert 得到** —— 一個籠統概念換成三條可觀察嘅嘢
-- [ ] F0-4 🚧 **`OQ-C` / `OQ-D` 仍然未答**,用建議做 default(`OQ-D` = overlay 唔加 scrim · `OQ-C` = 兩個都留)。⚠️ **`OQ-D` 遲答會貴**(佢係 primitive 形狀本身),所以佢個 default **寫入 `design-system.md §2`** ⇒ 將來改會再撞一次 H6,而嗰個係設計上想要嘅
+- [ ] F0-4 🚧 **`OQ-C` 仍然未答**,用建議做 default(兩個都留)。🟢 **`OQ-D` 2026-08-19 答咗 = overlay** —— **同 `F1` 落地嗰個 default 一致 ⇒ 零返工**,`drawer.tsx` 同 `design-system.md §2` 七條約束一個字唔使改。🔴 **但唔好把「零返工」記成「估中咗所以慳咗」** —— 真正令佢平嘅係嗰個 default **寫咗入 design-system**,即估錯嘅代價本來就只係**撞返一次 H6**,唔係靜靜漂走。⚠️ `OQ-C` 遲答唔貴(只影響已經被 `OQ-A` 閂住嘅 `F4`)
 
 ## `F1` — `Drawer` primitive(**H6**)
 
@@ -26,11 +26,14 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 
 ## `F2` — Layout 掛載
 
-- [ ] F2-1 掛喺 `App` shell **一個位**,唔係每版自己掛(後者一定會漂)
-- [ ] F2-2 🔴 **`G2` 真驗**:dock 開住嗰陣,底下嘅表**撳得郁** —— 呢個係 non-modal 嘅可觀察定義,唔係「睇落唔似 modal」
-- [ ] F2-3 `canUseAgent` gate(`R5`)—— **唔可以靠「reviewer 記得」**,要一條 test
-- [ ] F2-4 開合狀態 persist;sidebar 收埋 / 展開兩個狀態都唔爆;零橫向溢出
+- [x] F2-1 ✅ **掛喺 `AppShell` 一次**(`<AgentDock />` 喺 shell root,launcher 喺 `TopBar`)。🔴 **三個決定,而中間嗰個先係 `OQ-D` 嘅實際意思**:①每版自己掛 = navigate 就關,兼且漏咗嗰啲版就係 dock **靜靜唔存在**嘅版 ②**佢係 layout 嘅 sibling,唔係入面一個 column** —— 做 flex child 就會把主欄推窄,即係全站每張表都多一個斷點要驗(= push 嘅代價)③launcher 用 **`IconButton` 唔用 `Button`**:**DS-3** 一 view 一 primary,而 dock 係每一版都喺度嘅 chrome ⇒ 一個紅掣釘喺 top bar = **一次過喺所有版加多一個 primary**
+- [ ] F2-2 🔴 **`G2` 真驗**:dock 開住嗰陣,底下嘅表**撳得郁** —— 呢個係 non-modal 嘅可觀察定義,唔係「睇落唔似 modal」。⚠️ **要起本機 stack**(`drawer.test.tsx` / `agent-dock.test.tsx` 兩個檔頭都明文寫住佢哋證明唔到呢條:jsdom 冇 Tailwind ⇒ 冇真 geometry)
+- [x] F2-3 ✅ **`canUseAgent` gate,而做法係「一個 predicate 兩個 export 共用 + 一條 source scan」**(`R5`)。🔴 **點解唔係淨係收埋個掣**:咁樣道閘就變成**個掣嘅屬性**而唔係**個功能嘅屬性**,而 `F3` 會由 route 開呢個 panel ⇒ 到嗰陣「淨係經 launcher 入到」就係一句**冇人驗過嘅話**。🔴 **`undefined` 明文喺 gate test 個 list 入面** —— 佢係 `GET /me` 仲飛緊嗰陣嘅真實狀態,一個只處理已知 role 嘅 gate 會喺**每次冷載**閃一閃
+- [x] F2-4 ✅ **開合狀態 persist = state 喺 store 唔喺 component**(切 route 唔會關),一條 remount test 釘住。🔴 **刻意唔落 localStorage**:`theme` / `sidebarCollapsed` 都冇,一個淨係佢自己 refresh 之後返嚟嘅 dock 就係**唯一一個唔一致嘅嘢**。**零橫向溢出**結構上成立(`fixed` + `right-0` + `max-w-[92vw]`,唔參與 layout);⚠️ **sidebar 收埋 / 展開兩個狀態要 `F2-5` 影**
 - [ ] F2-5 **light + dark 真 render,dock 開同收兩個狀態都影**(含 `F1-6` 押後嗰半)
+
+**`F2` falsification 三道(逐道拆)**:①拆走 `AgentDock` 個 gate ⇒ **2 紅 11 綠**,而兩條紅**喺唔同層**(behavioural:`OPCO_IT` 照見到 panel · source scan:gate 唔見咗)②加一個冇 gate 嘅第三個 export ⇒ **2 紅 11 綠**,錯誤訊息**逐字點名** `AgentDockBadge does not call useDockVisible()` ③把 `dockOpen` 由 store 搬去 `useState` ⇒ **2 紅 11 綠**,兩條都落喺 `F2-4`。
+🔴 **第三道順帶揾到兩件要記低嘅事**:**(a)** 第一次拆出咗一個 **crash**(`useState` 冇 import)⇒ **每條都紅而紅嘅原因全部一樣**,即嗰次驗唔到任何嘢 —— **falsification 拆嘢拆出 crash 就唔算數**,要補返先重跑 **(b)** 同一個 mutation 之下,`renders no panel … even when open` **變成 vacuously green**(panel 永遠唔開就冇嘢可以捉)⇒ **一條 test 有冇意義,係睇佢對邊個 mutation 講嘢**,唔係睇佢自己寫得幾嚴謹
 
 ## `F3` — Context passing(`D-CTX`)
 

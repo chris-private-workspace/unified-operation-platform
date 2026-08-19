@@ -90,3 +90,66 @@ render 驗就夠 —— 色、半徑、間距**睇得到**。
 - **`F1-6`** light + dark 真 render **押後到 `F2`** —— `Drawer` 未掛載到任何頁面之前
   render 唔到佢。⚠️ 呢個係 **deviation**(plan `F1` acceptance 寫住 render),已記 changelog
 - `F2` layout 掛載 —— 而 `F2-2` 就係 `G2` 真正嘅收貨標準
+
+---
+
+## Day 2 — 2026-08-19 · `OQ-D` 答咗 + `F2` 掛載(`F2-1` / `F2-3` / `F2-4`)
+
+web **46 → 47 files / 488 → 501 tests** · api 唔變(97 / 1484)· lint / build 0。
+
+### 🟢 `OQ-D` = **overlay**,而「零返工」個原因唔係估中咗
+
+Chris 揀 overlay,**同 `F1` 落地嗰個 default 一致** ⇒ `drawer.tsx` 同 `design-system.md §2`
+七條約束**一個字唔使改**。
+
+🔴 **但唔好把呢件事記成「估中咗所以慳咗」** —— 真正令佢平嘅係嗰個 default **寫咗入
+design-system**,即係話**估錯嘅代價本來就只係撞返一次 H6**,唔係靜靜漂走。
+呢個先係 Day 0 嗰個「`OQ-D` 遲答會貴,所以寫入 design-system」決定換返嚟嘅嘢。
+
+### `F2` 三個掛載決定,而中間嗰個先係 `OQ-D` 嘅實際意思
+
+| 決定 | 點解 |
+|---|---|
+| 掛喺 `AppShell` **一次** | 每版自己掛 = navigate 就關;而**漏咗嗰啲版就係 dock 靜靜唔存在嘅版** |
+| **layout 嘅 sibling,唔係入面一個 column** | 呢個就係 overlay 落到 code 嘅樣。做 flex child 會把主欄推窄 ⇒ **全站每張表都多一個斷點要驗**(= push 嘅真實代價) |
+| launcher 用 **`IconButton` 唔用 `Button`** | **DS-3** 一 view 一 primary。dock 係**每一版都喺度**嘅 chrome ⇒ 一個紅掣釘喺 top bar = **一次過喺所有版加多一個 primary** |
+
+### 🔴 `R5`:唔係收埋個掣,係「一個 predicate + 一條 source scan」
+
+顯而易見嘅做法係收埋 launcher 然後由得 panel 跟。**但咁樣道閘就變成個掣嘅屬性,
+而唔係個功能嘅屬性** —— 而 `F3` 會由 route 開呢個 panel,到嗰陣「淨係經 launcher 入到」
+就係一句**冇人驗過嘅話**。
+
+⇒ `useDockVisible()` 一個,兩個 export 共用;`agent-dock.test.tsx` **scan 返個檔**,
+逐個 export 檢查。`R5` 逐字寫住「唔可以靠 reviewer 記得」,而呢個就係唔靠。
+
+🔴 **`undefined` 明文喺 gate test 個 list 入面** —— 佢係 `GET /me` 仲飛緊嗰陣嘅**真實狀態**,
+一個只處理已知 role 嘅 gate 會喺**每次冷載閃一閃**。
+
+### 「開合狀態 persist」喺呢個 codebase 嘅意思
+
+state 喺 **store** 唔喺 component ⇒ 切 route 唔會關(shell 之下嘅嘢每次 navigate 都 remount)。
+**刻意唔落 localStorage**:`theme` 同 `sidebarCollapsed` 都冇,一個淨係佢自己 refresh 之後
+返嚟嘅 dock 就係**唯一一個唔一致嘅嘢**。
+
+### falsification 三道,而第三道教返兩件事
+
+| 拆走 | 結果 | 邊條紅 |
+|---|---|---|
+| `AgentDock` 個 gate | **2 紅 11 綠** | behavioural(`OPCO_IT` 照見到 panel)**同** source scan(gate 唔見咗)—— **兩層各自捉到** |
+| 加一個冇 gate 嘅第三個 export | **2 紅 11 綠** | 訊息**逐字點名** `AgentDockBadge does not call useDockVisible()` |
+| `dockOpen` 由 store 搬去 `useState` | **2 紅 11 綠** | 兩條都落喺 `F2-4` |
+
+🔴 **(a) falsification 拆嘢拆出 crash 就唔算數。** 第三道第一次拆完撞 `useState is not
+defined` ⇒ **每條都紅,而紅嘅原因全部一樣**。嗰次驗唔到任何嘢 —— 補返 import 重跑先有意義。
+📌 同 Day 1「唔一次過拆三個」同族:**兩者都係「紅得唔對位就等於冇驗」**。
+
+🔴 **(b) 同一個 mutation 之下,`renders no panel … even when open` 變成 vacuously green**
+(panel 永遠唔開,就冇嘢可以捉)⇒ **一條 test 有冇意義,係睇佢對邊個 mutation 講嘢**,
+唔係睇佢自己寫得幾嚴謹。同 §9「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事」同族。
+
+### 🚧 下一步
+
+- **`F2-2`(`G2` live)** 同 **`F2-5`(light + dark render,含 `F1-6` 押後嗰半)** —— 兩條都要
+  **起本機 stack**。⚠️ **5433 而家喺 `ai-doc-extraction-db` 手上,停佢要 Chris 批**
+- ⚠️ **`F2-4` 個「sidebar 收埋 / 展開兩個狀態都唔爆」結構上成立但未影過** —— 併入 `F2-5`
