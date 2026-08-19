@@ -52,6 +52,32 @@ const MAX_CONSECUTIVE_FAILURES = 3;
  */
 const EVENT_SOURCE_CLOSED = 2;
 
+/**
+ * How long a silent connection is allowed to look alive.
+ *
+ * 🔴🔴 W49 `F4-3`, and this is the case that actually happens. Instrumenting the
+ * dock's own `EventSource` and killing the api produced: `open`, then **nothing
+ * at all** for 18 seconds — no `error`, no reconnect attempt, `readyState` still
+ * OPEN. A proxy in front of the api can hold the socket open after the upstream
+ * is gone, and the browser has no way to know. ⇒ Neither the CLOSED branch nor
+ * the failure count above can fire, so without a clock this hook cannot notice
+ * the single most common outage: **a deploy**.
+ *
+ * ⚠️ This also corrects two things that were written down: `RISK R35` ("gives up
+ * after 3 consecutive failures") and W48 `F7-5`, which attributed a frozen
+ * screen to that bound. The real mechanism is that no event arrives at all.
+ *
+ * 🔴 **The number is derived, not chosen.** The server sends a heartbeat every
+ * `AGENT_SSE_HEARTBEAT_MS` (default 25s, `agent-run.queue.ts`), so two missed
+ * heartbeats plus slack is the threshold. If somebody raises that env var above
+ * ~30s this becomes a FALSE alarm — the two are coupled and nothing enforces it,
+ * which is why the relationship is written here rather than left as a constant.
+ */
+const STALE_AFTER_MS = 60_000;
+
+/** How often to check. Coarse on purpose — this is a banner, not a metric. */
+const STALE_CHECK_MS = 10_000;
+
 export interface ConversationEventsState {
   /**
    * True once this hook has stopped listening for good.
@@ -101,12 +127,24 @@ export function useAgentConversationEvents(
     );
 
     let failures = 0;
+
+    /**
+     * Last time this connection proved it was alive. Heartbeats count — that is
+     * what they are for — so "alive" means bytes arrived, not "we once opened".
+     */
+    let lastSeen = Date.now();
+    const markAlive = () => {
+      lastSeen = Date.now();
+      setDisconnected(false);
+    };
+
     source.onopen = () => {
       failures = 0;
-      setDisconnected(false);
+      markAlive();
     };
     source.onmessage = () => {
       // The payload is not read. See the file header.
+      markAlive();
       void qc.invalidateQueries({ queryKey: ['agent', 'conversations', id] });
     };
     source.onerror = () => {
@@ -132,7 +170,20 @@ export function useAgentConversationEvents(
       }
     };
 
-    return () => source.close();
+    /**
+     * ⚠️ The connection is deliberately NOT closed when it goes stale. It may
+     * still be a live socket that simply has nothing behind it, and closing it
+     * would throw away the case where the api comes back and starts sending
+     * again — which clears the banner by itself through `markAlive`.
+     */
+    const staleTimer = setInterval(() => {
+      if (Date.now() - lastSeen > STALE_AFTER_MS) setDisconnected(true);
+    }, STALE_CHECK_MS);
+
+    return () => {
+      clearInterval(staleTimer);
+      source.close();
+    };
   }, [id, qc, attempt]);
 
   return { disconnected, reconnect };

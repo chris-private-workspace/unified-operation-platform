@@ -173,6 +173,102 @@ describe('useAgentConversationEvents (W49 F4-3)', () => {
     expect(FakeEventSource.instances.length).toBe(before + 1);
   });
 
+  // ── the outage that fires no events at all ──────────────────────
+
+  /**
+   * 🔴🔴 The case that actually happens, and the reason a clock exists here.
+   *
+   * Instrumenting the dock's real `EventSource` and killing the api produced
+   * `open` and then NOTHING for 18 seconds — no error, no reconnect, readyState
+   * still OPEN. A proxy can hold the socket after the upstream is gone. Neither
+   * branch above can fire, so silence has to be treated as a symptom.
+   */
+  it('reports disconnected when a connection goes silent', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(
+        () => useAgentConversationEvents('conv-1'),
+        {
+          wrapper,
+        },
+      );
+      act(() => latest().succeed());
+      expect(result.current.disconnected).toBe(false);
+
+      /**
+       * ⚠️ 90s, not 61s. The check runs on a 10s interval, so with 61s the last
+       * tick lands at exactly 60_000 and `> 60_000` is false — the first draft
+       * of this test failed on that off-by-one-tick, which is a property of the
+       * schedule rather than of the threshold.
+       */
+      act(() => vi.advanceTimersByTime(90_000));
+
+      expect(result.current.disconnected).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * ⚠️ And the other half, which is what stops it being a nuisance: a heartbeat
+   * IS proof of life. The server sends one every 25s by default, so an idle but
+   * healthy thread must never trip this.
+   */
+  it('treats a heartbeat as proof the connection is alive', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(
+        () => useAgentConversationEvents('conv-1'),
+        {
+          wrapper,
+        },
+      );
+      act(() => latest().succeed());
+
+      // Three heartbeats over 75s — well past the 60s threshold.
+      for (let i = 0; i < 3; i += 1) {
+        act(() => vi.advanceTimersByTime(25_000));
+        act(() => latest().onmessage?.());
+      }
+
+      expect(result.current.disconnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * ⚠️ NOT closed when stale — it may still be a live socket with nothing
+   * behind it, and the api coming back clears the banner by itself.
+   */
+  it('leaves a stale connection open so it can recover on its own', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(
+        () => useAgentConversationEvents('conv-1'),
+        {
+          wrapper,
+        },
+      );
+      act(() => latest().succeed());
+      /**
+       * ⚠️ 90s, not 61s. The check runs on a 10s interval, so with 61s the last
+       * tick lands at exactly 60_000 and `> 60_000` is false — the first draft
+       * of this test failed on that off-by-one-tick, which is a property of the
+       * schedule rather than of the threshold.
+       */
+      act(() => vi.advanceTimersByTime(90_000));
+      expect(result.current.disconnected).toBe(true);
+      expect(latest().close).not.toHaveBeenCalled();
+
+      act(() => latest().onmessage?.());
+
+      expect(result.current.disconnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('closes the connection when the thread goes away', () => {
     const { unmount } = renderHook(() => useAgentConversationEvents('conv-1'), {
       wrapper,
