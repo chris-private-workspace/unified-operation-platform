@@ -386,3 +386,26 @@ className **零 accent**。📌 一個 grep 命中唔等於一個 violation,**�
 
 ⇒ 兩條可以**同一次收**(merge → 部署 → 一次 DEV session 同時做 W48 三條 + W49 `F5-4`),
 但咁就要**喺 `F4` 未做嘅情況下 merge**。呢個係 owner 決定,唔係技術決定。
+
+### 🟢 Chris 2026-08-19 揀咗次序:**先驗 DEV → 做 `F4` → 先 merge**
+
+⇒ **W49 完整先入 `main`**(同 W47/W48 同一個次序),`plan §3` 個 acceptance 表先填得晒。
+換返嚟嘅代價 = 你要登 DEV **兩次**(一次收 W48 三條、一次收 `F5-4`),而唔係一次。
+
+**下一步嘅閘唔喺我度** —— `F4-0` 要 W48 `F7-3` 收咗先開得。
+
+### 🔴 差啲又中一次「grep 命中 ≠ 嗰件嘢喺度」
+
+驗 DEV bundle 嗰陣,`"Ask about this request"`(W49 `F3` 個掣 label)**中咗 1 hit**,
+而 W49 明明未 merge。查返 context 先知係 **W48 嘅字串**:
+
+```
+h.requestId ? "Ask about this request — what it needs, or what is blocking it." : …
+```
+
+⇒ **substring 命中**。而同一次探測 `"About"`(W49 個 context card)**0 hits**,兩個結果
+一對數就知邊個啱。
+
+📌 **同我 Day 4 早幾個鐘先寫落 `F5-2` 嗰句係同一族** ——「一個 grep 命中唔等於一個
+violation」同「一個 grep 命中唔等於嗰件嘢喺度」。**兩次都係查咗 context 先知**,
+而兩次嘅代價都係一分鐘。

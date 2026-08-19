@@ -90,6 +90,24 @@
 - [ ] F7-3 🚧 DEV:migration + 一條真對話 + **一次真 SSE 通知 + refetch**(⚠️ **唔可以引用 `B6`** —— 佢證嘅係 heartbeat + 短事件)。🔴 **本條 2026-08-19 `F8-1` 掃出寫錯咗兼更正**:原文寫「一次真 **token stream**」,而 `F4` 08-18 已經由 token-by-token 收窄做 **turn-level notify**(plan §8 有記,理由係真 token 流要擴 seam = H1,兼且 token 未經 `scrubPii` 就落 wire)⇒ **驗嘅嘢由頭到尾唔應該係 token**。📌 呢個就係 W47 教落「`F8-1` 要逐條掃 acceptance 句」嘅原因 —— plan §2 個 `F4` acceptance 其實**冇**寫 token(佢寫「DEV 真通」),stale 嘅只有 checklist 同 `G9` 兩處措辭
 - [ ] F7-4 ⚠️ **唔可以睇 revision status 當證據**(entrypoint 令 migrate 失敗 NON-FATAL)
 
+> 🔴 **2026-08-19(W49 Day 4)實測補一個座標,因為佢改變咗「仲差咩」嘅答案**:
+> **DEV 一早有 W48 code,唔使再部署。**`/api/docs/api-json` 同日兩次 **逐 byte 一致
+> (90341)**,入面有 `/agent/conversations` · `/agent/profiles/options` · `AgentChatTurn`;
+> web bundle 有 `/assistant` · `Agent for new conversations`(picker)· `New conversation`;
+> `/api/auth/sso/status` = `{"enabled":true}`。兩條新 route 返 **401 唔係 404** ⇒ 真喺 wire。
+>
+> ⇒ **三條全部卡同一樣嘢:一次真人登入**,唔係一次部署。
+> **401 喺 guard 度擋住,由頭到尾未掂過 DB** ⇒ `F2-6`(migration)要一個**成功讀到新表**
+> 嘅 response 先證得到 —— 而「一入到 `/assistant` 見到對話列表而唔係 500」就係嗰個 response。
+>
+> **三條收貨標準唔同,唔好當一件事**:
+> `F2-6` = 入到 `/assistant` 唔 500(表存在)· `F7-3` = 送完一句之後 **agent 自己覆你而你冇撳 refresh**
+> (要嘅係「唔使 refresh」嗰半)· `F7-4` = 唔使做,佢係一條約束(上面兩條就係證據)。
+>
+> ⚠️ **兩個已知陷阱,撞到唔好當壞咗**:`R33` 第一句返 400 講「有幾多個 agent」⇒ 撳 picker 揀一個;
+> `R35` `Thinking…` 卡住 ⇒ **切走 thread 再切返**,見到答案 = SSE 靜默咗唔係 agent 死咗
+> (⚠️ 兩者喺畫面上一模一樣)。
+
 ## `F8` — 收尾
 
 - [x] F8-1 ✅ **`plan.md` acceptance 逐條掃 + 狀態欄** —— §3 九條全部填咗,而 **`G2` / `G9` 兩條「DEV ❌」逐條寫明差嘅係邊種**(`G2` 部署完自動收 · `G9` 要部署完再做一次對話),因為 W47 收尾把 `G1`/`G8` 當成同一個阻塞而佢哋唔係。🔴 **順帶掃出兩處 stale,而 W47 就係話呢一步會掃到嘢**:`checklist F7-3` 同 `§3 G9` 都仲寫住「一次真 **token stream**」,而 `F4` 08-18 已經收窄做 **turn-level notify**(plan §8 有記)⇒ 兩處措辭更正咗。⚠️ **plan §2 個 `F4` acceptance 本身冇錯**(佢寫「DEV 真通」)—— 錯嘅只有兩處引用佢嘅地方,**所以逐條掃唔可以只掃 §3 個表**
