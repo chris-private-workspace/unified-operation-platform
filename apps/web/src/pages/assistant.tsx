@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Archive,
   Loader2,
@@ -26,7 +26,8 @@ import {
   runAwaitingDecision,
 } from '@/lib/assistant';
 import { formatDateTime } from '@/lib/format';
-import type { AgentChatTurn, AgentConversation } from '@/lib/api-types';
+import type { AgentConversation } from '@/lib/api-types';
+import { TurnBubble } from '@/components/agent/turn-bubble';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -69,6 +70,20 @@ export function Assistant() {
   const [draft, setDraft] = useState('');
 
   const [pickedProfile, setPickedProfile] = useState<string | undefined>();
+
+  /**
+   * W49 `F3` — the request the dock was looking at, handed over in the URL.
+   *
+   * 🔴 Read straight off the query string with no validation, and that is the
+   * point: this is a HINT (`D-CTX`). Anyone can edit it, so nothing here may
+   * treat it as permission. `POST /agent/conversations` looks the request up and
+   * runs `assertOpcoScope` before a thread exists, and a bad id 404s.
+   *
+   * ⚠️ Kept out of component state deliberately: state would go stale the moment
+   * somebody navigated, and the URL already IS the state.
+   */
+  const [searchParams] = useSearchParams();
+  const contextRequestId = searchParams.get('requestId');
 
   const list = useAgentConversations();
   const thread = useAgentConversation(selected);
@@ -168,14 +183,23 @@ export function Assistant() {
             variant="secondary"
             onClick={() =>
               create.mutate(
-                { requestId: null, profileId: agentId },
+                { requestId: contextRequestId, profileId: agentId },
                 { onSuccess: (row) => setSelected(row.id) },
               )
             }
             disabled={create.isPending || agents.length === 0}
           >
             <Plus size={14} strokeWidth={2} />
-            New conversation
+            {/*
+             * W49 `F3` — the label changes because the ACTION changes: a thread
+             * pinned to a request is a different thing from a loose one, and
+             * `OQ-D`'s live check in W48 showed the difference is real (with
+             * context the agent called `list_pending_requests`; without it, it
+             * answered "with the available tools" and made zero tool calls).
+             * Somebody who arrives here from the dock should be able to see
+             * which one they are about to get.
+             */}
+            {contextRequestId ? 'Ask about this request' : 'New conversation'}
           </Button>
         </div>
       </Card>
@@ -380,17 +404,3 @@ function ThreadRow({
  * Depth comes from a 1px border and a surface tint, never a shadow or a
  * gradient (DS-7).
  */
-function TurnBubble({ turn }: { turn: AgentChatTurn }) {
-  const mine = turn.role === 'user';
-  return (
-    <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-lg border px-[13px] py-[9px] text-[12.5px] leading-[1.55] ${
-          mine ? 'border-border bg-panel' : 'border-border bg-card'
-        }`}
-      >
-        {turn.content}
-      </div>
-    </div>
-  );
-}

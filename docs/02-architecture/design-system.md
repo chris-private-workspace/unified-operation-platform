@@ -73,7 +73,7 @@ shadcn/ui 做底但 re-skin 用上面 token(或 alias `--primary:var(--accent)` 
 | forms | Button · IconButton · Input · **Textarea** · Select · Checkbox · Switch · SegmentedControl | `variant`('primary'/'secondary'/'ghost'/'danger')· `size`('sm'/'md'/'lg')· 一 view 一個 primary。⚠️ **Textarea 唔喺 handoff 19 個入面** —— owner-approved 新增(W47),約束見下 |
 | display | Card · StatCard · Badge · Avatar | `Badge tone dot`;`StatCard label value tone icon delta sub`(tone 只 tint icon chip,value 保持中性) |
 | navigation | NavItem · Stepper · Tabs · Pagination | `Stepper steps current`(short 3-dot / procurement 6-dot,current 帶 `--ring-accent`) |
-| overlay / feedback | Tooltip · Dialog · Toast · EmptyState | Dialog 45% scrim;Toast bottom-center ~2.6s(**帶 action 時要更長**,見下);EmptyState 用於 all-clear/no-results |
+| overlay / feedback | Tooltip · Dialog · **Drawer** · Toast · EmptyState | Dialog 45% scrim;**Drawer 冇 scrim**(non-modal · **由 top bar 下面開始** · 約束見下);Toast bottom-center ~2.6s(**帶 action 時要更長**,見下);EmptyState 用於 all-clear/no-results。⚠️ **Drawer 唔喺 handoff 19 個入面** —— owner-approved 新增(W49) |
 
 **Badge = 全系統通用狀態標記。Stage → tone map(必守)**:
 `Ready→ok` · `Quoting / Awaiting vendor→warn` · `Requested→info` · `Blocked→danger` · `Assigned→neutral` · `AI→purple`。
@@ -104,6 +104,59 @@ Handoff **由頭到尾冇 textarea**(`design_handoff_licenseops` 同 `apps/web/s
 - **一定要有 cap,而 cap 由 caller 傳** —— 一個冇上限嘅多行輸入,喺一個會落 DB 嘅欄後面,就係一個冇人講過嘅 storage 決定
 
 📌 **點解值得開呢個 primitive**:W47 個 `AgentProfile.prompt` 係平台第一個「人手輸入、會改變 agent 行為」嘅欄(RISK `R26`)。冇呢個 field,個 registry 就得一半 —— 而佢三道防線(audit `before`/`after` · tool allow-list 留喺 code · 8000 字 cap)本身就係為咗令呢個欄安全存在而砌。
+
+**`Drawer`(owner-approved **新** primitive,Chris 2026-08-19 · W49 `F1`)**
+
+Handoff **冇 drawer / dock 呢個 pattern**。佢係本系統**第二個**唔由 handoff spec 重建嘅
+primitive(第一個係 `Textarea`),而**佢比 `Textarea` 重一級** —— `Textarea` 係一個
+field,`Drawer` 改變**成個 shell 嘅行為**:一個長開嘅面板,同底下每一版共存。
+
+🔴 **佢存在嘅唯一理由係 `non-modal`。** `Dialog` 做唔到呢件事,而點解做唔到,值得寫準
+啲 —— **`dialog.tsx` 其實冇任何 focus trap code**(2026-08-19 實讀),令底下撳唔到嘅
+係另外三樣嘢。所以下面唔寫「唔好 trap focus」(嗰句 assert 唔到),寫三樣 assert 得到嘅:
+
+**⇒ 約束(違反即 drift)**:
+
+- 🔴 **唔可以 `fixed inset-0`** —— `Dialog` 用佢覆蓋全屏,而**覆蓋全屏就係「阻住底下」本身**。
+  `Drawer` 只可以佔右邊一條(`fixed right-0 bottom-0` + 固定寬 + 一個 `top` offset)
+- 🔴 **由 shell 個 top bar 下面開始,唔可以由 viewport 頂開始**(`DRAWER_TOP_OFFSET = 56`,
+  W49 `F2-5` 加)—— **呢條係 live 揾返嚟嘅,唔係設計出嚟**:全高嗰陣 dock 喺 1440px
+  蓋住 x=1060–1440,而 top bar 右邊三個控制正正住喺嗰度 —— theme toggle · account menu
+  (Settings / Sign out)· **同埋 dock 自己個 launcher**。即一個 `aria-expanded` toggle
+  **開得埋唔得**。
+  ⚠️ **呢條唔係推翻 overlay** —— `OQ-D` 問嘅係「**內容**推唔推窄」,而 top bar 係 chrome
+  唔係內容。佢收窄嘅係 overlay 由邊度開始。
+  ⚠️ **代價要講明**:一個通用 primitive 由此知道「呢個 shell 有個 56px top bar」。
+  所以 `drawer.test.tsx` **讀返 `top-bar.tsx` 對數**,兩個數字一漂就紅 —— 否則失敗形狀
+  係一條 1px 縫、或者一個又被蓋返嘅控制,而兩樣都冇 test 睇得到
+- 🔴 **唔可以有 scrim** —— `Dialog` 個 `bg-black/45` 唔止係視覺,佢**攔截 click**。
+  一個有 scrim 嘅 drawer 就係一個窄啲嘅 dialog
+- 🔴 **唔可以 `aria-modal="true"`** —— 佢對輔助技術聲明「底下嘅嘢唔存在」,而 dock 嘅
+  全部意義就係底下嗰版仲喺度。用 `role="complementary"` + `aria-label`
+- **`Esc` 收起,但唔可以搶 focus** —— 開嘅時候唔 auto-focus 面板,因為用戶可能開住佢
+  繼續喺底下打字。⚠️ 呢條同 `Dialog` **刻意相反**
+- **深度靠 1px `border-l` + `bg-card`,唔加陰影**(DS-7)。⚠️ `Dialog` 用 `shadow-overlay`,
+  **唔可以抄過嚟** —— 一個長開嘅面板掛住一浸陰影,就係喺每一版加咗一個新嘅視覺層
+- **寬度固定,唔可以 `%`** —— `%` 喺闊 mon 會變成半版。用一個 px 常數,而**佢係 primitive
+  嘅一部分唔係 caller 揀**(caller 揀寬度 = 每個 caller 各自漂)
+- 🔴 **一個 view 一個 primary 呢條唔可以因為多咗個 dock 就破**(DS-3)—— dock 入面有
+  primary 嗰陣,底下嗰版就唔可以再有。⚠️ **呢條唔係 `Drawer` 自己保證得到**,佢係
+  caller 責任,寫喺度係因為 dock 係第一個令「一個 view」呢個講法變得含糊嘅嘢。
+  🔴 **W49 `F2-5` 實測命中一次,而破佢嘅係寫呢條約束嗰個人**:dock 個 `Open the
+  Assistant` 本來用 `text-accent`,喺 request detail 開 dock ⇒ 同一版**兩樣 accent**
+  (該版 primary 係 accent button `Check now`)。⇒ **dock 入面連 accent text link 都唔用** ——
+  佢係唯一一個會出現喺**每一版**嘅元件,所以佢係唯一一個負擔唔起 accent 嘅元件
+
+🟢 **`OQ-D` 2026-08-19 答咗 = overlay**(Chris)—— 浮喺內容上面,唔 push。理由:push
+會令**每一版嘅 grid 都要處理一個新斷點**,而 scope report `§3 G5` 只要求「唔阻住底下操作」。
+
+🔴 **overlay 有一個已知代價,唔係缺陷但要記住**:dock 開住嗰陣,佢覆蓋嗰條(1440px 之下
+= x 1060–1440)入面嘅嘢**係撳唔到嘅**。W49 `F2-5` 實測 request detail(two-column)有
+**5 個互動元素**落喺嗰度,包括該版嘅 primary(`Check now`)。
+📌 **點解仍然接受,而 top bar 嗰個唔接受** —— 分界線係**出唔出返嚟**:
+top bar 嗰個連**收 dock 個掣**都蓋埋 ⇒ 死局,一定要修;呢個收咗 dock 就用得返 ⇒ trade-off。
+⚠️ 而 `F3` 之後 dock 會由 request detail 送 `requestId`,即**用戶最想開 dock 嗰版,
+正正就係最受遮嗰版** —— 呢個張力未解決。
 
 **Toast `action`(owner-approved primitive 擴充,Chris 2026-07-31 · CH-013)**
 

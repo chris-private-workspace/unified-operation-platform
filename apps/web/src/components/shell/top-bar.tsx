@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { IconButton } from '@/components/ui/icon-button';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { AgentDockLauncher } from './agent-dock';
 import { useUiStore } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
 import { useSignOut } from '@/lib/auth/use-sign-out';
@@ -152,6 +153,11 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-[12px]">
+        {/*
+         * W49 `F2` — the dock's launcher. It renders nothing for a role that
+         * cannot use the agent, so no gate is repeated here (see agent-dock.tsx).
+         */}
+        <AgentDockLauncher />
         <IconButton title="Toggle theme" onClick={toggleTheme}>
           {theme === 'dark' ? (
             <Sun size={16} strokeWidth={2} />

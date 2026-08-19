@@ -80,9 +80,9 @@ const NO_AGENTS: AgentProfileOption[] = [];
 /** `F5-12` — one constant, so a rename cannot make one assertion vacuous. */
 const PICKER = 'Agent for new conversations';
 
-const renderScreen = () =>
+const renderScreen = (path = '/assistant') =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <Assistant />
     </MemoryRouter>,
   );
@@ -100,7 +100,19 @@ beforeEach(() => {
   vi.mocked(useCreateConversation).mockReturnValue(mutation());
   vi.mocked(useAddConversationTurn).mockReturnValue(mutation());
   vi.mocked(useArchiveConversation).mockReturnValue(mutation());
-  vi.mocked(useAgentConversationEvents).mockReturnValue(undefined);
+  /**
+   * ⚠️ W49 `F4-3` gave this hook a return value. `/assistant` still ignores it,
+   * so nothing here behaves differently — but the mock has to satisfy the type,
+   * and tsc is what noticed: every test in this file stayed green.
+   *
+   * 🔴 That the screen ignores `disconnected` is a real gap, not a decision —
+   * `R35` applies to `/assistant` too, just less often than to a dock somebody
+   * leaves open all day. Logged rather than fixed here (not this phase's file).
+   */
+  vi.mocked(useAgentConversationEvents).mockReturnValue({
+    disconnected: false,
+    reconnect: vi.fn(),
+  });
 });
 
 describe('Assistant (W48 F5)', () => {
@@ -318,6 +330,64 @@ describe('Assistant (W48 F5)', () => {
       { requestId: null, profileId: 'p-1' },
       expect.anything(),
     );
+  });
+
+  /**
+   * 🔴 W49 `F3-1` — the handover from the dock.
+   *
+   * ⚠️ This assertion exists at THIS layer for a specific reason. The mutation
+   * is mocked here, which is the arrangement W48 `F5-8` learned the hard way is
+   * blind to what actually reaches the wire — so this cannot be the only thing
+   * holding the context up, and it is not: the id's real check is server-side in
+   * `agent-conversation.scope.spec.ts`. What this one covers is narrower and
+   * still worth having — that the query string is read at all, rather than
+   * silently dropped on the way to the request body.
+   */
+  it('opens the thread on the request the dock handed over', () => {
+    const mutate = vi.fn();
+    vi.mocked(useCreateConversation).mockReturnValue({
+      mutate,
+      isPending: false,
+      isError: false,
+      error: null,
+    } as never);
+
+    renderScreen('/assistant?requestId=req_from_dock');
+    /**
+     * ⚠️ Matches EITHER label on purpose. Written the obvious way — looking for
+     * "Ask about this request" — this test went red in the falsification run by
+     * failing to find the button, never reaching the assertion it is named
+     * after. A dropped query string and a renamed button would then produce the
+     * same red. The label has its own test below; this one is about the body.
+     */
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /ask about this request|new conversation/i,
+      }),
+    );
+
+    expect(mutate).toHaveBeenCalledWith(
+      { requestId: 'req_from_dock', profileId: 'p-1' },
+      expect.anything(),
+    );
+  });
+
+  /**
+   * The label, separately — because the ACTION differs, not just the wording:
+   * W48 `OQ-D`'s controlled experiment showed a thread with request context made
+   * real tool calls where one without answered "with the available tools" and
+   * made none.
+   */
+  it('says which of the two things the button will do', () => {
+    renderScreen('/assistant?requestId=req_from_dock');
+    expect(
+      screen.getByRole('button', { name: /ask about this request/i }),
+    ).toBeInTheDocument();
+
+    renderScreen();
+    expect(
+      screen.getAllByRole('button', { name: /new conversation/i }).length,
+    ).toBeGreaterThan(0);
   });
 
   /**
