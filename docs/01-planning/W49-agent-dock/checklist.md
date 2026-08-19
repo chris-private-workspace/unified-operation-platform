@@ -55,13 +55,20 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 ## `F4` — dock 入面嘅 chat
 
 - [ ] F4-0 🔴 **閘:等 W48 `F7-3`(conversation SSE 喺 DEV 真通)** —— `OQ-A` 嘅答案。⚠️ **呢條唔係卡工作量,係卡一個唔喺本 phase 嘅事件**
+  - 🔴 **2026-08-19 更正咗個閘嘅內容,而更正嘅係我自己講過嘅嘢**。`F3` 收尾嗰陣我寫「`F7-3` 差嘅係**一次部署 + 一次對話**」—— **部署嗰半唔啱**。實測(同日兩次,`/api/docs/api-json` **逐 byte 一致 90341**):DEV **一早有 W48 code**(`/agent/conversations` · `/agent/profiles/options` · `AgentChatTurn` 全部喺 OpenAPI),兼且兩條新 route 返 **401 唔係 404** ⇒ 真喺 wire。
+  - ⇒ **W48 三條(`F2-6` / `F7-3` / `F7-4`)全部卡同一樣嘢:一組 DEV 憑證**,唔係一次部署。**401 喺 guard 度擋住,由頭到尾未掂過 DB** ⇒ `F2-6`(migration)要一個**成功讀到新表**嘅 response 先證得到,而嗰個要登入。
+  - 📌 **點解值得記**:「部署完自動收」同「要人做一次」係兩種唔同嘅等待,而 W47 收尾就係把 `G1`/`G8` 當成同一個阻塞先出事。今次我自己**又**混咗一次 —— 分別係今次係喺 checklist 度混,唔係喺收尾度
 - [ ] F4-1 重用 W48 嘅 hook(`useAgentConversation` / `useAddConversationTurn` / SSE),**唔另開一份 local state**(`R4`)
 - [ ] F4-2 🔴 **冇 approve 掣,兩條 test** —— behavioural + **source scan**。W48 `F5-4` 個教訓:第一條**只擋到一個串「Approve」嘅掣**,將來叫 `Accept` 嗰個一樣過
 - [ ] F4-3 ⚠️ **SSE 斷咗要講一句**(`RISK R35`)—— dock 係**長開**嘅,撞「連斷 3 次永久靜默」嘅機會遠高過要自己撳入去嘅 `/assistant`
 
 ## `F5` — Gate + live
 
-- [ ] F5-1 root `npm test` / `lint` / `build` 三個 exit 0 —— ⚠️ **收尾要重跑**(W47/W48 兩次教訓:勾咗嘅 gate 唔等於蓋住之後入嘅 commit)
-- [ ] F5-2 `ui-design` DS-1…DS-12 逐條
-- [ ] F5-3 本機 live:真開 dock 傾一段
-- [ ] F5-4 DEV live
+- [x] F5-1 ✅ **root gate 喺 tip `414b507` 上面重跑**(W47/W48 教訓:勾咗嘅 gate 唔蓋之後入嘅 commit,而 `F3` 之後有三個 commit)—— api **98 suites / 1491** · web **48 files / 523** · lint 0 · build 0,**三個 exit 0**
+- [x] F5-2 ✅ **`ui-design` DS-1…DS-12 逐條,而且分開「查得到」同「要 render」兩批** —— **靜態**:DS-1 W49 三個檔 `#hex`/`rgb(`/`hsl(` **零命中** · DS-2 用到嘅 8 個 token **逐個對返 `tailwind.config.ts`** · DS-6 只有 `MessageSquare` / `X` 兩個 lucide · DS-9 只有 `fadeIn`(approved 三個之一)。**Live probe**:DS-3 **dock 側零 accent**(page 側 `Check now` 係佢自己個 primary)· DS-5 subject `Geist Mono` · DS-7 `boxShadow: none` · DS-10 `ABOUT` = caps 細結構 label · DS-4 **light + dark 兩個都影過(含 `F3` 個 context card)**。
+  ⚠️ **DS-11(對 prototype)= N/A 而唔係 pass** —— `Drawer` 同 dock **唔喺 handoff 19 個入面**,冇嘢對得到;佢嘅對照物係 `design-system.md §2` 嗰段約束,而嗰個就係 `F1` H6 STOP 換返嚟嘅嘢。DS-12 N/A(冇掂 logo)。
+  🔴 **點解要重 render 一次**:`F3` 加咗個 context card,而 `F2-5` 嗰次 render **喺佢之前** —— 正正係 W47/W48 嗰個「勾咗嘅 gate 唔蓋之後入嘅 commit」
+- [x] F5-3 ✅ **本機 live —— 但收窄咗,而且要講清楚收窄咗咩**。原文「真開 dock 傾一段」**結構上做唔到**:①dock 入面冇 chat(`F4` 畀 `F7-3` 閂住)②**主 worktree 個 `.env` 冇 Azure OpenAI 座標**(§0:只喺 W46 worktree 嗰份)⇒ 傾唔到。
+  🟢 **改為驗整條 `F3` 鏈,而收貨標準係落 DB 對數唔係睇畫面**:request detail 開 dock ⇒ 顯示 **`REQ0044067`**,而**同頁面自己個 number 逐字一致**(唔係我砌嘅假象)⇒ 撳「Ask about this request」⇒ URL 變 `/assistant?requestId=cmsq0p4ou…` ⇒ 開對話 ⇒ **DB 最新一條 `AgentConversation` join 返 `Request` = `REQ0044067`**。
+  📌 **對照組就喺同一次 query 入面**:上一條(`F3-3` 實驗 C)`requestId` **空** ⇒ 證明個欄唔係永遠有值
+- [ ] F5-4 🚧 **DEV live —— 卡「未 merge」,唔係卡工作量**。DEV 冇 W49 code,而部署喺 merge 之後(W47/W48 同一次序)。⚠️ **佢同 `F4-0` 個閘可以同一次過收**,見 `F4-0` 更正

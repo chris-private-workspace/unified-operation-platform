@@ -312,7 +312,77 @@ per-agent 範圍)佢就即刻生效 ⇒ **唔應該刪**。
   **冇 `DELETE` endpoint**(`ADR-0041 D7`),繞過平台直接落 DB 刪唔值得為兩條測試資料做
 - 5433 **借咗第二次,已還原兼驗**(真 TCP `True` · `pg_isready` · 佢個 `ai_document_extraction` 完好)
 
+---
+
+## Day 4 — 2026-08-19 · `F5` gate + `ui-design` + 本機 live
+
+`F5-1` / `F5-2` / `F5-3` 收咗,**`F5-4`(DEV live)🚧 卡「未 merge」**。
+
+### `F5-1` —— 重跑,而唔係引用
+
+root gate 喺 **tip `414b507`** 上面跑:api **98 suites / 1491** · web **48 files / 523** ·
+lint 0 · build 0,三個 exit 0。
+📌 **點解要重跑**:`F3` 之後入咗三個 commit,而 W47/W48 兩次教訓都係同一句 ——
+**勾咗嘅 gate 唔蓋住之後入嘅嘢**。
+
+### `F5-2` —— 分開「查得到」同「要 render」兩批
+
+| 批 | 條目 | 做法 |
+|---|---|---|
+| **靜態** | DS-1 · DS-2 · DS-6 · DS-9 | `#hex`/`rgb(`/`hsl(` **零命中** · 用到嘅 **8 個 token 逐個對返 `tailwind.config.ts`** · 只有 `MessageSquare`/`X` 兩個 lucide · 只有 `fadeIn` |
+| **Live probe** | DS-3 · DS-4 · DS-5 · DS-7 · DS-10 | **dock 側零 accent** · light + dark 兩個都影(含 `F3` 個 card)· subject `Geist Mono` · `boxShadow: none` · `ABOUT` = caps 細結構 label |
+
+⚠️ **DS-11 = N/A 而唔係 pass**。`Drawer` 同 dock **唔喺 handoff 19 個入面**,冇嘢對得到;
+佢嘅對照物係 `design-system.md §2` 嗰段約束 —— **而嗰個就係 `F1` H6 STOP 換返嚟嘅嘢**。
+呢個分別要寫清楚,因為「N/A」同「pass」喺一份 checklist 入面睇落一樣。
+
+🔴 **`text-accent` grep 到一次,查清楚先發現喺 comment 入面**(`NOT text-accent`)——
+className **零 accent**。📌 一個 grep 命中唔等於一個 violation,**而唔查就會當佢係**。
+
+🔴 **點解要重 render 一次**:`F3` 加咗個 context card,而 `F2-5` 嗰次 render 喺佢之前。
+同 `F5-1` 一模一樣嘅理由。
+
+### `F5-3` —— 收窄咗,而收窄咗咩要講清楚
+
+原文「真開 dock 傾一段」**結構上做唔到**:①dock 入面冇 chat(`F4` 畀 `F7-3` 閂住)
+②**主 worktree 個 `.env` 冇 Azure OpenAI 座標**(§0:只喺 W46 worktree 嗰份)。
+
+🟢 **改為驗整條 `F3` 鏈,收貨標準係落 DB 對數**:
+
+1. request detail 開 dock ⇒ 顯示 **`REQ0044067`**,而**同頁面自己個 number 逐字一致**
+   (⇒ 唔係我砌出嚟嘅假象)
+2. 撳「Ask about this request」⇒ URL 變 `/assistant?requestId=cmsq0p4ou…`
+3. 開對話 ⇒ **DB 最新一條 `AgentConversation` join 返 `Request` = `REQ0044067`**
+
+📌 **對照組就喺同一次 query 入面**:上一條(`F3-3` 實驗 C)`requestId` **空**
+⇒ 個欄唔係永遠有值。
+
+### 🔴 更正一個我自己講過嘅嘢:`F7-3` 差嘅唔係部署
+
+`F3` 收尾我寫「`F7-3` 差嘅係**一次部署 + 一次對話**」。**部署嗰半唔啱。**
+
+實測(同日兩次,`/api/docs/api-json` **逐 byte 一致 90341**):DEV **一早有 W48 code**,
+兼且兩條新 route 返 **401 唔係 404** ⇒ 真喺 wire。
+
+⇒ **W48 三條(`F2-6` / `F7-3` / `F7-4`)全部卡同一樣嘢:一組 DEV 憑證。**
+**401 喺 guard 度擋住,由頭到尾未掂過 DB** ⇒ `F2-6`(migration)要一個**成功讀到新表**
+嘅 response 先證得到。
+
+📌 **「部署完自動收」同「要人做一次」係兩種唔同嘅等待** —— W47 收尾把 `G1`/`G8` 當成
+同一個阻塞就係呢個形狀,而我今次**又**混咗一次。分別係今次混喺 checklist,唔係喺收尾。
+
+### ⚠️ 手尾
+
+- 5433 **借咗第三次,已還原兼驗**(真 TCP `True` · `pg_isready` · `ai_document_extraction` 完好)
+- 本機 DB 而家有 **3 條測試 conversation**(`F3-3` 兩條 + `F5-3` 一條)。冇刪 ——
+  `AgentConversation` **冇 `DELETE` endpoint**(`ADR-0041 D7`)
+
 ### 🚧 下一步
 
-- **`F4` 仍然閂住** 等 W48 `F7-3`(DEV live)
-- **`F5`** gate + `ui-design` DS-1…12 + 本機/DEV live
+**`F4` 同 `F5-4` 而家係同一個結,而佢要 owner 拆:**
+
+- `F4`(dock 入面 chat)等 W48 `F7-3` ⇒ 等**一次 DEV 對話**(要憑證,人做)
+- `F5-4`(W49 DEV live)等 **W49 merge + 部署**
+
+⇒ 兩條可以**同一次收**(merge → 部署 → 一次 DEV session 同時做 W48 三條 + W49 `F5-4`),
+但咁就要**喺 `F4` 未做嘅情況下 merge**。呢個係 owner 決定,唔係技術決定。
