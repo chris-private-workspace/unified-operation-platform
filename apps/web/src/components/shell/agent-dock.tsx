@@ -1,10 +1,12 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare } from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { IconButton } from '@/components/ui/icon-button';
 import { useUiStore } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
+import { useRequest } from '@/hooks/queries';
 import { canUseAgent } from '@/lib/roles';
+import { routeContext } from '@/lib/route-context';
 
 /**
  * W49 `F2` — the site-wide agent dock (Tier 2 `T2-d`).
@@ -64,7 +66,28 @@ export function AgentDock() {
   const dockOpen = useUiStore((s) => s.dockOpen);
   const setDockOpen = useUiStore((s) => s.setDockOpen);
 
+  /**
+   * W49 `F3` — the context, derived from the route and nothing else (`OQ-B` ①).
+   *
+   * ⚠️ `useRequest` is here to NAME the request on screen, not to decide
+   * anything. It is the same query key the request detail screen uses, so on the
+   * one screen where this fires it is a cache hit and costs no request;
+   * everywhere else `ctx` is null and the query is disabled.
+   */
+  const { pathname } = useLocation();
+  const ctx = routeContext(pathname);
+  const request = useRequest(ctx?.id);
+
   if (!visible) return null;
+
+  /**
+   * 🔴 The link carries the id as a QUERY PARAMETER, which is the honest shape:
+   * it is a hint the next screen may use, sitting somewhere anyone can read and
+   * edit. It is not a token and it grants nothing — `agent-conversation.service`
+   * looks the request up and runs `assertOpcoScope` before a thread exists
+   * (`agent-conversation.scope.spec.ts` holds that up).
+   */
+  const assistantHref = ctx ? `/assistant?requestId=${ctx.id}` : '/assistant';
 
   return (
     <Drawer
@@ -72,6 +95,22 @@ export function AgentDock() {
       title="Assistant"
       onClose={() => setDockOpen(false)}
     >
+      {ctx && (
+        <div className="mb-[14px] rounded-lg border border-border bg-panel px-[12px] py-[10px]">
+          <div className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-fg-subtle">
+            About
+          </div>
+          {/*
+           * An identifier, so mono (DS-5). Falls back to the raw id while the
+           * request is loading or on a screen whose data this session has not
+           * fetched — showing the id is honest, and showing nothing would make
+           * the panel look like it had lost the context it is about to send.
+           */}
+          <div className="mt-[3px] font-mono text-[12.5px] text-fg">
+            {request.data?.serviceNowNumber ?? ctx.id}
+          </div>
+        </div>
+      )}
       {/*
        * W49 `F2` placeholder. `F4` replaces this with the conversation itself,
        * and is gated on W48 `F7-3` (SSE proven on DEV) — see checklist `F4-0`.
@@ -93,11 +132,11 @@ export function AgentDock() {
        * component that cannot afford accent for something this ordinary.
        */}
       <Link
-        to="/assistant"
+        to={assistantHref}
         onClick={() => setDockOpen(false)}
         className="mt-[12px] inline-flex items-center gap-[6px] text-[12.5px] font-medium text-fg-muted underline underline-offset-2 hover:text-fg"
       >
-        Open the Assistant
+        {ctx ? 'Ask about this request' : 'Open the Assistant'}
       </Link>
     </Drawer>
   );

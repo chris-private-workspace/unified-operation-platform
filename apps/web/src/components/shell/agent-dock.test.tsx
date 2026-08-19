@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentDock, AgentDockLauncher } from './agent-dock';
 import { useUiStore } from '@/store/ui';
 import { useCurrentUser } from '@/lib/auth/use-current-user';
+import { useRequest } from '@/hooks/queries';
 import type { Role } from '@/lib/api-types';
 
 /**
@@ -23,9 +24,16 @@ import type { Role } from '@/lib/api-types';
  */
 
 vi.mock('@/lib/auth/use-current-user', () => ({ useCurrentUser: vi.fn() }));
+vi.mock('@/hooks/queries', () => ({ useRequest: vi.fn() }));
 
 const asRole = (role: Role | undefined) =>
   vi.mocked(useCurrentUser).mockReturnValue({ role } as never);
+
+/** Only ever used to NAME the request on screen — never to decide anything. */
+const asRequest = (serviceNowNumber: string | null) =>
+  vi.mocked(useRequest).mockReturnValue({
+    data: serviceNowNumber ? { serviceNowNumber } : undefined,
+  } as never);
 
 const renderLauncher = () =>
   render(
@@ -34,15 +42,16 @@ const renderLauncher = () =>
     </MemoryRouter>,
   );
 
-const renderDock = () =>
+const renderDock = (path = '/requests') =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <AgentDock />
     </MemoryRouter>,
   );
 
 beforeEach(() => {
   useUiStore.setState({ dockOpen: false });
+  asRequest(null);
 });
 
 describe('agent dock role gate (W49 F2-3)', () => {
@@ -142,6 +151,64 @@ describe('agent dock open state (W49 F2-4)', () => {
       'aria-expanded',
       'true',
     );
+  });
+});
+
+/**
+ * W49 `F3-1` — what the dock CARRIES.
+ *
+ * 🔴 Read the limit of these first. They prove the id travels; they prove
+ * nothing about whether sending it is allowed. That second question is the whole
+ * point of `D-CTX` and it is answered in `agent-conversation.scope.spec.ts`
+ * against a real controller, because a frontend test asserting "we send
+ * requestId" is exactly the tautology `plan §4 R2` warned about.
+ */
+describe('agent dock context (W49 F3-1)', () => {
+  it('carries the request id from a detail route', () => {
+    asRole('ADMIN');
+    useUiStore.setState({ dockOpen: true });
+    renderDock('/requests/req_abc');
+
+    expect(
+      screen.getByRole('link', { name: 'Ask about this request' }),
+    ).toHaveAttribute('href', '/assistant?requestId=req_abc');
+  });
+
+  it('names the request when it can', () => {
+    asRole('ADMIN');
+    asRequest('REQ0044067');
+    useUiStore.setState({ dockOpen: true });
+    renderDock('/requests/req_abc');
+
+    expect(screen.getByText('REQ0044067')).toBeInTheDocument();
+  });
+
+  /**
+   * ⚠️ Falls back to the raw id rather than to nothing. A panel that showed no
+   * subject while still sending one would be lying by omission — and the id is
+   * exactly what it is about to hand over.
+   */
+  it('falls back to the id while the request is unknown', () => {
+    asRole('ADMIN');
+    useUiStore.setState({ dockOpen: true });
+    renderDock('/requests/req_abc');
+
+    expect(screen.getByText('req_abc')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['/requests', 'the list'],
+    ['/requests/new', 'the create form'],
+    ['/drift', 'an unrelated screen'],
+  ])('carries nothing from %s (%s)', (path) => {
+    asRole('ADMIN');
+    useUiStore.setState({ dockOpen: true });
+    renderDock(path);
+
+    expect(
+      screen.getByRole('link', { name: 'Open the Assistant' }),
+    ).toHaveAttribute('href', '/assistant');
+    expect(screen.queryByText('About')).toBeNull();
   });
 });
 
