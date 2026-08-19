@@ -32,6 +32,24 @@ import { X } from 'lucide-react';
  */
 export const DRAWER_WIDTH = 380;
 
+/**
+ * 🔴 W49 `F2-5` — the drawer starts BELOW the shell's top bar, not at the top of
+ * the viewport. Added after a live check, not from the design: at 1440px the
+ * dock covered x=1060–1440, and the top bar's right-hand controls live exactly
+ * there — theme toggle, the account menu (Settings / Sign out), and **the dock's
+ * own launcher**. An `aria-expanded` toggle you can open but not close.
+ *
+ * ⚠️ This does NOT reopen `OQ-D`. That question was whether the CONTENT gets
+ * pushed narrower, and it still does not — the top bar is chrome, not content.
+ * This narrows where the overlay starts; it does not turn it into a push.
+ *
+ * ⚠️ The honest cost: a general-purpose primitive now knows this shell has a
+ * 56px top bar. That is a real coupling, and it is why `drawer.test.tsx` reads
+ * `top-bar.tsx` and fails if the two numbers drift apart — the failure mode
+ * otherwise is a 1px seam or a re-covered control that no test can see.
+ */
+export const DRAWER_TOP_OFFSET = 56;
+
 export interface DrawerProps {
   open: boolean;
   /** Also the accessible name — this panel has no `aria-modal` to lean on. */
@@ -60,9 +78,9 @@ export function Drawer({ open, title, onClose, children }: DrawerProps) {
       // there.
       role="complementary"
       aria-label={title}
-      style={{ width: DRAWER_WIDTH }}
+      style={{ width: DRAWER_WIDTH, top: DRAWER_TOP_OFFSET }}
       /*
-       * `right-0 top-0 bottom-0` — a strip, never `inset-0`.
+       * `right-0 bottom-0` + a `top` offset — a strip, never `inset-0`.
        * `z-40` — below Toast (z-50) and Dialog (z-[90]): a panel somebody left
        * open must not swallow a transient notification, and a real modal still
        * outranks it.
@@ -72,7 +90,7 @@ export function Drawer({ open, title, onClose, children }: DrawerProps) {
        * `fadeIn` is one of the three approved keyframes (DS-9) — a slide-in
        * would be a new motion, which is a separate conversation.
        */
-      className="fixed bottom-0 right-0 top-0 z-40 flex max-w-[92vw] flex-col border-l border-border bg-card animate-[fadeIn_.15s_ease]"
+      className="fixed bottom-0 right-0 z-40 flex max-w-[92vw] flex-col border-l border-border bg-card animate-[fadeIn_.15s_ease]"
     >
       <div className="flex items-center justify-between border-b border-border px-[18px] py-[14px]">
         <h2 className="text-[14px] font-semibold text-fg">{title}</h2>

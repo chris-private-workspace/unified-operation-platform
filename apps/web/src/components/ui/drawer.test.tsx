@@ -1,6 +1,8 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Drawer, DRAWER_WIDTH } from './drawer';
+import { Drawer, DRAWER_TOP_OFFSET, DRAWER_WIDTH } from './drawer';
 
 /**
  * W49 `F1-4` — the first primitive in this system with a test, and there is a
@@ -133,6 +135,23 @@ describe('Drawer (W49 F1)', () => {
     });
   });
 
+  /**
+   * 🔴 W49 `F2-5` — starts below the top bar, and the `top` value has to reach
+   * the element for the same reason the width does.
+   *
+   * This one was added after a LIVE check, not from the design: full-height, the
+   * dock covered the top bar's right-hand controls — theme toggle, the account
+   * menu, and its own launcher. Nothing in jsdom could see that (no Tailwind, no
+   * geometry), which is why `F2-2` is a live step and not a test.
+   */
+  it('starts below the shell top bar, not at the top of the viewport', () => {
+    open();
+    const panel = screen.getByRole('complementary');
+
+    expect(panel).toHaveStyle({ top: `${DRAWER_TOP_OFFSET}px` });
+    expect(panel.className).not.toMatch(/\btop-0\b/);
+  });
+
   it('closes from the close button', () => {
     const onClose = vi.fn();
     open({ onClose });
@@ -140,5 +159,39 @@ describe('Drawer (W49 F1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 🔴 The coupling `DRAWER_TOP_OFFSET` introduces, held up.
+ *
+ * The number 56 now exists twice — here and as the top bar's own height — and
+ * the two are not connected by anything the compiler can see. If somebody makes
+ * the top bar taller, tsc is happy, every test above is happy, and the result is
+ * either a strip of the page showing through or a top-bar control covered again.
+ * That is precisely the "two implementations each correct on their own, and the
+ * seam between them belongs to neither" shape (BUG-011, W45 `apiPatch`).
+ */
+describe('drawer offset stays level with the shell top bar (W49 F2-5)', () => {
+  const topBarHeight = (): number | null => {
+    const source = readFileSync(
+      join(__dirname, '..', 'shell', 'top-bar.tsx'),
+      'utf8',
+    );
+    const m = source.match(/<header\s+className="[^"]*?\bh-\[(\d+)px\]/);
+    return m ? Number(m[1]) : null;
+  };
+
+  /**
+   * The vacuity guard: a renamed file or a restyled header would make the regex
+   * return null, and a `null === null` comparison below would pass having
+   * checked nothing.
+   */
+  it('can still find the top bar height', () => {
+    expect(topBarHeight()).toBeTypeOf('number');
+  });
+
+  it('matches it exactly', () => {
+    expect(DRAWER_TOP_OFFSET).toBe(topBarHeight());
   });
 });

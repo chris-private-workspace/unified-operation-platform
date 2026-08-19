@@ -166,6 +166,7 @@ layout 行為**嘅嘢(non-modal · 唔可以 trap focus · 要決定 push 定 ov
 | **R4** | **dock 同 `/assistant` 兩份 state 各自漂** —— 同一條對話喺兩處開,一邊送咗 turn 另一邊唔知 | Med | Med | 兩邊都行同一個 TanStack query key ⇒ invalidate 一次兩邊都更新。⚠️ **前提係唔另開一份 local state** |
 | **R5** | **「全站」包唔包 login / 未登入頁?** | Low | Med | `canUseAgent` 已經喺 web 側(W46 F8);dock 掛載點要行同一個 predicate,**唔可以靠「reviewer 記得」** |
 | **R6** | 🟡 **`T2-d` 開工而 W48 `F7-3` 未收** —— 喺一條 DEV 未驗嘅管道上面砌全站功能 | Med | Med | 見 `OQ-A` —— **呢條唔係技術決定,係 owner 決定** |
+| **R7** 🆕 | 🔴 **`F3` 之後,用戶最想開 dock 嗰版就係最受 dock 遮嗰版** —— `F2-5` 實測 request detail(two-column)有 **5 個互動元素**落喺 dock 覆蓋範圍(`Check now`[該版 primary]· `Mark synced` · `Edit` · `Hide` · `Transcript`),而 `F3` 正正要由呢一版送 `requestId` | **High** | 🟡 Med | ⚠️ **本 phase 唔修,但唔可以當唔知**。①分界線已經定咗:**「出唔出返嚟」** —— top bar 嗰個係死局(已修),呢個收咗 dock 就用得返 ②`OQ-D` 答咗 overlay,所以修法唔可以係「改做 push」——要改就係另一個決定 ③真正要睇嘅係 `F3` 落地之後嘅實際用法:如果人要**一路睇 request detail 一路傾**,呢條就由 trade-off 變成缺陷 |
 
 ---
 

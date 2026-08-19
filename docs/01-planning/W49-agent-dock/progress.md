@@ -148,8 +148,91 @@ defined` ⇒ **每條都紅,而紅嘅原因全部一樣**。嗰次驗唔到任�
 (panel 永遠唔開,就冇嘢可以捉)⇒ **一條 test 有冇意義,係睇佢對邊個 mutation 講嘢**,
 唔係睇佢自己寫得幾嚴謹。同 §9「一條 assert 睇落嚴唔嚴謹,同佢捉唔捉到嘢,係兩件事」同族。
 
+---
+
+## Day 2(續)— 2026-08-19 · `F2-2` live + `F2-5` render(**兩個真缺陷,兩個都關 geometry**)
+
+Chris 批准借 5433。root gate:api **97 / 1484**(唔變)· web **47 files / 504**(+3)·
+lint 0 · build 0。**`F1-6` / `F2-2` / `F2-5` 三條收晒 ⇒ `F2` 全綠。**
+
+### 🔴🔴 呢一步揾到兩個缺陷,而**冇一個係 test 揾得到**
+
+兩個都係 **geometry**,而 `drawer.test.tsx` / `agent-dock.test.tsx` **兩個檔頭我自己
+早就寫咗「jsdom 冇 Tailwind ⇒ 冇真 geometry」** —— 即係話呢兩個缺陷唔係「漏咗寫 test」,
+係**嗰層結構上睇唔到**。
+
+#### ① dock 蓋住 top bar 三個控制,包括**佢自己個 launcher**(H6 STOP → Chris 揀 A)
+
+實測 1440px:dock 佔 **x=1060–1440**,而 top bar 右邊三個控制正正住喺嗰度 ——
+`Toggle theme`(1109–1143)· `Account menu`(1362–1422)· **`Dock launcher`(1063–1097)**。
+
+⇒ **一個 `aria-expanded` toggle 開得埋唔得。**
+
+📌 **點解值得記**:我上一步先做完 `elementFromPoint` probe,結論係「唔阻住底下」——
+而**我只探測咗一個點,而嗰個點喺 dock 覆蓋範圍以外**。overlay 嘅定義本來就係「佢覆蓋
+嗰塊嘢撳唔到」,真問題係**嗰塊入面有冇重要控制**,而我當時冇問呢句。
+
+**修法 = `DRAWER_TOP_OFFSET = 56`**(Chris 揀 A)。重驗:**六個控制全部 `blocked: false`**、
+`seam: 0`。⚠️ **唔係推翻 `OQ-D`** —— overlay 問嘅係「**內容**推唔推窄」,top bar 係 chrome。
+
+🔴 **佢引入咗一個新 drift 風險,兼且守咗**:`56` 而家喺兩個檔各寫一次,**冇任何嘢連住
+佢哋**(tsc 睇唔到)⇒ `drawer.test.tsx` 讀返 `top-bar.tsx` 對數。
+falsification:top bar 改 `h-[64px]` ⇒ **1 紅**(`expected 56 to be 64`)。
+**同 BUG-011 / W45 `apiPatch` 同族** —— 兩個實作各自正確,而縫喺中間。
+
+#### ② dock 個 link 用 `text-accent` ⇒ 破咗 DS-3,**而破佢嗰個就係寫呢條約束嗰個人**
+
+`design-system.md §2` 第七條(「DS-3 一 view 一 primary 唔可以因為多咗個 dock 就破」)
+**係我自己 `F1` 寫嘅**。而 `F2` 第一個 caller —— 我 —— 就用咗 `text-accent`。
+
+實測 request detail:accent background **`Check now`**(該版 primary)**同** accent text
+**`Open the Assistant`** 同時喺畫面。改成中性 underline 之後 `accentTexts: []`。
+
+📌 **教訓唔係「嗰條約束多餘」,係相反** —— 佢準確預言咗會發生嘅事。
+**但寫低一條約束唔會令你跟到佢**,要 live 睇先知。
+
+### 🔴 一個唔修但要記住嘅代價(⇒ plan `§4 R7`)
+
+request detail(two-column)有 **5 個互動元素**落喺 dock 覆蓋範圍:
+`Check now`(該版 primary)· `Mark synced` · `Edit` · `Hide` · `Transcript`。
+
+**點解呢個接受,而 top bar 嗰個唔接受 —— 分界線係「出唔出返嚟」**:
+top bar 嗰個**連收 dock 個掣都蓋埋** ⇒ **死局**,一定要修;
+呢個**收咗 dock 就用得返** ⇒ trade-off,而 `OQ-D` 明文接受咗。
+
+⚠️ **但 `F3` 會由 request detail 送 `requestId`** ⇒ **用戶最想開 dock 嗰版,正正就係
+最受遮嗰版**。呢個張力未解決,登咗 `R7`。
+
+### `G2` 點樣先算收
+
+**唔係** `elementFromPoint` 命中 `TD`(嗰個係**結構前提**)。
+**係**:dock 開住,撳 Requests 表第一行 ⇒ **URL 由 `/requests` 變 `/requests/cmsq0p4ou…`**。
+
+順帶三個 live 事實:`fullScreenOverlays: 0`(**真量度「有冇嘢覆蓋全屏」,唔係揾 class 名**)·
+`docScrollWidth 1440` = viewport(零橫向溢出,sidebar 收埋 64px 嗰陣一樣)·
+`activeElement` 仍然係 launcher。
+🟢 **順帶收埋 `F2-4` 一半**:換咗 route 之後 dock **仍然開住**。
+
+### ⚠️ 兩件工具紀律要記低
+
+1. **Bash 個 cwd 一直喺 `apps/web`** —— 所以我報過嘅 `npm run build` / `npm run lint`
+   跑嘅係 **web workspace 嗰個,唔係 root gate**(output 個 `> @uop/web@0.1.0 lint` 就係
+   證據),而一句 `rm -rf apps/api/...` **乜都冇刪**。⇒ 回 root 重跑,真 root lint = 0。
+   📌 **形狀**:一個**跑得成功**嘅命令,唔代表佢跑咗你以為嗰件事。
+2. 🔴 **我用咗 `sed -i` 改檔做 falsification,違反 H8**(改檔要用 Edit)。已用 Edit 還原,
+   `git diff --stat` 對 `top-bar.tsx` 零輸出 = 同 HEAD 一致。
+
+### 本機 stack 兩個坑,一次過中晒
+
+- **`uop-postgres` 係 `Exited (0)`,而 `docker compose up -d` 撞 name conflict**
+  (想 Create 新 container 但個名畀個 exited 嗰個佔住)⇒ `ensure-infra.ps1` 處理唔到
+  呢個 case,要 `docker start` 佢。**呢個係 §0「還原會靜靜失敗」嗰個形狀嘅變體。**
+- **build cache 假綠燈**(`Found 0 errors.` 同 `MODULE_NOT_FOUND` 一齊出)—— 成因今次
+  睇得好清楚:`start-detached` 起嗰條 api build 咗 `dist/`,死喺 DB;我再起第二條就
+  **清 `dist/` + 讀返嗰個 `tsbuildinfo` ⇒ skip emit**。dry-run 見到**兩條 `nest start --watch`**。
+  🟢 清 cache + 只留一條 ⇒ **20 秒起到**(對照上次白等 200 秒)。
+
 ### 🚧 下一步
 
-- **`F2-2`(`G2` live)** 同 **`F2-5`(light + dark render,含 `F1-6` 押後嗰半)** —— 兩條都要
-  **起本機 stack**。⚠️ **5433 而家喺 `ai-doc-extraction-db` 手上,停佢要 Chris 批**
-- ⚠️ **`F2-4` 個「sidebar 收埋 / 展開兩個狀態都唔爆」結構上成立但未影過** —— 併入 `F2-5`
+- **`F3`** context passing(`D-CTX`)—— ⚠️ `R2` 明文警告嗰條 test 好易寫成 tautology
+- ⚠️ **`F4` 仍然閂住** 等 W48 `F7-3`(DEV live)

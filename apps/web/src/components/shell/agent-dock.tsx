@@ -84,10 +84,18 @@ export function AgentDock() {
         Chat is not connected to this panel yet. The full Assistant runs the
         same agent, with the same approval gate.
       </p>
+      {/*
+       * 🔴 NOT `text-accent`, and this was caught live rather than reasoned out.
+       * On a request detail the page's own primary is an accent button (`Check
+       * now`); an accent link in the dock put two accent things on one screen —
+       * exactly what `design-system.md §2`'s seventh constraint says a dock must
+       * not do to DS-3. The dock appears on EVERY screen, so it is the one
+       * component that cannot afford accent for something this ordinary.
+       */}
       <Link
         to="/assistant"
         onClick={() => setDockOpen(false)}
-        className="mt-[12px] inline-flex items-center gap-[6px] text-[12.5px] font-medium text-accent hover:underline"
+        className="mt-[12px] inline-flex items-center gap-[6px] text-[12.5px] font-medium text-fg-muted underline underline-offset-2 hover:text-fg"
       >
         Open the Assistant
       </Link>

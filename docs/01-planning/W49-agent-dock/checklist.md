@@ -22,15 +22,23 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 - [x] F1-3 ✅ **`drawer.tsx`** —— `role="complementary"` · `fixed bottom-0 right-0 top-0`(**唔係 `inset-0`**)· 冇 scrim · 冇 `aria-modal` · `z-40`。🔴 **z-index 排序有論據**:`Dialog z-[90]` > `Toast z-50` > **`Drawer z-40`** > 頁面 —— 一個長開嘅 chrome **唔應該蓋住 transient 通知**,而真 modal 仍然要蓋得住佢
 - [x] F1-4 ✅ **8 條 test,而佢係本系統第一個有 test 嘅 primitive** —— 🔴 **點解只有佢要**:其餘 primitive 靠 render 驗就夠(色 / 半徑 / 間距睇得到),而 `Drawer` 嘅約束係**行為**,`aria-modal` / scrim / `inset-0` 喺截圖入面**完全睇唔出**。⚠️ **明文寫低咗呢份 test 證明唔到咩**:jsdom 冇 Tailwind ⇒ 冇真 geometry ⇒ 呢八條係**結構前提**,`G2`(dock 開住底下撳得郁)要 `F2-2` live 先驗得到
 - [x] F1-5 ✅ **falsification 三道,逐道拆唔一次過拆**(一次改三個就分唔清邊條對應邊個,亦驗唔到零誤傷)—— ①加 `inset-0` ⇒ **1 紅 7 綠**(`not to match /\binset-0\b/`)②加 scrim wrapper ⇒ **1 紅 7 綠**(`expected 'DIV' to be 'ASIDE'`)③加 `aria-modal` ⇒ **1 紅 7 綠**。**三道紅嘅原因逐個對位**
-- [ ] F1-6 🚧 **light + dark 真 render 押後到 `F2`** —— `Drawer` 未掛載到任何頁面之前 render 唔到佢。⚠️ **呢個係 deviation**(plan `F1` acceptance 寫住「light/dark 真 render」)⇒ 要記 changelog
+- [x] F1-6 ✅ **light + dark 真 render 喺 `F2-5` 做咗**(押後嗰半收返)—— 押後理由成立:`Drawer` 係 `fixed` 面板,冇 caller 就冇嘢喺畫面。⚠️ **押後嗰刻嘅 deviation 已記 changelog**,而**押後換到嘢**:`F2-5` 影到「開 + 收 × light + dark × sidebar 展開 + 收埋」六個組合,`F1` 嗰刻淨係影到一個空面板
 
 ## `F2` — Layout 掛載
 
 - [x] F2-1 ✅ **掛喺 `AppShell` 一次**(`<AgentDock />` 喺 shell root,launcher 喺 `TopBar`)。🔴 **三個決定,而中間嗰個先係 `OQ-D` 嘅實際意思**:①每版自己掛 = navigate 就關,兼且漏咗嗰啲版就係 dock **靜靜唔存在**嘅版 ②**佢係 layout 嘅 sibling,唔係入面一個 column** —— 做 flex child 就會把主欄推窄,即係全站每張表都多一個斷點要驗(= push 嘅代價)③launcher 用 **`IconButton` 唔用 `Button`**:**DS-3** 一 view 一 primary,而 dock 係每一版都喺度嘅 chrome ⇒ 一個紅掣釘喺 top bar = **一次過喺所有版加多一個 primary**
-- [ ] F2-2 🔴 **`G2` 真驗**:dock 開住嗰陣,底下嘅表**撳得郁** —— 呢個係 non-modal 嘅可觀察定義,唔係「睇落唔似 modal」。⚠️ **要起本機 stack**(`drawer.test.tsx` / `agent-dock.test.tsx` 兩個檔頭都明文寫住佢哋證明唔到呢條:jsdom 冇 Tailwind ⇒ 冇真 geometry)
+- [x] F2-2 ✅ **`G2` 收咗,而且係「真撳」唔係「量度」** —— dock 開住,撳 Requests 表第一行 ⇒ **URL 由 `/requests` 變 `/requests/cmsq0p4ou…`**。⚠️ 之前一步嘅 `elementFromPoint` 只係**結構前提**(命中 `TD`、`hitIsInsidePanel: false`),真收貨標準係嗰下 click。順帶三個 live 事實:`fullScreenOverlays: 0`(**真量度「有冇嘢覆蓋全屏」,唔係揾 class 名**)· `docScrollWidth 1440` = viewport(零橫向溢出)· `activeElement` 仍然係 launcher(dock 冇搶 focus)。🟢 **順帶收埋 `F2-4` 一半**:click 之後換咗 route,而 dock **仍然開住** ⇒ store-level persist 喺真 router 下面成立
 - [x] F2-3 ✅ **`canUseAgent` gate,而做法係「一個 predicate 兩個 export 共用 + 一條 source scan」**(`R5`)。🔴 **點解唔係淨係收埋個掣**:咁樣道閘就變成**個掣嘅屬性**而唔係**個功能嘅屬性**,而 `F3` 會由 route 開呢個 panel ⇒ 到嗰陣「淨係經 launcher 入到」就係一句**冇人驗過嘅話**。🔴 **`undefined` 明文喺 gate test 個 list 入面** —— 佢係 `GET /me` 仲飛緊嗰陣嘅真實狀態,一個只處理已知 role 嘅 gate 會喺**每次冷載**閃一閃
 - [x] F2-4 ✅ **開合狀態 persist = state 喺 store 唔喺 component**(切 route 唔會關),一條 remount test 釘住。🔴 **刻意唔落 localStorage**:`theme` / `sidebarCollapsed` 都冇,一個淨係佢自己 refresh 之後返嚟嘅 dock 就係**唯一一個唔一致嘅嘢**。**零橫向溢出**結構上成立(`fixed` + `right-0` + `max-w-[92vw]`,唔參與 layout);⚠️ **sidebar 收埋 / 展開兩個狀態要 `F2-5` 影**
-- [ ] F2-5 **light + dark 真 render,dock 開同收兩個狀態都影**(含 `F1-6` 押後嗰半)
+- [x] F2-5 ✅ **light + dark × 開 + 收 × sidebar 展開 + 收埋 全部 render 過**(含 `F1-6` 押後嗰半)。🔴🔴 **而呢一步揾到兩個 test 結構上睇唔到嘅缺陷,兩個都關 geometry**:
+
+  **① `Drawer` 全高 ⇒ 蓋住 top bar 右邊三個控制,包括佢自己個 launcher**(**H6 STOP → Chris 揀 A**)。實測 1440px 之下 dock 佔 x=1060–1440,而 `Toggle theme`(1109–1143)· `Account menu`(1362–1422)· **`Dock launcher`(1063–1097)** 全部落喺嗰度 ⇒ 一個 `aria-expanded` toggle **開得埋唔得**。⇒ `DRAWER_TOP_OFFSET = 56`,dock 由 top bar 下面開始。修完重驗:**六個控制全部 `blocked: false`** · `seam: 0`。
+  ⚠️ **呢個唔係推翻 `OQ-D`** —— overlay 問嘅係「**內容**推唔推窄」,而 top bar 係 chrome。收窄嘅係「由邊度開始」。
+  🔴 **佢引入咗一個新 drift 風險兼且守咗**:`56` 而家喺兩個檔各寫一次,而**冇任何嘢連住佢哋** ⇒ `drawer.test.tsx` **讀返 `top-bar.tsx` 對數**(falsification:把 top bar 改成 `h-[64px]` ⇒ **1 紅**,`expected 56 to be 64`)。同 BUG-011 / W45 `apiPatch` **同族** —— 兩個實作各自正確,而縫喺中間。
+
+  **② dock 個 `Open the Assistant` 用咗 `text-accent` ⇒ 破咗 DS-3**,而**破佢嗰個就係寫呢條約束嗰個人**。實測 request detail:accent background `Check now`(該版 primary)**同** accent text `Open the Assistant` 同時存在。改成中性 underline link 之後 `accentTexts: []`。📌 **教訓**:`design-system.md §2` 第七條(「DS-3 唔可以因為多咗個 dock 就破」)**係我自己 `F1` 寫嘅**,而第一個 caller 就違反咗 —— ⇒ 嗰條約束唔係多餘,但**寫低一條約束唔會令你跟到佢**,要 live 睇。
+
+  🔴 **順帶量到一個唔修但要記住嘅代價**:request detail(two-column)有 **5 個互動元素**落喺 dock 覆蓋範圍(`Check now` · `Mark synced` · `Edit` · `Hide` · `Transcript`)。**點解呢個接受而 top bar 嗰個唔接受 —— 分界線係「出唔出返嚟」**:top bar 嗰個連收 dock 個掣都蓋埋(死局);呢個收咗 dock 就用得返(trade-off)。⚠️ **但 `F3` 之後 dock 會由 request detail 送 `requestId`** ⇒ **用戶最想開 dock 嗰版正正就係最受遮嗰版**,呢個張力未解決 ⇒ 登 plan `§4 R7`
 
 **`F2` falsification 三道(逐道拆)**:①拆走 `AgentDock` 個 gate ⇒ **2 紅 11 綠**,而兩條紅**喺唔同層**(behavioural:`OPCO_IT` 照見到 panel · source scan:gate 唔見咗)②加一個冇 gate 嘅第三個 export ⇒ **2 紅 11 綠**,錯誤訊息**逐字點名** `AgentDockBadge does not call useDockVisible()` ③把 `dockOpen` 由 store 搬去 `useState` ⇒ **2 紅 11 綠**,兩條都落喺 `F2-4`。
 🔴 **第三道順帶揾到兩件要記低嘅事**:**(a)** 第一次拆出咗一個 **crash**(`useState` 冇 import)⇒ **每條都紅而紅嘅原因全部一樣**,即嗰次驗唔到任何嘢 —— **falsification 拆嘢拆出 crash 就唔算數**,要補返先重跑 **(b)** 同一個 mutation 之下,`renders no panel … even when open` **變成 vacuously green**(panel 永遠唔開就冇嘢可以捉)⇒ **一條 test 有冇意義,係睇佢對邊個 mutation 講嘢**,唔係睇佢自己寫得幾嚴謹
