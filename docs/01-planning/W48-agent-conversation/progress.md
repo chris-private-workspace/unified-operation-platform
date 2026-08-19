@@ -632,3 +632,53 @@ Chris 揀 **A**(畫面顯示 + 揀 profile)。api **1480 → 1484** · web **474
   既有 tone**(DS-8 AI → purple)所以**唔觸發 H6 STOP**,但 `F5-3` 嗰次 render
   **蓋唔到今日棵樹**。⚠️ 要**再借一次 5433**
 - `F7-3` / `F7-4` DEV live · `F2-6` DEV migration · `F8` 收尾
+
+---
+
+## Day 4 — 2026-08-19 · `F5-10` render + `F5-11` live(Chris 批咗再借 5433)
+
+### 🟢🟢 `F5-8` 個 live 驗比預期強:揀 profile 唔止揀咗個 id,揀咗個行為
+
+經 **UI** 開新對話(缺陷本來就發生喺呢條路),而我**刻意揀第二個** `power-bi-only`:
+
+| 驗到咩 | 證據 |
+|---|---|
+| 唔再 400 | `text-danger` **零元素**,一句真答案返到嚟 |
+| 揀嘅嘢真入咗 conversation | thread header 即刻顯示 **`power-bi-only`** |
+| **揀嘅係行為唔係 id** | agent 答「**I can only suggest Power BI licences**」= 嗰個 profile 個 custom prompt 逐字生效 |
+| SSE | bubble 1 → 2,**冇 refetch 過** |
+
+📌 第三行等於 **W47 `R26`(prompt 落 DB = 一個真嘅 runtime 行為面)喺 conversation
+呢條新路上重現** —— 唔使再推論。
+
+🟢 **順帶 live 證到 `G5`**:`GET /agent/profiles/options` 真 wire 只有
+`id` / `name` / `model` **三個欄**,而 `power-bi-only` 喺 DB **係有 prompt** 嘅
+⇒ 唔止 unit test 咁講,係真嘢冇出去。
+
+### `F5-10` render:兩個 theme 都行返 token
+
+purple badge `#6d28d9` → **`#a982f0`**(DS-8 AI → purple)· picker `--card`
+`#ffffff` → `#141417` · 高度 **34px = 同 `Input` 一致** · 一個 primary · 零溢出。
+順帶再確認一次:**`Thinking…` 唔喺度而 proposal block 喺** ⇒ `F5-7` 個修正喺
+今日棵樹上仍然生效(呢個就係「重跑」嘅意義)。
+
+### 🔴 `search_catalog` 嗰個缺口,多咗一層
+
+2026-08-18 記低嘅係「`businessAlias` 全 `null` ⇒ 人話搵唔到」。今日再撞一次,
+而值得記嘅係**下一層**:
+
+- tool step **`status: ok`**,返 `[]` ⇒ 平台講嘅係「**搵唔到**」
+- agent 對用戶講「I **couldn't retrieve** the active catalogue」⇒ 用戶聽到嘅係「**攞唔到**」
+
+**呢兩句意思完全唔同**:一個係「冇呢件貨」,一個係「系統壞咗」,而後者會令人去搵 IT。
+⇒ **平台冇 bug**,但個 catalog 缺口**被 model 措辭放大咗**。
+
+### 🚧 `F5-12` — render 揭到一個「可能誤解」,今日刻意唔改
+
+同一屏入面:picker 顯示 `power-bi-only`(= **開新對話**會用邊個),而 thread header
+顯示 `gpt-5.6-luna`(= **呢條**用緊邊個)。兩者意思唔同,視覺上都係「一個 agent 名」。
+
+⚠️ 佢**冇 `F5-7` 咁硬** —— 嗰個係自相矛盾(spinner + 已提出建議),呢個係可能誤解。
+💡 最平嘅修法係 label 由 `Agent` 變 `Agent for new conversations`(純文字、零視覺
+改動,但要一併改 test)。**留畀 Chris 睇截圖判斷**,而 **`T2-d` dock 重用呢個 pattern
+之前一定要答**。
