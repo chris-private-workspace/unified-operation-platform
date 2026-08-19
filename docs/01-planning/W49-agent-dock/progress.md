@@ -435,11 +435,76 @@ dock 喺**每一版** ⇒ 一個 primary 喺度即係**喺所有版一次過**�
 ⚠️ **順帶記低一個真 gap**:`/assistant` **忽略 `disconnected`** ⇒ `R35` 喺嗰邊仍然
 適用,只係冇 dock 咁頻繁。同 `No agent is switched on.` 蓋兩件事嗰個一齊登記。
 
+---
+
+## Day 5(續)— `F5-2b` render,而佢揾到 `F4-3` 喺真環境唔 work
+
+api **98 / 1491**(唔變)· web **545**(+12)· lint 0 · build 0。5433 借咗**第四次**已還原兼驗。
+
+### render 本身冇問題
+
+dock chat light + dark 都影過:user bubble `bg-panel` · assistant `bg-card` ·
+composer · **`Send` 係 secondary 唔係紅**。順帶**本機 agent 真答到嘢而且用咗 request
+context**(`CH-022 A7 Check: 1 × SPE_E3` / `CH-021 A12 TEST: 1 × AAD_PREMIUM_P2`)。
+
+### 🔴🔴 但順住 render 去驗 `F4-3`,發現佢 fire 唔到 —— 兩個唔同成因
+
+**①`EventSource` 對 HTTP error 唔會數到 3。**
+殺 api 再開一條**新** connection:**1 個 error event · `readyState` 2 · 12 秒後仍然 2**。
+規範上「connection cannot be established」係 **fail-the-connection,永不重試** ⇒
+`failures` 只到 1,而 `MAX_CONSECUTIVE_FAILURES = 3` 永遠去唔到。
+
+**②真實斷線根本零 event —— 而呢個先係最常見嗰個。**
+instrument 咗 dock **自己**條 connection(wrap `EventSource` 記低每個 event)再殺 api:
+
+```
+open-attempt → open (readyState 1)
+… 殺 api …
+[18 秒] 冇任何新 event
+```
+
+冇 `error`、冇重連、`readyState` **一直 OPEN**。proxy 喺 upstream 死咗之後仲揸住個
+socket,而瀏覽器**冇方法知**。⇒ **CLOSED 分支同 failure count 兩個都 fire 唔到。**
+
+### 修法兩段,而第二段個數字係推導唔係揀
+
+| | |
+|---|---|
+| `readyState === CLOSED` | **即刻**報。數落去永遠唔會夠 |
+| **staleness timer** | 60s 冇收到**任何嘢**(含 heartbeat)就當斷 |
+
+🔴 **60s 點嚟**:後端每 `AGENT_SSE_HEARTBEAT_MS`(**default 25s**,`agent-run.queue.ts`)
+send 一次 heartbeat ⇒ 兩次 miss 加餘量。⚠️ **有人調高嗰個 env 過 ~30s,呢度就變誤報** ——
+兩者耦合而**冇任何嘢 enforce**,所以段關係寫喺 code 唔留一個裸常數。
+
+⚠️ **stale 嗰陣刻意唔 close** —— 佢可能仲係活 socket 只係後面冇嘢,close 咗就丟埋
+「api 返嚟繼續 send」嗰條路(嗰條自己會經 `markAlive` 清走 banner)。一條 test 釘住。
+
+### 🔴 dock 自己嗰條 test 結構上睇唔到呢件事
+
+佢 assert「`disconnected` **為 true 嗰陣**有冇 banner」—— **啱,而且喺 `disconnected`
+永遠唔會 true 之下完全無用**。「**幾時** flip」係另一條問題。
+
+⇒ 新 `agent-conversation-events.test.tsx` **12 條**。
+📌 **呢個 hook 由 W48 起冇 test,而嗰個決定當時係啱嘅** —— 佢返 `void`,**冇嘢好 assert**。
+畀咗佢 return value 之後,佢啲失敗模式先變成 assert 得到,而**第一件揾到嘅就係一個一直
+喺度嘅缺陷**。
+
+### 📌 兩處寫低咗嘅嘢要更正
+
+`RISK R35`(「連斷 3 次永久靜默」)同 **W48 `F7-5`**(把畫面唔郁歸因於嗰個 bound)——
+**兩處都歸錯因**。真實機制係**根本冇 event 到**。`R35` 已更新(🟡 Partial)。
+
+### ⚠️ 兩個手尾
+
+- **未驗**:以上只喺**本機(vite dev proxy)**觀察過。DEV 行 nginx + ACA,可能會 close
+  個 stream ⇒ 目前實作**兩種都蓋到**,但「DEV 實際係邊種」要 `F5-4` 先知
+- 🔴 **我用咗 `perl -0pi` 改檔做 falsification,違反 H8**(改檔要用 Edit)。已用 Edit 還原。
+  **今日第二次**(Day 2 用過 `sed -i`)
+
 ### 🚧 下一步
 
-- **`F5-2b`** —— `F4` 之後個 **render 半邊要再跑一次**(`F5-2` 嗰次喺 `F4` 之前)。
-  📌 **同一個形狀第三次**:勾咗嘅 gate 唔蓋之後入嘅 commit
-- **`F5-4`** DEV live —— 仍然等 merge + 部署
+- **`F5-4`** DEV live —— 等 merge + 部署。⚠️ 順帶會答到上面嗰條「DEV 係邊種斷線」
 
 ---
 
