@@ -72,8 +72,13 @@ const EVENT_SOURCE_CLOSED = 2;
  * heartbeats plus slack is the threshold. If somebody raises that env var above
  * ~30s this becomes a FALSE alarm — the two are coupled and nothing enforces it,
  * which is why the relationship is written here rather than left as a constant.
+ *
+ * 🟢 Exported only so the test can hold that relationship up against the api's
+ * own default — the same reason `DRAWER_TOP_OFFSET` is exported. Nothing at
+ * runtime imports it, and "written down" stopped being good enough once the
+ * comment above had to admit that nothing enforces it.
  */
-const STALE_AFTER_MS = 60_000;
+export const STALE_AFTER_MS = 60_000;
 
 /** How often to check. Coarse on purpose — this is a banner, not a metric. */
 const STALE_CHECK_MS = 10_000;
