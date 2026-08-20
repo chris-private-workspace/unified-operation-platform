@@ -180,6 +180,7 @@
 - [x] G4-pre-1 ✅ **`ADR-0038` `Accepted`(Chris 2026-08-16,四條後果過目之後)** —— **D3** 唔打網絡要有 test 守住(唔可以靠註釋)· **D4** 要對真 SDK 型別 assert,唔可以自己砌 shape · **D5** OQ-7 Claude 半邊 target 收窄 · **D6** 三件未查證。🟢 **同 ADR-0037 唔同,本 ADR 冇任何一條 deferred** —— 嗰邊個 `E4` 係知情留低,而 `D6` 本身就係一個決定(「G4 第一步係查,唔係寫」)⇒ **R1 gate 過,G4 開得工**
 - [x] G4-pre-2 ✅ **做咗**(`package.json` 有 `@anthropic-ai/sdk@^0.117.1` 落 `apps/api`;`claude-tool-runner.provider.ts` + spec 齊;D6 三樣嘅答案寫咗入 ADR-0038)—— ⚠️ **2026-08-17 補勾,一直做咗冇勾** **`npm i @anthropic-ai/sdk -w @uop/api`**(D1:落 `apps/api` 唔落 root,跟 `@openai/agents` 位置),然後 🔴 **第一件事係查 D6 三樣,唔係寫 adapter** —— ①`betaTool()` 收嘅參數形狀 vs `AgentToolRegistry` 今日出嘅嘢(**D1 成唔成立就睇呢個**;要改 registry 先接到 = D1 錯咗,要返轉頭講,唔係硬塞 —— ADR-0037 E2 立咗呢條尺)②transitive 撞唔撞 `@openai/agents`(尤其 **`zod`** / HTTP client,tool schema 就係靠 `zod`)③license
 - [ ] G4-pre-3 🔴 **`OQ-7` Claude 半邊唔再 block G4**(ADR-0038 D5)—— 但**真打 Anthropic 之前仍然要重新答**,唔可以引用 ADR-0037(E7 個禁令一個字冇郁)。**新 R21**:「裝咗個 SDK」被讀成「可以打 Anthropic」,而 D3 嗰條 test 係唯一防線
+  <br>⚠️ **2026-08-20 phase 收 `closed` 嗰陣刻意保持 `[ ]`** —— 佢**唔係遺留待辦,係一個條件觸發嘅約束**(冇人打 Anthropic 就永遠唔使做,而一有人打就必須先做)。🔴 **但一個住喺 closed phase 裏面嘅 `[ ]`,冇人會再讀** ⇒ 已登 BACKLOG **`W46-OQ7-ANTHROPIC`** 接住。📌 **同 `AGENT-DOCK-VS-ASSISTANT` / `W43-LIVE-CLOSE` 同族**:唔阻住 closeout 嘅嘢,冇人會喺 closeout 提你
 - [x] G5 ✅ **兩半都做齊(`G5-A` expiry 2026-08-16 · `G5-B` BullMQ 2026-08-16)**
 - [x] G5-A ✅ **Run expiry(OQ-5)2026-08-16 落地** —— api **1289 → 1308 / 88 → 89** · web **414 → 415**(6 紅 = pre-existing 一個字冇變)· 兩邊 tsc 0 / lint 0 · **falsification ×9 真紅零誤傷**(內含一個反方向)
 - [x] G5-A-a 🔴 **`expired` 唔係 `aborted` 嘅一種,而理由係 G7 唔係「講得準啲」** —— `aborted` 已經專指「有人撳咗 Stop」(`abortRun`),而 G7 個人口 `decidedAt != null` 就係建喺呢個分野上。溝埋 = 把「冇人審」併入「平台停咗佢」,**而前者正正係 R13 要量嗰樣**。🟢 **零 migration**:`status` 係 `String` 唔係 Prisma enum ⇒ **ADR-0031 D1 喺呢度回本**
@@ -285,7 +286,9 @@
 - [x] G-CLOSE-d ✅ **Falsification ×3,其中一個係測 contract spec 自己嘅盲點** —— ①claude 側 `toolName` 改大寫 ⇒ **2 紅** ②**兩邊一齊**改大寫 ⇒ **1 紅**(🔴 **互相比較嗰條綠咗,hardcode 期望嗰條紅** ⇒ 兩種 assert **夾埋先有意義**;一條「兩邊一致」嘅 assert 對「兩邊一齊錯」係盲嘅 —— CH-023 tautology 教訓嘅正面應用)③拆走 claude 失敗路個 record ⇒ **2 紅**。還原後 `git diff --stat` 對兩個 provider **零輸出**兼**真跑過**
 - [x] G-CLOSE-e ✅ **`R11`–`R25` 十五條入咗 `RISK_REGISTER.md`** —— carry 咗最耐嗰筆。`plan §6` 只定義咗 `R11`–`R16`,其餘散落喺 ADR-0037 / 0038 / 0039 同封 infra 信 ⇒ **有九條 risk 由頭到尾冇一個地方會令佢浮上嚟**,同 `PAR-submit` **一模一樣嘅形狀**(住喺一份文件尾嘅 `- [ ]`)。🔴 **入冊嗰陣校正咗 `R20`**(兩個 SDK 各自 ship `zod`)—— 實測 `@anthropic-ai/sdk` 得**兩個** dependency 而 `zod` 係 **optional peerDependency**,workspace 解析到**一個** `zod@4.4.3` ⇒ 標 `🟢 Resolved` 兼**理由寫成「實測推翻咗原假設」**,唔係靜靜刪走
 - [x] G-CLOSE-f ✅ **收尾數字** —— api **1348 → 1355 / 91 → 92** · web **433 passed / 6 pre-existing** · 兩邊 tsc 0 / lint 0
-- [ ] G-CLOSE-g 🚧 **W46 淨低兩條** —— ~~`A14`~~ 🟢 **2026-08-17 收咗**(Chris 開咗 Azure OpenAI resource);淨低 **`A1`(DEV 半邊)· `B6`**,而**呢兩條卡嘅係 Redis 唔係 Azure OpenAI** ⇒ 封信仲有用,但**佢而家淨係為 Redis 而存在**。🔴 **兩條都唔係「未開發」,係「冇環境驗」** —— code 兩邊都寫完兼有 test
+- [x] G-CLOSE-g ✅🟢 **2026-08-20 收 —— 而本條最值錢嘅係佢自己曾經係死陳述**。原文(保留):~~W46 淨低兩條 —— ~~`A14`~~ 🟢 2026-08-17 收咗(Chris 開咗 Azure OpenAI resource);淨低 **`A1`(DEV 半邊)· `B6`**,而呢兩條卡嘅係 Redis 唔係 Azure OpenAI ⇒ 封信仲有用,但佢而家淨係為 Redis 而存在。🔴 兩條都唔係「未開發」,係「冇環境驗」—— code 兩邊都寫完兼有 test~~
+  <br>🔴 **點解叫死陳述**:`A1` 同 `B6` **2026-08-17 部署 #9 就收咗**(Redis 配咗 `rediss://…:6380`),而 `plan.md` 同日已經把兩條標 `[x]` —— **即係話由嗰日起,同一個 phase 兩份檔一直互相矛盾**,而本條仲以命令句寫住「淨低兩條」。⇒ 任何人只讀 checklist 就會以為 W46 未完。
+  <br>📌 **而呢個病本 phase 自己診斷過一次**:`G-CLOSE-a` 記低咗「`plan.md` 個 acceptance 表由頭到尾冇更新過,21 條全部 `[ ]` 而 18 條老早做完」—— **今次係同一個病喺另一個欄(status / 收尾句)發作**。⇒ **一份文件講「仲差咩」嗰句,同 acceptance 表一樣要當成會過期嘅嘢維護。**
 
 ---
 
