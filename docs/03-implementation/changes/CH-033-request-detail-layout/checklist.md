@@ -31,10 +31,13 @@
 - [x] `spec.md` §6 補實際 falsification 結果 + 記低 `G1` 個 refactor
 - [x] `progress.md` 完成摘要
 - [x] `CLAUDE.md §0` + `SESSION_SUMMARY` 換座標
-- [ ] 🚧 **DEV live 驗** —— 唔喺本單 acceptance(`G1`–`G8` 冇一條要 DEV)。
-      target = 下一次部署(同 CH-032 一齊驗)。
+- [x] **DEV 上機** —— 🟢 **部署 #13(`dev-9053bcd`)2026-08-20 做咗**。
+      🔴 **本單一個新字串都冇**(淨係改 class 同版面)⇒ **唯一嘅 bundle 證據喺 CSS**:
+      `.lg\:grid-cols-2` 由 **×0 → ×1**(`lg:grid-cols-2` 喺 `04f3c86` 零檔)。
+- [ ] 🚧 **DEV live 行為驗**(睇實物三欄)—— **Chris 人手做**(要登入,而 AI 側刻意
+      唔喺瀏覽器打 break-glass 密碼,H4)。
       📌 Chris 原本睇嗰張單(`REQ0044105`)喺 DEV,而本機三張單全部**有** agent run
-      ⇒ **`No run yet` 佔一欄** 嗰個樣本機驗唔到,DEV 嗰張先係。
+      ⇒ **`No run yet` 佔一欄** 嗰個樣本機**結構上**驗唔到,要 DEV 嗰張先睇到。
 
 ## 唯一退讓(`G5` 實際結果)
 
