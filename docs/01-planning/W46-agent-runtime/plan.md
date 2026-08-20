@@ -1,6 +1,16 @@
 # W46 — AI Agent Runtime(Tier 1)
 
-**Status**: `approved`(2026-08-15;**ADR-0036 Accepted ⇒ 開得工**)
+**Status**: `closed`(🟢 2026-08-20 補 flip;原本 `approved`,2026-08-15;**ADR-0036 Accepted ⇒ 開得工**)
+
+> 🟢 **點解 flip**:**21 條 acceptance 全部 `[x]`**(A1–A14 + B1–B7,實數 21 個 `[x]` / **0 個 `[ ]`**)。
+> 卡最耐嗰幾條都收咗:`A1` + `B6`(2026-08-17 部署 #9 `dev-45ad525`,Redis 配咗 `rediss://…:6380`)·
+> `A14`(2026-08-17 Chris 開咗 Azure OpenAI resource,approve → run `completed`)· `B3`(收尾補齊)。
+> Merge `G-MERGE-a..f` 全 ✅,而**下游 W47 / W48 / W49 三個 phase 已經全部 `closed`**。
+> ⚠️ 原本 `approved` 嘅理由(Chris 2026-08-15「唔開 PR、唔 merge」)喺 2026-08-17 批准落地嗰刻就失效。
+>
+> 🔴 **順帶修咗一個同 phase 內部矛盾**:`checklist.md` `G-CLOSE-g` 一直寫住「淨低 `A1`(DEV 半邊)· `B6`」,
+> 而本檔同日已經把兩條標 `[x]` ⇒ **同一個 phase 兩份檔互相矛盾**。📌 而 `G-CLOSE-a` 本身就係喺記錄
+> 「`plan.md` 個 acceptance 表由頭到尾冇更新過」—— **同一個病喺 status 欄再發作一次**。
 **Created**: 2026-08-15
 **Owner**: Chris Lai
 **Branch**: 🚧 未建 —— 🔴 由 **`docs/w46-agent-runtime`** 開 `feat/w46-agent-runtime`,**唔好由 `main` 開**(理由見下)

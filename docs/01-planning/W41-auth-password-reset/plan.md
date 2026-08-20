@@ -4,7 +4,7 @@ name: "AUTH-4c-C — email 自助重設密碼(ADR-0019 D8 落地)"
 sprint_week: W41
 start_date: 2026-07-29
 end_date:
-status: active                # draft | active | closed
+status: closed                # draft | active | closed — 🟢 2026-08-20 補 flip。🔴 **本 phase 係「收官程序真係行過,淨係漏咗一個檔」嘅硬證據**:同一個 phase 個 `checklist.md` frontmatter **早就係 `status: closed`**(2026-07-31),而 `progress.md` 尾段逐字記低咗兩步收官(BACKLOG `AUTH-4c-C` → ✅ closed(R7) · checklist `active` → `closed`)—— **唯獨 `plan.md` 冇跟**。殘留兩條 live(真寄→真收→真重設→舊 session 真失效)Chris 2026-07-31 拍板 defer,已升格 **`DD-4`**(`DEFERRED_REGISTER.md` 有恢復條件 + 判準)⇒ **殘留有 owner,唔靠本檔記住**
 spec_refs:
   - docs/adr/0019-acs-email-notification-transport.md **D8**(九條決定,本 phase 逐條落地)· D3(caller 傳地址)· D7(邊界)
   - docs/adr/0006-local-password-authentication.md(4c 系列;§7 refresh rotation 精神)
