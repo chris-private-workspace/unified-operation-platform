@@ -32,7 +32,13 @@
 - [x] `progress.md` 完成摘要
 - [x] `RISK_REGISTER` `R35` → 🟢(本單係佢最後一個未完項)
 - [x] `BACKLOG` `ASSISTANT-HONESTY` → done
-- [ ] 🚧 **DEV live 驗** — 唔喺本單 acceptance(`G1`–`G7` 冇一條要 DEV)。
-      target = 下一次部署,順手確認兩句同 banner 喺真環境出到。
+- [x] **DEV 上機** — 🟢 **部署 #13(`dev-9053bcd`)2026-08-20 做咗**。
+      🔴 **證據唔係「字串喺唔喺 bundle」,係「出現幾多次」** —— `D2` 逐字抄 dock,
+      所以三句喺舊版 **必然存在**(`git grep … 04f3c86` 三句都命中 `agent-dock.tsx`)。
+      改用次數:三句 + `Reconnect` **由 ×1 變 ×2**(部署前後 live bundle 對照)。
+- [ ] 🚧 **DEV live 行為驗**(睇實物)— **Chris 人手做**,AI 側刻意唔喺瀏覽器打
+      break-glass 密碼(H4)。⇒ **「code 上咗機」已收,「畫面睇落啱」未收**,
+      兩者證據來源唔同(沿用 `CH-015` 先例)。
       ⚠️ **banner 喺 DEV 好可能出唔到** — 部署 #12 實測 DEV 斷線會 fire `error`
-      兼 3.2 秒自動重連,所以要 api 真係返唔到嚟先見到(見 `BACKLOG` 嗰條 🚧)。
+      兼 3.2 秒自動重連,要 api 真係返唔到嚟先見到(`RISK R35` 最後一條未驗嘅路;
+      Chris 2026-08-20 決定唔喺 #13 做 scale-to-0,留下次)。

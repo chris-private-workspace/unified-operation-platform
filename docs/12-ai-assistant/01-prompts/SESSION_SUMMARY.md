@@ -5,9 +5,38 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-033 已收)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · 部署 #13 已做)**
 
-**🟢🟢 最新係 `CH-033 request detail 版面`(2026-08-20,`status: done`)。**
+**🟢🟢 DEV 而家跑 `dev-9053bcd`(部署 #13,2026-08-20)—— 含 CH-032 + CH-033。**
+api `--0000016` / web `--0000012`。infra 配嘅 custom domain · `external` ·
+workload profile 全部完好。
+
+🔴🔴 **本次帶咗一個方法轉變,下次部署直接用得着:marker 由「有冇」變「幾多次」。**
+#12 學到「一個字串要做 marker,先要驗佢喺舊版真係冇」;今次一驗就發現 **CH-032 三句
+喺舊版全部存在,而且係設計使然** —— `D2` 就係「**逐字抄 dock**」⇒ **「有冇出現」呢個
+維度結構上冇可能有答案**。改用**次數**:dock 一次 + `/assistant` 一次 ⇒ 舊 ×1 新 ×2,
+**部署之前先由 live bundle 攞 baseline**。實測四個 marker 全部 `×1 → ×2`。
+
+🔴 **CH-033 一個新字串都冇**(純 class + 版面)⇒ **唯一 bundle 證據喺 CSS**:
+`.lg\:grid-cols-2` 由 **×0 → ×1**。📌 **一單「純版面」改動,證據唔會喺 JS。**
+
+🟢 **五條證據冇一條靠 revision status**:live asset 名逐字 = image 內部 `docker cp`
+抽出嗰個(連 `js length 285165` 都對)· #12 個 bundle **404** · 兩組 marker ·
+`api-json` **90,341 B 同 #12 逐 byte 一致**(正面印證零後端改動)· vendor chunk hash
+同 #12 一樣 ⇒ 對得返「零新 dep」。
+
+🟢 **`-Send` 前個 masking 檢查做深咗一層**:唔止睇 output 有冇 `<len N>`,而係**由
+params 逐個讀返真值,再問 output 有冇 `Contains` 佢** ⇒ `leaks = 0`。
+📌 **「睇落 masked」同「真值唔喺入面」係兩件事**,而後者先係 H4 要嘅。
+
+⚠️ **兩樣冇做:**
+① **live 行為驗證(睇實物)交返 Chris 人手** —— AI 側刻意唔喺瀏覽器打 break-glass
+密碼(H4)⇒ **收咗嘅係「code 上咗機」,唔係「畫面睇落啱」**(沿用 `CH-015` 先例)。
+② **`R35` 最後一條未驗嘅路(api 返唔到嚟)照樣未驗** —— Chris 決定唔做 scale-to-0。
+
+⬇️ **以下係部署 #13 之前嘅座標** ⬇️
+
+**🟢🟢 `CH-033 request detail 版面`(2026-08-20,`status: done`)。**
 `G1`–`G8` 八條全 ✅。**交付**:ticket reference 三個字級各升一級 ·
 **Line items / Operational history / AI Assist 三等分並排** ·
 `Request remark` 提出 grid full width · `mayUseAgent` 為假 ⇒ `lg:grid-cols-2`。

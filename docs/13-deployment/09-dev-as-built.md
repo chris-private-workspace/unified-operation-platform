@@ -514,6 +514,82 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-20 · 部署 #13(`dev-9053bcd`)— **CH-032 + CH-033 上機;marker 由「有冇」變「幾多次」**
+
+**點解要有呢次部署**:`main` 由 #12 之後行前咗 **25 個 commit**,入面有兩單有 DEV carry-over 嘅改動 —— **CH-032**(`/assistant` honesty)同 **CH-033**(request detail 版面),另加 `SSE-HEARTBEAT-COUPLING` 個 test(`STALE_AFTER_MS` 由 `const` 變 `export const`)。
+
+**開工三條事實**(全部實測,唔靠記憶):
+
+| 問題 | 答案 |
+|---|---|
+| DEV 而家跑咩 | `dev-04f3c86` 兩個 app 都係(= #12)⇒ 落後兩單 |
+| 有冇 migration | `git diff 04f3c86..9053bcd -- apps/api/prisma/ prisma/` **完全空** ⇒ **連續第二次零 migration** |
+| 後端有冇改 | `git diff … -- apps/api/src/` **完全空** ⇒ 純前端 |
+
+#### 🔴🔴 本次最重要:**#12 個教訓喺呢度變成結構性問題,而解法係換一個維度**
+
+#12 學到「**一個字串要做 marker,先要驗佢喺舊版真係冇**」。今次一驗就發現 **CH-032 三句文案喺 `04f3c86` 全部已經存在**:
+
+```
+git grep -F 'Could not load the agent list. Try again in a moment.' 04f3c86 -- apps/web/src
+  → 04f3c86:apps/web/src/components/shell/agent-dock.tsx      (三句都係)
+```
+
+⚠️ **而且唔係意外,係設計** —— CH-032 個 `D2` 就係「**逐字抄 dock**」,所以嗰三句**必然**喺舊版存在。⇒ **「有冇出現」呢個維度,對本單結構上冇可能有答案。**
+
+🟢 **解法:唔問「有冇」,問「幾多次」。** dock 用一次,`/assistant` 用一次 ⇒ 舊版 ×1、新版 ×2。部署**之前**先由 live bundle 攞 baseline,咁個對照就唔係推論:
+
+| marker | live(部署前 `dev-04f3c86`) | image 內部(新 build) | live(部署後) |
+|---|---|---|---|
+| `Live updates stopped. Replies may not appear on their own.` | **×1** | ×2 | **×2** ✅ |
+| `No agent is switched on. An admin can turn one on under Agent.` | **×1** | ×2 | **×2** ✅ |
+| `Could not load the agent list. Try again in a moment.` | **×1** | ×2 | **×2** ✅ |
+| `Reconnect` | **×1** | ×2 | **×2** ✅ |
+| CSS `.lg\:grid-cols-2` | **×0** | ×1 | **×1** ✅ |
+| CSS `.lg\:grid-cols-3` | ×1 | ×1 | ×1 |
+
+🔴 **CH-033 一個新字串都冇**(佢淨係改 class 同版面)⇒ 佢個 marker **只可能喺 CSS**。`lg:grid-cols-2` 喺 `04f3c86` **零檔**、`9053bcd` 有 ⇒ Tailwind 生成 `.lg\:grid-cols-2` rule,而**舊 CSS bundle 真係冇**(實測 ×0)。📌 **一單「純版面」改動,唯一嘅 bundle 證據喺 CSS 唔喺 JS。**
+
+#### 五條驗證證據(冇一條靠 revision status)
+
+| # | 證據 | 結果 |
+|---|---|---|
+| 1 | live asset 名 vs **image 內部** `docker cp` 抽出嗰個 | `index-CQjd-n6b.js` / `index-Bdx9QGmI.css` **逐字對上**,連 `js length 285165` 都一樣 |
+| 2 | 負面命中:#12 個 bundle | `/assets/index-aKcTA3up.js` → **404** ⇒ 排除 cache / CDN |
+| 3 | CH-032 四個 marker | 全部由 **×1 → ×2** |
+| 4 | CH-033 CSS marker | `.lg\:grid-cols-2` 由 **×0 → ×1** |
+| 5 | `/api/docs/api-json` | **90,341 B —— 同 #12 逐 byte 一致** ⇒ 正面印證「零後端改動」 |
+
+🟢 **順帶一條免費對數**:`query-vendor-B-CFovtL.js` 同 `react-vendor-DANtqp6M.js` 兩個 hash **同 #12 完全一樣** ⇒ vendor chunk 一個字冇變,同「零新 dependency」對得上。
+
+**未認證探測**:`/api/me` **401 `Missing credentials`**(guard 正常)· `/api/auth/sso/status` `{"enabled":true}` · `/login` 200。
+
+#### 七步(同 #6 / #7 / #8 / #10 / #11 / #12 逐步一致)
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…` · sub `30dac177…` · tenant `4f63aaa0-…` ⇒ 部署 SP,**一次就對**(唔似 #12 要先 re-login) |
+| 1 `docker login`(`--password-stdin`) | `Login Succeeded` |
+| 2 真 pull(base image 由 Dockerfile `^FROM` **讀返**:`node:20-slim` / `nginx:1.27-alpine`) | 兩個 `exit 0` |
+| 3 `docker build` × 2 | 兩個 `exit 0` ⇒ BUG-008 gate 過 |
+| 3.5 **push 之前喺 image 內部驗**(#12 個做法,再用一次) | `docker create` + `docker cp` 抽 assets ⇒ 四個 marker 喺 push 之前已經確認 |
+| 4 `docker push` × 2 | api `sha256:8b8fd89d…2d95` · web `sha256:166679a2…e244`,**同本地 manifest 逐字對上** |
+| 5 params tag 換 | 2 處 · `lengthDelta = 0` · 舊 tag 殘留 **0** · 33 個 parameter · `git check-ignore` 命中 + `git status` **空** |
+| 6 dry-run | api secrets **11** / env **30** · web 1 / 1 · **四個 sanity 全 `False`** · 舊 tag 零命中 · **leak scan:逐個 secret 對 output 做 `Contains`,0 命中** |
+| 7 `-Send` | 兩個 **`PATCH exit = 0`** · api `--0000016` · web `--0000012` |
+
+**PATCH 之後對數**:兩個 app 都 `dev-9053bcd`;🟢 api `external: false` · web `external: true` + `customDomains: rapo-uop-web-dev.rci-t.com`(`SniEnabled`)· `workloadProfileName: Consumption` **全部完好** ⇒ infra 配嘅嘢結構上冇被掂。
+
+🟢 **`-Send` 之前個 masking 檢查今次做深咗一層**:唔止睇 output 有冇 `<len N>`,而係**由 params 檔逐個讀返真值,再問 output 有冇 `Contains` 佢** ⇒ `leaks found = 0`。**「睇落 masked」同「真值唔喺入面」係兩件事**,而後者先係 H4 要嘅。
+
+#### ⚠️ 兩樣本次冇做,要講明
+
+1. **live 行為驗證(睇實物)交返 Chris 人手做** —— CH-033 三欄同 CH-032 兩句都要登入先睇到,而 AI 側刻意唔喺瀏覽器打 break-glass 密碼(H4)。⇒ **本次收嘅係「code 上咗機」,唔係「畫面睇落啱」。** 兩者證據來源唔同,沿用 `CH-015` 先例分開寫。
+   📌 有一個樣**本機結構上驗唔到**:Chris 原本睇嗰張 `REQ0044105` **冇 agent run**,而本機三張單全部有 ⇒「`No run yet` 佔一整欄」要 DEV 先睇到。
+2. **`RISK R35` 最後一條未驗嘅路(api 返唔到嚟)照樣未驗** —— Chris 決定唔做 scale-to-0(要一條開住嘅 SSE 連線 = 要 session,兼且會令 DEV api 停幾分鐘)。⇒ **`R35` 個已知缺口原樣保留**,下次有 session 嗰陣順手做。
+
+---
+
 ### 2026-08-20 · 部署 #12(`dev-04f3c86`)— **W49 agent dock 上機;第一次「零 migration」部署**
 
 **點解要有呢次部署**:2026-08-19 merge 咗 **W49 `agent-dock`(PR #127)**,16 個 commit。W49 最後一條 acceptance `F5-4`(DEV live)結構上要部署先做得到。
