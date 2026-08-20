@@ -7,8 +7,18 @@
 
 ## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-032 已收)**
 
-**🟢🟢 最新唔係 W49,係 `CH-032 /assistant honesty`(2026-08-20,`status: done`)。**
+**🟢🟢 最新唔係 W49,係 `CH-032 /assistant honesty`(2026-08-20,`status: done`,
+已 merge 落 `main` —— PR #134)。**
 `G1`–`G7` 七條全 ✅ —— 批 + 實作 + test + falsification + light/dark render **一日做完**。
+
+🔴 **「已 merge」逐個驗過**,唔係睇 PR state:兩個 commit `--is-ancestor` 都 `IN` ·
+`origin/main..branch` **= 0** · `git cherry` 零 `+` 行。branch **兩邊都刪咗** ⇒
+**本地同 remote 而家都淨返 `main`,零 open PR**。
+🟢 **順帶一步值得抄**:`git diff <跑過 gate 嗰個 commit> <merge commit>` **空**
+⇒ 我測嗰棵樹**就係** `main` 而家棵樹 —— 唔使靠「應該冇變啩」,正正答返 W47 嗰個
+「一個勾咗嘅 gate 唔等於佢蓋住咗今日棵樹」。
+
+⚠️ **DEV 因此落後 `main` 一個 CH** —— DEV 跑緊 `dev-04f3c86`(= W49)。
 
 | | |
 |---|---|
