@@ -7,6 +7,7 @@ import {
   Plus,
   Send,
   ShieldAlert,
+  WifiOff,
 } from 'lucide-react';
 import {
   useAgentConversation,
@@ -92,11 +93,23 @@ export function Assistant() {
   const archive = useArchiveConversation();
   const send = useAddConversationTurn(selected ?? '');
 
-  useAgentConversationEvents(selected);
+  const events = useAgentConversationEvents(selected);
 
+  /**
+   * 🔴 CH-032 `D1` — `profiles.error` belongs here for the same reason the other
+   * two do.
+   *
+   * It was missing, and the failure was silent rather than loud: a 403 on the
+   * profile list fell through to `profiles.data ?? []`, so the screen said "No
+   * agent is switched on" — a sentence about the PLATFORM's state — when the
+   * real answer was about THIS PERSON's permissions. Same root as `A` below:
+   * three queries, two treated as first-class and one treated as "empty if
+   * absent".
+   */
   const forbidden =
     (list.error instanceof ApiError && list.error.status === 403) ||
-    (thread.error instanceof ApiError && thread.error.status === 403);
+    (thread.error instanceof ApiError && thread.error.status === 403) ||
+    (profiles.error instanceof ApiError && profiles.error.status === 403);
 
   if (forbidden) {
     return (
@@ -174,9 +187,34 @@ export function Assistant() {
               </Select>
             </div>
           )}
-          {!profiles.isLoading && agents.length === 0 && (
+          {/*
+           * 🔴 CH-032 `A` — two situations, two sentences.
+           *
+           * One sentence used to cover both, and one of the two readings was a
+           * lie: `agents` comes from `profiles.data ?? []`, so a FAILED request
+           * (500, a dropped network) produced the same "No agent is switched
+           * on." as an empty list. The platform does not know whether an agent
+           * is switched on at that moment — it could not read the list.
+           *
+           * 🔴 Found the expensive way. On DEV 2026-08-19 all three profiles
+           * were `active: false`, and this sentence was TRUE — but it reads as
+           * the only possible explanation, and even the person debugging it
+           * nearly stopped at "there are no profiles" rather than asking
+           * `?includeInactive=true`.
+           *
+           * ⚠️ Wording is copied WORD FOR WORD from the dock (`D2`), including
+           * the second half about who can fix it, which this screen never said.
+           * `assistant.test.tsx` compares the two files rather than trusting
+           * that they will be edited together.
+           */}
+          {profiles.isError && (
+            <span className="text-[12.5px] text-danger">
+              Could not load the agent list. Try again in a moment.
+            </span>
+          )}
+          {!profiles.isError && !profiles.isLoading && agents.length === 0 && (
             <span className="text-[12.5px] text-fg-muted">
-              No agent is switched on.
+              No agent is switched on. An admin can turn one on under Agent.
             </span>
           )}
           <Button
@@ -274,6 +312,45 @@ export function Assistant() {
                   {formatDateTime(open.createdAt)}
                 </span>
               </div>
+
+              {/*
+               * 🔴 CH-032 `B` / `RISK R35` — the same banner the dock has.
+               *
+               * `useAgentConversationEvents` has returned `{ disconnected,
+               * reconnect }` since W49 `F4-3`; this screen threw the value away,
+               * so a thread whose live connection had died looked exactly like a
+               * thread nobody had answered yet. The dock is open all day and
+               * meets this far more often, which is why it was fixed there
+               * first — but the failure is not rarer here, only less frequent.
+               *
+               * 🔴 Deliberately OUTSIDE the scrolling transcript (`D3`). It is a
+               * state of the screen, not a message in the conversation, and a
+               * status that scrolls out of view is one nobody sees at the moment
+               * it starts mattering.
+               *
+               * ⚠️ `Reconnect` is an underline link, not a `Button` — "Send" is
+               * this view's one primary (DS-3), and the fix for a stalled
+               * connection must not out-shout the thing the person came to do.
+               */}
+              {events.disconnected && (
+                <div className="mx-[18px] mt-[14px] flex items-start gap-[8px] rounded-lg border border-border bg-panel px-[11px] py-[9px]">
+                  <WifiOff
+                    size={14}
+                    strokeWidth={2}
+                    className="mt-[2px] shrink-0 text-fg-subtle"
+                  />
+                  <div className="text-[12px] leading-[1.5] text-fg-muted">
+                    Live updates stopped. Replies may not appear on their own.
+                    <button
+                      type="button"
+                      onClick={events.reconnect}
+                      className="ml-[5px] cursor-pointer font-medium text-fg underline underline-offset-2"
+                    >
+                      Reconnect
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-1 flex-col gap-[12px] overflow-y-auto px-[18px] py-[16px]">
                 {(open.turns ?? []).length === 0 && (

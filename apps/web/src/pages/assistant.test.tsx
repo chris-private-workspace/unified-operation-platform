@@ -80,6 +80,23 @@ const NO_AGENTS: AgentProfileOption[] = [];
 /** `F5-12` — one constant, so a rename cannot make one assertion vacuous. */
 const PICKER = 'Agent for new conversations';
 
+/**
+ * 🔴 CH-032 `D2` — the three sentences this screen shares with the dock.
+ *
+ * Written out ONCE here, and held against BOTH source files by the scan at the
+ * bottom of this file. They are hard-coded rather than imported from either
+ * component on purpose: a shared constant would make every assertion below
+ * agree with whatever the code currently says, which is the tautology `R1`
+ * warns about — the test would go green through a rewording, which is exactly
+ * the change it exists to catch.
+ */
+const AGENTS_FAILED_LINE =
+  'Could not load the agent list. Try again in a moment.';
+const NO_AGENTS_LINE =
+  'No agent is switched on. An admin can turn one on under Agent.';
+const DISCONNECTED_LINE =
+  'Live updates stopped. Replies may not appear on their own.';
+
 const renderScreen = (path = '/assistant') =>
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -101,13 +118,14 @@ beforeEach(() => {
   vi.mocked(useAddConversationTurn).mockReturnValue(mutation());
   vi.mocked(useArchiveConversation).mockReturnValue(mutation());
   /**
-   * ⚠️ W49 `F4-3` gave this hook a return value. `/assistant` still ignores it,
-   * so nothing here behaves differently — but the mock has to satisfy the type,
-   * and tsc is what noticed: every test in this file stayed green.
+   * W49 `F4-3` gave this hook a return value, and CH-032 `B` made this screen
+   * use it. Default to a healthy connection so every OTHER test in this file
+   * describes a screen with no banner on it.
    *
-   * 🔴 That the screen ignores `disconnected` is a real gap, not a decision —
-   * `R35` applies to `/assistant` too, just less often than to a dock somebody
-   * leaves open all day. Logged rather than fixed here (not this phase's file).
+   * ⚠️ This mock used to exist only to satisfy tsc — the screen threw the value
+   * away, and every test here stayed green while it did. That is worth keeping
+   * in view: a mocked return value nothing consumes is indistinguishable, from
+   * inside the suite, from one that is wired up correctly.
    */
   vi.mocked(useAgentConversationEvents).mockReturnValue({
     disconnected: false,
@@ -431,7 +449,10 @@ describe('Assistant (W48 F5)', () => {
     expect(
       screen.getByRole('button', { name: /new conversation/i }),
     ).toBeDisabled();
-    expect(screen.getByText('No agent is switched on.')).toBeInTheDocument();
+    // ⚠️ CH-032 lengthened this sentence (`D2` copies the dock's wording, which
+    // also names who can fix it). Asserted against the constant so the two
+    // halves cannot drift apart again.
+    expect(screen.getByText(NO_AGENTS_LINE)).toBeInTheDocument();
   });
 
   it('says which agent an open thread runs on', () => {
@@ -481,5 +502,196 @@ describe('Assistant (W48 F5)', () => {
 
     expect(screen.getByText('Access required')).toBeInTheDocument();
     expect(screen.queryByText('No conversations yet')).toBeNull();
+  });
+});
+
+/**
+ * CH-032 — the two places this screen said something that was not true, and the
+ * one place it said nothing at all.
+ *
+ * 🔴 None of these were found by a test. `A` came out of a live DEV incident on
+ * 2026-08-19 (every profile switched off, and the sentence on screen was true
+ * but read as the only possible explanation); `B` is `R35`, fixed in the dock
+ * in W49 and left here; `C` was noticed while writing `A` down.
+ *
+ * 📌 What they have in common is the shape, not the symptom: **the screen states
+ * a fact about the platform that it derived from a query it did not check the
+ * outcome of.** `profiles.data ?? []` collapses "failed" into "empty", and a
+ * discarded hook return collapses "connection gone" into "nobody has answered".
+ */
+describe('Assistant honesty (CH-032)', () => {
+  // ── A — one sentence used to cover two situations ─────────────
+
+  /**
+   * 🔴 The lie. `agents` comes from `profiles.data ?? []`, so before CH-032 a
+   * FAILED request rendered the same words as an empty list: the screen claimed
+   * to know the registry was empty when it had not been able to read it.
+   *
+   * ⚠️ Asserted as a PAIR. "Shows the error" alone stays green if both sentences
+   * render together, and two contradictory sentences side by side is its own
+   * defect — the same trap W48 `F5-3` hit with `Thinking…` above a proposal.
+   */
+  it('says it could not read the agent list, instead of that there are none', () => {
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query(undefined, {
+        isError: true,
+        error: new ApiError(500, 'Internal Server Error'),
+      }) as ReturnType<typeof useAgentProfileOptions>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText(AGENTS_FAILED_LINE)).toBeInTheDocument();
+    expect(screen.queryByText(NO_AGENTS_LINE)).toBeNull();
+  });
+
+  /** The other half: an answered request that really is empty still says so. */
+  it('still says there are none when the list came back empty', () => {
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query(NO_AGENTS) as ReturnType<typeof useAgentProfileOptions>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText(NO_AGENTS_LINE)).toBeInTheDocument();
+    expect(screen.queryByText(AGENTS_FAILED_LINE)).toBeNull();
+  });
+
+  /**
+   * ⚠️ Neither sentence while the answer is still in flight. A screen that
+   * announces "no agents" for the 200ms before the list arrives has invented a
+   * third false state on the way to fixing two.
+   */
+  it('says neither while the list is still loading', () => {
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query(undefined, { isLoading: true }) as ReturnType<
+        typeof useAgentProfileOptions
+      >,
+    );
+
+    renderScreen();
+
+    expect(screen.queryByText(AGENTS_FAILED_LINE)).toBeNull();
+    expect(screen.queryByText(NO_AGENTS_LINE)).toBeNull();
+  });
+
+  // ── B — R35, the banner this screen was missing ───────────────
+
+  /**
+   * 🔴 `R35`. The bound in `useAgentConversationEvents` is correct and has been
+   * since W48; what was missing here is that nothing on screen SAID it had
+   * fired. A thread whose live connection has died looks exactly like a thread
+   * nobody has answered — and the only cure was to switch threads and switch
+   * back, which W48 `F7-5` found by accident and no user would guess.
+   */
+  it('says when live updates have stopped, and offers a way back', () => {
+    const reconnect = vi.fn();
+    vi.mocked(useAgentConversationEvents).mockReturnValue({
+      disconnected: true,
+      reconnect,
+    });
+
+    renderScreen();
+
+    expect(screen.getByText(DISCONNECTED_LINE)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /reconnect/i }));
+    expect(reconnect).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * ⚠️ The negative, and it is the half that keeps the banner worth reading. A
+   * status that is always on screen is furniture, and `RISK R35`'s own wording
+   * warns that a banner which cries wolf is one nobody reads.
+   */
+  it('shows no banner while the connection is healthy', () => {
+    renderScreen();
+
+    expect(screen.queryByText(DISCONNECTED_LINE)).toBeNull();
+    expect(screen.queryByRole('button', { name: /reconnect/i })).toBeNull();
+  });
+
+  /**
+   * 🔴 DS-3, re-checked WITH the banner up. `Reconnect` is a link-styled
+   * `button`, not a `Button` — "Send" is this view's single primary, and the
+   * cure for a stalled connection must not out-shout the thing the person came
+   * here to do. Counting accent backgrounds is how `F5-3` states this, so the
+   * new element is held to the same count rather than to a promise in a comment.
+   */
+  it('does not add a second primary action when the banner is up', () => {
+    vi.mocked(useAgentConversationEvents).mockReturnValue({
+      disconnected: true,
+      reconnect: vi.fn(),
+    });
+
+    const { container } = renderScreen();
+
+    const primaries = container.querySelectorAll('button.bg-accent');
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]).toHaveTextContent('Send');
+  });
+
+  // ── C — the 403 that fell through ─────────────────────────────
+
+  /**
+   * 🔴 `D1`. `forbidden` checked the conversation list and the open thread but
+   * not the profile list, so a REGIONAL who could read neither got "No agent is
+   * switched on" — a sentence about the PLATFORM — when the true answer was
+   * about their own permissions. Same root as `A`: three queries, two treated
+   * as first-class and one treated as "empty if absent".
+   */
+  it('explains a 403 on the profile list instead of blaming the registry', () => {
+    vi.mocked(useAgentProfileOptions).mockReturnValue(
+      query(undefined, {
+        isError: true,
+        error: new ApiError(403, 'Forbidden'),
+      }) as ReturnType<typeof useAgentProfileOptions>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText('Access required')).toBeInTheDocument();
+    expect(screen.queryByText(NO_AGENTS_LINE)).toBeNull();
+    expect(screen.queryByText(AGENTS_FAILED_LINE)).toBeNull();
+  });
+
+  // ── D2 — the two screens say the same words ───────────────────
+
+  /**
+   * 🔴 The point of `D2`, and the only assertion here that outlives a rewrite of
+   * either component.
+   *
+   * The dock and this screen answer the same three questions, and W49 shipped
+   * them with DIFFERENT wording for one of them without anything going red —
+   * `/assistant` had "No agent is switched on." while the dock also named who
+   * could turn one on. Prose in a comment asking the next person to keep them in
+   * step is not a mechanism; this is.
+   *
+   * ⚠️ Whitespace is collapsed before comparing, so Prettier re-wrapping a long
+   * JSX line cannot fail this for a reason that has nothing to do with wording.
+   */
+  it('uses the same words as the dock, in both files', () => {
+    const normalize = (s: string) => s.replace(/\s+/g, ' ');
+    const assistant = normalize(
+      readFileSync(join(__dirname, 'assistant.tsx'), 'utf8'),
+    );
+    const dock = normalize(
+      readFileSync(
+        join(__dirname, '..', 'components', 'shell', 'agent-dock.tsx'),
+        'utf8',
+      ),
+    );
+
+    for (const line of [
+      AGENTS_FAILED_LINE,
+      NO_AGENTS_LINE,
+      DISCONNECTED_LINE,
+    ]) {
+      // Named in the failure message: a bare `toContain` on a loop variable
+      // reports "expected <the whole file> to contain …", which says nothing
+      // about WHICH of the two files drifted.
+      expect(assistant, `assistant.tsx is missing: ${line}`).toContain(line);
+      expect(dock, `agent-dock.tsx is missing: ${line}`).toContain(line);
+    }
   });
 });
