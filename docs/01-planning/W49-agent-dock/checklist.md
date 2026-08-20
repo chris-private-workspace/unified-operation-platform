@@ -1,6 +1,6 @@
 ---
 phase: W49-agent-dock
-status: active
+status: closed          # 🟢 2026-08-20 部署 #12 之後 F5-4 收 ⇒ G1–G7 全 ✅。淨低 F0-4(`OQ-C`)🚧
 derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 ---
 
@@ -71,7 +71,20 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
     ⇒ **兩個修正**:`readyState === CLOSED` 即刻報 · **staleness timer**(60s 冇收到任何嘢就當斷,個數由後端 `AGENT_SSE_HEARTBEAT_MS` default 25s **推導**唔係揀)。⚠️ stale 嗰陣**刻意唔 close** —— 佢可能仲係活 socket,而 api 返嚟就自己清走 banner。
     📌 **呢個更正咗 `RISK R35` 同 W48 `F7-5` 兩處寫低咗嘅嘢**(兩者都把畫面唔郁歸因於 3 次 bound)。
     🔴 **而 dock 自己嗰條 test 結構上睇唔到** —— 佢 assert「`disconnected` **為 true 嗰陣**有冇 banner」,喺 `disconnected` 永遠唔會 true 之下**完全無用**。「幾時 flip」係另一條問題,而佢住喺 hook 度 ⇒ 新 `agent-conversation-events.test.tsx` **12 條**(呢個 hook 由 W48 起冇 test —— 喺佢返 `void` 嗰陣係合理嘅,**冇嘢好 assert**)
-  - ⚠️ **未驗嗰半**:以上只喺**本機(vite dev proxy)**觀察過。DEV 行 nginx + ACA,可能會 close 個 stream ⇒ 目前實作**兩種都蓋到**,但「DEV 實際係邊種」要 `F5-4` 先知
+  - 🟢🟢 **2026-08-20 驗咗,而 DEV 同本機係相反嗰種** —— 原文:~~以上只喺本機(vite dev proxy)觀察過…「DEV 實際係邊種」要 `F5-4` 先知~~。部署 #12 之後 instrument 咗一條自己嘅 `EventSource` 再 `az containerapp revision restart`:
+    ```
+    ms     61  open       rs=1
+    ms     73  message
+    ms  25074  message              <- ping,25s heartbeat
+    ms  50075  message              <- ping
+    ms  50990  error      rs=0      <- api 死咗,DEV 真係 close 咗個 stream
+    ms  54206  open       rs=1      <- 3.2 秒後自動重連成功
+    ms  54229  message
+    ```
+    ⇒ **DEV(nginx + ACA)= close + fire `error` + 自動重連**,唔係本機嗰個「零 event · `readyState` 一直 OPEN」。**兩種都蓋到呢個決定係啱嘅** —— 兩個環境真係唔同行為。
+    🟢 **dock 冇出 banner,而佢唔應該出**:1 次 `error` 就重連成功,`MAX_CONSECUTIVE_FAILURES = 3` 數唔到。
+    🟢 **順帶驗到 60s staleness timer 個推導成立**:`ping` 實測**真係 25 秒**(= `AGENT_SSE_HEARTBEAT_MS` default)⇒ 60s 門檻唔會誤報。
+    ⚠️ **未驗嗰半仍然存在,只係細咗**:本次係一次**乾淨嘅 revision restart(~3 秒)**。「api 長時間唔返嚟」(部署中途 crash / rollback)之下 DEV 會唔會**累積到 3 次 failure 出 banner**,**本次冇驗** —— 因為重連太快,結構上撞唔到嗰條路
 - [x] F4-4 ✅ **DS-3 一條 source scan 釘住** —— dock 個 Send 用 **`secondary` 唔用 `primary`**。`/assistant` 用 primary 係**啱**嘅(佢係一版一個 job),而 dock 喺**每一版** ⇒ 一個 primary 喺度即係**喺所有版一次過**加多一個。scan 釘 `variant="primary"` 同 `text-accent` 兩樣
 
 ## `F5` — Gate + live
@@ -85,4 +98,11 @@ derived_from: plan.md v1.0(Chris Lai approved 2026-08-19)
 - [x] F5-3 ✅ **本機 live —— 但收窄咗,而且要講清楚收窄咗咩**。原文「真開 dock 傾一段」**結構上做唔到**:①dock 入面冇 chat(`F4` 畀 `F7-3` 閂住)②**主 worktree 個 `.env` 冇 Azure OpenAI 座標**(§0:只喺 W46 worktree 嗰份)⇒ 傾唔到。
   🟢 **改為驗整條 `F3` 鏈,而收貨標準係落 DB 對數唔係睇畫面**:request detail 開 dock ⇒ 顯示 **`REQ0044067`**,而**同頁面自己個 number 逐字一致**(唔係我砌嘅假象)⇒ 撳「Ask about this request」⇒ URL 變 `/assistant?requestId=cmsq0p4ou…` ⇒ 開對話 ⇒ **DB 最新一條 `AgentConversation` join 返 `Request` = `REQ0044067`**。
   📌 **對照組就喺同一次 query 入面**:上一條(`F3-3` 實驗 C)`requestId` **空** ⇒ 證明個欄唔係永遠有值
-- [ ] F5-4 🚧 **DEV live —— 卡「未 merge」,唔係卡工作量**。DEV 冇 W49 code,而部署喺 merge 之後(W47/W48 同一次序)。⚠️ **佢同 `F4-0` 個閘可以同一次過收**,見 `F4-0` 更正
+- [x] F5-4 ✅🟢🟢 **2026-08-20 部署 #12(`dev-04f3c86`)之後收咗**。原文保留:~~DEV live —— 卡「未 merge」,唔係卡工作量。DEV 冇 W49 code,而部署喺 merge 之後(W47/W48 同一次序)~~ —— 判斷啱,`F4-0` 個閘亦真係喺 W48 `F7-3` 嗰次一齊開咗。
+  <br>🔴 **本次同過去五次部署最大分別:W49 零 migration**(`git diff b4915e9..04f3c86 -- prisma/` 完全空)⇒ **#6–#11 慣用嘅「新表 / 新欄讀得到」判準結構上用唔到**,照抄就係「驗咗等於冇驗」。改用兩條:①**live asset 名 `index-aKcTA3up.js` 逐字等於我由 image 內部抽出嗰個**(⇒ DEV 跑緊嘅就係我 build 嗰個,唔係推論)②**部署 #11 個 bundle `index-Bo38NJHT.js` → 404**(負面命中,排除舊 cache)。順帶 `/api/docs/api-json` **90,341 B 同 #11 逐 byte 一致** —— 正好印證「W49 零後端改動」。
+  <br>🔴 **順帶捉到一個假 marker,而佢係交接文件推薦嗰個** —— 交接寫「`Ask about a licence request…` W49 新加,`/assistant` 個版本唔係呢句」。實查 `git grep -F … b4915e9` ⇒ **`assistant.tsx` 一早有** ⇒ 佢喺 W48 bundle 一樣命中,**證明唔到嘢**。另外三個(`aria-label="Assistant"` · `Open in Assistant` · `Ask in the full Assistant`)`b4915e9` **0 檔** / `04f3c86` **1 檔** ⇒ 先係真 marker,而 live 三個都中。📌 **同 Day 4(續)「grep 命中 ≠ 嗰件嘢喺度」同族,機制唔同**:嗰次係 substring 命中,今次係「**以為新加,其實舊有**」⇒ **一個字串要做 marker,先要驗佢喺舊版真係冇**。
+  <br>**四樣逐個**:①**launcher 開得到兼唔推窄** —— `mainWidth` / `mainRight` / `docScrollWidth` **開前開後三個數逐個一樣**(1224 / 1472 / 1472),`fullScreenOverlays: 0`(真量度「有冇嘢覆蓋全屏」,唔係揾 class 名)· `aria-modal: null` · `boxShadow: none` ②**`dockTop = 56`**,而同一次量到 `topbarHeight = 56` ⇒ 兩個數**互相對得上**唔係我抄常數;top bar **四個控制全部 `blocked: false`** ⇒ `F2-5` 嗰個修正喺真環境兌現 ③**context passing 兩邊都驗**:`/requests/:id` dock 顯示 `REQ0044097` 而**同頁面自己個 number 逐字一致**(唔係我砌嘅);列表頁重開 dock ⇒ **冇 REQ**、文案由「about **this request**」變「about **licences**」 ④**dock 內真傾到,答案自己出**(送完之後**冇 reload / 冇 navigate / 冇撳任何掣**,`Thinking…` 自己消失兼答案自己出現)。
+  <br>🔴 **`G4` 唔靠答案文字判斷** —— agent 個回覆講「The request **list**」,似講緊 `list_pending_requests`;真證據係**落 DB 對數**:`conversation.requestId` 逐字 = `cmswq1v100021pg01jwtfkfdp`,而 run step detail 寫住 `Run started from conversation cmt0unsws… on request cmswq1v10…`。`proposals: 0` ⇒ 零副作用。
+  <br>🟢 **順帶 live 證到 `F3-8` owner-only**:用 Chris 個 session 打 `GET /agent/conversations` **見唔到**我用 break-glass admin 開嗰條(部署 #11 留低)。
+  <br>⚠️ **一樣驗唔到,要講明**:`/requests/new` 喺 DEV **去唔到**(條 route 存在 `router.tsx:46`,但畀 feature flag redirect 返 `/requests` —— `requests.new-request-flag.test.tsx`)⇒ 「create form 唔送 context」呢條路 **live 驗唔到**,只有 `route-context.test.ts:30` 蓋住。我改驗**同一個 `null` 分支嘅另一半**(列表頁),⇒ 分支邏輯有 live 證據,**但嗰條特定 pathname 冇**。
+  <br>⚠️ **另一個觀察,係設計唔係缺陷**:`browser_navigate`(完整頁面載入)之後 dock **會關**,因為開合狀態刻意**唔落 localStorage**(`F2-4`)。SPA 內部導航(撳 row)**唔會關** —— 兩者都實測過

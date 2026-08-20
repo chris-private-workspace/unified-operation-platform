@@ -5,7 +5,43 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-19 · W48 已收)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · W49 已收)**
+
+**🟢🟢 W49 `agent-dock`(Tier 2 `T2-d`)2026-08-20 merge 咗(PR #127,merge commit
+`04f3c86`)兼且 phase `closed` —— G1–G7 全 ✅。**
+⚠️ 呢格上一版第一句寫住 W48,而 **W48 已經唔係最新** —— 唔好用佢做「今日喺邊」。
+
+| | |
+|---|---|
+| 交付 | `Drawer` primitive(**本系統第二個新 primitive**,H6 STOP → Chris 批,七條約束入 `design-system.md §2`)· dock 掛喺 `AppShell` **一次** · route context passing(`D-CTX`)· dock 入面 chat |
+| 性質 | **零 schema · 零 migration · 零新 endpoint · 零 ADR**(純前端) |
+| DEV | 🟢 **部署 #12 `dev-04f3c86`(2026-08-20)** ⇒ 最後一條 `F5-4` 收 |
+| 剩低 | 🚧 `OQ-C` 未答(唔喺 acceptance 入面)· `/requests/new` 喺 DEV 去唔到 ⇒ 嗰條 pathname live 驗唔到 |
+
+🔴🔴 **部署 #12 帶咗一個會直接害到下手嘅教訓:零 migration 令一個用咗六次嘅判準失效。**
+#6–#11 每次都靠「**新表 / 新欄讀得到**」做正面證據(#10 `GET /agent/profiles` 200 ·
+#11 `GET /agent/conversations` **200 唔係 500**),而 W49 `git diff -- prisma/` **完全空**
+⇒ 照抄嗰段就係**驗咗一樣舊版都成立嘅嘢**。改用兩條**唔靠字串**嘅:
+①**live asset 名逐字等於由 image 內部 `docker cp` 抽出嗰個** ②**上一個部署嘅 bundle 404**。
+
+🔴 **順帶捉到交接文件推薦嘅 marker 有一個係假** —— `Ask about a licence request` 寫住
+「W49 新加」,實查 `git grep -F … b4915e9` ⇒ **`assistant.tsx` 一早有**。
+📌 **一個字串要做 marker,先要驗佢喺舊版真係冇**(成本 = 一條 `git grep`)。同 W49
+`progress.md` Day 4「grep 命中 ≠ 嗰件嘢喺度」同族,但機制唔同 —— 嗰次係 **substring 命中**,
+今次係「**以為新加,其實舊有**」。
+
+🟢🟢 **順手答咗一條之前未知嘅嘢:DEV 嘅 SSE 斷線同本機相反。**
+殺 api revision 實測:**DEV(nginx + ACA)close 個 stream + fire `error` + 3.2 秒自動重連**;
+**本機(vite proxy)零 event · `readyState` 一直 OPEN**。⇒ W49 `F4-3` 決定「兩種都蓋到」
+係啱嘅,唔係過度防禦。`ping` 實測**真係 25 秒**(= `AGENT_SSE_HEARTBEAT_MS` default)
+⇒ 60s staleness timer 個推導成立。
+
+🔴 **開工前一個坑(W48 同 W49 兩次都撞)**:DEV 三個 `AgentProfile` 收工全部 `active: false`,
+而 **`GET /agent/profiles` 預設只返 active** ⇒ **打去見到 `[]` 唔代表冇 profile**,
+要 `?includeInactive=true`。唔開返一個,dock 同 `/assistant` 兩個開始掣**一樣係 disabled,
+而畫面唔會話你知點解**。用完記得停返。
+
+⬇️ **以下係 W49 之前嘅座標** ⬇️
 
 **🔵🔵 W48 `agent-conversation`(Tier 2 `T2-c`)2026-08-19 已經 merge 落 `main`
 (PR #124,tip `3a9dd66`),branch 兩邊都刪咗。**
