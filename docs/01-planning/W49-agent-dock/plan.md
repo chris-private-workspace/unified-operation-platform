@@ -3,7 +3,7 @@ phase: W49-agent-dock
 name: "全站 agent dock —— Drawer primitive + context passing(Tier 2 第三塊)"
 sprint_week: W49
 start_date: 2026-08-19
-end_date: TBD                 # 見 §5 —— `OQ-C` 未答,而佢決定 `F4` 有冇拆嘢做
+end_date: 2026-08-20          # 部署 #12(`dev-04f3c86`)收埋 `F5-4` 嗰日。⚠️ 原本寫 `TBD` 兼註「等 `OQ-C`,而佢決定 `F4` 有冇拆嘢做」—— `F4` 用 default 做完咗,而 `OQ-C` 去到 closed 嗰刻仍然未答(佢唔喺 acceptance 入面)⇒ 已登 BACKLOG `AGENT-DOCK-VS-ASSISTANT`
 status: closed                # draft | active | closed —— 🟢 2026-08-20 部署 #12 收埋 F5-4 ⇒ §3 G1–G7 全 ✅。carry-over:`OQ-C` 未答(唔喺 acceptance 入面)
 spec_refs:
   - docs/02-architecture/agent-tier2-scope.md §3 G5 / §4 T2-d / §5.2 D-CTX / §5.1 OQ-3
@@ -148,7 +148,7 @@ layout 行為**嘅嘢(non-modal · 唔可以 trap focus · 要決定 push 定 ov
 | G3 | **dock 唔可以繞過 approval** | 同 `/assistant` 一樣兩條 test(含 source scan) | **Yes** | ✅ **兩條變三條**(`F4-2`:改名做 `Accept proposal` 兩條都綠 ⇒ 補 allow-list)· DEV live dock 內**只有 `Close` / `Send`**,`proposals: 0` |
 | G4 | **`D-CTX`:前端送嘅 context 唔係授權** | 一條**真捉得到嘢**嘅 test,見 `R2` | **Yes** | ✅ `F3-2` falsification **2 紅 42 綠**(而三個既有 suite 全綠 = 嗰條縫嘅實證)· `F3-3` 三個實驗 · **DEV live 落 DB 對數**:`conversation.requestId` 逐字 = 開 dock 嗰張,step detail 寫住 `on request cmswq1v10…` |
 | G5 | H6 light + dark | 兩個都 render 過,**dock 開合兩個狀態都影** | **Yes** | ✅ **render 咗三次**(`F2-5` 開合 × sidebar 兩態 · `F5-2` 加 context card 之後 · `F5-2b` `F4` chat 之後)—— 每次都因為中間入咗 commit。`F2-5` 順帶捉到兩個 test 睇唔到嘅 geometry 缺陷 |
-| G6 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ `F5-1` 喺 tip `414b507` 重跑 —— api **98 / 1491** · web **48 / 523** · lint 0 · build 0 |
+| G6 | root gate | test / lint / build 三個 exit 0 | **Yes** | ✅ **最後一次 = merge 前 tip `ce9c7d6`(2026-08-19,已 merge `main` 之後)** —— api **98 suites / 1491** · web **49 files / 545** · lint 0 · build 0;PR **#127** 個 CI `validate` 亦 **pass 2m10s**(而 CI 由 2026-08-15 起真跑 web)。<br>⚠️ **本欄 2026-08-20 更正過一次,而更正嘅嘢就係本條想講嗰件** —— 原文引用 `F5-1` 喺 tip **`414b507`** 嗰次(api 98 / 1491 · web **48 / 523**),嗰次係 **`F4` 之前**,之後仲入咗 `F4` 五個 commit 同一次 `main` merge。🔴 **同一形狀第三次**:「**一個勾咗嘅 gate 唔等於嗰個 gate 蓋住咗今日棵樹**」(W47 `F6` 之後又入 commit,web 449 → 453)。⇒ **收尾嗰刻要重跑一次,兼且寫低嗰次嘅 tip** —— 冇 tip 嘅 gate 數字,讀嘅人分唔出佢蓋住幾多 |
 | G7 | live 驗 | 本機真開 dock 傾一段 + DEV | **Yes** | ✅ **兩邊都收** —— 本機 `F5-3`(**收窄咗**:dock 內冇 chat + 主 worktree `.env` 冇 Azure OpenAI ⇒ 改驗整條 `F3` 鏈,落 DB 對數)· **DEV `F5-4` 2026-08-20 部署 #12 之後收**,dock 內真傾到,答案**自己出**(冇 reload / 冇 navigate / 冇撳掣) |
 
 > 🔴 **`G2` 同 `G4` 係本 phase 兩條真紅線。**
