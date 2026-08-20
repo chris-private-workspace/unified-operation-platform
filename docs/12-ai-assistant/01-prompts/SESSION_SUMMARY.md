@@ -5,9 +5,43 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-032 已收)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-033 已收)**
 
-**🟢🟢 最新唔係 W49,係 `CH-032 /assistant honesty`(2026-08-20,`status: done`,
+**🟢🟢 最新係 `CH-033 request detail 版面`(2026-08-20,`status: done`)。**
+`G1`–`G8` 八條全 ✅。**交付**:ticket reference 三個字級各升一級 ·
+**Line items / Operational history / AI Assist 三等分並排** ·
+`Request remark` 提出 grid full width · `mayUseAgent` 為假 ⇒ `lg:grid-cols-2`。
+**零 schema · 零 API · 零新 token · 零 ADR**;web **562 / 50**(+7)。
+
+🔴 **四個教訓,每個都會再撞:**
+
+**①「版面唔啱」嘅報告,可能係「有樣嘢你從來冇見過」。** Chris 話「想三個並排」,而
+Line items 同 Operational history **一早已經並排**;佢見唔到 AI Assist,係因為佢喺
+history **下面**(render 實測 `top: 516`,另一張單 `747`)。
+
+**② 兩份註釋互相矛盾咗一段時間,而冇嘢會紅。** `request-detail.tsx` 寫住「AI Assist
+係 body 得個 Coming soon 嘅空 card」,而 `ai-assist-card.tsx:39` 自己寫住 W46 `F8`
+**早就換走咗**。🟢 查咗先講得出本單**唔算推翻 CH-030 `F4`** —— `F4` 反對嘅係「空 card
+霸住頂,把 timeline 推落 fold」,三等分之後兩個都喺 fold 之上。📌 **一個決定嘅理由
+過時,同一個決定被推翻,係兩件事**(只有前者唔使重新拍板)。
+
+**③🔴🔴 一條 assert 排喺另一條後面,可以令佢由「守衛」變成「複述」。**
+`G1` 本來寫成一條 test:先 `toEqual(['12','12.5','11.5'])`,再 loop 查每個值喺唔喺
+`typography.css`。⚠️ **`toEqual` 一過三個值就釘死 ⇒ 個 loop 冇可能紅。** 拆做兩條之後,
+falsification(把 label 改成 `13px`)得出 **`13px is not in typography.css`** ——
+**refactor 之前結構上出唔到**。同 W47 `F3-6` 同族,但機制係「前面嗰條已經把答案定死」。
+
+**④ render probe 要自己判 pass/fail,唔可以淨係印數字畀人肉對。** 「三個 panel 並排」
+正正係嗰種**兩個啱咗就睇落似成功**嘅 claim。加咗 verdict 之後 falsification 得出
+`G2: FAIL` · `tops [362, 362, **562**]` · `widths [**757**, 371, 371]` ⇒ 證到 probe
+唔係 tautology。
+
+⚠️ **一個樣本機驗唔到**:Chris 睇嗰張 `REQ0044105` **冇 agent run**,而本機三張單
+**全部有** ⇒「`No run yet` 佔一整欄」個樣要喺 DEV 先睇到。
+
+⬇️ **以下係 CH-033 之前嘅座標** ⬇️
+
+**🟢🟢 `CH-032 /assistant honesty`(2026-08-20,`status: done`,
 已 merge 落 `main` —— PR #134)。**
 `G1`–`G7` 七條全 ✅ —— 批 + 實作 + test + falsification + light/dark render **一日做完**。
 
