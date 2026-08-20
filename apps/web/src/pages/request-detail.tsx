@@ -590,302 +590,324 @@ export function RequestDetail() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-[16px] lg:grid-cols-3">
-        <div className="flex flex-col gap-[16px] lg:col-span-2">
-          {req.rawRequestText && (
-            <Card
-              title="Request remark"
-              action={
-                <span className="text-[11px] text-fg-subtle">
-                  from ServiceNow · free text
-                </span>
-              }
-            >
-              <blockquote className="rounded-r-[8px] border-l-[3px] border-accent-line bg-hover px-[14px] py-[12px] text-[13px] italic text-fg-muted">
-                “{req.rawRequestText}”
-              </blockquote>
-            </Card>
-          )}
+      {/*
+       * 🔴 CH-033 `D3` — OUTSIDE the panel grid, full width.
+       *
+       * It used to sit on top of "Line items" inside the left column, and that
+       * had a cost measured rather than guessed: on a request that has a remark,
+       * "Line items" started 139px lower than "Operational history" — so the two
+       * panels people compare were never level with each other. Now the three
+       * panels below all start at the same y, and the remark gets the full width
+       * that free prose actually wants (it is a paragraph, not a field).
+       */}
+      {req.rawRequestText && (
+        <Card
+          title="Request remark"
+          action={
+            <span className="text-[11px] text-fg-subtle">
+              from ServiceNow · free text
+            </span>
+          }
+        >
+          <blockquote className="rounded-r-[8px] border-l-[3px] border-accent-line bg-hover px-[14px] py-[12px] text-[13px] italic text-fg-muted">
+            “{req.rawRequestText}”
+          </blockquote>
+        </Card>
+      )}
 
-          <Card
-            title="Line items"
-            padded={false}
-            action={
-              <div className="flex items-center gap-[10px]">
-                <span className="text-[11.5px] text-fg-subtle">
-                  {req.lineItems.length} SKUs
-                </span>
-                {/* Add only on intake requests — platform-created is already
+      {/*
+       * 🔴 CH-033 `D2` — three panels, one column each (Chris 2026-08-20).
+       *
+       * Before this "Line items" took two thirds and the other two were stacked
+       * in the remaining third, which put AI Assist below the fold on every
+       * request — Chris did not know it was on this screen at all.
+       *
+       * ⚠️ `D4` — OPCO_IT never gets the AI Assist card (see below), and a
+       * three-column grid with two children is a third of the page left blank on
+       * every single request that role opens. So the track count follows the
+       * card, not the layout's preference.
+       */}
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-[16px]',
+          mayUseAgent ? 'lg:grid-cols-3' : 'lg:grid-cols-2',
+        )}
+      >
+        <Card
+          title="Line items"
+          padded={false}
+          action={
+            <div className="flex items-center gap-[10px]">
+              <span className="text-[11.5px] text-fg-subtle">
+                {req.lineItems.length} SKUs
+              </span>
+              {/* Add only on intake requests — platform-created is already
                     fully in ServiceNow (CH-007 D6). canAddLine mirrors the
                     backend gate; the server still 409s if this drifts. */}
-                {canAddLine(req) && !newLine && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => setNewLine({ skuCatalogId: '', qty: 1 })}
-                  >
-                    <Plus size={13} strokeWidth={2} /> Add line item
-                  </Button>
-                )}
-              </div>
-            }
-          >
-            {newLine && (
-              <div className="flex flex-wrap items-end gap-[10px] border-b border-border bg-hover px-[16px] py-[12px]">
-                <div className="flex min-w-[200px] flex-1 flex-col gap-[4px]">
-                  <label className="text-[11.5px] text-fg-muted">SKU</label>
-                  <Select
-                    value={newLine.skuCatalogId}
-                    onChange={(e) =>
-                      setNewLine({ ...newLine, skuCatalogId: e.target.value })
-                    }
-                  >
-                    <option value="">Select a SKU…</option>
-                    {(catalog.data ?? [])
-                      .filter((s) => s.active)
-                      .map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.displayName}
-                        </option>
-                      ))}
-                  </Select>
-                </div>
-                <div className="flex w-[84px] flex-col gap-[4px]">
-                  <label className="text-[11.5px] text-fg-muted">Qty</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={newLine.qty}
-                    onChange={(e) =>
-                      setNewLine({
-                        ...newLine,
-                        qty: Math.max(1, Number(e.target.value) || 1),
-                      })
-                    }
-                    className="font-mono"
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={pending || !newLine.skuCatalogId}
-                  onClick={addLineItem}
-                >
-                  <Check size={13} strokeWidth={2} /> Add
-                </Button>
+              {canAddLine(req) && !newLine && (
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={pending}
-                  onClick={() => setNewLine(null)}
+                  onClick={() => setNewLine({ skuCatalogId: '', qty: 1 })}
                 >
-                  <X size={13} strokeWidth={2} /> Cancel
+                  <Plus size={13} strokeWidth={2} /> Add line item
                 </Button>
+              )}
+            </div>
+          }
+        >
+          {newLine && (
+            <div className="flex flex-wrap items-end gap-[10px] border-b border-border bg-hover px-[16px] py-[12px]">
+              <div className="flex min-w-[200px] flex-1 flex-col gap-[4px]">
+                <label className="text-[11.5px] text-fg-muted">SKU</label>
+                <Select
+                  value={newLine.skuCatalogId}
+                  onChange={(e) =>
+                    setNewLine({ ...newLine, skuCatalogId: e.target.value })
+                  }
+                >
+                  <option value="">Select a SKU…</option>
+                  {(catalog.data ?? [])
+                    .filter((s) => s.active)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.displayName}
+                      </option>
+                    ))}
+                </Select>
               </div>
-            )}
-            {req.lineItems.length === 0 ? (
-              <EmptyState
-                title="No line items"
-                description="Nothing has been added to this request yet."
-              />
-            ) : (
-              req.lineItems.map((item) => {
-                // CH-025 A — the TIMELINE's steps, which carry a terminal
-                // 'Completed' marker the stage machine does not have. `next`
-                // below still comes off `stepsFor`, so a finished line grows no
-                // "Advance stage" button.
-                const steps = displayStepsFor(item);
-                const stepNo = displayStepIndex(item) + 1;
-                const next = nextStage(item);
-                const cancelled = item.stage === 'CANCELLED';
-                const isReady = item.stage === 'READY';
-                const canAssign = isReady && assignable;
-                const isBase = item.sku
-                  ? baseBySkuId.get(item.sku.skuId)
-                  : false;
-                const pathLabel = item.procurementRequired
-                  ? `Procurement path${item.quoteRef ? ` · ref ${item.quoteRef}` : ''}`
-                  : 'Short path · no quote/PO';
-                // CH-009: capacity only matters while a seat is still pending —
-                // once the line is ASSIGNED / CANCELLED it is just noise.
-                const showCapacity = !cancelled && item.stage !== 'ASSIGNED';
-                const budget = opcoCapacity(
-                  ledgerIndex,
-                  req.opcoId,
-                  item.skuCatalogId,
-                );
-                const seats = showTenant
-                  ? tenantCapacity(tenantIndex, item.skuCatalogId)
-                  : null;
-                return (
-                  <div
-                    key={item.id}
-                    className="flex items-start justify-between gap-[12px] border-b border-border px-[16px] py-[14px] last:border-0"
-                  >
-                    <div className="flex min-w-0 flex-col gap-[8px]">
-                      <div className="flex items-center gap-[8px]">
-                        <span className="font-semibold">
-                          {item.sku?.displayName ?? item.skuCatalogId}
-                        </span>
-                        {isBase && <Badge tone="info">BASE</Badge>}
-                        <span className="font-mono text-[11.5px] text-fg-subtle">
-                          ×{item.quantity}
-                        </span>
-                      </div>
-                      <span className="flex flex-wrap items-center gap-x-[8px] text-[11.5px] text-fg-subtle">
-                        {pathLabel}
-                        {/* CH-024 C — the licence RITM belongs on the line that
+              <div className="flex w-[84px] flex-col gap-[4px]">
+                <label className="text-[11.5px] text-fg-muted">Qty</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={newLine.qty}
+                  onChange={(e) =>
+                    setNewLine({
+                      ...newLine,
+                      qty: Math.max(1, Number(e.target.value) || 1),
+                    })
+                  }
+                  className="font-mono"
+                />
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending || !newLine.skuCatalogId}
+                onClick={addLineItem}
+              >
+                <Check size={13} strokeWidth={2} /> Add
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={() => setNewLine(null)}
+              >
+                <X size={13} strokeWidth={2} /> Cancel
+              </Button>
+            </div>
+          )}
+          {req.lineItems.length === 0 ? (
+            <EmptyState
+              title="No line items"
+              description="Nothing has been added to this request yet."
+            />
+          ) : (
+            req.lineItems.map((item) => {
+              // CH-025 A — the TIMELINE's steps, which carry a terminal
+              // 'Completed' marker the stage machine does not have. `next`
+              // below still comes off `stepsFor`, so a finished line grows no
+              // "Advance stage" button.
+              const steps = displayStepsFor(item);
+              const stepNo = displayStepIndex(item) + 1;
+              const next = nextStage(item);
+              const cancelled = item.stage === 'CANCELLED';
+              const isReady = item.stage === 'READY';
+              const canAssign = isReady && assignable;
+              const isBase = item.sku ? baseBySkuId.get(item.sku.skuId) : false;
+              const pathLabel = item.procurementRequired
+                ? `Procurement path${item.quoteRef ? ` · ref ${item.quoteRef}` : ''}`
+                : 'Short path · no quote/PO';
+              // CH-009: capacity only matters while a seat is still pending —
+              // once the line is ASSIGNED / CANCELLED it is just noise.
+              const showCapacity = !cancelled && item.stage !== 'ASSIGNED';
+              const budget = opcoCapacity(
+                ledgerIndex,
+                req.opcoId,
+                item.skuCatalogId,
+              );
+              const seats = showTenant
+                ? tenantCapacity(tenantIndex, item.skuCatalogId)
+                : null;
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-start justify-between gap-[12px] border-b border-border px-[16px] py-[14px] last:border-0"
+                >
+                  <div className="flex min-w-0 flex-col gap-[8px]">
+                    <div className="flex items-center gap-[8px]">
+                      <span className="font-semibold">
+                        {item.sku?.displayName ?? item.skuCatalogId}
+                      </span>
+                      {isBase && <Badge tone="info">BASE</Badge>}
+                      <span className="font-mono text-[11.5px] text-fg-subtle">
+                        ×{item.quantity}
+                      </span>
+                    </div>
+                    <span className="flex flex-wrap items-center gap-x-[8px] text-[11.5px] text-fg-subtle">
+                      {pathLabel}
+                      {/* CH-024 C — the licence RITM belongs on the line that
                             owns it: this is the ticket the platform closes when
                             THIS SKU is assigned. Absent (not "—") when the line
                             has none, so nothing implies a missing ticket. */}
-                        {item.serviceNowNumber && (
-                          <span>
-                            ·{' '}
-                            <span className="font-mono text-fg-muted">
-                              {item.serviceNowNumber}
-                            </span>
+                      {item.serviceNowNumber && (
+                        <span>
+                          ·{' '}
+                          <span className="font-mono text-fg-muted">
+                            {item.serviceNowNumber}
                           </span>
-                        )}
-                      </span>
-                      {/* Two layers, never merged: OpCo budget is live + scoped;
+                        </span>
+                      )}
+                    </span>
+                    {/* Two layers, never merged: OpCo budget is live + scoped;
                           tenant seats are as-of the last sync (snapshot, not
                           Graph) so they are labelled as such. Neither gates
                           anything — the backend stays the only authority. */}
-                      {showCapacity && (
-                        <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[2px] text-[11.5px] text-fg-subtle">
-                          <span>
-                            OpCo budget{' '}
-                            <span
-                              className={cn(
-                                'font-mono',
-                                budget.headroom < 0
-                                  ? 'text-danger'
-                                  : 'text-fg-muted',
-                              )}
-                            >
-                              {budget.assigned}/{budget.allocated}
-                            </span>{' '}
-                            ·{' '}
-                            {/* Keyed on allocated, not on `present`: a missing
+                    {showCapacity && (
+                      <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[2px] text-[11.5px] text-fg-subtle">
+                        <span>
+                          OpCo budget{' '}
+                          <span
+                            className={cn(
+                              'font-mono',
+                              budget.headroom < 0
+                                ? 'text-danger'
+                                : 'text-fg-muted',
+                            )}
+                          >
+                            {budget.assigned}/{budget.allocated}
+                          </span>{' '}
+                          ·{' '}
+                          {/* Keyed on allocated, not on `present`: a missing
                                 row and an existing 0-budget row are the same
                                 thing to an operator — nothing is allocated. */}
-                            {budget.allocated === 0
-                              ? 'no allocation set'
-                              : budget.headroom > 0
-                                ? `${budget.headroom} left`
-                                : 'no headroom'}
+                          {budget.allocated === 0
+                            ? 'no allocation set'
+                            : budget.headroom > 0
+                              ? `${budget.headroom} left`
+                              : 'no headroom'}
+                        </span>
+                        {seats && (
+                          <span>
+                            Tenant seats{' '}
+                            {seats.known ? (
+                              <>
+                                <span
+                                  className={cn(
+                                    'font-mono',
+                                    seats.exhausted
+                                      ? 'text-danger'
+                                      : 'text-fg-muted',
+                                  )}
+                                >
+                                  {seats.available}
+                                </span>{' '}
+                                free of{' '}
+                                <span className="font-mono">{seats.owned}</span>{' '}
+                                · last sync
+                              </>
+                            ) : (
+                              'unknown — no tenant snapshot'
+                            )}
                           </span>
-                          {seats && (
-                            <span>
-                              Tenant seats{' '}
-                              {seats.known ? (
-                                <>
-                                  <span
-                                    className={cn(
-                                      'font-mono',
-                                      seats.exhausted
-                                        ? 'text-danger'
-                                        : 'text-fg-muted',
-                                    )}
-                                  >
-                                    {seats.available}
-                                  </span>{' '}
-                                  free of{' '}
-                                  <span className="font-mono">
-                                    {seats.owned}
-                                  </span>{' '}
-                                  · last sync
-                                </>
-                              ) : (
-                                'unknown — no tenant snapshot'
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {!cancelled && (
-                        <div className="mt-[2px] flex items-center gap-[10px]">
-                          {/* index, not stage name: an ASSIGNED line points at
+                        )}
+                      </div>
+                    )}
+                    {!cancelled && (
+                      <div className="mt-[2px] flex items-center gap-[10px]">
+                        {/* index, not stage name: an ASSIGNED line points at
                               the terminal marker, which has no stage of its own. */}
-                          <Stepper steps={steps} current={stepNo - 1} />
-                          {/* CH-030 F2 — the step's NAME, not just its number.
+                        <Stepper steps={steps} current={stepNo - 1} />
+                        {/* CH-030 F2 — the step's NAME, not just its number.
                               `stepper.tsx` renders dots only and puts the label
                               in `title=`, so until this the one word that says
                               a line is finished ("Completed", CH-025 A) lived
                               in a hover tooltip. Read off the same `steps`
                               array the dots use, so the two cannot disagree. */}
-                          <span className="font-mono text-[11px] text-fg-subtle">
-                            Step {stepNo}/{steps.length} · {steps[stepNo - 1]}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-[8px]">
-                      <Badge tone={STAGE_TONE[item.stage]}>
-                        {cap(STAGE_LABEL[item.stage])}
-                      </Badge>
-                      {!cancelled && (
-                        <div className="flex items-center gap-[8px]">
-                          {next && !isReady && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={pending}
-                              onClick={() =>
-                                advance.mutate(
-                                  { lineItemId: item.id, toStage: next },
-                                  {
-                                    onSuccess: () =>
-                                      flash(
-                                        `Advanced to ${STAGE_LABEL[next]}`,
-                                        'ok',
-                                      ),
-                                    onError,
-                                  },
-                                )
-                              }
-                            >
-                              Advance stage
-                            </Button>
-                          )}
-                          {isReady && (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              disabled={!canAssign || pending}
-                              // Which gate, not just that one is shut: the two
-                              // are resolved by different people (ADR-0025 D5).
-                              title={
-                                !synced
-                                  ? 'Blocked — account not synced to Azure AD'
-                                  : !snSynced
-                                    ? 'Blocked — the target user is not in ServiceNow yet'
-                                    : undefined
-                              }
-                              onClick={() =>
-                                assign.mutate(
-                                  { lineItemId: item.id },
-                                  {
-                                    // W45 — the toast is gone on purpose. It
-                                    // said "License assigned" whether or not
-                                    // the RITM was closed, which is precisely
-                                    // the fact W44 F7-12 needed two days and a
-                                    // live ServiceNow query to establish.
-                                    onSuccess: (res) =>
-                                      setAssignResult({
-                                        ...res,
-                                        ...subjectOf(item.id),
-                                      }),
-                                    onError: (e) => onAssignError(e, item.id),
-                                  },
-                                )
-                              }
-                            >
-                              {assignable ? 'Assign now' : 'Blocked · sync'}
-                            </Button>
-                          )}
-                          {/* W36 / ADR-0016 D3 — the exceptional path, offered
+                        <span className="font-mono text-[11px] text-fg-subtle">
+                          Step {stepNo}/{steps.length} · {steps[stepNo - 1]}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-[8px]">
+                    <Badge tone={STAGE_TONE[item.stage]}>
+                      {cap(STAGE_LABEL[item.stage])}
+                    </Badge>
+                    {!cancelled && (
+                      <div className="flex items-center gap-[8px]">
+                        {next && !isReady && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={pending}
+                            onClick={() =>
+                              advance.mutate(
+                                { lineItemId: item.id, toStage: next },
+                                {
+                                  onSuccess: () =>
+                                    flash(
+                                      `Advanced to ${STAGE_LABEL[next]}`,
+                                      'ok',
+                                    ),
+                                  onError,
+                                },
+                              )
+                            }
+                          >
+                            Advance stage
+                          </Button>
+                        )}
+                        {isReady && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={!canAssign || pending}
+                            // Which gate, not just that one is shut: the two
+                            // are resolved by different people (ADR-0025 D5).
+                            title={
+                              !synced
+                                ? 'Blocked — account not synced to Azure AD'
+                                : !snSynced
+                                  ? 'Blocked — the target user is not in ServiceNow yet'
+                                  : undefined
+                            }
+                            onClick={() =>
+                              assign.mutate(
+                                { lineItemId: item.id },
+                                {
+                                  // W45 — the toast is gone on purpose. It
+                                  // said "License assigned" whether or not
+                                  // the RITM was closed, which is precisely
+                                  // the fact W44 F7-12 needed two days and a
+                                  // live ServiceNow query to establish.
+                                  onSuccess: (res) =>
+                                    setAssignResult({
+                                      ...res,
+                                      ...subjectOf(item.id),
+                                    }),
+                                  onError: (e) => onAssignError(e, item.id),
+                                },
+                              )
+                            }
+                          >
+                            {assignable ? 'Assign now' : 'Blocked · sync'}
+                          </Button>
+                        )}
+                        {/* W36 / ADR-0016 D3 — the exceptional path, offered
                               ONLY to an admin and ONLY once the OpCo has no
                               headroom left. Non-admins never see it (the
                               backend 403s them anyway), and nobody sees it while
@@ -897,110 +919,117 @@ export function RequestDetail() {
                               gating the normal path on client data would let a
                               stale number block a legitimate assign. Being
                               wrong here only costs an extra button. */}
-                          {mayOverride && canAssign && budget.exhausted && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={pending}
-                              title="Assign beyond the OpCo allocation (recorded with your reason)"
-                              onClick={() =>
-                                setOverride({
-                                  lineItemId: item.id,
-                                  skuLabel:
-                                    item.sku?.displayName ?? item.skuCatalogId,
-                                  assigned: budget.assigned,
-                                  allocated: budget.allocated,
-                                  reason: '',
-                                })
-                              }
-                            >
-                              Override budget
-                            </Button>
-                          )}
-                          {/* Remove only an unsent REQUESTED line (D5). Locked
+                        {mayOverride && canAssign && budget.exhausted && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={pending}
+                            title="Assign beyond the OpCo allocation (recorded with your reason)"
+                            onClick={() =>
+                              setOverride({
+                                lineItemId: item.id,
+                                skuLabel:
+                                  item.sku?.displayName ?? item.skuCatalogId,
+                                assigned: budget.assigned,
+                                allocated: budget.allocated,
+                                reason: '',
+                              })
+                            }
+                          >
+                            Override budget
+                          </Button>
+                        )}
+                        {/* Remove only an unsent REQUESTED line (D5). Locked
                               lines show NO trash at all — not a disabled one —
                               so the UI never implies the lock can be undone. */}
-                          {canRemoveLine(item) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={pending}
-                              title="Remove this line item"
-                              onClick={() =>
-                                removeLine.mutate(item.id, {
-                                  onSuccess: () =>
-                                    flash('Line item removed', 'ok'),
-                                  onError,
-                                })
-                              }
-                            >
-                              <Trash2
-                                size={13}
-                                strokeWidth={2}
-                                className="text-danger"
-                              />
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </Card>
-        </div>
-
-        <div className="flex flex-col gap-[16px]">
-          {/* CH-030 F4 — the timeline first. "AI Assist" is a Preview card whose
-              body is an EmptyState reading "Coming soon", so it was holding the
-              top of the right column with nothing in it while the one panel
-              that answers "what happened to this request" sat below the fold. */}
-          <Card title="Operational history">
-            {req.events.length === 0 ? (
-              <EmptyState
-                title="No history yet"
-                description="Events appear as this request progresses."
-              />
-            ) : (
-              <div className="flex flex-col">
-                {req.events.map((ev, i) => (
-                  <div key={ev.id} className="flex gap-[11px]">
-                    {/* dot + vertical connector to the next event (prototype) */}
-                    <div className="flex flex-col items-center">
-                      <span
-                        className={cn(
-                          'mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full',
-                          DOT[EVENT_TONE[ev.type]],
+                        {canRemoveLine(item) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={pending}
+                            title="Remove this line item"
+                            onClick={() =>
+                              removeLine.mutate(item.id, {
+                                onSuccess: () =>
+                                  flash('Line item removed', 'ok'),
+                                onError,
+                              })
+                            }
+                          >
+                            <Trash2
+                              size={13}
+                              strokeWidth={2}
+                              className="text-danger"
+                            />
+                          </Button>
                         )}
-                      />
-                      {i < req.events.length - 1 && (
-                        <span className="w-px flex-1 bg-border" />
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-col pb-[14px] leading-[1.35]">
-                      <span className="text-[12.5px]">
-                        {ev.message ??
-                          (ev.fromStage && ev.toStage
-                            ? `${ev.fromStage} → ${ev.toStage}`
-                            : ev.type)}
-                      </span>
-                      <span className="font-mono text-[11px] text-fg-subtle">
-                        {formatDateTime(ev.createdAt)}
-                      </span>
-                    </div>
+                      </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                </div>
+              );
+            })
+          )}
+        </Card>
 
-          {/* W46 F8 — hidden for OPCO_IT rather than shown-and-broken: every
-              /agent route is @Roles(ADMIN, REGIONAL), so the card would only be
-              able to render a 403. The server guard is the real one; this stops
-              offering a button that cannot work. */}
-          {mayUseAgent && id && <AiAssistCard requestId={id} />}
-        </div>
+        {/*
+         * CH-030 `F4` put the timeline above AI Assist because AI Assist was
+         * then a "Coming soon" placeholder holding the top of the column with
+         * nothing in it, pushing the one panel that answers "what happened to
+         * this request" below the fold.
+         *
+         * ⚠️ Two things have since changed, and BOTH are needed before that
+         * ordering stops mattering: W46 `F8` replaced the placeholder with a
+         * real card (`ai-assist-card.tsx`), and CH-033 gave each panel its own
+         * column — so neither can push the other down any more. 📌 `F4` is not
+         * overruled here; the situation it was answering no longer exists.
+         */}
+        <Card title="Operational history">
+          {req.events.length === 0 ? (
+            <EmptyState
+              title="No history yet"
+              description="Events appear as this request progresses."
+            />
+          ) : (
+            <div className="flex flex-col">
+              {req.events.map((ev, i) => (
+                <div key={ev.id} className="flex gap-[11px]">
+                  {/* dot + vertical connector to the next event (prototype) */}
+                  <div className="flex flex-col items-center">
+                    <span
+                      className={cn(
+                        'mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full',
+                        DOT[EVENT_TONE[ev.type]],
+                      )}
+                    />
+                    {i < req.events.length - 1 && (
+                      <span className="w-px flex-1 bg-border" />
+                    )}
+                  </div>
+                  <div className="flex min-w-0 flex-col pb-[14px] leading-[1.35]">
+                    <span className="text-[12.5px]">
+                      {ev.message ??
+                        (ev.fromStage && ev.toStage
+                          ? `${ev.fromStage} → ${ev.toStage}`
+                          : ev.type)}
+                    </span>
+                    <span className="font-mono text-[11px] text-fg-subtle">
+                      {formatDateTime(ev.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* W46 F8 — hidden for OPCO_IT rather than shown-and-broken: every
+            /agent route is @Roles(ADMIN, REGIONAL), so the card would only be
+            able to render a 403. The server guard is the real one; this stops
+            offering a button that cannot work.
+            ⚠️ CH-033 `D4` — the grid above counts its columns off the SAME
+            predicate, so hiding this does not leave a blank third. */}
+        {mayUseAgent && id && <AiAssistCard requestId={id} />}
       </div>
 
       {/* 🔴 Hidden, not unmounted, while a result is on screen. Two stacked
@@ -1188,6 +1217,25 @@ function ServiceNowTickets({ req }: { req: OnboardingRequest }) {
   );
 }
 
+/**
+ * 🔴 CH-033 `A` / `D1` — one step up the scale, each value taken from
+ * `design_handoff_licenseops/design-system/tokens/typography.css`:
+ *
+ *   label   11.5px (--text-2xs)  →  12px   (--text-xs)
+ *   number  11.5px (--text-2xs)  →  12.5px (--text-sm)
+ *   sub     11px   (--text-3xs)  →  11.5px (--text-2xs)
+ *
+ * These three lines were sitting on the two SMALLEST sizes the design system
+ * defines — below them there is only `--text-micro: 10.5px`, which the token
+ * file reserves for uppercase column headers, with "Never smaller than 10.5px"
+ * written at the top of the file. CH-030 `F1` was answering "can a reader tell
+ * these are three different tickets"; nobody was asked whether they could read
+ * them, and Chris could not (2026-08-20).
+ *
+ * ⚠️ The number gets its OWN size rather than inheriting the label's: it is the
+ * part people copy into ServiceNow, so it is the half worth enlarging most, and
+ * mono at the same px reads smaller than sans anyway.
+ */
 function TicketRef({
   label,
   numbers,
@@ -1199,15 +1247,15 @@ function TicketRef({
 }) {
   return (
     <div className="flex flex-col items-end gap-[1px] leading-[1.3]">
-      <span className="flex flex-wrap items-center justify-end gap-x-[7px] text-[11.5px] text-fg-muted">
+      <span className="flex flex-wrap items-center justify-end gap-x-[7px] text-[12px] text-fg-muted">
         {label}
         {numbers.map((n) => (
-          <span key={n} className="font-mono text-fg">
+          <span key={n} className="font-mono text-[12.5px] text-fg">
             {n}
           </span>
         ))}
       </span>
-      <span className="text-[11px] text-fg-subtle">{sub}</span>
+      <span className="text-[11.5px] text-fg-subtle">{sub}</span>
     </div>
   );
 }
