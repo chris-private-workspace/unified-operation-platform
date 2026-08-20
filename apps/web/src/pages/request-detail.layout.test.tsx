@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RequestDetail } from './request-detail';
 import {
@@ -254,6 +254,57 @@ describe('CH-033 D4 — the column count follows the card', () => {
       container.querySelector('[data-testid="ai-assist-card"]'),
     ).not.toBeNull();
     expect(gridOf(container)!.className).toContain('lg:grid-cols-3');
+  });
+});
+
+describe('CH-034 — the sync gate lives in the left column', () => {
+  /**
+   * 🔴 Stated as containment, not as a class name.
+   *
+   * The gate used to be a direct child of the header Card, spanning its full
+   * width, so the nearest ancestor holding BOTH it and the person's name was
+   * the Card itself — which also holds the ServiceNow ticket panel. After
+   * CH-034 that ancestor is the left column, and the ticket panel is outside
+   * it. Asserting `lg:grid-cols`-style classes would only restate the markup;
+   * this says where the box actually sits in the tree.
+   *
+   * ⚠️ The negative half (`not.toContain('Onboarding request')`) is what makes
+   * it fail before the change — without it, "some ancestor holds both" is
+   * trivially true of the Card, and of `<body>`.
+   */
+  it('puts the gate under the name, not across the whole card', () => {
+    const { container } = show();
+
+    const name = container.querySelector('h1')!;
+    const gate = screen.getByText('AD account created');
+
+    // Nearest common ancestor, found by walking up from the name.
+    let col: HTMLElement | null = name.parentElement;
+    while (col && !col.contains(gate)) col = col.parentElement;
+
+    expect(col).not.toBeNull();
+    expect(col!.textContent).toContain('AD account created');
+    expect(col!.textContent).not.toContain('Onboarding request');
+  });
+
+  /**
+   * ⚠️ The gate must not be stretched by its new flex column parent — that is
+   * what `self-start` is for, and losing it would silently restore the old
+   * full-width row (with `ml-auto` flinging the status back to the far edge).
+   * jsdom computes no layout, so this checks the declaration; the GEOMETRY is
+   * checked by the render probe (`spec.md` `G2`/`G3`).
+   */
+  it('does not let the column stretch the gate', () => {
+    const { container } = show();
+
+    const gate = screen
+      .getByText('AD account created')
+      .closest('div.self-start');
+    expect(gate).not.toBeNull();
+    expect(gate!.className).toContain('max-w-full');
+    // The old full-width row had this; keeping it would fight `self-start`.
+    expect(gate!.className).not.toContain('mt-[16px]');
+    expect(container.querySelector('h1')).not.toBeNull();
   });
 });
 

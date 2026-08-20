@@ -345,51 +345,190 @@ export function RequestDetail() {
       {/* Header + sync gate */}
       <Card>
         <div className="flex items-start justify-between gap-[16px]">
-          <div className="flex gap-[14px]">
-            <Avatar
-              name={req.targetDisplayName ?? req.targetUpn}
-              size={44}
-              variant="brand"
-            />
-            <div className="flex flex-col gap-[3px]">
-              <div className="flex items-center gap-[10px]">
-                <h1 className="text-[18px] font-semibold">
-                  {req.targetDisplayName ?? req.targetUpn}
-                </h1>
-                <Badge tone={status.tone} dot>
-                  {status.label}
-                </Badge>
-              </div>
-              <div className="font-mono text-[12.5px] text-fg-muted">
-                {req.targetUpn}
-              </div>
-              <div className="mt-[4px] flex flex-wrap gap-x-[16px] gap-y-[2px] text-[11.5px] text-fg-subtle">
-                <span>
-                  OpCo{' '}
-                  <span className="font-mono text-fg-muted">
-                    {req.opco?.code ?? '—'}
+          {/*
+           * 🔴 CH-034 — the left side is now a COLUMN, and that is the whole
+           * change: the sync gate used to be a full-width row under this card,
+           * so the three checks were spread across the page with `Ready to
+           * assign` pushed to the far right by `ml-auto`, a hand-span away from
+           * the last step it was describing. Nested here it shrinks to its own
+           * content, and the status lands beside the step it belongs to.
+           *
+           * ⚠️ The gate is a sibling of the avatar row, NOT a child of the name
+           * block — that is what lines it up with the avatar's left edge rather
+           * than with the name (Chris's mock-up, `D1`).
+           */}
+          <div className="flex min-w-0 flex-col gap-[14px]">
+            <div className="flex gap-[14px]">
+              <Avatar
+                name={req.targetDisplayName ?? req.targetUpn}
+                size={44}
+                variant="brand"
+              />
+              <div className="flex flex-col gap-[3px]">
+                <div className="flex items-center gap-[10px]">
+                  <h1 className="text-[18px] font-semibold">
+                    {req.targetDisplayName ?? req.targetUpn}
+                  </h1>
+                  <Badge tone={status.tone} dot>
+                    {status.label}
+                  </Badge>
+                </div>
+                <div className="font-mono text-[12.5px] text-fg-muted">
+                  {req.targetUpn}
+                </div>
+                <div className="mt-[4px] flex flex-wrap gap-x-[16px] gap-y-[2px] text-[11.5px] text-fg-subtle">
+                  <span>
+                    OpCo{' '}
+                    <span className="font-mono text-fg-muted">
+                      {req.opco?.code ?? '—'}
+                    </span>
                   </span>
-                </span>
-                <span>
-                  Handler{' '}
-                  <span className="text-fg-muted">
-                    {req.handledById ? 'Assigned' : 'Unassigned'}
+                  <span>
+                    Handler{' '}
+                    <span className="text-fg-muted">
+                      {req.handledById ? 'Assigned' : 'Unassigned'}
+                    </span>
                   </span>
-                </span>
-                {/* CH-024 C — the platform's own reference. It used to fall
+                  {/* CH-024 C — the platform's own reference. It used to fall
                     back to `req.serviceNowNumber`, which printed the onboarding
                     REQ a second time three centimetres from where the panel on
                     the right already showed it, while the licence request was
                     nowhere on the screen. */}
-                <span>
-                  Ref{' '}
-                  <span className="font-mono text-fg-muted">
-                    #{req.id.slice(-6)}
+                  <span>
+                    Ref{' '}
+                    <span className="font-mono text-fg-muted">
+                      #{req.id.slice(-6)}
+                    </span>
                   </span>
-                </span>
+                </div>
+              </div>
+            </div>
+
+            {/* CH-030 F3 — `items-start`, not `items-center`. The three steps stopped
+                being the same height the moment one of them withheld its timestamp,
+                and centring made the checkmarks and titles sit on three different
+                lines. Top-aligned, they read as one row again whatever each carries.
+
+                🔴 CH-034 — `self-start` + `max-w-full`, and those two do the whole
+                job. A flex column stretches its children by default, so without
+                `self-start` this box would still span the column and `ml-auto`
+                below would still fling the status to the far edge — the exact
+                thing this change exists to stop. `max-w-full` is the guard for
+                the other direction: with both gates shut the row also carries
+                "Check now" and "Mark synced", and it must wrap rather than push
+                the card wider. */}
+            <div className="flex max-w-full flex-wrap items-start gap-[14px] self-start rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
+              {/* CH-024 D — the first step now names WHICH account: the row is read
+                  left to right as one sentence, and "Account created" on its own
+                  left the reader to guess whether it meant AD, M365 or ServiceNow. */}
+              <SyncStep
+                done={Boolean(req.accountCreatedAt)}
+                title="AD account created"
+                sub="in shared tenant"
+              />
+              {/* mt aligns the rule with the 22px check circle's centre, now that the
+                  row is top-aligned rather than centred. */}
+              <div className="mt-[10px] h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
+              <SyncStep
+                done={synced}
+                title="Synced to Azure AD"
+                sub="directory replication"
+                at={req.azureSyncedAt}
+              />
+              {/* mt aligns the rule with the 22px check circle's centre, now that the
+                  row is top-aligned rather than centred. */}
+              <div className="mt-[10px] h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
+              {/* ADR-0025 D4 — gate ②, shown as a third check point rather than as a
+                  separate panel: it is the same kind of fact as the two beside it
+                  (does this person exist over there yet), and assigning needs all
+                  three. A panel of its own would read as optional.
+                  CH-024 D — "Synced to" rather than "Known to", so all three steps
+                  describe the same kind of event in the same words. */}
+              <SyncStep
+                done={snSynced}
+                title="Synced to ServiceNow"
+                sub="target user record"
+                at={req.serviceNowUserSyncedAt}
+              />
+              {/* self-center: the status / actions belong to the row as a whole, not
+                  to the last step, so they stay vertically centred while the steps
+                  above are top-aligned.
+                  ⚠️ CH-034 — `ml-auto` is deliberately KEPT. It only pushes when
+                  there is slack, and a shrink-to-fit box has none, so the status
+                  now sits beside the step it describes. Removing it would change
+                  nothing today and lose the behaviour if the box ever stretches
+                  again. */}
+              <div className="ml-auto flex items-center gap-[8px] self-center">
+                {/* 🔴 CH-024 D — line items FIRST, gates second. This branch used to
+                    start at `assignable`, which is a statement about whether the
+                    request COULD be assigned; once both gates opened it said "Ready
+                    to assign" forever, including after every line had been assigned.
+                    The header badge above was already right (deriveStatus →
+                    "Completed"), so the screen contradicted itself. */}
+                {allLinesAssigned(req) ? (
+                  <span className="text-[12.5px] font-medium text-ok">
+                    License assigned
+                  </span>
+                ) : assignable ? (
+                  <span className="text-[12.5px] font-medium text-ok">
+                    Ready to assign
+                  </span>
+                ) : synced ? (
+                  // Gate ① is open, gate ② is not. Deliberately text and no button:
+                  // "Check now" asks GRAPH, and offering it here would send the
+                  // operator to re-check the side that is already fine. There is no
+                  // break-glass either — nobody can assert a ServiceNow record into
+                  // existence. The sweep opens this one on evidence or not at all.
+                  <span className="flex flex-col items-end leading-[1.25]">
+                    <span className="text-[12.5px] font-medium text-warn">
+                      Waiting on ServiceNow
+                    </span>
+                    <span className="text-[11px] text-fg-subtle">
+                      checked automatically
+                    </span>
+                  </span>
+                ) : (
+                  <>
+                    {/* CH-015 — the primary action is now the one with evidence
+                        behind it. "Mark synced" is unchanged in what it does; it is
+                        demoted to ghost because asserting the gate open is the
+                        exception (ADR-0015 D3 break-glass), not the default. One
+                        primary per view (H6). */}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={pending || cooldown > 0}
+                      onClick={runSyncCheck}
+                    >
+                      {cooldown > 0 ? (
+                        <>
+                          Check now ·{' '}
+                          <span className="font-mono">{cooldown}s</span>
+                        </>
+                      ) : (
+                        'Check now'
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      title="Opens the gate without asking Graph — for when Graph is unreachable"
+                      onClick={() =>
+                        markSynced.mutate(undefined, {
+                          onSuccess: () => flash('Marked as synced', 'ok'),
+                          onError,
+                        })
+                      }
+                    >
+                      Mark synced
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
+
           <div className="flex shrink-0 flex-col items-end gap-[8px]">
             {/* CH-024 C — the two ServiceNow tickets, named and separated.
                 Before this they were one line reading "ServiceNow REQ0012345",
@@ -479,115 +618,6 @@ export function RequestDetail() {
             </div>
           </div>
         )}
-
-        {/* CH-030 F3 — `items-start`, not `items-center`. The three steps stopped
-            being the same height the moment one of them withheld its timestamp,
-            and centring made the checkmarks and titles sit on three different
-            lines. Top-aligned, they read as one row again whatever each carries. */}
-        <div className="mt-[16px] flex flex-wrap items-start gap-[14px] rounded-[10px] border border-border bg-hover px-[14px] py-[12px]">
-          {/* CH-024 D — the first step now names WHICH account: the row is read
-              left to right as one sentence, and "Account created" on its own
-              left the reader to guess whether it meant AD, M365 or ServiceNow. */}
-          <SyncStep
-            done={Boolean(req.accountCreatedAt)}
-            title="AD account created"
-            sub="in shared tenant"
-          />
-          {/* mt aligns the rule with the 22px check circle's centre, now that the
-              row is top-aligned rather than centred. */}
-          <div className="mt-[10px] h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
-          <SyncStep
-            done={synced}
-            title="Synced to Azure AD"
-            sub="directory replication"
-            at={req.azureSyncedAt}
-          />
-          {/* mt aligns the rule with the 22px check circle's centre, now that the
-              row is top-aligned rather than centred. */}
-          <div className="mt-[10px] h-[2px] w-[60px] shrink-0 rounded bg-border-strong" />
-          {/* ADR-0025 D4 — gate ②, shown as a third check point rather than as a
-              separate panel: it is the same kind of fact as the two beside it
-              (does this person exist over there yet), and assigning needs all
-              three. A panel of its own would read as optional.
-              CH-024 D — "Synced to" rather than "Known to", so all three steps
-              describe the same kind of event in the same words. */}
-          <SyncStep
-            done={snSynced}
-            title="Synced to ServiceNow"
-            sub="target user record"
-            at={req.serviceNowUserSyncedAt}
-          />
-          {/* self-center: the status / actions belong to the row as a whole, not
-              to the last step, so they stay vertically centred while the steps
-              above are top-aligned. */}
-          <div className="ml-auto flex items-center gap-[8px] self-center">
-            {/* 🔴 CH-024 D — line items FIRST, gates second. This branch used to
-                start at `assignable`, which is a statement about whether the
-                request COULD be assigned; once both gates opened it said "Ready
-                to assign" forever, including after every line had been assigned.
-                The header badge above was already right (deriveStatus →
-                "Completed"), so the screen contradicted itself. */}
-            {allLinesAssigned(req) ? (
-              <span className="text-[12.5px] font-medium text-ok">
-                License assigned
-              </span>
-            ) : assignable ? (
-              <span className="text-[12.5px] font-medium text-ok">
-                Ready to assign
-              </span>
-            ) : synced ? (
-              // Gate ① is open, gate ② is not. Deliberately text and no button:
-              // "Check now" asks GRAPH, and offering it here would send the
-              // operator to re-check the side that is already fine. There is no
-              // break-glass either — nobody can assert a ServiceNow record into
-              // existence. The sweep opens this one on evidence or not at all.
-              <span className="flex flex-col items-end leading-[1.25]">
-                <span className="text-[12.5px] font-medium text-warn">
-                  Waiting on ServiceNow
-                </span>
-                <span className="text-[11px] text-fg-subtle">
-                  checked automatically
-                </span>
-              </span>
-            ) : (
-              <>
-                {/* CH-015 — the primary action is now the one with evidence
-                    behind it. "Mark synced" is unchanged in what it does; it is
-                    demoted to ghost because asserting the gate open is the
-                    exception (ADR-0015 D3 break-glass), not the default. One
-                    primary per view (H6). */}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={pending || cooldown > 0}
-                  onClick={runSyncCheck}
-                >
-                  {cooldown > 0 ? (
-                    <>
-                      Check now · <span className="font-mono">{cooldown}s</span>
-                    </>
-                  ) : (
-                    'Check now'
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={pending}
-                  title="Opens the gate without asking Graph — for when Graph is unreachable"
-                  onClick={() =>
-                    markSynced.mutate(undefined, {
-                      onSuccess: () => flash('Marked as synced', 'ok'),
-                      onError,
-                    })
-                  }
-                >
-                  Mark synced
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
       </Card>
 
       {/*
