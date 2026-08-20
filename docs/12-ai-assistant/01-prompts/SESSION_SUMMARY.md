@@ -5,9 +5,41 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · 部署 #13 已做)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-034 已收,但未上 DEV)**
 
-**🟢🟢 DEV 而家跑 `dev-9053bcd`(部署 #13,2026-08-20)—— 含 CH-032 + CH-033。**
+**🟢🟢 最新係 `CH-034 request header 收窄`(2026-08-20,`status: done`)—— 🚧 但
+DEV 仲未有佢。** sync gate 由 Card 底部全寬一行,搬入左欄 · 收窄 · 同 Avatar 對齊。
+實測 gate 由撐滿(≈1144)變 **780 / 789**;`gateLeft` = `avatarLeft` = `leftColLeft`
+= `avatarRowLeft` **四個全部 289**。web **564 / 50**(+2)。
+
+🔴 **三個教訓:**
+
+**① 兩個 class 做晒成件事,而其中一個唔加就靜靜失效。** 冇 `self-start`,flex column
+預設 stretch ⇒ box 照樣撐滿、`ml-auto` 照樣把狀態飛去最右 —— **即係改咗等於冇改,
+而畫面唔會報錯**。冇 `max-w-full`,兩個 gate 未開嗰陣多咗兩個掣就會撐闊成張 card。
+⇒ test 分別守住兩個。
+
+**② `ml-auto` 刻意唔刪。** 直覺係「收窄咗就唔需要」,但佢**只喺有剩餘空間先推得動**
+⇒ 今日刪唔刪一模一樣。🟢 而 render 實測 **wrapped 狀態下佢真係做緊嘢**(兩個掣右對齊)
+⇒ 刪咗係「今日冇分別、將來有分別」嘅改動。
+
+**③🔴🔴 render probe 報咗一個唔存在嘅缺陷,而揭穿佢嘅唔係座標,係身份。**
+`G3` 第一次跑 **`FAIL`**(gate `left: 289` vs `avatarLeft: 248`),而 **code 係啱嘅** ——
+`248` 正正係 sidebar 寬度,即我由 `h1` 行三層 `parentElement` **行過咗頭**,量咗 main 區。
+🔎 決定性嘅係加印 **`avatarClass` / `avatarWidth`** —— 見到 `44`(逐格等於 code 入面
+`size={44}`)先確定今次真係揾到 Avatar。
+📌 **幾何 probe 一定要連「你量緊邊個 element」一齊印**,否則一個錯 element 會報一個
+唔存在嘅缺陷,而你會去改一段本身完全冇問題嘅 code。同 CH-033 嗰個「probe 問錯問題」
+同族,但機制唔同:**嗰次係問錯問題,今次係瞄準錯 element。**
+
+🔴 **falsification 道 1 紅喺負面 assert 嗰半** —— 冇咗
+`not.toContain('Onboarding request')`,「由 `h1` 行上去揾到一個同時包住 gate 嘅
+ancestor」對 **Card 同 `<body>` 都成立** ⇒ 整條 test 會靜靜綠。
+
+⬇️ **以下係 CH-034 之前嘅座標** ⬇️
+
+**🟢🟢 DEV 而家跑 `dev-9053bcd`(部署 #13,2026-08-20)—— 含 CH-032 + CH-033
+(⚠️ **唔含 CH-034**)。**
 api `--0000016` / web `--0000012`。infra 配嘅 custom domain · `external` ·
 workload profile 全部完好。
 
