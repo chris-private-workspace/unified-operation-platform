@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.*.local
+# `.env` 嘅備份 —— 2026-08-20 加。改 `.env` 之前備份係啱嘅做法,但備份出嚟嗰個檔
+# 同原檔一樣係真 secret,而上面三條**一條都唔會擋佢**(`.env.bak.xxx` 唔 match
+# `.env.*.local`)⇒ 實測 `git check-ignore` exit 1、`git status` 見到佢 `??`。
+# 📌 更好嘅做法係根本唔喺 repo 入面備份;呢條係嗰個習慣失手嗰陣嘅安全網。
+.env.bak*
+.env.*.bak*
 # Azure deployment 真值 params 檔（含 DB 密碼 / API keys / JWT / admin 初始密碼）——
 # 絕不 commit;只 commit template aca.json + 無值範本 aca.params.example.json。
 deploy/azure/*.params.*.json
