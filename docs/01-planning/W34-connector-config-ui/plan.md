@@ -4,7 +4,7 @@ name: "Connector 非機密配置經 UI 管理 — Model C(ADR-0013)"
 sprint_week: W34
 start_date: 2026-07-22
 end_date:
-status: active
+status: closed                # draft | active | closed — 🟢 2026-08-20 補 flip。原本係裸 `active`,**零 comment 零 blocker**。26/29 勾,**功能項全勾**,三條未勾全部係收尾雜務(doc sync · BACKLOG 更新 · commit)。BACKLOG `INTEG-4` ✅ 2026-07-23(ADR-0013 Accepted,四條 OQ 全答);兩個 deferral 喺 `progress.md` 已定性(C1 熱重建 = 第二期 D4 · 改 secret 的 UI = **永不做**)⇒ 係已收嘅決定唔係遺留待辦。⚠️ **自證一則**:嗰條未勾嘅「BACKLOG 更新(R7)」——BACKLOG 其實早就更新咗,即**連未勾項本身都係 stale**
 spec_refs:
   - docs/adr/0013-connector-config-ui-management.md（本 phase 執行嘅決定 = R1 pre-doc）
   - docs/adr/0010-integration-observability-delivery.md（item 4 觀測面,本 phase 擴展）

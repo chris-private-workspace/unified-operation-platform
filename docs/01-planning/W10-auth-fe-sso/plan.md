@@ -5,7 +5,7 @@ sprint_week: W10
 backlog_id: AUTH（sub-phase AUTH-2）
 start_date: 2026-07-10
 end_date: TBD              # 🔴 blocked on IT SPA app registration（真 SSO e2e 前置）
-status: active             # draft | active | closed — AUTH-2a done（8 deliverable + G1-G6/G8 過）;仍 active 因 2b/G7 卡 IT app reg（未驗當 done = 違 H7）
+status: closed             # draft | active | closed — 🟢 2026-08-20 補 flip。原文:「AUTH-2a done（8 deliverable + G1-G6/G8 過）;仍 active 因 2b/G7 卡 IT app reg（未驗當 done = 違 H7）」—— 🔴 嗰個 blocker **雙重解封咗**:①ADR-0028 改行 server-side authorization code exchange ⇒ **唔再需要 SPA app registration**(BACKLOG C 段明文劃走「IT 未開 SPA app reg」)②AUTH-2b **2026-08-13 closed** —— SSO 半邊 Chris 本人測試確認,break-glass 半邊 W44 `F6-6` 驗(login 200 + 兩個 cookie + role ADMIN)。⚠️ **證據唔喺本 phase 份檔** —— 見 W44 `F9-8` / BACKLOG
 spec_refs:
   - docs/architecture.md §9（Auth / Security — SSO + 3 role）
   - CLAUDE.md §5 H2（vendor/dep lock — MSAL 新 dep 要 approval + ADR）· H4（token/secret 唔 log）· H6（Login/Settings UI 忠實還原 handoff）

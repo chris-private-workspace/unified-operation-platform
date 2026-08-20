@@ -4,7 +4,7 @@ name: "Azure UAT 部署準備 — 文件 + build artifacts + RCI PAR 治理流�
 sprint_week: W32
 start_date: 2026-07-22
 end_date: 2026-07-24          # planned, may slip with changelog log
-status: draft                 # draft | active | closed
+status: closed                # draft | active | closed — 🟢 2026-08-20 補 flip。**佢從來冇被卡住** —— 裸 `draft` 零 comment 零 blocker,即開工時 draft 之後冇人 flip。`checklist.md` **19/19 全勾**(ADR-0012 Accepted · `docs/13-deployment/` 文件集 · Dockerfile 真 build 綠燈),BACKLOG `DEPLOY-prep` ✅ 2026-07-22。🔴 **最強證據係下游**:W33(DEPLOY-exec)已經 `closed` 兼真上線 ⇒ **一個 `draft` phase 嘅產物,老早畀下一個 closed phase 消費咗**
 spec_refs:
   - docs/adr/0012-azure-uat-deployment-topology.md（本 phase 產出 — topology 決定）
   - docs/architecture.md §7（locked stack「Docker Compose」→ 本 phase 由 H2 觸發改為 Azure Container Apps）

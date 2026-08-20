@@ -4,7 +4,7 @@ name: "UOP 建 O365 User License Maintenance Request + 雙同步 gate"
 sprint_week: W43
 start_date: 2026-08-03
 end_date: TBD
-status: active                # draft | active | closed
+status: closed                # draft | active | closed — 🟢 2026-08-20 補 flip。⚠️ **佢當時就係以「PASS(有條件)」收官,唔係卡住冇收** —— `progress.md` Phase Gate 逐字:G1–G7 ✅,**G8/G9/G10 🚧 明文未做**,理由同 target 全部寫入 checklist,冇任何未勾項被刪;`checklist.md` frontmatter 亦早就 `status: complete`(2026-08-04)。🔴 **flip 之前補咗一件事**:三條 live close(`F6-3`/`F6-4`/`G8`,Chris 2026-08-04 叫停「先確定咗功能可行就可以」)同「5 張 SN 測試單要人手 cancel」,之前**只住喺 BACKLOG「進行中」段一句 blockquote 敘事**,唔係有 ID 嘅 tracked item ⇒ 已開 **`W43-LIVE-CLOSE`** 接住。📌 **同 `AGENT-DOCK-VS-ASSISTANT` 同一個理由** —— 否則佢會跟住一個 closed phase 一齊消失
 spec_refs:
   - docs/adr/0025-onboarding-license-request-creation.md（**本 phase 產出**，Proposed）
   - docs/adr/0024-onboarding-task-closure.md（**部分被 0025 supersede** — D2/D3 保留、D1 改用途、D6① 停用）

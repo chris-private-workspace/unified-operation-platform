@@ -1,6 +1,13 @@
 # W45 — Assign 過程可見性
 
-**Status**: `active`(2026-08-10;ADR-0029 同日 Proposed → **Accepted**)
+**Status**: `closed`(🟢 2026-08-20 補 flip;原本 `active`,2026-08-10;ADR-0029 同日 Proposed → **Accepted**)
+
+> 🔴 **點解 flip**:兩條未勾**冇一條係功能** —— `F0-3`「W44 收官(rolling JIT:唔可以兩個 phase 同時 active)」同
+> `F0-5`「建 branch `feat/w45-assign-progress`」。兩個理由今日都冇咗:**W44 已經 `closed`**(2026-08-13),
+> 而 branch 顧慮隨 `feat/w44-azure-dev-deploy` 2026-08-10 merge 入 `main` 自動消失。
+> BACKLOG `ASSIGN-PROGRESS` ✅ closed(2026-08-12,`F4-4` live 驗收),36/38 勾。
+> ⚠️ **順帶**:W44 自己個 status comment 都自認犯過同一個病(「`progress.md` 早就 flip 咗,本檔漏跟」)——
+> ⇒ **`plan.md` 係全套文件入面最遲更新嗰一份,呢個係結構性 pattern 唔係今次意外。**
 **Created**: 2026-08-09
 **Owner**: Chris Lai
 **Branch**: 🚧 `feat/w45-assign-progress` **未建** —— commit 落緊 `feat/w44-azure-dev-deploy`(W44 未 merge,另開 branch 會起喺一個未落地嘅 base);見 checklist F0-5
