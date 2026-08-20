@@ -4,7 +4,7 @@ name: "全站 agent dock —— Drawer primitive + context passing(Tier 2 第三
 sprint_week: W49
 start_date: 2026-08-19
 end_date: 2026-08-20          # 部署 #12(`dev-04f3c86`)收埋 `F5-4` 嗰日。⚠️ 原本寫 `TBD` 兼註「等 `OQ-C`,而佢決定 `F4` 有冇拆嘢做」—— `F4` 用 default 做完咗,而 `OQ-C` 去到 closed 嗰刻仍然未答(佢唔喺 acceptance 入面)⇒ 已登 BACKLOG `AGENT-DOCK-VS-ASSISTANT`
-status: closed                # draft | active | closed —— 🟢 2026-08-20 部署 #12 收埋 F5-4 ⇒ §3 G1–G7 全 ✅。carry-over:`OQ-C` 未答(唔喺 acceptance 入面)
+status: closed                # draft | active | closed —— 🟢 2026-08-20 部署 #12 收埋 F5-4 ⇒ §3 G1–G7 全 ✅。🟢 同日 `OQ-C` 亦答咗 = A(兩個都留)⇒ **四條 OQ 全清,零 carry-over**
 spec_refs:
   - docs/02-architecture/agent-tier2-scope.md §3 G5 / §4 T2-d / §5.2 D-CTX / §5.1 OQ-3
   - docs/02-architecture/design-system.md §2(primitive 清單)· §5(擴充路徑)· §6(畫面登記)
@@ -207,18 +207,22 @@ layout 行為**嘅嘢(non-modal · 唔可以 trap focus · 要決定 push 定 ov
 
 ---
 
-## 7. Open Questions(四條 —— 🟢 **三條答咗**,淨低 `OQ-C`)
+## 7. Open Questions(四條 —— 🟢 **2026-08-20 全部答晒**)
 
 | # | 問題 | 建議 | 影響 |
 |---|---|---|---|
 | **OQ-A** 🟢 **答咗** | W48 `F7-3`(conversation SSE 喺 DEV 真通)未做,`T2-d` 開唔開工? | 🟢 **Chris 2026-08-19 揀建議:可以開,但 `F1`/`F2` 行先** —— `Drawer` primitive 同 layout 唔碰 SSE。**`F4`(dock 入面 chat)之前要收到 `F7-3`** | ⇒ `F4` 由「排喺 `F3` 後面」變成「**排喺一個唔喺本 phase 嘅事件後面**」。checklist `F4` 要明文標住呢個閘 |
 | **OQ-B** 🟢 **答咗** | 「當前頁面嘅資料」= ① **route + 主要 entity id**,定 ② **頁面 render 咗嘅嘢**? | 🟢 **Chris 2026-08-19 揀 ①** | 🟢🟢 **零後端改動確立** —— ①今日已經實作咗(§0.1),⇒ 本 phase **零 schema · 零 migration · 零新 endpoint · 零 ADR**,純前端。而②會把冇 scope 概念嘅 UI state 變成 agent 資料來源 |
-| **OQ-C** | dock 同 W48 個 `/assistant` 全頁,關係係? | **兩個都留** —— dock = 隨手問;`/assistant` = 睇返舊對話 / 長篇。兩邊行同一個 query key(`R4`) | 揀「dock 取代」就要拆一個啱啱做完嘅畫面兼且 `design-system.md §6` 要除名 |
+| **OQ-C** 🟢 **答咗** | dock 同 W48 個 `/assistant` 全頁,關係係? | 🟢 **Chris 2026-08-20 揀 A = 建議「兩個都留」** —— dock = 隨手問;`/assistant` = 睇返舊對話 / 長篇。兩邊行同一個 query key(`R4`)。**理由唔係「維持現狀最平」,係兩個介面各有對方冇嘅嘢**:dock **冇 thread 列表**,`/assistant` **冇 route context** ⇒ 唔係重複,係兩個用途 | 🟢 **零改動**(W49 由頭到尾就係照呢個 default 做)。🔴 **但佢唔係「冇影響」—— 佢解封咗一單 backlog**:揀 A ⇒ `/assistant` **長期存在** ⇒ **`ASSISTANT-HONESTY` 由「吊住」變「可以排期」**;揀 B(dock 取代)就會連個畫面一齊拆走,嗰單直接刪。⚠️ 亦即係話「唔答」**唔係中立** —— 佢令一單真缺陷無限期等一個冇人打算開嘅會 |
 | **OQ-D** 🟢 **答咗** | `Drawer` 用 **push**(把內容推窄)定 **overlay**(浮喺上面)? | 🟢 **Chris 2026-08-19 揀 overlay(即建議)** —— push 會令每一版嘅 grid 都要處理一個新斷點,而 `G5` 只要求「唔阻住底下操作」 | 🟢 **`F1` 落地嗰個 default 確認** ⇒ `drawer.tsx` 同 `design-system.md §2` 七條約束**一個字唔使改**;`F2` 個 dock 做 layout **sibling** 唔做 flex child |
 
 🟢 **`OQ-A` / `OQ-B` / `OQ-D` 2026-08-19 答咗。**`OQ-A` / `OQ-B` 令 plan `draft → active`;
 `OQ-D` 落喺 `F2` 開工嗰日答,而**答案同 default 一致 ⇒ 零返工**。
-⚠️ **淨低 `OQ-C`(dock 同 `/assistant` 關係)仍然未答**,用建議做 default 繼續。
+🟢🟢 **`OQ-C` 2026-08-20 答咗 = A(兩個都留),phase closed 之後先答。**
+⚠️ **而「closed 之後先答」呢件事本身要記低** —— 佢由頭到尾**唔喺 acceptance 入面**(`G1`–`G7` 冇一條掂佢),
+所以 W49 收得成 `closed` 係啱嘅;但佢亦因此**差啲跟住一份 closed 文件一齊消失**,
+要靠收尾掃出嚟登返 BACKLOG(`AGENT-DOCK-VS-ASSISTANT`)先救得返。
+📌 **一條唔阻住 closeout 嘅 OQ,冇人會喺 closeout 提你** —— 呢個就係佢要有 BACKLOG 一行嘅原因。
 
 🔴 **兩條嘅「改動成本」唔同,而呢個分別今次真係換到嘢**:
 
@@ -241,6 +245,7 @@ layout 行為**嘅嘢(non-modal · 唔可以 trap focus · 要決定 push 定 ov
 | 2026-08-19 | 🚧 **`F1` acceptance 個「light/dark 真 render」押後到 `F2`** | `Drawer` 未掛載到任何頁面之前 **render 唔到佢** —— 佢係一個 `fixed` 面板,冇 caller 就冇嘢喺畫面。⇒ 併入 `F2-5`(而且嗰度先影得到「開」同「收」兩個狀態)。⚠️ **acceptance 冇被刪,只係搬咗位** | AI |
 | 2026-08-19 | 🟢 **`OQ-D` 答咗 = overlay(同 default 一致)** | `F1` 已經照 default 落地 ⇒ **零返工**,`drawer.tsx` 同 `design-system.md §2` 一個字唔使改。⚠️ **唔好把「零返工」記成「估中咗所以慳咗」** —— 慳到嘅原因係嗰個 default **寫入咗 design-system**,即係話估錯嘅代價本來就只係撞返一次 H6,唔係靜靜漂走 | Chris Lai |
 | 2026-08-19 | 🔴 **更正 §0.3 一個前提:`Dialog` 冇 focus trap** | 讀實作揾到:`dialog.tsx` **冇任何 focus trap code**,只有 `aria-modal="true"` 聲明。令底下撳唔到嘅係 **`fixed inset-0` + 45% scrim 攔截 click**。⇒ `Drawer` 要避開嘅係**三樣具體嘢**(`inset-0` · scrim · `aria-modal`),唔係一個叫「focus trap」嘅籠統概念 —— 而呢三樣**逐樣都 assert 得到**,籠統概念 assert 唔到 | AI |
+| 2026-08-20 | 🟢🟢 **`OQ-C` 答咗 = A(兩個都留)—— phase `closed` 之後先答** | **零返工**(W49 由頭到尾照呢個 default 做)。🔴 **但佢唔係冇影響 —— 佢解封咗一單 backlog**:揀 A ⇒ `/assistant` 長期存在 ⇒ **`ASSISTANT-HONESTY` 由「吊住」變「可以排期」**,而嗰單正正就係 **`RISK R35` 仍然 🟡 Partial 嗰半**(dock 側已減,`/assistant` 未)。⚠️ **「唔答」唔係中立** —— 佢會令一單真缺陷無限期等一個冇人打算開嘅會。📌 **順帶一個流程觀察**:呢條 OQ 唔喺 `G1`–`G7` 任何一條入面 ⇒ **closeout 唔會提你**,所以佢差啲跟住一份 closed 文件消失,靠登 BACKLOG 救返 | Chris Lai |
 
 ---
 
