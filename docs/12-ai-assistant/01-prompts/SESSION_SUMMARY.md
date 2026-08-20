@@ -5,11 +5,50 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · W49 已收)**
+## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-032 已收)**
+
+**🟢🟢 最新唔係 W49,係 `CH-032 /assistant honesty`(2026-08-20,`status: done`)。**
+`G1`–`G7` 七條全 ✅ —— 批 + 實作 + test + falsification + light/dark render **一日做完**。
+
+| | |
+|---|---|
+| 交付 | ①「一句話蓋兩件事」拆成兩句 ②補返 dock 早有嘅 disconnected banner + `Reconnect` ③`forbidden` 補 `profiles.error` |
+| 性質 | **零 schema · 零 migration · 零新 endpoint · 零新 dep · 零新 token · 零新 primitive · 零新 icon · 零 ADR**(純前端,一個檔) |
+| gate | api **1491 / 98**(冇掂後端)· web **555 / 49**(**+8** 條)· lint 0 · build 0 |
+| 剩低 | 🚧 **DEV live 唔喺本單 acceptance**,留下次部署;⚠️ banner 喺 DEV **平時唔會出**(#12 實測 3.2 秒自動重連) |
+
+🟢🟢 **`RISK R35` 由 🟡 Partial 收成 🟢** —— 三個未完項(DEV 側 · heartbeat coupling ·
+`/assistant`)**2026-08-20 同日收齊**。
+
+🔴 **三個方法論教訓,每個都會再撞:**
+
+**①「逐字抄」揭到一個冇人見過嘅差異。** `D2` 本來只係防漂移,一擺埋一齊先發現 dock
+嗰句係**兩截**(`… An admin can turn one on under Agent.`)而 `/assistant` 只有頭半截
+⇒ **「邊個可以整返掂」由頭到尾冇講過**,而**兩邊都「有文案」,所以任何「呢度有冇字」
+嘅檢查都會話 OK**。📌 兩句「差唔多」嘅文案,要**逐字擺埋一齊**先睇得出邊句蝕底。
+
+**② falsification 道 2 刻意拆 dock,唔拆 `assistant.tsx`。** 咁 `/assistant` 行為一個字
+冇變,剩返嗰條紅**只可能**嚟自跨檔比對 ⇒ 真證到 tautology 冇發生。**如果四道都拆同一個
+檔,`G2` 每次都紅,而「佢究竟有冇真係讀第二個檔」由頭到尾冇驗過** —— 四道全紅睇落好
+安心,而最關鍵嗰條問題冇問過。
+
+**③ 一個 probe 可以樣樣做齊,但問錯咗問題。** `D3` 第一版寫
+`banner.closest('.overflow-y-auto')` 返 **`true`**,睇落即係「banner 喺 scroll 區入面
+⇒ D3 唔成立」;實際上嗰個 scroller 係 **`AppShell` main 區**,而**頁面每個 element 都
+喺佢入面** ⇒ 個 assert **結構上冇可能返 false**。揭穿佢嘅係同一份 report 入面
+`transcriptTop: 56` —— 一個「兩張 card 之下嘅面板」唔可能由第 56 px 開始。改問
+`transcript.contains(banner)` 之後:`contains: false` · `bannerIsBefore: true` ·
+banner `bottom` **逐格等於** `transcriptTop` `362.25`。
+
+💡 **一個可以直接抄嘅手法:render 一個「只喺失敗時先出」嘅 UI,唔使殺 api。**
+`page.route('**/agent/conversations/*/events', r => r.abort())` 幾秒逼爆
+`MAX_CONSECUTIVE_FAILURES`,而**其餘每條 query 照常答** —— 正正就係 banner 存在嗰個
+狀態(內容喺畫面、live 更新唔喺)。committed 嘅 `render-check.mjs` 做唔到呢個。
+
+⬇️ **以下係 CH-032 之前嘅座標** ⬇️
 
 **🟢🟢 W49 `agent-dock`(Tier 2 `T2-d`)2026-08-20 merge 咗(PR #127,merge commit
 `04f3c86`)兼且 phase `closed` —— G1–G7 全 ✅。**
-⚠️ 呢格上一版第一句寫住 W48,而 **W48 已經唔係最新** —— 唔好用佢做「今日喺邊」。
 
 | | |
 |---|---|
