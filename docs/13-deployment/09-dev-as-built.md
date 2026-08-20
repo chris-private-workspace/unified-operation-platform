@@ -514,6 +514,97 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-20 · 部署 #12(`dev-04f3c86`)— **W49 agent dock 上機;第一次「零 migration」部署**
+
+**點解要有呢次部署**:2026-08-19 merge 咗 **W49 `agent-dock`(PR #127)**,16 個 commit。W49 最後一條 acceptance `F5-4`(DEV live)結構上要部署先做得到。
+
+⚠️ **開工先問「DEV 上面係邊個版本」**:`az containerapp list` 實測兩個 app 都係 `dev-b4915e9`(部署 #11)⇒ 落後成個 W49。
+
+#### 🔴 本次同 #6–#11 最大分別:**W49 零 migration ⇒ 驗證方法要換**
+
+`git diff --stat b4915e9..04f3c86 -- apps/api/prisma/ prisma/` **完全空**(0 行)。
+
+⇒ 過去六次部署慣用嗰個「**新表 / 新欄讀得到**」判準(#10 `GET /agent/profiles` 200 · #11 `GET /agent/conversations` 200 唔係 500)**結構上用唔到**,因為冇新表。**照抄 #11 個驗證段就係「驗咗等於冇驗」。**
+
+**改用兩條,而佢哋比字串命中更硬**:
+
+| 證據 | 結果 |
+|---|---|
+| **live asset 名 vs image 內部抽出嗰個** | 兩個都係 `index-aKcTA3up.js` —— **逐字對上** ⇒ DEV 跑緊嘅**就係我 build 嗰個 image**,唔係「有個新 bundle」呢種推論 |
+| **負面命中**:部署 #11 個 bundle | `/assets/index-Bo38NJHT.js` → **404** ⇒ 排除舊 cache / CDN |
+| (輔證)W49 獨有字串 | `aria-label":"Assistant`(dock launcher)· `Open in Assistant` · `Ask in the full Assistant` **三個全中**;W48 baseline(`Agent for new conversations` / `No request context`)仍在;`No seats enabled` **False** |
+
+🔴 **四個 marker 入面有一個唔係 marker,而係查 git 先知** —— 交接寫住「`Ask about a licence request…` ← dock placeholder,**W49 新加**,`/assistant` 個版本唔係呢句」。實查 `git grep -F 'Ask about a licence request' b4915e9 -- apps/web/src` ⇒ **`assistant.tsx` 一早有**。⇒ 佢喺 W48 bundle 一樣命中,**證明唔到 W49 上咗機**。另外三個 `b4915e9` **0 檔 / `04f3c86` 1 檔** ⇒ 先係真 marker。
+📌 **同 W49 `progress.md` Day 4(續)嗰個「grep 命中 ≠ 嗰件嘢喺度」同族,但唔同機制** —— 嗰次係 **substring 命中**,今次係「**以為新加,其實舊有**」。⇒ **一個字串要做 marker,先要驗佢喺舊版真係冇**;而做呢件事嘅成本係一條 `git grep`。
+| (輔證)`/api/docs/api-json` | **90,341 B — 同 #11 逐 byte 一致** ⇒ 正好印證「W49 零後端改動」 |
+
+🔴 **一個做法值得抄**:字串檢查**喺 push 之前先喺 image 內部做咗一次**(`docker create` + `docker cp` 抽 `/usr/share/nginx/html/assets` 出嚟再用 Grep 工具搜)。⇒ **build 錯咗喺部署之前就知**,唔使部署完先發現。
+
+#### ⚠️ 前置撞咗一次身份問題(§9 講嗰個,實際發生)
+
+第一次 `az account show` 返 **`2ae44f00-…`**(唔係部署 SP `d2f094a3-…`),`az containerapp list` 直接 `AuthorizationFailed`。Chris `az login` 之後再驗先對。**錯身份個 error 完全唔提權限來源**,呢個就係「az 操作之前一律先驗身份」呢條規矩存在嘅原因。
+
+🟢 **順帶**:`aca.params.dev.json` **gitignored 唔跨 worktree**,開工前 `Test-Path` 驗過(在,33 個 parameter)。
+
+#### 七步(同 #6 / #7 / #8 / #10 / #11 逐步一致)
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…` · sub `30dac177…` · tenant `4f63aaa0-…` —— 三個都同腳本 hardcode 逐字對 |
+| 1 `docker login`(`--password-stdin`) | `Login Succeeded` |
+| 2 真 pull(base image 由 Dockerfile `^FROM` **讀返**) | 兩個 `exit 0` |
+| 3 `docker build` × 2 | 兩個 `exit 0` ⇒ BUG-008 gate 過 |
+| 4 `docker push` × 2 | api `sha256:a1d336a9…9220` · web `sha256:e21b983a…3216`,**同本地 manifest list 逐字對上** |
+| 5 params tag 換 | 2 處 · `lengthDelta = 0` · 33 個 parameter · 舊 tag 殘留 0 · `git check-ignore` + `git status` 兩重驗 |
+| 6 dry-run | secrets 11 / env 30 · **四個 sanity 全 `False`** · **12 個 secret 全部 masked** · 舊 tag 零命中 |
+| 7 `-Send` | 兩個 `PATCH exit = 0` · api `--0000015` · web `--0000011` |
+
+**PATCH 之後對數**:兩個 app 都 `dev-04f3c86`;🟢 api `external: false` · web `external: true` + `customDomains: rapo-uop-web-dev.rci-t.com` **完好** ⇒ infra 配嘅嘢結構上冇被掂。
+
+#### 🟢🟢 `F5-4`(W49 最後一條)—— **要人做一次,唔係部署完自動收**
+
+⚠️ **開工前一個坑**:DEV 三個 `AgentProfile` 上次收工全部停咗,而 **`GET /agent/profiles` 預設只返 active** ⇒ 打去見到 `[]` **唔代表冇 profile**。`?includeInactive=true` 見到三個,開返一個(用完停返)。
+
+| # | 驗咩 | 實測 |
+|---|---|---|
+| 1 | launcher 開得到兼**唔推窄內容**(`OQ-D`) | **前後對照**:`mainWidth` 1224 → **1224** · `mainRight` 1472 → **1472** · `docScrollWidth` 1472 → **1472**。`fullScreenOverlays: 0`(**真量度有冇嘢覆蓋全屏**,唔係揾 class 名)· `aria-modal: null` · `boxShadow: none` |
+| 2 | drawer 由 top bar **下面**開始 | `dockTop = 56`,而**同一次量到 `topbarHeight = 56`** ⇒ 兩個數互相對得上,唔係抄常數。top bar **四個控制全部 `blocked: false`** ⇒ `F2-5` 修正兌現 |
+| 3 | context passing 兩邊 | `/requests/:id` dock 顯示 **`REQ0044097`**,而**同頁面自己個 number 逐字一致**;列表頁重開 ⇒ **冇 REQ**,文案由「about **this request**」變「about **licences**」 |
+| 4 | dock 內真傾到,答案**自己出** | 送完之後**冇 reload / 冇 navigate / 冇撳任何掣** ⇒ `Thinking…` 自己消失兼答案自己出現 |
+| (順帶)| `G2` non-modal | dock 開住撳 Requests 第一行 ⇒ URL 真變 `/requests/cmswq1v10…` |
+| (順帶)| `G3` 唔可以繞過 approval | dock 內**只有 `Close` / `Send`** 兩個掣 |
+
+🔴 **`G4` 唔靠答案文字判斷** —— agent 個回覆講「The request **list**」,似講緊 `list_pending_requests`。真證據係**落 DB 對數**:`conversation.requestId` 逐字 = `cmswq1v100021pg01jwtfkfdp`,run step detail 寫住 `Run started from conversation cmt0unsws… on request cmswq1v10…`。`proposals: 0` ⇒ **零副作用,冇掂 Graph**。
+
+🟢 **順帶 live 證到 `F3-8` owner-only**:用 Chris 個 session 打 `GET /agent/conversations` **見唔到**部署 #11 用 break-glass admin 開嗰條。
+
+#### 🎯 順手答咗一條之前未知嘅嘢:**DEV 嘅 SSE 斷線係邊種**
+
+instrument 一條自己嘅 `EventSource`,再 `az containerapp revision restart`:
+
+```
+ms     61  open       rs=1
+ms     73  message
+ms  25074  message              <- ping,25s heartbeat
+ms  50075  message              <- ping
+ms  50990  error      rs=0      <- api 死咗,DEV 真係 close 咗個 stream
+ms  54206  open       rs=1      <- 3.2 秒後自動重連成功
+ms  54229  message
+```
+
+⇒ **DEV(nginx + ACA)= close + fire `error` + 自動重連**,而**本機(vite dev proxy)係「零 event · `readyState` 一直 OPEN」** —— 兩個環境真係唔同行為,所以 W49 `F4-3` 決定「兩種都蓋到」係啱嘅。
+🟢 dock **冇出 banner,而佢唔應該出**(1 次 error 就重連成功,`MAX_CONSECUTIVE_FAILURES = 3` 數唔到)。
+🟢 `ping` 實測**真係 25 秒** = `AGENT_SSE_HEARTBEAT_MS` default ⇒ `F4-3` 個 60s staleness timer **由 heartbeat 推導**呢件事成立,唔會誤報。
+⚠️ **未驗嗰半仍在,只係細咗**:本次係一次**乾淨嘅 restart(~3 秒)**;「api 長時間唔返嚟」之下會唔會累積到 3 次 failure 出 banner,**結構上撞唔到** ⇒ 冇驗。
+
+#### ⚠️ 一樣驗唔到,要講明
+
+**`/requests/new` 喺 DEV 去唔到** —— 條 route 存在(`router.tsx:46`)但畀 feature flag redirect 返 `/requests`(`requests.new-request-flag.test.tsx`)⇒ 「create form 唔送 context」呢條路 **live 驗唔到**,只有 `route-context.test.ts:30` 蓋住。改驗**同一個 `null` 分支嘅另一半**(列表頁)⇒ **分支邏輯有 live 證據,但嗰條特定 pathname 冇**。
+
+**收工**:profile 停返 `active: false`(三個全部 inactive,同開工前一樣)· 對話保留做證據 · api restart 之後 `GET /api/me` 返 401(guard 正常)。
+
+---
+
 ### 2026-08-19 · 部署 #11(`dev-b4915e9`)— **W48 agent conversation 上機 ⇒ SSE 第一次真捱過 proxy**
 
 **點解要有呢次部署**:2026-08-18 merge 咗 **W48 `agent-conversation`(PR #124/#125)**,一個新 migration(`20260818055347_w48_agent_conversation`,**純 additive:`CREATE TABLE` ×2 · `ADD COLUMN` ×1 · `CREATE INDEX` ×4 · FK ×5,零 DROP**)、七條新 route、一個新前端畫面 `/assistant`。W48 三條 acceptance(`F2-6` / `F7-3` / `F7-4`)**結構上要部署先驗得到**。

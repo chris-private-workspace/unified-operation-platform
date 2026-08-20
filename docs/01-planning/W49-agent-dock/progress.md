@@ -1,6 +1,6 @@
 ---
 phase: W49-agent-dock
-status: active
+status: closed          # 🟢 2026-08-20 部署 #12(`dev-04f3c86`)收埋 F5-4 ⇒ G1–G7 全 ✅
 ---
 
 # W49 — 全站 agent dock · Progress
@@ -540,3 +540,109 @@ h.requestId ? "Ask about this request — what it needs, or what is blocking it.
 📌 **同我 Day 4 早幾個鐘先寫落 `F5-2` 嗰句係同一族** ——「一個 grep 命中唔等於一個
 violation」同「一個 grep 命中唔等於嗰件嘢喺度」。**兩次都係查咗 context 先知**,
 而兩次嘅代價都係一分鐘。
+
+---
+
+## Day 6 — 2026-08-20 · **部署 #12(`dev-04f3c86`)⇒ `F5-4` 收,九條 G 全 ✅**
+
+部署七步同 #6 / #7 / #8 / #10 / #11 逐步一致,**零 code 改動**(只改 gitignored 個 image tag)。
+digest 逐字對上本地 manifest list · `lengthDelta = 0` · dry-run 四個 sanity 全 `False` ·
+12 個 secret 全 masked · 兩個 `PATCH exit = 0` · api `--0000015` / web `--0000011`。
+
+### 🔴🔴 本日最重要嗰件:**零 migration 令一個用咗六次嘅判準失效**
+
+`git diff b4915e9..04f3c86 -- prisma/` **完全空**。而 #6–#11 每次都靠「**新表 / 新欄讀得到**」
+做正面證據(#10 `GET /agent/profiles` 200 · #11 `GET /agent/conversations` **200 唔係 500**)。
+
+⇒ **照抄 #11 個驗證段,會驗咗等於冇驗** —— 打嗰兩條 read 一樣返 200,但佢哋喺 `dev-b4915e9`
+上面**本來就返 200**。呢個唔係「漏咗驗」,係「**驗咗一樣舊版都成立嘅嘢**」。
+
+**換咗兩條,而佢哋比字串命中更硬**:
+
+| | |
+|---|---|
+| **asset 名對數** | live `/assets/index-aKcTA3up.js` **逐字等於**我由 image 內部(`docker cp`)抽出嗰個 ⇒ **DEV 跑緊嘅就係我 build 嗰個 image**,唔係「有個新 bundle」呢種推論 |
+| **負面命中** | 部署 #11 個 `index-Bo38NJHT.js` → **404** ⇒ 排除舊 cache |
+
+📌 **順帶一個做法值得留低**:字串檢查**喺 push 之前先喺 image 內部做咗一次**
+(`docker create` + `docker cp` 抽 assets,再用 Grep 工具搜)⇒ build 錯咗喺部署之前就知。
+
+### 🔴 第三次同族,而今次係交接文件推薦嗰個 marker 本身錯
+
+Day 4(續)記低咗「grep 命中 ≠ 嗰件嘢喺度」(substring 命中)。今日**同族第三次,機制唔同**:
+
+交接寫「`Ask about a licence request…` ← dock placeholder,**W49 新加**,`/assistant` 個版本
+唔係呢句」。實查:
+
+```
+git grep -c -F 'Ask about a licence request' b4915e9 -- apps/web/src
+  -> b4915e9:apps/web/src/pages/assistant.tsx:1
+```
+
+⇒ **W49 之前一早有** ⇒ 佢喺 W48 bundle 一樣命中,**證明唔到 W49 上咗機**。
+
+另外三個(`aria-label="Assistant"` · `Open in Assistant` · `Ask in the full Assistant`)
+`b4915e9` **0 檔** / `04f3c86` **1 檔** ⇒ 先係真 marker,而 live 三個都中。
+
+📌 **一個字串要做 marker,先要驗佢喺舊版真係冇。** 成本 = 一條 `git grep`。
+🟢 **而今次結論冇變** —— 因為兩條硬證據(asset 名 · 舊 bundle 404)本來就唔靠字串。
+**呢個先係「多一條唔同種類嘅證據」嘅價值**:唔係加信心,係**一條塌咗其他仲企得住**。
+
+### `F5-4` 四樣(每樣都用可觀察嘅嘢,唔用「睇落係」)
+
+1. **唔推窄內容**(`OQ-D`)—— **前後對照**:`mainWidth` 1224 → 1224 · `mainRight` 1472 → 1472 ·
+   `docScrollWidth` 1472 → 1472。`fullScreenOverlays: 0`(**真量度有冇嘢覆蓋全屏**,唔係揾 class 名)·
+   `aria-modal: null` · `boxShadow: none`
+2. **`dockTop = 56`**,而**同一次量到 `topbarHeight = 56`** ⇒ 兩個數互相對得上,唔係我抄常數。
+   top bar **四個控制全部 `blocked: false`** ⇒ `F2-5` 嗰個修正喺真環境兌現
+3. **context 兩邊都驗**:`/requests/:id` dock 顯示 `REQ0044097` 而**同頁面自己個 number 逐字一致**;
+   列表頁重開 ⇒ **冇 REQ**,文案由「about **this request**」變「about **licences**」
+4. **答案自己出** —— 送完之後**冇 reload / 冇 navigate / 冇撳任何掣**,`Thinking…` 自己消失
+
+🔴 **`G4` 刻意唔靠答案文字** —— agent 個回覆講「The request **list**」,似講緊 `list_pending_requests`。
+真證據係**落 DB 對數**:`conversation.requestId` 逐字 = `cmswq1v100021pg01jwtfkfdp`,而 run step
+detail 寫住 `Run started from conversation cmt0unsws… on request cmswq1v10…`。`proposals: 0` ⇒ 零副作用。
+
+🟢 **順帶 live 證到 `F3-8` owner-only**:用 Chris 個 session 打 `GET /agent/conversations`
+**見唔到**部署 #11 用 break-glass admin 開嗰條。
+
+### 🎯 順手答咗 `F4-3` 嗰條「DEV 實際係邊種」
+
+instrument 一條自己嘅 `EventSource` 再 `az containerapp revision restart`:
+
+```
+ms     61  open       rs=1
+ms  25074  message              <- ping,25s heartbeat
+ms  50075  message              <- ping
+ms  50990  error      rs=0      <- api 死咗,DEV 真係 close 咗個 stream
+ms  54206  open       rs=1      <- 3.2 秒後自動重連成功
+```
+
+⇒ **DEV(nginx + ACA)= close + error + 自動重連**,而**本機(vite proxy)係零 event · 一直 OPEN**。
+**兩個環境真係唔同行為** ⇒ `F4-3` 決定「兩種都蓋到」係啱嘅,唔係過度防禦。
+🟢 dock **冇出 banner,而佢唔應該出**(1 次 error 就重連成功,數唔到 3)。
+🟢 `ping` 實測**真係 25 秒** = `AGENT_SSE_HEARTBEAT_MS` default ⇒ 60s staleness timer 個推導成立。
+⚠️ **未驗嗰半仍在,只係細咗**:本次係一次**乾淨嘅 restart(~3 秒)**;「api 長時間唔返嚟」
+會唔會累積到 3 次 failure 出 banner,**結構上撞唔到** ⇒ 冇驗。
+
+### ⚠️ 一樣驗唔到
+
+`/requests/new` 喺 DEV **去唔到** —— 條 route 存在(`router.tsx:46`)但畀 feature flag redirect 返
+`/requests`(`requests.new-request-flag.test.tsx`)⇒ 「create form 唔送 context」呢條路
+**live 驗唔到**,只有 `route-context.test.ts:30` 蓋住。改驗**同一個 `null` 分支嘅另一半**(列表頁)
+⇒ **分支邏輯有 live 證據,但嗰條特定 pathname 冇**。
+
+### ⚠️ 兩個環境細節
+
+- **DEV 三個 profile 全部 `active: false`**,而 `GET /agent/profiles` **預設只返 active**
+  ⇒ 打去見到 `[]` **唔代表冇 profile**。開返一個做驗證,**用完停返**(收工三個全部 inactive)。
+- **`az account show` 第一次返 `2ae44f00-…`**(唔係部署 SP)⇒ `AuthorizationFailed`,而個 error
+  **完全唔提權限來源**。Chris `az login` 之後先對。⇒ §9 嗰條「az 操作之前一律先驗身份」實際兌現咗一次。
+- `browser_navigate`(完整頁面載入)之後 dock **會關**,SPA 內部導航(撳 row)**唔會** ——
+  兩者都實測過,而**呢個係 `F2-4` 刻意決定**(唔落 localStorage),唔係缺陷。
+
+### `plan.md §3` 補咗一欄
+
+🔴 **原本個 acceptance 表冇「狀態」欄** —— 而**冇狀態欄,同全部 `[ ]` 係同一個問題**:冇人講得出
+仲差幾多。W46 收尾撞過(21 條全 `[ ]` 而 18 條做完),呢度係同族嘅另一個形狀 ——
+**唔係冇人更新,係結構上冇地方畀你更新**。已補,G1–G7 逐條填晒。
