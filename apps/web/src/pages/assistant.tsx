@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Archive,
+  CircleAlert,
   Loader2,
   MessageSquare,
   Plus,
@@ -24,8 +25,10 @@ import { ApiError } from '@/lib/api';
 import {
   TURN_MAX_LENGTH,
   isThinking,
+  latestRunFailure,
   runAwaitingDecision,
 } from '@/lib/assistant';
+import { WHO_FIXES } from '@/lib/who-fixes';
 import { formatDateTime } from '@/lib/format';
 import type { AgentConversation } from '@/lib/api-types';
 import { TurnBubble } from '@/components/agent/turn-bubble';
@@ -145,6 +148,15 @@ export function Assistant() {
     (profiles.isLoading ? null : 'Retired agent');
   const thinking = isThinking(open?.runs);
   const awaiting = runAwaitingDecision(open?.runs);
+  /**
+   * 🔴 CH-035 — the run that ended with nothing to show for it.
+   *
+   * Structurally exclusive with `thinking`: both read the LATEST run, and one
+   * asks whether it is live while the other asks whether it failed. `G5` asserts
+   * that anyway, because "they cannot both be true" is a property of today's
+   * helpers rather than something the JSX below states.
+   */
+  const failure = latestRunFailure(open?.runs);
   const tooLong = draft.length > TURN_MAX_LENGTH;
 
   const submit = () => {
@@ -371,6 +383,44 @@ export function Assistant() {
                       className="animate-spin"
                     />
                     Thinking…
+                  </div>
+                )}
+                {/*
+                 * 🔴 CH-035 `D3` — INSIDE the transcript, under the turn it
+                 * belongs to, unlike the disconnected banner above.
+                 *
+                 * The two look similar and the placement rule is opposite, so
+                 * the distinction is worth stating: a dropped connection is a
+                 * state of the SCREEN and must not scroll away, while a failed
+                 * run is the outcome of ONE question and belongs beside it. A
+                 * thread with three answers and one failure in the middle would
+                 * be misdescribed by a banner at the top.
+                 *
+                 * 🔴 The sentence is copied WORD FOR WORD in `agent-dock.tsx`
+                 * (`D2`) and `assistant.test.tsx` compares the two files —
+                 * CH-032 measured what happens otherwise: two "nearly the same"
+                 * lines drift and nothing goes red.
+                 *
+                 * ⚠️ No retry control, deliberately (§2 Out). Asking again is
+                 * already one turn away, and a Stop/retry pair here would need
+                 * two more states nobody has designed.
+                 */}
+                {failure && (
+                  <div className="flex items-start gap-[8px] rounded-lg border border-border bg-panel px-[13px] py-[11px]">
+                    <CircleAlert
+                      size={14}
+                      strokeWidth={2}
+                      className="mt-[2px] shrink-0 text-danger"
+                    />
+                    <p className="text-[12.5px] leading-[1.5] text-fg-muted">
+                      That question was not answered — the run stopped before it
+                      could reply.
+                      {failure.whoFixes && WHO_FIXES[failure.whoFixes] && (
+                        <span className="ml-[4px]">
+                          {WHO_FIXES[failure.whoFixes]}
+                        </span>
+                      )}
+                    </p>
                   </div>
                 )}
                 {awaiting && (

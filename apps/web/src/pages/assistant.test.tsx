@@ -96,6 +96,19 @@ const NO_AGENTS_LINE =
   'No agent is switched on. An admin can turn one on under Agent.';
 const DISCONNECTED_LINE =
   'Live updates stopped. Replies may not appear on their own.';
+/**
+ * 🔴 CH-035 `D2` — the fourth shared sentence, and the only one of the four the
+ * dock did NOT already have. The other three were "dock did it right, this
+ * screen lagged"; this one was missing on both surfaces at once.
+ *
+ * ⚠️ Only the HEADLINE is compared across files. The `whoFixes` follow-up is a
+ * shared `WHO_FIXES` const (`DEV-3`), so scanning for it would be a tautology —
+ * both files would contain it by construction, which is what `R1` warns about.
+ */
+const RUN_FAILED_LINE =
+  'That question was not answered — the run stopped before it could reply.';
+/** The ADR-0029 D2 line for `platform`, which is what `failRun` writes. */
+const PLATFORM_FIX_LINE = 'This one is ours — raise it with the platform team.';
 
 const renderScreen = (path = '/assistant') =>
   render(
@@ -655,6 +668,141 @@ describe('Assistant honesty (CH-032)', () => {
     expect(screen.queryByText(AGENTS_FAILED_LINE)).toBeNull();
   });
 
+  // ── CH-035 — a run that ended with nothing to show ────────────
+
+  /**
+   * 🔴 The whole change, in one assertion.
+   *
+   * Before CH-035 this exact state rendered the person's own turn and then
+   * NOTHING — no spinner, no error, no explanation. 2026-08-20 that is what
+   * Chris met on this screen: `AgentRun` was `failed`, the step said why, the
+   * `whoFixes` was sitting in the database, and the screen showed a blank.
+   */
+  it('says so when the latest run failed, and who can fix it', () => {
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(
+        THREAD({
+          turns: [
+            {
+              id: 't-1',
+              role: 'user',
+              content: 'what can you help',
+              createdAt: '2026-08-20T07:50:00Z',
+            },
+          ],
+          runs: [
+            {
+              id: 'run-1',
+              status: 'failed',
+              startedAt: '2026-08-20T07:50:17Z',
+              whoFixes: 'platform',
+            },
+          ],
+        }),
+      ) as ReturnType<typeof useAgentConversation>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText(RUN_FAILED_LINE)).toBeInTheDocument();
+    expect(screen.getByText(PLATFORM_FIX_LINE)).toBeInTheDocument();
+  });
+
+  /**
+   * `DEV-1` — `expired` is the same shape and was not in the spec.
+   *
+   * 🔴 And it carries `whoFixes: 'operator'`, which ADR-0029 D2 deliberately
+   * gives NO sentence: nobody else has to fix anything, the question just needs
+   * asking again. So this asserts the headline appears **and that no follow-up
+   * line was invented for it** — a generic "someone can fix this" would imply a
+   * route that does not exist.
+   */
+  it('says so for an expired run, with no invented follow-up line', () => {
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(
+        THREAD({
+          runs: [
+            {
+              id: 'run-1',
+              status: 'expired',
+              startedAt: '2026-08-20T07:50:17Z',
+              whoFixes: 'operator',
+            },
+          ],
+        }),
+      ) as ReturnType<typeof useAgentConversation>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText(RUN_FAILED_LINE)).toBeInTheDocument();
+    expect(screen.queryByText(PLATFORM_FIX_LINE)).toBeNull();
+  });
+
+  /**
+   * ⚠️ The negative half. A message that is always on screen is furniture —
+   * the same argument the disconnected banner's negative test makes.
+   */
+  it('says nothing of the sort when the run completed', () => {
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(
+        THREAD({
+          runs: [
+            {
+              id: 'run-1',
+              status: 'completed',
+              startedAt: '2026-08-20T07:50:17Z',
+            },
+          ],
+        }),
+      ) as ReturnType<typeof useAgentConversation>,
+    );
+
+    renderScreen();
+
+    expect(screen.queryByText(RUN_FAILED_LINE)).toBeNull();
+  });
+
+  /**
+   * 🔴 `G5` — the two can never be on screen together.
+   *
+   * W48 `F5-3` shipped `Thinking…` directly above "AI-Assist has proposed
+   * something", and every test in that suite stayed green because each one
+   * asked whether SOME element was present. A spinner over a failure notice is
+   * the same defect wearing different clothes: it tells somebody to wait for a
+   * reply that is never coming.
+   *
+   * ⚠️ Asserted on a thread whose newest run failed while an OLDER one is still
+   * marked live — the one arrangement where a "did any run fail / is any run
+   * running" implementation would show both.
+   */
+  it('never shows Thinking… beside a failure', () => {
+    vi.mocked(useAgentConversation).mockReturnValue(
+      query(
+        THREAD({
+          runs: [
+            {
+              id: 'run-1',
+              status: 'running',
+              startedAt: '2026-08-20T07:49:00Z',
+            },
+            {
+              id: 'run-2',
+              status: 'failed',
+              startedAt: '2026-08-20T07:50:17Z',
+              whoFixes: 'platform',
+            },
+          ],
+        }),
+      ) as ReturnType<typeof useAgentConversation>,
+    );
+
+    renderScreen();
+
+    expect(screen.getByText(RUN_FAILED_LINE)).toBeInTheDocument();
+    expect(screen.queryByText('Thinking…')).toBeNull();
+  });
+
   // ── D2 — the two screens say the same words ───────────────────
 
   /**
@@ -686,6 +834,7 @@ describe('Assistant honesty (CH-032)', () => {
       AGENTS_FAILED_LINE,
       NO_AGENTS_LINE,
       DISCONNECTED_LINE,
+      RUN_FAILED_LINE,
     ]) {
       // Named in the failure message: a bare `toContain` on a loop variable
       // reports "expected <the whole file> to contain …", which says nothing

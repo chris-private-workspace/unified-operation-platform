@@ -5,10 +5,37 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講一件會令你用錯前提嘅事(2026-08-20 · CH-034 已收,但未上 DEV)**
+## 🔴 **先講三件會令你用錯前提嘅事(2026-08-21)**
 
-**🟢🟢 最新係 `CH-034 request header 收窄`(2026-08-20,`status: done`)—— 🚧 但
-DEV 仲未有佢。** sync gate 由 Card 底部全寬一行,搬入左欄 · 收窄 · 同 Avatar 對齊。
+**① 🟢🟢 本機 `apps/api/.env` 而家有齊 `AZURE_OPENAI_*` ⇒ agent 真跑得掂。**
+2026-08-21 Chris 批准由 `orca/workspaces/…/ai-agent` worktree 抄咗三個 key 過嚟
+(`ENDPOINT` / `API_KEY` / `API_VERSION`)。實測開一條 thread 送一句 ⇒ run
+`completed` **9.5 秒**兼有 assistant turn。⚠️ **副作用**:「run 失敗」呢個狀態喺本機
+**自然重現唔到咗**,要驗就要 `page.route` 注入。
+⚠️ **冇抄** `AGENT_RUNTIME`(佢行 DB-first,擺 env fallback 會同 Integrations panel
+靜靜競爭)· `ANTHROPIC_API_KEY`(實測係空值)。
+
+**② 🔴 CLAUDE.md §9 嗰句「憑證唔喺 repo ⇒ 要 Chris 自己 `az login`」已經更正 ——
+佢錯咗十日。** 部署 SP 憑證一直就喺 `apps/api/.env`(`azure_client_id` 前綴逐字
+`d2f094a3` = 嗰個部署 SP,`azure_secret` 非空)。根因:08-10 個 grep pattern 係
+`^[A-Z_0-9]+=` **只 match 大寫**,而嗰 11 個 key **全部細楷**。`.env` 實際 **28 個 key
+唔係 17 個**。⚠️ 但**「憑證喺度」≠「login 得到」** —— 冇人真跑過
+`az login --service-principal`。
+
+**③ 🟢🟢 最新係 `CH-035 run 失敗要講出嚟`(2026-08-21,`status: done`)—— 🚧 未上 DEV。**
+`/assistant` 同 dock 兩個 chat 面而家講得出「run 停咗」+ `whoFixes`(ADR-0029 受控字彙,
+唔顯示 raw error)。api **1495 / 98** · web **577 / 51**。
+🔴 **三個最貴嘅教訓**:①**`get()` 成功路徑喺 api 側從來冇 test 行過** —— 新 `runs.map` 落
+一個冇 `runs` 嘅 mock,整個 suite 仍然 44/44 綠(現有 `it.each` 只測 Forbidden,喺
+`assertOwner` 就 return)②**一條 test 可以自己證明唔到自己** —— 兩條 assert 排住,拆走
+branch 之後第一條就紅、第二條冇跑過 ③🔴 **render probe 唔一定係唯讀** —— `li button` 每個
+`<li>` 有**兩個**(open + archive),我個「逐個撳」loop 誤 archive 咗兩條 thread(已還原);
+揭穿佢嘅係 **`rows=30` 而 API 得 15 條**呢個對唔上嘅數字。
+
+⬇️ **以下係之前嘅座標** ⬇️
+
+**🟢🟢 `CH-034 request header 收窄`(2026-08-20,`status: done`)—— 🚧 DEV 仲未有佢
+(同 CH-035 一齊等部署 #14)。** sync gate 由 Card 底部全寬一行,搬入左欄 · 收窄 · 同 Avatar 對齊。
 實測 gate 由撐滿(≈1144)變 **780 / 789**;`gateLeft` = `avatarLeft` = `leftColLeft`
 = `avatarRowLeft` **四個全部 289**。web **564 / 50**(+2)。
 

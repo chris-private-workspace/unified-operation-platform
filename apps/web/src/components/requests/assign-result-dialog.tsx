@@ -11,11 +11,11 @@ import {
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { WHO_FIXES } from '@/lib/who-fixes';
 import type {
   AssignResult,
   AssignStep,
   AssignStepKey,
-  AssignStepOwner,
   AssignStepStatus,
 } from '@/lib/api-types';
 
@@ -61,14 +61,11 @@ const STEP_LABEL: Record<AssignStepKey, string> = {
  * ADR-0029 D2 — say who unblocks it. `operator` gets no line: those messages
  * already say what to do ("provide a usage location"), and "you fix it" adds
  * nothing.
+ *
+ * ⚠️ CH-035 moved the map itself to `lib/who-fixes.ts` — unchanged, word for
+ * word — because the two chat surfaces need the same vocabulary and a second
+ * copy would drift silently (CH-032 `D2`). This screen's use of it is unchanged.
  */
-const WHO_FIXES: Partial<Record<AssignStepOwner, string>> = {
-  admin: 'An admin can override this or raise the allocation.',
-  identity: 'Chased through Entra Connect / directory sync.',
-  servicenow: 'Chased through the ServiceNow user import.',
-  procurement: 'More tenant seats have to be bought.',
-  platform: 'This one is ours — raise it with the platform team.',
-};
 
 const STATUS_ICON: Record<AssignStepStatus, LucideIcon> = {
   ok: CircleCheck,

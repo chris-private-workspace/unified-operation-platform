@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Loader2, MessageSquare, Plus, Send, WifiOff } from 'lucide-react';
+import {
+  CircleAlert,
+  Loader2,
+  MessageSquare,
+  Plus,
+  Send,
+  WifiOff,
+} from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
 import { IconButton } from '@/components/ui/icon-button';
 import { Button } from '@/components/ui/button';
@@ -22,8 +29,10 @@ import { ApiError } from '@/lib/api';
 import {
   TURN_MAX_LENGTH,
   isThinking,
+  latestRunFailure,
   runAwaitingDecision,
 } from '@/lib/assistant';
+import { WHO_FIXES } from '@/lib/who-fixes';
 import { canUseAgent } from '@/lib/roles';
 import { routeContext, type RouteContext } from '@/lib/route-context';
 
@@ -134,6 +143,10 @@ export function AgentDock() {
   const open = thread.data;
   const thinking = isThinking(open?.runs);
   const awaiting = runAwaitingDecision(open?.runs);
+  // 🔴 CH-035 — see `assistant.tsx`. Same helper, same sentence, and the dock
+  // meets this more often for the reason `F4-3` gives about the banner: it is
+  // open all day.
+  const failure = latestRunFailure(open?.runs);
   const tooLong = draft.length > TURN_MAX_LENGTH;
 
   const submit = () => {
@@ -216,6 +229,34 @@ export function AgentDock() {
               <div className="flex items-center gap-[7px] text-[12.5px] text-fg-muted">
                 <Loader2 size={14} strokeWidth={2} className="animate-spin" />
                 Thinking…
+              </div>
+            )}
+            {/*
+             * 🔴 CH-035 `D3` — inside the scrolling transcript, under the turn
+             * it belongs to. The disconnected banner above is deliberately the
+             * other way round (outside, pinned): that one is a state of the
+             * panel, this one is the outcome of one question.
+             *
+             * ⚠️ The sentence below is copied WORD FOR WORD from
+             * `assistant.tsx` (`D2`), and `agent-dock.test.tsx` compares the two
+             * files rather than trusting they get edited together.
+             */}
+            {failure && (
+              <div className="flex items-start gap-[8px] rounded-lg border border-border bg-panel px-[11px] py-[9px]">
+                <CircleAlert
+                  size={14}
+                  strokeWidth={2}
+                  className="mt-[2px] shrink-0 text-danger"
+                />
+                <p className="text-[12px] leading-[1.5] text-fg-muted">
+                  That question was not answered — the run stopped before it
+                  could reply.
+                  {failure.whoFixes && WHO_FIXES[failure.whoFixes] && (
+                    <span className="ml-[4px]">
+                      {WHO_FIXES[failure.whoFixes]}
+                    </span>
+                  )}
+                </p>
               </div>
             )}
             {/*

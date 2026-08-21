@@ -63,6 +63,33 @@ export class AgentConversationRunDto {
   @ApiProperty() id!: string;
   @ApiProperty() status!: string;
   @ApiProperty() startedAt!: Date;
+
+  /**
+   * CH-035 `B` / `D1` = C — who can unblock a run that ended badly.
+   *
+   * 🔴 A CONTROLLED VOCABULARY, never the error text. ADR-0029 D2 defined these
+   * six values and the screen already has a sentence for each; sending
+   * `AgentStep.detail` instead would put a message like
+   * `Set AZURE_OPENAI_ENDPOINT` in front of an operator who cannot act on it.
+   *
+   * ⚠️ `null` on every run that has not failed — and also on `aborted`, which
+   * ends a run without writing a failed step. Absence here means "nothing to
+   * fix", not "we do not know".
+   */
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: [
+      'operator',
+      'admin',
+      'identity',
+      'servicenow',
+      'procurement',
+      'platform',
+    ],
+    description:
+      'Who can unblock this run, when it ended in failure. Null otherwise. ADR-0029 D2 vocabulary — never the error text.',
+  })
+  whoFixes?: string | null;
 }
 
 export class AgentConversationDto {
