@@ -12,13 +12,27 @@
 
 ### 🔴 三件會影響你開工前提嘅事
 
-**① `A3` 出現,推論唔到 DEV profile 狀態。**
-Chris 撳 `Run AI Assist` 得到 `This request has no free-text wording for AI-Assist to
-read`。⚠️ **唔好由此推「DEV 有 active profile」** —— `assertHasText` 喺
-`ai-assist.service.ts:150`,而 `resolveForRun`(profile 三條 400)喺 `:258` ⇒ 執行**停咗
-喺文字檢查**,後面嗰三條閘**由頭到尾冇跑過**。「DEV 有冇 active profile」**今日仍然冇答案**
-(部署 #12 收工紀錄寫住三個全部 `active: false`,而嗰個係紀錄唔係實測)。
-📌 同「`sync-check` 返 `FOUND` 證明唔到個 user 存在」同族。
+**① 🟢🟢 DEV 有恰好一個 active profile,agent 端到端通(2026-08-21 實測)。**
+Chris 喺 `/requests/…` 撳 `Edit` 落一句 remark 再撳 `Run AI Assist` ⇒ **run 真開到,
+agent 提咗兩個 SKU**。`resolveForRun` **只喺「恰好一個 active」先放行**(零個 / 多過一個
+都係 400)⇒ **`= 1` 係嚴謹推論唔係估計**。
+
+🔴 **但同一日先撞過相反方向,兩邊都要記**:未落 remark 之前撳,得到
+`This request has no free-text wording for AI-Assist to read` —— 嗰陣**推論唔到**
+profile 狀態,因為 `assertHasText`(`ai-assist.service.ts:150`)排喺 `resolveForRun`
+(`:258`)之前,後面三條閘**根本冇跑過**。
+📌 **對稱性**:「一個閘冇報錯」推論唔到後面(同「`sync-check` 返 `FOUND` 證明唔到個
+user 存在」同族);但「**一個動作成功**」就證明晒**沿路每道閘都過**。
+
+⚠️ **順帶一個冇應驗嘅預警**:我引 W48「`businessAlias` 101 個 SKU 全部 `null`」預告
+agent 用人話名(`Microsoft 365 E3`)搵唔到 catalog —— **實際搵到**。🔴 **唔可以反過嚟推
+`CATALOG-ALIAS` 唔存在**(嗰個係另一個場景嘅實測);正確講法係**「搵唔到」唔係必然**。
+
+💡 **一條零副作用嘅造數據路(下次要 DEV 測試數據就用佢)**:`request-detail.tsx:538` 個
+`Edit` 掣冇 stage / role 條件,`Remark` 欄亦冇 `disabled` ⇒ **改 remark 唔使造新單**。
+⚠️ 唔好行 `POST /requests/intake` —— 佢會 `notifyNewIntake` **通知 OpCo IT 真人**
+(DEV `acsConnectionString` 有值),兼且留低一張刪唔到嘅假單(`serviceNowSysId` 係
+`@unique`)。🟢 但**佢唔會喺 SN 開單**(ADR-0025 D2 只活喺 flat path)。
 
 **② 一個假設標唔標明「未驗」,後果差一整輪白做。**
 我開單時寫「**A1(零 active profile)嫌疑最大**」—— **估錯咗**。🟢 但同時寫咗「呢個係
