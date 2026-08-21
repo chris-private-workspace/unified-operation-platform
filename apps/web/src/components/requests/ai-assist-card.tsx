@@ -233,6 +233,27 @@ export function AiAssistCard({ requestId }: AiAssistCardProps) {
   const mayHide = run != null && !open && canHideAgentRun(role);
   const waiting = run?.proposals.filter((p) => p.status === 'pending') ?? [];
 
+  /**
+   * 🔴 BUG-012 — a refusal, in BOTH of this card's two shapes.
+   *
+   * This was written inline in the with-a-run branch below, which is correct
+   * for `abort` / `hide` / `decide` — all three need a run to exist — and
+   * silently wrong for `start`: the button that calls it lives in the `!run`
+   * branch, which returns before that JSX is ever reached. So a 400 from
+   * `POST /agent/runs` (no active profile / several and none named / a request
+   * with no free-text) arrived in this component and had nowhere to go. The
+   * operator got a button that did nothing and a console line.
+   *
+   * Hoisted rather than copied into the second branch: two copies is how two
+   * branches start disagreeing about what a failure looks like.
+   */
+  const failure = start.error ?? abort.error ?? hide.error ?? decide.error;
+  const failureNote = failure ? (
+    <div className="rounded-lg bg-danger-soft px-[12px] py-[10px] text-[11.5px] leading-[1.45] text-danger">
+      {failure.message}
+    </div>
+  ) : null;
+
   const header = (
     <span className="flex items-center gap-[8px]">
       <Sparkles size={16} strokeWidth={2} className="text-purple" />
@@ -251,24 +272,29 @@ export function AiAssistCard({ requestId }: AiAssistCardProps) {
   if (!run) {
     return (
       <Card title={header} action={<Badge tone="purple">Preview</Badge>}>
-        <EmptyState
-          icon={<Sparkles size={18} strokeWidth={2} />}
-          title="No run yet"
-          description="The agent reads the free-text remark and proposes licence line items. It creates nothing on its own — you decide."
-          action={
-            /* DS-3 — secondary, not primary. The page's primary belongs to the
-               request itself (sync check / assign); an assistive surface does
-               not compete for it. */
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={pending}
-              onClick={() => start.mutate()}
-            >
-              Run AI Assist
-            </Button>
-          }
-        />
+        {/* Same column and gap as the with-a-run branch, so a refusal reads the
+            same way in both — `Card` puts no spacing between its children. */}
+        <div className="flex flex-col gap-[14px]">
+          {failureNote}
+          <EmptyState
+            icon={<Sparkles size={18} strokeWidth={2} />}
+            title="No run yet"
+            description="The agent reads the free-text remark and proposes licence line items. It creates nothing on its own — you decide."
+            action={
+              /* DS-3 — secondary, not primary. The page's primary belongs to
+                 the request itself (sync check / assign); an assistive surface
+                 does not compete for it. */
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() => start.mutate()}
+              >
+                Run AI Assist
+              </Button>
+            }
+          />
+        </div>
       </Card>
     );
   }
@@ -306,14 +332,7 @@ export function AiAssistCard({ requestId }: AiAssistCardProps) {
       }
     >
       <div className="flex flex-col gap-[14px]">
-        {(start.error || abort.error || hide.error || decide.error) && (
-          <div className="rounded-lg bg-danger-soft px-[12px] py-[10px] text-[11.5px] leading-[1.45] text-danger">
-            {
-              (start.error ?? abort.error ?? hide.error ?? decide.error)
-                ?.message
-            }
-          </div>
-        )}
+        {failureNote}
 
         {/* ── proposals ─────────────────────────────────────── */}
         {waiting.map((proposal) => (
