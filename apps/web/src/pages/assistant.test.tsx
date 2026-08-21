@@ -364,6 +364,58 @@ describe('Assistant (W48 F5)', () => {
   });
 
   /**
+   * 🔴 BUG-012 — a refused open has to say why, on this screen too.
+   *
+   * `create.error` arrived in this component and had nowhere to render, so a
+   * refused `POST /agent/conversations` was silent here while the dock said so
+   * all along. Found by BUG-012's `G5` sweep rather than by anything being red:
+   * there was no test on this path at all, on either side of it.
+   *
+   * ⚠️ Rarer than the AI-Assist card's version — this screen names a profile
+   * and the button is disabled when there are none — so what this covers is the
+   * race: a profile switched off mid-session, a 403, a refusal the server grows
+   * later. That is precisely the kind of failure nobody is watching for.
+   */
+  it('says why a refused open was refused', () => {
+    vi.mocked(useCreateConversation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: true,
+      error: new ApiError(
+        400,
+        'That agent profile does not exist for this agent',
+      ),
+    } as never);
+
+    renderScreen();
+
+    // The server's sentence, not a house-brand "something went wrong".
+    expect(screen.getByText(/does not exist for this agent/i)).toBeTruthy();
+  });
+
+  /**
+   * The fallback for a non-`ApiError` (a dropped connection has no body to
+   * quote). Worth its own case because the wording is copied from the dock word
+   * for word — same reason CH-032 `D2` compares the two files rather than
+   * trusting they get edited together.
+   */
+  it('falls back to the dock’s wording when there is no server sentence', () => {
+    vi.mocked(useCreateConversation).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      isError: true,
+      error: new Error('network down'),
+    } as never);
+
+    renderScreen();
+
+    expect(screen.getByText('That could not be started.')).toBeTruthy();
+    // Not the raw JS error — that is a stack-trace detail, not an operator's
+    // sentence (CH-035 `D1` = C took the same line on `whoFixes`).
+    expect(screen.queryByText(/network down/i)).toBeNull();
+  });
+
+  /**
    * 🔴 W49 `F3-1` — the handover from the dock.
    *
    * ⚠️ This assertion exists at THIS layer for a specific reason. The mutation

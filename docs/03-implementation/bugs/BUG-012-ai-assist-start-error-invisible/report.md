@@ -165,13 +165,20 @@ index-9VsTcD40.js:336  POST https://rapo-uop-web-dev.rci-t.com/api/agent/runs 40
 - [x] `G3` Fix implemented —— `failureNote` hoist 咗,兩個分支共用
 - [x] `G4` Regression test added —— **fails-before 真跑**:1 紅 → **27 綠**
 - [x] `G5` 同族面掃過 —— **兩個唔同答案**,見 §6 表(dock 🟢 · `/assistant` 🔴 → §9)
-- [ ] 🚧 `G6` H6 light + dark render —— **未做**,要起本機 stack(要借返 5433)。
-      ⚠️ 風險唔係零:`!run` 分支多咗一層 `flex flex-col gap-[14px]` wrapper ⇒
-      **理論上**零視覺分別(EmptyState 本身 block + 撐滿 · `gap` 對單一 child 無效 ·
-      class 逐字重用),但**呢個係推論唔係實測**,而「字喺邊」正正係 test 問唔到嗰半
-      (CH-030 `items-center` 同族)
-- [x] `G7` root gate —— api **1495 / 98 suites**(冇掂後端)· web **579 / 51**(**+2**)·
+- [x] `G6` H6 light + dark render —— **四張,四個 verdict 全 `true`**(`page.route` 注入
+      400,唔使殺 api —— CH-032 同一手)。
+      🟢 **`V3` 就係四層 test 問唔到嗰半,而佢係本條真正嘅理由**:
+      `emptyState.width` **337** = `wrapper.width` **337**,而 wrapper class 讀返出嚟
+      逐字係 `flex flex-col gap-[14px]`(= 我新加嗰個)⇒ **新 wrapper 冇改變
+      EmptyState 個 box**;banner 底 **483** + `gap-[14px]` = 497 ≈ emptyState top **498**。
+      🟢 **token 真 swap**(唔係 hardcode):`text-danger` `rgb(200,30,30)` →
+      **`rgb(244,113,113)`** · `bg-danger-soft` `rgb(252,234,234)` → **`rgb(42,17,19)`**。
+      `overflowsX: false` ×4。**零新 button ⇒ DS-3 結構上冇郁**。
+      🔴 **順帶揭到一句寫錯咗嘅註釋**,見 §10
+- [x] `G7` root gate —— api **1495 / 98 suites**(冇掂後端)· web **581 / 51**(**+4**)·
       lint **exit 0** · build **exit 0**
+- [x] `G9` `/assistant` 一併修(§9)—— **falsification 道 4:拆走佢個 render ⇒ 恰好 2 紅**,
+      兩條都係新加嘅,零誤傷
 - [ ] 🚧 `G8` Verified in env —— **有前提**:要 A 嗰邊仲係失敗狀態先驗到(見 checklist)
 
 ## 8. Report Changelog
@@ -182,12 +189,36 @@ index-9VsTcD40.js:336  POST https://rapo-uop-web-dev.rci-t.com/api/agent/runs 40
 | 2026-08-21 | **Sev3 confirmed,開工修 B** | Chris | **Chris** |
 | 2026-08-21 | §6 補 `G5` 同族面結果;新增 §9 carry-over | 掃到 `/assistant` 有同一形狀 | — |
 
-## 9. 掃出嚟嘅 carry-over(唔喺本單 scope)
+## 9. `G5` 掃出嘅第二個缺陷 —— ✅ **Chris 決定一併修入本單**(2026-08-21)
 
 **`ASSISTANT-CREATE-SILENT`** —— `/assistant` 開新對話失敗一樣冇任何 UI(§6 表)。
-同本單**同一個形狀、唔同檔**。修法會係同一招(hoist 一個 `failureNote`),成本三行,
-但佢係 scope 擴張 ⇒ **交返 Chris 決定**:一併修入本單,定另開一張單。
-**未經決定之前唔會郁 `assistant.tsx`。**
+本來登做 carry-over 交返 Chris 決定,**佢揀咗一併修**(理由:同一招、同一次 review、
+同一次部署收兩個缺口)。
+
+**修法同 card 嗰邊唔同,而唔同係啱嘅**:`/assistant` 只有一個分支,冇 early-return
+問題 ⇒ **唔使 hoist**,直接喺個掣後面加返 render。文案 fallback
+(`That could not be started.`)**逐字抄 dock**,同 CH-032 `D2` 一樣。
+
+⚠️ **本單 symptom(§1)因此由一個畫面變兩個** —— report 標題同 §1 刻意冇改寫,
+因為 DEV 撞到嗰個係 card;`/assistant` 嗰半由 `G5` 掃出,**冇人喺 live 撞過**。
+
+## 10. `G6` 順帶捉到一句寫錯咗嘅註釋
+
+我喺 `assistant.tsx` 寫低「**Sits BELOW the button**」,理由寫得頭頭是道
+(上面兩句解釋點解個掣暗,呢句係撳完之後嘅結果)。**render probe 顯示佢唔喺下面**:
+banner `top: 165`,而 parent 係 `flex flex-wrap items-center`(`top: 157`,高 34)
+⇒ banner 同個掣**同一行、喺右邊**,只有窄 viewport 先會 wrap 落下面。
+
+🔴 **值得記低嘅唔係我寫錯咗,係「冇任何嘢會紅」**:
+- test 問「訊息喺唔喺畫面」⇒ 綠
+- lint / tsc ⇒ 綠
+- 而註釋描述嘅係**視覺位置**,DOM 順序上佢確實喺 button 之後 ⇒ **半啱**,
+  所以連讀 code 嗰個都好可能唔會停低
+
+📌 同 CH-033 嗰個「兩份註釋互相矛盾咗一段時間而冇嘢會紅」同族,但機制唔同:
+嗰次係兩份文件對唔上,**今次係一份註釋同 render 出嚟嘅畫面對唔上**。
+而捉到佢嘅係一個**為咗驗第二件事**(V3 wrapper 有冇郁到 layout)而做嘅 probe ——
+⇒ **幾何 probe 印低嘅座標,順帶就係註釋嘅事實核查**。已改成實測描述兼附座標。
 
 ---
 

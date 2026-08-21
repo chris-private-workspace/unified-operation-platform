@@ -115,7 +115,61 @@ status: in-progress     # in-progress | closed
 
 | Hash | Subject |
 |---|---|
-| _(待 commit)_ | `fix(web): BUG-012 —— Run AI Assist 失敗要講出嚟` |
+| `7b1256b` | `fix(web): BUG-012 —— Run AI Assist 失敗要講出嚟` |
+
+---
+
+## Day 1(續 2)— Chris 兩個決定:做 `G6` · `/assistant` 一併修
+
+### Done
+
+- **`/assistant` 一併修**(`G9`)—— test +2,falsification **道 4:恰好 2 紅**,零誤傷
+- **`G6` render 做咗** —— 借返 5433(Chris 批;`ai-doc-extraction-db` 停咗,image
+  `postgres:15-alpine` **pinned** ⇒ 還原安全)· 起 stack(api 200 @ 15s · web 200 ·
+  proxy 200 · 進程 11 健康)· 四張 light/dark,**verdict 四個全 `true`**
+- root gate 重跑:api **1495 / 98** · web **581 / 51**(**+4**)· lint 0 · build 0
+
+### Decisions
+
+- 🔴 **`/assistant` 唔跟 card 用同一個修法,而唔同係啱嘅** —— card 要 hoist 係因為
+  **有 early return**;`/assistant` 只有一個分支,直接加返 render 就夠。
+  📌 **為咗「兩邊睇落一致」而抄一個唔需要嘅結構,就係 §1.2 講嗰種 over-engineering。**
+  真正需要逐字一致嘅係**文案**(fallback 抄 dock),唔係結構。
+
+### 值得記低嘅第三件事(本單最抵)
+
+**一個為咗驗 A 而做嘅 probe,順帶捉到 B —— 而 B 冇任何 gate 捉得到。**
+
+`G6` 個 probe 本來只係想答一條:我喺 `!run` 分支加嘅 `flex flex-col` wrapper,
+有冇郁到 EmptyState 個 box(答案:冇 —— 兩個都係 **337**)。
+但同一份 report 印低嘅座標,順手證偽咗**我自己啱啱寫落 `assistant.tsx` 嗰句註釋**:
+我寫「Sits BELOW the button」,實測 banner `top: 165` 喺一個 `flex flex-wrap
+items-center` row(`top: 157`,高 34)入面 ⇒ **佢喺個掣右邊,唔喺下面**。
+
+🔴 **點解冇嘢會紅**:test 問「訊息喺唔喺畫面」⇒ 綠;lint / tsc ⇒ 綠;
+而註釋描述嘅係**視覺位置**,DOM 順序上佢**確實**喺 button 之後 ⇒ **半啱**,
+連讀 code 嗰個都好可能唔會停低。
+
+📌 同 CH-033「兩份註釋互相矛盾」同族,但機制唔同:嗰次係兩份文件對唔上,
+**今次係一份註釋同 render 出嚟嘅畫面對唔上**。
+⇒ **幾何 probe 印低嘅座標,順帶就係註釋嘅事實核查** —— 呢個係做 render 嘅第二個回報,
+而佢唔喺任何 acceptance 入面。
+
+### Blockers
+
+- 🚧 **`G8` DEV 未驗** —— 要部署,兼且有前提(A 要仲係失敗狀態)。
+- ⚠️ **A 仍然未知** —— console 一句由頭到尾未跑過。**本單由頭到尾冇等佢**,而事後睇,
+  呢個判斷係啱嘅:B 修完,A 係邊條都唔改變 diff。
+
+### Effort
+
+- Planned:—;Actual:診斷 0.5h + 修 1.0h + `/assistant` & render 1.0h
+
+### Commits(續)
+
+| Hash | Subject |
+|---|---|
+| _(待 commit)_ | `fix(web): BUG-012 G9 —— /assistant 開對話失敗一樣要講` |
 
 ---
 

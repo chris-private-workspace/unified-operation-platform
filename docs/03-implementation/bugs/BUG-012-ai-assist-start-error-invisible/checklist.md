@@ -47,7 +47,9 @@ last_updated: 2026-08-21
       所以佢**唔係** regression test 係 **guard**(擋住「render 一個 `undefined` 紅框」
       都算數);已喺 test 註釋寫明,唔可以當佢係第二條證據
 - [x] `T3` 既有 `surfaces a failed hide` 仍然綠
-- [x] root gate —— api **1495 / 98** · web **579 / 51**(+2)· lint 0 · build 0
+- [x] `T4` / `T5` `/assistant` 兩條(`G9`)—— server 原句 · non-`ApiError` fallback
+      (後者順帶 assert **唔會**印 raw JS error,同 CH-035 `D1`=C 一條線)
+- [x] root gate —— api **1495 / 98** · web **581 / 51**(**+4**)· lint 0 · build 0
 
 ## Falsification(三道,全部真跑)
 
@@ -60,19 +62,28 @@ last_updated: 2026-08-21
 - [x] **道 3** 把 `start.error` 由 `failure` 個 `??` 鏈拆走(**保留 render**)——
       **恰好 1 紅**,紅嗰條係新 test ⇒ 佢綁住嘅係 **`start` 呢個來源**,
       唔係「畫面有個紅框就算數」
+- [x] **道 4** 拆走 `/assistant` 個 render(`G9`)—— **恰好 2 紅**,兩條都係新加嘅,零誤傷
 
 ## Verification
 
 - [x] `G5` **同族面掃過 —— 兩個唔同答案**:dock 🟢 `create.error` 真係 render
       (`agent-dock.tsx:180` → `:415-420`)· `/assistant` 🔴 **零 render**
-      (`assistant.tsx:95`/`:235`)⇒ 唔喺本單 scope,登咗 `report.md §9` 交返 Chris 決定
-- [ ] 🚧 `G6` H6 light + dark render —— **未做**,要起本機 stack(要借返 5433,
-      而 `ai-doc-extraction-db` 而家揸住,**要 Chris 批**)。
-      ⚠️ **唔可以當佢冇風險**:`!run` 分支多咗一層 flex wrapper。三個理由指向零視覺分別
-      (EmptyState 本身 block + 撐滿 · `gap` 對單一 child 無效 · class 逐字重用),
-      但**三個都係推論**,而「字喺邊」正正係四層 test 問唔到嗰半(CH-030 同族)。
-      💡 要 render 一個「只喺失敗時先出」嘅 UI **唔使殺 api** —— `page.route` 注入 400
-      (CH-032 用過同一手)⇒ 本機 Azure OpenAI 通、run 會成功,自然重現唔到
+      (`assistant.tsx:95`/`:235`)
+- [x] `G9` **`/assistant` 一併修**(Chris 2026-08-21 決定,`report.md §9`)——
+      ⚠️ **修法同 card 唔同,而唔同係啱嘅**:嗰邊要 hoist 係因為有 early return,
+      呢邊只有一個分支 ⇒ 直接加返 render 就夠,**唔好為咗「一致」而抄一個唔需要嘅結構**。
+      Test **+2**(server 原句 · non-`ApiError` fallback);fallback 文案**逐字抄 dock**
+      (CH-032 `D2` 同一理由)。**falsification 道 4:拆走佢 ⇒ 恰好 2 紅**,零誤傷
+- [x] `G6` H6 light + dark render —— **四張,verdict 四個全 `true`**(Chris 2026-08-21
+      批准借 5433;`page.route` 注入 400,冇殺 api)。
+      🟢 **`V3`(本條真正嘅理由)**:`emptyState.width` **337** = `wrapper.width` **337**,
+      wrapper class 讀返出嚟逐字係 `flex flex-col gap-[14px]` ⇒ **量緊嘅就係我新加嗰個**
+      (CH-034 教訓:連身份一齊印),而佢**冇改變 EmptyState 個 box**
+      🟢 `V2` banner 底 483 + `gap-[14px]` ≈ emptyState top 498 · `V1` 主句逐字 ·
+      `V4` `overflowsX: false` ×4
+      🟢 **token 真 swap**:`rgb(200,30,30)` → `rgb(244,113,113)`(fg)·
+      `rgb(252,234,234)` → `rgb(42,17,19)`(bg)⇒ DS-1 唔係 hardcode。**零新 button** ⇒ DS-3 冇郁
+      🔴 **順帶捉到一句寫錯咗嘅註釋** —— 見 `report.md §10`
 - [ ] 🚧 `G8` **DEV 重跑 `report.md §2a`** —— ⚠️ **有前提**:要 A 嗰邊仲係失敗狀態先驗到。
       若 A 係 profile 問題而中途開返咗 profile,呢條就**冇嘢可以驗**
       (同 CH-032 banner / CH-035 提示「上到機唔等於見到」同族)⇒ 到時要人為造一次失敗
