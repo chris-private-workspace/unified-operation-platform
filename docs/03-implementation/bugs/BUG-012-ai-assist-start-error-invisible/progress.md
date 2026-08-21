@@ -169,7 +169,15 @@ items-center` row(`top: 157`,高 34)入面 ⇒ **佢喺個掣右邊,唔喺下面
 
 | Hash | Subject |
 |---|---|
-| _(待 commit)_ | `fix(web): BUG-012 G9 —— /assistant 開對話失敗一樣要講` |
+| `6be2d5d` | `fix(web): BUG-012 G9 —— /assistant 開對話失敗一樣要講 + G6 render` |
+
+### 收工
+
+- 5433 **還咗** —— `docker compose … up -d --force-recreate postgres`(**`--force-recreate`
+  唔可以慳**,SOP 實測慳咗就白做一輪);收貨標準係 **`docker port` 有 binding +
+  真 TCP `True`**,唔係 `docker ps` 個 healthy flag。
+- 覆核:`ai_document_extraction` DB 喺返度(named volume 冇冧)· 同項目其餘四個
+  container **uptime 全部 5 days,冇動** · `uop-redis` 刻意留住(佔 6379,唔衝突)。
 
 ---
 
