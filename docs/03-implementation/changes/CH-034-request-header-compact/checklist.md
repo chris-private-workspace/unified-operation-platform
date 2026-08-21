@@ -29,8 +29,15 @@
 - [x] `spec.md` §6 補實際 falsification 結果
 - [x] `progress.md`
 - [x] `CLAUDE.md §0` + `SESSION_SUMMARY`
-- [ ] 🚧 **DEV 上機** —— 要下一次部署(#14)。⚠️ 同 CH-033 一樣係**純版面**改動,
-      **一個新字串都冇** ⇒ marker 只可能喺 CSS(`self-start` 舊版有冇要驗)。
+- [x] 🟢🟢 **DEV 上機 —— 部署 #14(`dev-4a92be0`)2026-08-21 做咗**(連 CH-035 一齊)。
+      🔴 **上面嗰句「marker 只可能喺 CSS(`self-start` 舊版有冇**要驗**)」—— 驗咗,答案係
+      唔得。** `self-start` 喺 `9053bcd` **四個檔已經用緊**(`change-password-form` /
+      `sidebar` / `top-bar` / `settings`)⇒ Tailwind **一早生成咗 `.self-start` 呢條 rule**
+      ⇒ 「CSS ×0 → ×1」結構上冇可能成立。
+      🟢 **改用 `max-w-full`,而佢喺舊版係實測零檔** ⇒ 兩個 marker 都成立:
+      JS className 相鄰組合 `max-w-full flex-wrap` **×0 → ×1** · CSS `.max-w-full` **×0 → ×1**。
+      📌 **本 checklist 當時寫「要驗」而唔係「就係佢」,係啱嘅** —— 而下一手(部署 #14)
+      **真係去驗咗**,先冇用一個假 marker 收貨。
 - [ ] 🚧 **DEV live 睇實物** —— Chris 人手(AI 側唔喺瀏覽器打 break-glass 密碼,H4)
 
 ## 🔴 一個 probe 教訓(值得記入 progress)

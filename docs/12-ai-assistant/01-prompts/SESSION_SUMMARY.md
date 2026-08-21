@@ -5,7 +5,25 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
-## 🔴 **先講三件會令你用錯前提嘅事(2026-08-21)**
+## 🟢🟢 **DEV 而家跑 `dev-4a92be0`(部署 #14,2026-08-21)—— CH-034 + CH-035 都上咗**
+
+api / web 兩個 `PATCH exit 0`,infra 配嘅 custom domain · `external` · workload profile
+全部完好。**DEV 同 `main` 而家同步。**
+
+🔴🔴 **本次一個教訓值得你開工之前讀:一個假 marker,而佢係我哋自己寫落交接文件嗰個。**
+CH-034 收單文件同**呢份 SESSION_SUMMARY 上一版**都寫住「marker 只可能喺 CSS
+(`self-start`)」。開工一驗:`self-start` 喺舊版 **四個檔已經用緊** ⇒ Tailwind 一早生成咗
+`.self-start` ⇒ `×0 → ×1` **結構上冇可能成立**。改用 `max-w-full`(舊版**零檔**)先得。
+📌 **一份交接文件推薦嘅 marker,同一個外人推薦嘅,一樣要驗**(#12 嗰條規矩嘅新版本)。
+🟢 **順帶一句公道說話**:CH-034 個 checklist 當時寫嘅係「`self-start` 舊版有冇**要驗**」而
+唔係「就係佢」—— **寫「要驗」呢個習慣今次真係擋咗一次**。
+
+⚠️ **另外兩個假 marker**:①`whoFixes` 舊版 `api-json` 已經出現 **2 次**(來自 `AgentStepDto`)
+⇒ 改用 schema-level ②`WHO_FIXES` 五句搬咗檔但 **bundle 總數一個字冇變**。
+
+⬇️ **以下係部署 #14 之前寫嘅** ⬇️
+
+## 🔴 **三件會令你用錯前提嘅事(2026-08-21)**
 
 **① 🟢🟢 本機 `apps/api/.env` 而家有齊 `AZURE_OPENAI_*` ⇒ agent 真跑得掂。**
 2026-08-21 Chris 批准由 `orca/workspaces/…/ai-agent` worktree 抄咗三個 key 過嚟

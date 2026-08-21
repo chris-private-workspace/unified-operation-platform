@@ -514,6 +514,94 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-21 · 部署 #14(`dev-4a92be0`)— **CH-034 + CH-035 上機;一個「睇落啱」嘅 marker 喺用之前就被否決**
+
+**點解要有呢次部署**:`main` 由 #13 之後行前 **12 個 commit**,入面兩單有 DEV carry-over —— **CH-034**(request header 收窄)同 **CH-035**(run 失敗要講出嚟)。
+
+**開工三條事實**(全部實測):
+
+| 問題 | 答案 |
+|---|---|
+| DEV 而家跑咩 | `az containerapp list` ⇒ 兩個 app 都 `dev-9053bcd`(= #13) |
+| 有冇 migration | `git diff 9053bcd..main -- '*prisma*'` **完全空** ⇒ **連續第三次零 migration** |
+| 有冇新 dep | `git diff … -- '*package*.json'` **完全空** ⇒ vendor chunk 應該唔變 |
+
+#### 🔴🔴 本次最重要:**一個「睇落啱」嘅 marker,喺用之前就被否決**
+
+CH-034 一個新字串都冇(純 class + 版面),而 CH-035 收單文件同 `SESSION_SUMMARY` 都寫住「marker 只可能喺 CSS(`self-start`)」。**開工驗一驗就發現嗰個 marker 係假嘅**:
+
+```
+git grep -c -F 'self-start' 9053bcd -- apps/web/src
+  → change-password-form.tsx:1 · sidebar.tsx:1 · top-bar.tsx:1 · settings.tsx:2
+```
+
+⇒ 舊版**四個檔**已經用緊 `self-start` ⇒ Tailwind **一早生成咗 `.self-start` 呢條 CSS rule** ⇒ 「CSS ×0 → ×1」結構上冇可能成立。
+
+🟢 **搵返兩個真 marker,而佢哋喺舊版都係實測 0 檔**:
+
+| 層 | Marker | 點解成立 |
+|---|---|---|
+| JS | `max-w-full flex-wrap`(className 相鄰組合) | CH-034 加咗 `max-w-full`,而個 class 字串原樣入 JS bundle |
+| CSS | `.max-w-full` | `max-w-full` 喺 `9053bcd` **零檔** ⇒ Tailwind 從來冇生成過嗰條 rule |
+
+📌 **同 #12 嗰條規矩同源**(「一個字串要做 marker,先要驗佢喺舊版真係冇」),但本次嘅**新意思係:被否決嗰個 marker,係我哋自己喺上一單收尾時寫落文件嘅**。⇒ **一份交接文件推薦嘅 marker,同一個外人推薦嘅 marker,一樣要驗。**
+
+⚠️ **順帶第二個假 marker,同樣驗咗先知**:`whoFixes` 呢個字**舊版 `api-json` 已經出現 2 次**(來自 `AgentStepDto`)⇒ 「api-json 有冇 `whoFixes`」答唔到問題。改用 **schema-level**:`components.schemas.AgentConversationRunDto` 有冇 `whoFixes` 呢個 property。
+
+⚠️ **第三個唔可以用嘅**:`WHO_FIXES` 五句由 `assign-result-dialog.tsx` 搬去 `lib/who-fixes.ts` ⇒ **bundle 入面總數一個字冇變**(實測 image 內部同 live 都係 ×1)。
+
+#### Baseline(部署**之前**由 live 攞,#13 個做法)
+
+🟢 **三個數字同 #13 記載逐字一致** ⇒ 印證咗「我個測量方法同 #13 係同一套」,唔係另起爐灶:
+
+| | baseline(#13 記載) | baseline(本次實測) |
+|---|---|---|
+| asset | `index-CQjd-n6b.js` / `index-Bdx9QGmI.css` | **逐字一樣** |
+| js length | 285,165 | **285,165** |
+| `api-json` | 90,341 B | **90,341 B** |
+
+#### 五條驗證證據(冇一條靠 revision status)
+
+| # | 證據 | 結果 |
+|---|---|---|
+| 1 | live asset 名 vs **image 內部** `docker cp` 抽出嗰個 | `index-9VsTcD40.js` / `index-BPOsyRyz.css` **逐字對上** |
+| 2 | 負面命中:#13 個 bundle | `/assets/index-CQjd-n6b.js` → **404** ⇒ 排除 cache / CDN |
+| 3 | CH-035 主句 | **×0 → ×2**(assistant + dock) |
+| 4 | CH-034 兩個 marker | JS `max-w-full flex-wrap` **×0 → ×1** · CSS `.max-w-full` **×0 → ×1** |
+| 5 | `AgentConversationRunDto` schema | props 由 `id, status, startedAt` → **`id, status, startedAt, whoFixes`**,enum 六個值逐個對上;`api-json` **90,341 → 90,596 B** |
+
+🟢 **三個 sanity marker 全部不變**(`Live updates stopped` ×2 · `.lg\:grid-cols-2` ×1 · `This one is ours` ×1)⇒ 證明個計數方法冇漂,唔係「乜都變咗」。
+
+**未認證探測**:`/api/me` **401** · `/api/auth/sso/status` `{"enabled":true}` · `/login` 200。
+
+⚠️ **一個要記住嘅量度 artifact**:image 內部 `Get-Content -Raw` 量到 js length **286,805**,而 live `Invoke-WebRequest.Content` 量到 **286,353**(差 452)。**唔影響結論** —— asset 名係 Vite 嘅 content hash,**名一樣就代表 byte 一樣**,兩個數字嘅差係兩種讀法嘅 artifact 唔係內容差異。📌 但值得寫低:**「同一個數字」呢種證據,要兩邊用同一個量法先有意義。**
+
+#### 七步(同 #6 / #7 / #8 / #10 / #11 / #12 / #13 逐步一致)
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…` · sub `30dac177…` · tenant `4f63aaa0-…` ⇒ 部署 SP,**一次就對** |
+| 1 `docker login`(`--password-stdin`) | `Login Succeeded` exit 0 |
+| 2 真 pull(base image 由 Dockerfile `^FROM` **讀返**) | `node:20-slim` · `nginx:1.27-alpine` 兩個 exit 0 |
+| 3 `docker build` × 2 | 兩個 exit 0 ⇒ BUG-008 gate 過 |
+| 3.5 **push 之前喺 image 內部驗** | **六個 marker 全 PASS**(三新三 sanity)⇒ build 錯咗喺部署之前就知 |
+| 4 `docker push` × 2 | api `sha256:0cdd256a…dde80` · web `sha256:4dabf3ce…222b`,**同本地 manifest 逐字對上** |
+| 5 params tag 換 | 2 處 · `lengthDelta = 0` · 舊 tag 殘留 **0** · 33 個 parameter · `git check-ignore` 命中 + `git status` **空** |
+| 6 dry-run | api secrets **11** / env **30** · web 1 / 1 · **四個 sanity 全 `False`** · 舊 tag 零命中 · **leak scan 11 個 secret,0 命中** |
+| 7 `-Send` | 兩個 **`PATCH exit = 0`** |
+
+**PATCH 之後對數**:兩個 app 都 `dev-4a92be0`;🟢 api `external: false` · web `external: true` + `customDomains: rapo-uop-web-dev.rci-t.com`(`SniEnabled`)· `workloadProfileName: Consumption` **全部完好**。
+
+🟢 **rollout 快過預期**:驗證 script 寫咗 poll 最多 6 分鐘,實際 **第一次打就已經係新 bundle**(0 秒)。
+
+#### ⚠️ 兩樣本次冇做,要講明
+
+1. **live 行為驗證(睇實物)交返 Chris 人手** —— CH-034 個收窄 gate 同 CH-035 個失敗提示都要登入先睇到,而 AI 側刻意唔喺瀏覽器打 break-glass 密碼(H4)。⇒ **本次收嘅係「code 上咗機」,唔係「畫面睇落啱」**(沿用 `CH-015` 先例)。
+   📌 而 **CH-035 個提示喺 DEV 平時唔會出** —— 佢要一條真失敗嘅 run,而 DEV 側 Azure OpenAI 通(#11 實測)⇒ 同 CH-032 個 disconnected banner 一樣,**上到機唔等於見到**。
+2. **`RISK R35` 最後一條(api 返唔到嚟)照樣未驗** —— 同 #13 一樣,要 scale-to-0,Chris 決定唔做。
+
+---
+
 ### 2026-08-20 · 部署 #13(`dev-9053bcd`)— **CH-032 + CH-033 上機;marker 由「有冇」變「幾多次」**
 
 **點解要有呢次部署**:`main` 由 #12 之後行前咗 **25 個 commit**,入面有兩單有 DEV carry-over 嘅改動 —— **CH-032**(`/assistant` honesty)同 **CH-033**(request detail 版面),另加 `SSE-HEARTBEAT-COUPLING` 個 test(`STALE_AFTER_MS` 由 `const` 變 `export const`)。
