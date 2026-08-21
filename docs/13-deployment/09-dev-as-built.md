@@ -514,6 +514,91 @@ this.issuer = [
 > ℹ️ **部署 #3**(2026-08-10,ADR-0030 / CH-022 接真 Graph + ServiceNow)記喺 `W44-azure-dev-deploy/progress.md` Day 7,冇搬過嚟。
 > ℹ️ **部署 #7**(2026-08-13,`dev-2a68f8d`,追 CH-029)記喺 `CH-029-ledger-truth-gaps/progress.md` Day 1,冇搬過嚟。
 
+### 2026-08-21 · 部署 #15(`dev-7dc3811`)— **BUG-012 上機;第一次「部署之後嗰一撳」同時收 acceptance 同答根因**
+
+**點解要有呢次部署**:`main` 由 #14 之後行前 6 個 commit,入面 **BUG-012**(agent 開唔到嗰陣畫面唔講)有 DEV carry-over(`G8`)。
+
+**開工四條事實**(全部實測):
+
+| 問題 | 答案 |
+|---|---|
+| DEV 而家跑咩 | `az containerapp list` ⇒ 兩個 app 都 `dev-4a92be0`(= #14) |
+| 有冇 migration | `git diff 4a92be0..HEAD -- '*prisma*'` **完全空** ⇒ **連續第四次零 migration** |
+| 有冇新 dep | **完全空** ⇒ vendor chunk 應該唔變 |
+| 改咗邊度 | **4 個 web 檔,零 api** ⇒ 見下面「api 側冇獨立證據」 |
+
+#### Marker:兩個都要用**次數**,而兩個都驗過先用
+
+BUG-012 個 fallback 文案係**逐字抄 dock** 嘅(CH-032 `D2` 同一理由),所以「有冇出現」呢個維度**結構上冇答案** —— 沿用 #13 嗰個做法改數次數,兼且**部署之前由 live 攞 baseline**:
+
+| 層 | Marker | 舊版 | 預期 |
+|---|---|---|---|
+| JS | `That could not be started.` | ×1(只喺 dock) | **×2** |
+| JS | `text-[12.5px] text-danger` | ×3 | **×4** |
+
+🟢 **三個數字同 #14 記載逐字一致**(`index-9VsTcD40.js` · `index-BPOsyRyz.css` · js length **286,353**)⇒ 印證量法同 #14 同一套。
+
+#### 七步(同 #6–#14 逐步一致)
+
+| 步 | 結果 |
+|---|---|
+| 0 `az account show` | `d2f094a3-…` · sub `30dac177…` · tenant `4f63aaa0-…` ⇒ 部署 SP,**一次就對** |
+| 1 `docker login`(`--password-stdin`) | `Login Succeeded` exit 0 |
+| 2 真 pull(base image 由 Dockerfile `^FROM` **讀返**) | `node:20-slim` · `nginx:1.27-alpine` 兩個 exit 0 |
+| 3 `docker build` × 2 | 兩個 exit 0 ⇒ BUG-008 gate 過 |
+| 3.5 **push 之前喺 image 內部驗** | **五個 marker 全 PASS**(兩新三 sanity)+ 舊 asset 名喺新 html **0 次** |
+| 4 `docker push` × 2 | api `sha256:e514d785…d90f` · web `sha256:2594e2c3…8c3a`,**同本地 manifest 逐字對上**;另用 registry 憑證 `docker manifest inspect` 獨立確認 ACR 真係收到 |
+| 5 params tag 換 | 2 處 · `lengthDelta = 0` · 舊 tag 殘留 **0** · 33 個 parameter · `git check-ignore` 命中 + `git status` **空** |
+| 6 dry-run | api secrets **11** / env **30** · web 1 / 1 · **四個 sanity 全 `False`** · 舊 tag 零命中 · **leak scan(見下)** |
+| 7 `-Send` | 兩個 **`PATCH exit = 0`** |
+
+🟢 **leak scan 今次做深咗一層**:唔靠名 filter(#14 靠名查 11 個),而係**33 個 parameter 逐個問「真值有冇原文出現喺 output」**,再按結果分四類。得出:**唔喺 output 嗰 13 個,正正就係 11 個真 secret + 2 個 PATCH 刻意唔送嘅**(`managedEnvironmentId` / `webCustomDomainCertificateId`)⇒ 同 #14 個結論一致,但**由結果反推**而唔係由名 filter 決定要查邊個。⚠️ 另外 7 個「真值喺 output」嘅係 env var(`agentModel` / `azureOpenAiEndpoint` / `servicenowUser` 等)—— **設計上就要送**,唔係洩漏。
+
+**PATCH 之後對數**:兩個 app 都 `dev-7dc3811`;🟢 api `external: false` · web `external: true` + `customDomains: rapo-uop-web-dev.rci-t.com`(`SniEnabled`)· `workloadProfileName: Consumption` **全部完好**。rollout **第一次打就已經係新 bundle**(0 秒)。
+
+#### 五條驗證證據(冇一條靠 revision status)
+
+| # | 證據 | 結果 |
+|---|---|---|
+| 1 | live asset 名 vs **image 內部** `docker cp` 抽出嗰個 | `index-DadJbgf7.js` **逐字對上**;`index-BPOsyRyz.css` **同 #14 一樣冇變**(本次零新 Tailwind class ⇒ CSS bundle 應該逐 byte 一樣,而佢真係一樣 —— **一個額外正面證據**) |
+| 2 | 負面命中:#14 個 bundle | `/assets/index-9VsTcD40.js` → **404** ⇒ 排除 cache / CDN |
+| 3 | BUG-012 marker(次數) | `That could not be started.` **×1 → ×2** · `text-[12.5px] text-danger` **×3 → ×4** |
+| 4 | 三個 sanity marker | `No run yet` ×1 · `Live updates stopped` ×2 · `This one is ours` ×1 —— **全部不變** ⇒ 計數方法冇漂 |
+| 5 | `api-json` | **90,349 → 90,349 逐 byte 一致**;schemas 111 / paths 73 不變 ⇒ **零後端改動嘅正面印證** |
+
+**未認證探測**:`/api/me` **401** · `/api/auth/sso/status` `{"enabled":true}` · `/login` 200。
+
+#### 🔴 三樣要誠實講
+
+**① api 側今次結構上冇獨立證據。** 佢一個字都冇改 ⇒「`api-json` 一樣」**同時符合新舊 revision**。我有嘅只係 ARM image 欄 = `dev-7dc3811`,加上「同一次 PATCH,web 側 rollout 已證」。📌 **形狀同 #12 嗰個「零 migration 令判準失效」同族,但今次係零改動令『上咗機』冇得驗** —— 一個改動越細,證明佢上咗機就越難。
+
+**② 兩個數字同 #14 記載對唔上,而我冇解釋(刻意唔編)**:
+
+| | #14 記載 | 本次實測 |
+|---|---|---|
+| `api-json`(部署後) | 90,596 B | **90,349 B** |
+| image vs live js length | 差 **452**(286,805 / 286,353) | **完全一樣**(286,515 / 286,515) |
+
+⚠️ 已排除「量度不穩」:`api-json` 連打三次都係 90,349,而 `AgentConversationRunDto.whoFixes` **確實在**(enum 六值齊)⇒ DEV 真係跑緊 #14 嘅 code。**點解對唔上,今日冇答案。** 本次結論唔受影響,因為用咗 #14 自己寫低嗰條規矩:**baseline 同驗證兩邊用同一量法**。📌 **同 §9 嗰句同源:一個「解釋得通」嘅無害解釋,比冇解釋更危險** —— 所以呢度只記現象。
+
+**③ `G8` 由 Chris 人手收**(AI 側唔喺瀏覽器打 break-glass 密碼,H4,沿用 CH-015 先例)。
+
+#### 🟢🟢 本次最值得記:**部署之後嗰一撳,同時收咗 acceptance 同答咗根因**
+
+BUG-012 開單時分咗兩件事:**B**(畫面唔講,已證)同 **A**(400 究竟係邊條,未知)。部署之後 Chris 喺 DEV 撳一次 `Run AI Assist`,**紅框出咗**:
+
+```
+This request has no free-text wording for AI-Assist to read
+```
+
+⇒ **`G8` 收**(banner 真係出到)**兼且 A = `A3`**。
+
+🔴 **而我原本估 `A1`(零 active profile),估錯咗** —— 理由係部署 #12 收工紀錄寫住 DEV 三個 profile 全部 `active: false`。🟢 **擋住個錯結論嘅,係當時同時寫低咗「呢個係紀錄唔係當日實測,唔可以當答案」**:如果當時當咗事實,下一步就會去開返一個 profile,而**開完之後個 400 照出**。
+
+🔴 **順帶一個唔可以推落去嘅位**:**`A3` 出現,推論唔到 DEV profile 狀態** —— `assertHasText` 喺 `ai-assist.service.ts:150`,`resolveForRun` 喺 `:258` ⇒ 執行停咗喺文字檢查,profile 三條閘**由頭到尾冇跑過**。📌 同「`sync-check` 返 `FOUND` 證明唔到個 user 存在」同族:**一個閘冇報錯,唔等於佢後面嗰啲閘過咗。**
+
+---
+
 ### 2026-08-21 · 部署 #14(`dev-4a92be0`)— **CH-034 + CH-035 上機;一個「睇落啱」嘅 marker 喺用之前就被否決**
 
 **點解要有呢次部署**:`main` 由 #13 之後行前 **12 個 commit**,入面兩單有 DEV carry-over —— **CH-034**(request header 收窄)同 **CH-035**(run 失敗要講出嚟)。

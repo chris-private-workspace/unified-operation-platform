@@ -1,14 +1,14 @@
 ---
 bug_id: BUG-012
 report_ref: ./report.md
-status: in-progress     # in-progress | done
+status: done            # in-progress | done
 last_updated: 2026-08-21
 ---
 
 # BUG-012 — Checklist
 
 > 由 `report.md §7` acceptance 推導。
-> ⚠️ **未開工** —— 等 Chris confirm repro + severity(PROCESS §4.5 步驟 2)。
+> ✅ **2026-08-21 一日收晒**(開單 → triage → 修 → render → 部署 #15 → DEV 實物驗)。
 
 ## Investigation
 
@@ -84,18 +84,27 @@ last_updated: 2026-08-21
       🟢 **token 真 swap**:`rgb(200,30,30)` → `rgb(244,113,113)`(fg)·
       `rgb(252,234,234)` → `rgb(42,17,19)`(bg)⇒ DS-1 唔係 hardcode。**零新 button** ⇒ DS-3 冇郁
       🔴 **順帶捉到一句寫錯咗嘅註釋** —— 見 `report.md §10`
-- [ ] 🚧 `G8` **DEV 重跑 `report.md §2a`** —— ⚠️ **有前提**:要 A 嗰邊仲係失敗狀態先驗到。
-      若 A 係 profile 問題而中途開返咗 profile,呢條就**冇嘢可以驗**
-      (同 CH-032 banner / CH-035 提示「上到機唔等於見到」同族)⇒ 到時要人為造一次失敗
+- [x] `G8` **DEV 重跑 `report.md §2a` —— 紅框出咗**(部署 #15 `dev-7dc3811` 之後,
+      Chris 人手撳):`This request has no free-text wording for AI-Assist to read`。
+      🟢 **一撳收兩件事**:`G8` + **A = `A3`**。
+      🔴 **而我原本估 `A1` 估錯咗** —— 見 `report.md §6`;擋住咗嗰個錯結論嘅,係當時
+      寫低「紀錄唔係實測,唔可以當答案」嗰句。
+      🔴 **`A3` 推論唔到 profile 狀態** —— `assertHasText`(`:150`)排喺 `resolveForRun`
+      (`:258`)之前 ⇒ 後者由頭到尾冇跑過。**下手唔好由「冇 profile 錯誤」推「profile 冇事」。**
 
 ## Closeout
 
-- [ ] `progress.md` closeout summary(timeline + root cause + lessons)
-- [ ] Sev3 ⇒ `postmortem.md` optional。🟡 **但本單係同族第五次**,closeout 時決定寫唔寫
-- [ ] `RISK_REGISTER.md` —— 睇下「UI 有 render code 但分支去唔到」算唔算新 pattern
-- [ ] `BACKLOG.md` 同步(R7)
-- [ ] `report.md` status → `done`;`progress.md` status → `closed`
-- [ ] `CLAUDE.md §0` + `SESSION_SUMMARY` 換座標
+- [x] `progress.md` closeout summary(timeline + root cause + lessons)
+- [x] **唔寫 `postmortem.md`** —— Sev3 optional,而三個教訓已經逐個寫咗喺 `progress.md`
+      同 `report.md §10`;再寫一份會係複述。**pattern 本身改為升級做 RISK**(見下)
+- [x] 🔴 **`RISK_REGISTER.md` 新增 `R38`** —— 「一個失敗訊息可以由 server 一路傳到前端,
+      然後死喺一條冇人行得到嘅路上,而每一層 test 都係綠」。累計**五次**
+      (W45 `apiPatch` · `BUG-011` · `CH-032` · `CH-035` · 本單,而本單自己有兩個實例)。
+      升級判準跟 `R9`(同一條路重覆)唔跟 `R5`(三個唔同路徑)
+- [x] `BACKLOG.md` 同步(R7)
+- [x] `report.md` status → `done`;`progress.md` status → `closed`
+- [x] `CLAUDE.md §0` + `SESSION_SUMMARY` 換座標
+- [x] `docs/13-deployment/09-dev-as-built.md` 補部署 #15
 
 ---
 

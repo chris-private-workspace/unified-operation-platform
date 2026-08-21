@@ -5,6 +5,42 @@
 
 **身份**:Unified Operation Platform,spec `docs/architecture.md`,IT operation / support 管理 + 操作平台(逐步引入 AI);第一個模組 LicenseOps(M365 onboarding license 履行)。
 
+## 🟢🟢 **DEV 而家跑 `dev-7dc3811`(部署 #15,2026-08-21)—— `BUG-012` 上咗;`main` = `7dc3811`,DEV 同 `main` 同步**
+
+`BUG-012` 一日收晒(開單 → triage → 修 → render → 部署 → DEV 實物驗),PR #142 merged,
+零 open PR,本地同 remote 都淨返 `main`。
+
+### 🔴 三件會影響你開工前提嘅事
+
+**① `A3` 出現,推論唔到 DEV profile 狀態。**
+Chris 撳 `Run AI Assist` 得到 `This request has no free-text wording for AI-Assist to
+read`。⚠️ **唔好由此推「DEV 有 active profile」** —— `assertHasText` 喺
+`ai-assist.service.ts:150`,而 `resolveForRun`(profile 三條 400)喺 `:258` ⇒ 執行**停咗
+喺文字檢查**,後面嗰三條閘**由頭到尾冇跑過**。「DEV 有冇 active profile」**今日仍然冇答案**
+(部署 #12 收工紀錄寫住三個全部 `active: false`,而嗰個係紀錄唔係實測)。
+📌 同「`sync-check` 返 `FOUND` 證明唔到個 user 存在」同族。
+
+**② 一個假設標唔標明「未驗」,後果差一整輪白做。**
+我開單時寫「**A1(零 active profile)嫌疑最大**」—— **估錯咗**。🟢 但同時寫咗「呢個係
+紀錄唔係當日實測,唔可以當答案」⇒ 冇去開 profile。**當咗事實嘅話,開完之後個 400 照出。**
+
+**③ 新 RISK `R38`** —— 「一個失敗訊息可以由 server 一路傳到前端,然後死喺一條冇人行得到
+嘅路上,而每一層 test 都係綠」。累計**五次**(W45 `apiPatch` · `BUG-011` · CH-032 ·
+CH-035 · BUG-012)。⇒ **新 mutation 落地時,「失敗點樣顯示」係 deliverable 唔係 polish**,
+而且要問:**觸發佢嗰個掣,同顯示 error 嗰段 JSX,喺唔喺同一個 render 分支?**
+
+### ⚠️ 部署 #15 兩樣要記
+
+- **api 側今次結構上冇獨立證據** —— 零 api 改動 ⇒「`api-json` 一樣」同時符合新舊 revision。
+  只有 ARM image 欄 + 「同一次 PATCH,web 側 rollout 已證」。**同 #12「零 migration 令判準
+  失效」同族,今次係零改動令『上咗機』冇得驗** —— 改動越細,證明佢上咗機越難。
+- **兩個數字同 #14 記載對唔上,而我冇解釋(刻意唔編)**:`api-json` #14 寫 90,596,本次
+  三次都量到 **90,349**;#14 寫 image vs live js length 差 452,本次**兩邊完全一樣**
+  (286,515)。已排除量度不穩(`whoFixes` schema 確實在)。結論唔受影響,因為 baseline
+  同驗證兩邊用同一量法。
+
+⬇️ **以下係部署 #15 之前寫嘅** ⬇️
+
 ## 🟢🟢 **DEV 而家跑 `dev-4a92be0`(部署 #14,2026-08-21)—— CH-034 + CH-035 都上咗**
 
 api / web 兩個 `PATCH exit 0`,infra 配嘅 custom domain · `external` · workload profile

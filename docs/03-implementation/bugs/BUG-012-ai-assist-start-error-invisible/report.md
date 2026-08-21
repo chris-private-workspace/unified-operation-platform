@@ -2,7 +2,7 @@
 bug_id: BUG-012
 title: "撳 Run AI Assist 失敗時畫面完全冇反應 —— error 分支結構上去唔到"
 severity: Sev3          # Sev1 | Sev2 | Sev3 | Sev4 (per PROCESS.md §4.4)
-status: verifying       # triaged | investigating | fixing | verifying | done | wont-fix
+status: done            # triaged | investigating | fixing | verifying | done | wont-fix
 reported: 2026-08-21
 reporter: "Chris(DEV live)"
 affects_components: [apps/web/components/requests/ai-assist-card]
@@ -121,7 +121,31 @@ index-9VsTcD40.js:336  POST https://rapo-uop-web-dev.rci-t.com/api/agent/runs 40
 **`start.error` 一條 test 都冇。** 個 render 位置對已測嗰個 case 完全正確,
 所以「同一個位置對另一個 case 去唔到」冇任何嘢會紅。
 
-### 待定 — A(400 本身係邊條)
+### ✅ A 答咗(2026-08-21,部署 #15 之後 Chris 喺 DEV 撳)
+
+**答案係 `A3`:`This request has no free-text wording for AI-Assist to read`。**
+
+🔴 **我估錯咗,而估錯本身值得記低**:我寫「**A1 嫌疑最大**」(理由 = 部署 #12 收工紀錄
+寫住 DEV 三個 profile 全部 `active: false`)。⚠️ 但我同時明文寫咗「呢個係**紀錄唔係
+當日實測**,唔可以當答案」—— **嗰句謹慎擋住咗一個錯結論**。如果當時把 A1 當事實,
+下一步就會係「去開返一個 profile」,而**開完之後個 400 照出**,因為根因由頭到尾唔喺嗰度。
+
+🔴 **一個唔可以順住推落去嘅位(重要,唔寫下手會誤用)** —— **`A3` 出現推論唔到 DEV
+profile 嘅狀態**:
+
+| 位置 | 閘 |
+|---|---|
+| `ai-assist.service.ts:150` | `assertRequestIsUsable` ← **`assertHasText` 喺呢度** |
+| `ai-assist.service.ts:258`(`queueRun` 入面) | `resolveForRun` ← profile 三條 400 喺呢度 |
+
+⇒ 執行**停咗喺文字檢查**,`resolveForRun` **由頭到尾冇跑過** ⇒ 「DEV 有冇 active
+profile」呢條問題**今日仍然冇答案**。📌 同「`sync-check` 返 `FOUND` 證明唔到個 user
+存在」同族:**一個閘冇報錯,唔等於佢後面嗰啲閘過咗**。
+
+🟢 **而根因本身唔係 bug** —— 嗰張 request 真係冇 free-text remark,平台拒絕係**啱**嘅。
+**本單修好嘅係:呢個啱嘅拒絕,由「撳極都冇反應」變成一句人睇得明嘅說話。**
+
+### (下面係 A 未答之前嘅分析,保留)
 
 `POST /agent/runs` 有**三條** 400 路,body 個 `message` 逐句唔同:
 
@@ -179,7 +203,10 @@ index-9VsTcD40.js:336  POST https://rapo-uop-web-dev.rci-t.com/api/agent/runs 40
       lint **exit 0** · build **exit 0**
 - [x] `G9` `/assistant` 一併修(§9)—— **falsification 道 4:拆走佢個 render ⇒ 恰好 2 紅**,
       兩條都係新加嘅,零誤傷
-- [ ] 🚧 `G8` Verified in env —— **有前提**:要 A 嗰邊仲係失敗狀態先驗到(見 checklist)
+- [x] `G8` Verified in env —— **部署 #15(`dev-7dc3811`)之後,Chris 喺 DEV 撳,紅框出咗**,
+      寫住 `This request has no free-text wording for AI-Assist to read`。
+      🟢 **一撳同時收兩件事**:`G8`(banner 真係出到)+ **A 嘅答案**(= `A3`)。
+      ⚠️ 證據來源:**Chris 人手**(要登入,AI 側唔打 break-glass 密碼,H4;沿用 CH-015 先例)
 
 ## 8. Report Changelog
 
