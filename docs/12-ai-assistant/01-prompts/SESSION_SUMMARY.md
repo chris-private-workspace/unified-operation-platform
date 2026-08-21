@@ -28,6 +28,39 @@ user 存在」同族);但「**一個動作成功**」就證明晒**沿路每道�
 agent 用人話名(`Microsoft 365 E3`)搵唔到 catalog —— **實際搵到**。🔴 **唔可以反過嚟推
 `CATALOG-ALIAS` 唔存在**(嗰個係另一個場景嘅實測);正確講法係**「搵唔到」唔係必然**。
 
+🔴 **⚠️ 一個未解觀察,唔好當佢已經有答案** —— 同日兩張 DEV 截圖,profile picker 顯示
+**兩個唔同名**:api 正常嗰張係 `dev-g8-powerbi-only`,api 死嗰張係 **`w48-deploy-check`**
+(而嗰陣 `Could not load the agent list` 正出緊 ⇒ 個值可能 stale)。**但 `w48-deploy-check`
+呢個名總要由某處 load 過先出得到。** 🔴 **兩者唔可能同時真**:若 DEV 真係有**兩個** active
+profile,`Run AI Assist`(唔送 `profileId`)就應該 400(`A2`),而佢**開到咗**。
+💡 **一秒澄清法**:開個 picker 個 dropdown 數下有幾多個選項。**未數之前,唔好寫「DEV 有 N 個
+profile」。**
+
+⚠️ **順帶:`dev-g8-powerbi-only` 係一個 custom prompt、只建議 Power BI 嘅 profile**
+(W47 `R26` 實測過同一個:agent 自己答「I can only suggest Power BI licences」)
+⇒ **喺 DEV 做嘅任何 agent 行為觀察,都戴住呢個 prompt 濾鏡**,唔係通用行為。
+實測佐證:dock 問 `hi`,回覆係「Hi! How can I help with **Power BI** licences?」
+
+## 🔴 `R35` 最後一條 2026-08-21 試過,冇收,但換返三個發現
+
+**① 一個「睇落等價」嘅平價驗法,唔等價。** 我用 `ingress.targetPort 3000 → 3999` 代替
+R35 建議嘅 scale-to-0。新請求真係全 503,但 **dock 開住嘅 thread 等足 90 秒零 banner**。
+⇒ **改 port 只 route 新連線,已建立嘅 socket 照駁住仲行緊嘅 container —— 冇殺過 container。**
+**驗呢條缺口必須真係令 instance 消失。**
+
+**② 「冇 banner」呢個 negative,反過嚟證明咗場景冇造出嚟。** `STALE_AFTER_MS` timer 係
+client-side、唔靠 server,存在目的就係捉「零 event」—— 佢冇 fire ⇒ SSE 一直收緊 heartbeat
+⇒ 連線冇斷。🔴 **差啲把「banner 冇出」寫成「mitigation 失效」** ⇒ 要問多一句:
+**呢個 negative 係「機制冇 fire」定係「機制根本冇被觸發」?**
+
+**③ `/assistant` 個 banner 喺「api 全死」之下結構上 render 唔到。**
+`assistant.tsx:337` 個 `{open && …}` 包住成段面板(banner 喺 `:379`),而 `open = thread.data`
+(`:130`)⇒ api 死 ⇒ `open` falsy ⇒ banner 冇位企。**要驗就要用 dock**(`:197` 唔受 gate 限制)。
+⇒ 順帶登咗 `BACKLOG ASSISTANT-PANEL-COLLAPSE`(dock 仲用得 · `/assistant` 塌晒)。
+
+⇒ **下次部署順手做 scale-to-0**,而且要用**完整 api body**(`patch-deploy-dev.ps1` 嗰個)加
+`scale` —— `template.containers` 係 array,送得唔完整會 unset 走 11 個 secret + 30 個 env。
+
 💡 **一條零副作用嘅造數據路(下次要 DEV 測試數據就用佢)**:`request-detail.tsx:538` 個
 `Edit` 掣冇 stage / role 條件,`Remark` 欄亦冇 `disabled` ⇒ **改 remark 唔使造新單**。
 ⚠️ 唔好行 `POST /requests/intake` —— 佢會 `notifyNewIntake` **通知 OpCo IT 真人**
