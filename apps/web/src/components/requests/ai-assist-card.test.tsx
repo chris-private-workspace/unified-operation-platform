@@ -118,6 +118,48 @@ describe('no run yet', () => {
     fireEvent.click(screen.getByText('Run AI Assist'));
     expect(start.mutate).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * 🔴 BUG-012 — a refused start has to say why, HERE.
+   *
+   * `POST /agent/runs` refuses with a 400 and a sentence: no active profile,
+   * several active profiles and none named, or a request with no free-text for
+   * the agent to read. The error reached the component all along — `apiPost`
+   * carries the body — but the block that renders it sat below `if (!run)
+   * return`, and this button only exists ABOVE that line. Every one of those
+   * refusals was therefore silent: the operator saw a button that did nothing.
+   *
+   * ⚠️ `showRun(null)` is the point of the test, not a detail of it. A run
+   * being absent is the ONLY state `start.mutate()` can be called in, so an
+   * error banner that needs a run is an error banner that can never appear.
+   * The sibling test below (`surfaces a failed hide`) passes with a run present
+   * and always did — which is exactly why nothing was red.
+   */
+  it('says why a refused start was refused', () => {
+    vi.mocked(useStartAgentRun).mockReturnValue({
+      ...start,
+      error: new Error(
+        'This agent has no active profile, so there is no model to run it on',
+      ),
+    } as never);
+    showRun(null);
+
+    // The server's own words, not a generic "something went wrong" — the whole
+    // point is that the operator learns which of the three refusals this was.
+    expect(screen.getByText(/no active profile/i)).toBeTruthy();
+  });
+
+  /**
+   * The empty state does not gain a permanent red box: with nothing wrong there
+   * is nothing to say. Without this, a banner rendering `undefined` would still
+   * satisfy the test above.
+   */
+  it('shows no banner when the start has not failed', () => {
+    showRun(null);
+
+    expect(screen.queryByText(/no active profile/i)).toBeNull();
+    expect(document.querySelector('.bg-danger-soft')).toBeNull();
+  });
 });
 
 describe('🔴 D4 — two kinds of record, told apart', () => {

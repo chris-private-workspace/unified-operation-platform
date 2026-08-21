@@ -251,6 +251,38 @@ export function Assistant() {
              */}
             {contextRequestId ? 'Ask about this request' : 'New conversation'}
           </Button>
+          {/*
+           * 🔴 BUG-012 — the same shape as the AI-Assist card, and found by that
+           * bug's `G5` sweep rather than by anything being red: `create.error`
+           * had nowhere to render, so a refused `POST /agent/conversations` was
+           * silent HERE while the dock said so all along (`agent-dock.tsx`
+           * passes it to its launcher as `error`). Two screens, one action, one
+           * of them mute.
+           *
+           * ⚠️ Narrower than the card's case, which is why it survived: this
+           * screen sends `profileId`, and with no active profile the button
+           * above is already disabled. What is left is a race — a profile
+           * switched off mid-session, a 403, a refusal the server grows later.
+           * Rare is not never, and silent is silent.
+           *
+           * Sits AFTER the button rather than before it, unlike the two
+           * sentences above: those explain why the button is dim, this is what
+           * came back from pressing it. ⚠️ "After" is the row order, not a line
+           * below — the parent is `flex flex-wrap items-center`, so it renders
+           * to the button's RIGHT and only wraps under on a narrow viewport
+           * (measured: banner at x=473 inside a row at x=307, same 34px row).
+           * That matches where `profiles.isError` already puts its sentence.
+           *
+           * Fallback wording is the dock's, word for word, for the same reason
+           * `D2` copied the sentence above.
+           */}
+          {create.error != null && (
+            <span className="text-[12.5px] text-danger">
+              {create.error instanceof ApiError
+                ? create.error.message
+                : 'That could not be started.'}
+            </span>
+          )}
         </div>
       </Card>
 
