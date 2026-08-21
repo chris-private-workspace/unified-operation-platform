@@ -2,39 +2,46 @@
 
 > 由 `spec.md` §4 deliverable + §5 acceptance derive(PROCESS §3.4 步驟 4)。
 > `D1` = **C**(「失敗咗」+ `whoFixes`),`D2` / `D3` 照建議。三個 deviation 見 `spec.md §9`。
+> **2026-08-21 一日做完。**
 
 ## 落地
 
-- [ ] `A` **API** —— 抽 `RUN_SELECT` 常數(跟 `TURN_SELECT` 先例,`DEV-2`),nested 攞
-      最後一條 `failed` step 嘅 `whoFixes`,map 成純量
-- [ ] `B` **DTO** —— `AgentConversationRunDto` 加 `whoFixes`(nullable · 受控字彙)
-- [ ] `C` **`lib/who-fixes.ts`** —— 由 `assign-result-dialog.tsx` 抽出 `WHO_FIXES`,
-      兩邊 import(`DEV-3`)。⚠️ 唔改文案一個字
-- [ ] `D` **`api-types.ts`** —— `AgentConversationRun` 加 `whoFixes`
-- [ ] `E` **`lib/assistant.ts`** —— `latestRunFailure()`:最新 run 係 `failed` / `expired`
-      ⇒ 返佢,否則 `null`(`DEV-1`)
-- [ ] `F` **`assistant.tsx`** —— failed 分支,transcript 之內、最後一個 turn 之下(`D3`)
-- [ ] `G` **`agent-dock.tsx`** —— 同一個分支,**主句逐字一致**(`D2`)
-- [ ] `H` **Test** —— helper · `/assistant` · dock · source scan
+- [x] `A` **API** —— 抽 `RUN_SELECT` 常數(跟 `TURN_SELECT` 先例,`DEV-2`),nested 攞
+      最後一條 `failed` step 嘅 `whoFixes`,map 成純量。⚠️ `detail` **刻意唔 select**
+- [x] `B` **DTO** —— `AgentConversationRunDto.whoFixes`(nullable · enum 六個值)
+- [x] `C` **`lib/who-fixes.ts`** —— 由 `assign-result-dialog.tsx` 抽出,**一個字冇改**;
+      順手刪咗嗰邊變成 orphan 嘅 `AssignStepOwner` import(§1.3)
+- [x] `D` **`api-types.ts`** —— `AgentConversationRun.whoFixes`
+- [x] `E` **`lib/assistant.ts`** —— `latestRunFailure()` + `FAILED_STATUSES`
+      (`failed` + `expired`,**`aborted` 明文排除**,`DEV-1`)
+- [x] `F` **`assistant.tsx`** —— failed 分支,transcript 之內、最後一個 turn 之下(`D3`)
+- [x] `G` **`agent-dock.tsx`** —— 同一個分支,**主句逐字一致**(`D2`)
+- [x] `H` **Test** —— helper 7 條(**新檔**)· `/assistant` +4 · dock +2 · **api +4**
 
 ## Acceptance
 
-- [ ] `G1` helper 認得 —— 三條:`failed` ⇒ 真 · `completed` ⇒ 假 ·
-      **舊 run failed 但最新 `running` ⇒ 假**(「只睇最新」要同 `isThinking` 一致)
-      ➕ `DEV-1` 加一條:`expired` ⇒ 真
-- [ ] `G2` `/assistant` 講得出 —— `failed` ⇒ 出;`completed` ⇒ **唔出**
-- [ ] `G3` dock 講得出 —— 同上
-- [ ] `G4` 兩邊**主句**逐字一致 —— source scan(⚠️ 只守主句,`whoFixes` 係共用 const,
-      見 `DEV-3`);falsification 道 2 **拆 dock 唔拆 assistant**
-- [ ] `G5` 唔會同 `Thinking…` 一齊出 —— 明文 assert 互斥(`F5-3` 撞過「兩樣嘢一齊喺畫面」)
-- [ ] `G6` H6 light + dark —— 兩 theme 真 render · 零橫向溢出 · `accentButtons` 最多一個
-- [ ] `G7` root gate —— test / lint / build 三個 exit 0
-- [ ] `G8` falsification ×4 —— 每道真紅零誤傷
+- [x] `G1` helper 認得 —— **7 條**(`failed` · `expired` · `aborted` 唔算 · `completed` ·
+      舊 failed 被蓋過 · 新 failed 喺舊 success 之後 · 空/undefined)
+- [x] `G2` `/assistant` 講得出 —— `failed` 出 + `whoFixes` 句 · `expired` 出但**冇**
+      第二句(`operator` 冇 line)· `completed` **唔出**
+- [x] `G3` dock 講得出 —— 正面 + 負面各一
+- [x] `G4` 兩邊**主句**逐字一致 —— source scan 第四句;falsification 道 2 **拆 dock 唔拆
+      assistant** ⇒ `assistant.tsx` 三條行為 test 全綠 ⇒ **證到唔係 tautology**
+- [x] `G5` 唔會同 `Thinking…` 一齊出 —— 🔴 **佢嘅獨立性由道 4 證,唔係由自己個 test 結構證**
+      (見 `spec §6` ①)
+- [x] `G6` H6 light + dark —— 四張 render:`insideTranscript: true` ×4 ·
+      `thinkingOnScreen: false` ×4 · icon 色真 swap(`#c81e1e` → `#f47171`)·
+      `accentButtons` assistant **1** / dock **0** · `overflowsX: false` ×4
+- [x] `G7` root gate —— api **1495 / 98**(+4)· web **577 / 51**(+13)· lint 0 · build 0
+- [x] `G8` falsification ×4 —— **4 / 2 / 1 / 2 紅,零誤傷**(見 `spec §6`)
 
 ## 收尾
 
-- [ ] `spec.md` §6 補實際 falsification 結果
-- [ ] `progress.md` 完成摘要
-- [ ] `BACKLOG` `AGENT-RUN-FAILED-SILENT` → done
-- [ ] `CLAUDE.md §0` + `SESSION_SUMMARY` 換座標
-- [ ] 🚧 **DEV 上機** —— 要部署 #14(連同 CH-034)
+- [x] `spec.md` §6 補實際結果 + §9 三個 deviation
+- [x] `progress.md` 完成摘要(五件值得記住嘅事)
+- [x] `BACKLOG` `AGENT-RUN-FAILED-SILENT` → done
+- [x] `CLAUDE.md §0` + `SESSION_SUMMARY` 換座標
+- [x] 🔴 **清返 render probe 嘅副作用** —— 兩條被誤 archive 嘅 thread 已 unarchive,
+      DB 覆核 `archived = 0`(見 `progress.md` ④)
+- [ ] 🚧 **DEV 上機** —— 要部署 #14(連 CH-034)。🟢 本單**有新字串**,主句本身就係 marker
+      (而佢喺舊版確定唔存在 —— 呢單就係加佢嗰單)

@@ -134,12 +134,34 @@ Icon:`CircleAlert`(`ai-assist-card.tsx` 一早用緊)⇒ **唔觸發 H6 STOP**�
 
 ## 6. Falsification 計劃
 
-| 道 | 拆咩 | 預期 |
-|---|---|---|
-| 1 | 拆走 `/assistant` 個分支 | `G2` 紅(⚠️ `G4` 會**一齊**紅 —— 同 CH-032 道 1/3 一樣係結構性必然,唔係誤傷) |
-| 2 | **改 dock 一個字**(唔掂 `assistant.tsx`) | **恰好 `G4` 一條紅** ⇒ 呢道先真證到 scan 唔係 tautology(CH-032 道 2 個手法) |
-| 3 | helper 改成「有任何一條 run failed」 | `G1` 第三條紅(舊 failed + 新 running) |
-| 4 | 把 failed 分支同 `thinking` 改成可以同時出 | `G5` 紅 |
+| 道 | 拆咩 | 預期 | **實際(2026-08-21 真跑)** |
+|---|---|---|---|
+| 1 | 拆走 `/assistant` 個分支 | `G2` 紅(`G4` 一齊) | 🔴 **4 紅** — `G2` 兩條(`failed` + `expired`)· **`G5`** · `G4` 點名 **`assistant.tsx` is missing** |
+| 2 | **改 dock 一個字**(`could reply` → `could respond`,唔掂 `assistant.tsx`) | 恰好 `G4` 一條 | **2 紅** — dock **正面**那條 + `G4` 點名 **`agent-dock.tsx` is missing**;🟢 **`assistant.tsx` 三條行為 test 全綠** |
+| 3 | helper 改成 `runs.find(...)`(有任何一條 failed) | `G1` 第三條 | ✅ **恰好 1 紅** — `ignores a failure that has already been superseded`,訊息 `expected { id: 'old', status: 'failed' } to be null` |
+| 4 | `isThinking` 改成 `runs.some(...)`(有任何一條 live) | `G5` 紅 | **2 紅** — W48 嗰條 `does not show Thinking… when only an older run is unfinished` + **`G5`** |
+
+**零誤傷**:四道每次其餘全綠(64 / 66 / 67 / 66)。
+
+### 三件跑完先知嘅事
+
+**① `G5` 個 test 自己證明唔到自己 —— 要道 4 先證到。**
+佢兩條 assert 排住:先 `getByText(HEADLINE)` 再 `queryByText('Thinking…')).toBeNull()`。
+道 1 拆走 branch,**第一條就紅,第二條連跑都冇跑過** ⇒ 單睇道 1,「互斥」呢個 claim
+完全未驗。道 4(令兩者可以同時 true)先真證到第二條 assert 跑得到兼捉到嘢。
+📌 **同 CH-033 嗰個「一條 assert 排喺另一條後面,可以令佢由守衛變複述」同族**,但機制唔同:
+嗰次係前面嗰條把答案釘死,今次係**前面嗰條紅咗令後面冇機會跑**。
+
+**② 道 2 冇做到「恰好 1 紅」,而個原因係好事。**
+CH-032 道 2 做到,因為嗰句文案喺 dock 側冇對應行為 test。今次 dock **有**一條行為 test
+hardcode 住主句 ⇒ 改字必紅。**呢個係覆蓋率更高,唔係測試設計失手。**
+🟢 而 `G4` 想證嘅嘢照樣證到:**`assistant.tsx` 三條行為 test 全部綠** ⇒ `/assistant` 側行為
+一個字冇變,剩返嗰條 source scan 紅**只可能**嚟自跨檔比對 ⇒ tautology 冇發生。
+
+**③ 道 3 令 UI test 零紅 —— 「只睇最新 run」呢條規則,全靠新開嗰個 helper test。**
+`assistant.test.tsx` 同 `agent-dock.test.tsx` **一條都冇紅**。如果本單冇開
+`lib/assistant.test.ts`,「有任何一條 run failed 就報錯」呢個改動會**靜靜過骨**,而後果係
+一條答得好地地嘅 thread 上面掛住一個永久錯誤通知。
 
 ---
 
