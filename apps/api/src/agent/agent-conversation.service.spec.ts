@@ -95,6 +95,120 @@ describe('AgentConversationService (W48 F3)', () => {
     },
   );
 
+  // ── CH-035 — whoFixes reaches the wire ────────────────────────
+
+  /**
+   * 🔴🔴 Written because `get`'s SUCCESS path had no test at all.
+   *
+   * The `it.each` above exercises `get`, `archive` and `unarchive` — but only
+   * their refusal, which returns at `assertOwner` before touching the response.
+   * So the shape this endpoint actually sends was unasserted, and CH-035 put new
+   * mapping code exactly there. Confirmed rather than assumed: the whole
+   * agent-conversation suite stayed green (44/44) with the new `runs.map` on a
+   * mock that has no `runs` at all, because nothing ever ran it.
+   *
+   * ⚠️ This is the W45 `apiPatch` / BUG-011 shape again — the frontend suite
+   * builds its own `whoFixes` fixture, so "does the API send it" is a question
+   * neither layer's tests were positioned to ask.
+   */
+  const withRuns = (runs: unknown[]) => {
+    const built = build();
+    built.prisma.agentConversation.findUnique.mockResolvedValue({
+      ...conversationRow,
+      turns: [],
+      runs,
+    });
+    return built;
+  };
+
+  it('flattens the failed step onto the run as whoFixes', async () => {
+    const { service } = withRuns([
+      {
+        id: 'run_1',
+        status: 'failed',
+        startedAt: new Date('2026-08-20T07:50:17Z'),
+        steps: [{ whoFixes: 'platform' }],
+      },
+    ]);
+
+    const result = (await service.get(owner, 'conv_1')) as {
+      runs: { whoFixes: string | null }[];
+    };
+
+    expect(result.runs[0].whoFixes).toBe('platform');
+  });
+
+  it('sends null when the run left no failed step behind', async () => {
+    const { service } = withRuns([
+      {
+        id: 'run_1',
+        status: 'completed',
+        startedAt: new Date('2026-08-20T07:50:17Z'),
+        steps: [],
+      },
+    ]);
+
+    const result = (await service.get(owner, 'conv_1')) as {
+      runs: { whoFixes: string | null }[];
+    };
+
+    expect(result.runs[0].whoFixes).toBeNull();
+  });
+
+  /**
+   * 🔴 The negative, and it is the one that matters most.
+   *
+   * `steps` is destructured out rather than left beside `whoFixes`. Shipping
+   * both would be two answers to one question, and the array is the half that
+   * grows a `detail` field the day somebody widens the select — which is exactly
+   * the free text `D1` chose NOT to send.
+   */
+  it('does not ship the step array itself', async () => {
+    const { service } = withRuns([
+      {
+        id: 'run_1',
+        status: 'failed',
+        startedAt: new Date('2026-08-20T07:50:17Z'),
+        steps: [{ whoFixes: 'platform' }],
+      },
+    ]);
+
+    const result = (await service.get(owner, 'conv_1')) as {
+      runs: Record<string, unknown>[];
+    };
+
+    expect(result.runs[0]).not.toHaveProperty('steps');
+  });
+
+  /**
+   * The read itself: newest failed step only. A run can fail a tool call and
+   * carry on, so "the step that ended it" is the last one, not the first.
+   */
+  it('asks for the newest failed step and only that one', async () => {
+    const { service, prisma } = withRuns([]);
+
+    await service.get(owner, 'conv_1');
+
+    const select = prisma.agentConversation.findUnique.mock.calls[0][0] as {
+      select: {
+        runs: {
+          select: {
+            steps: {
+              where: { status: string };
+              orderBy: { createdAt: string };
+              take: number;
+            };
+          };
+        };
+      };
+    };
+    const steps = select.select.runs.select.steps;
+
+    expect(steps.where).toEqual({ status: 'failed' });
+    expect(steps.orderBy).toEqual({ createdAt: 'desc' });
+    expect(steps.take).toBe(1);
+  });
+
   it('addTurn refuses somebody else’s conversation before writing anything', async () => {
     const { service, chatTurnCreate, aiAssist } = build();
 

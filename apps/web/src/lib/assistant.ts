@@ -55,6 +55,47 @@ export function isThinking(runs: AgentConversationRun[] | undefined): boolean {
 }
 
 /**
+ * CH-035 — the statuses that END a run without an answer.
+ *
+ * 🔴 Both of these write a `whoFixes` on the step that ended them (`failRun` →
+ * `platform`, `expireRun` → `operator`), which is what makes them the same
+ * shape and why `DEV-1` widened this beyond the `failed` the spec asked for.
+ *
+ * 🔴 `aborted` is deliberately NOT here. Somebody pressed Stop — the thread has
+ * no answer because a person decided it should not have one, and there is
+ * nothing for anybody to fix. It writes no failed step at all, so there would be
+ * nothing to say beyond what the person already knows they did.
+ *
+ * ⚠️ Written as the explicit BAD set rather than "terminal and not completed",
+ * the opposite of `LIVE_STATUSES` above — and the asymmetry is on purpose. That
+ * one had to fail safe for statuses nobody has invented yet; this one must not
+ * claim a failure it cannot describe, so a new status stays silent here until
+ * somebody decides what it means.
+ */
+const FAILED_STATUSES: AgentRunStatus[] = ['failed', 'expired'];
+
+/**
+ * The run that ended badly and left the thread with nothing, if that is what
+ * happened to the last thing the person asked.
+ *
+ * 🔴 The LATEST run only — the rule `isThinking` established, for the same
+ * reason: a thread accumulates one run per turn, and a failure three questions
+ * ago has already been answered by the two successful turns after it. Asking
+ * "did any run fail" would put a permanent error on a working thread.
+ *
+ * 🔴 Returns the RUN, not a boolean, because the caller needs `whoFixes` off it.
+ * A boolean would push the second lookup back into the component, which is
+ * where this file's header says rules must not live.
+ */
+export function latestRunFailure(
+  runs: AgentConversationRun[] | undefined,
+): AgentConversationRun | null {
+  if (!runs || runs.length === 0) return null;
+  const latest = runs[runs.length - 1];
+  return FAILED_STATUSES.includes(latest.status) ? latest : null;
+}
+
+/**
  * The run a person has to go and decide, if there is one.
  *
  * 🔴 `F5-4` / ADR-0041 D8 — this returns a run to LINK TO, never something to

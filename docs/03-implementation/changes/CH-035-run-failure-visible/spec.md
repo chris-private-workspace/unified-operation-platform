@@ -1,7 +1,8 @@
 ---
 change_id: CH-035
 title: 一條 failed 嘅 run,喺兩個 chat 面完全唔顯示
-status: proposed        # proposed | approved | done
+status: approved        # proposed | approved | done
+approved: 2026-08-21    # Chris Lai — D1 揀 C;D2 / D3 照建議
 owner: Chris Lai
 author: AI
 opened: 2026-08-20
@@ -10,8 +11,8 @@ source: 2026-08-20 本機實測(配 Azure OpenAI 之前撞到)· 同族 CH-032 �
 
 # CH-035 — run 失敗要講出嚟
 
-> **狀態:`proposed`** —— 等 owner 批 §2 scope + §3 三條 D + §5 acceptance。
-> 分類理由見 §0。**未批之前唔落任何 code。**
+> **狀態:`approved`(Chris Lai,2026-08-21)—— `D1` 揀 **C**(「失敗咗」+ `whoFixes`),`D2` / `D3` 照建議。**
+> 分類理由見 §0;決定見 §3;**開工後三個 deviation 見 §10**。
 
 ---
 
@@ -161,7 +162,58 @@ Icon:`CircleAlert`(`ai-assist-card.tsx` 一早用緊)⇒ **唔觸發 H6 STOP**�
 
 ---
 
-## 9. 估算
+## 9. 🔴 開工後三個 deviation(`R3` changelog,2026-08-21)
+
+批 spec 之後、寫 code 之前查 API 側,揾到三件 spec 寫嗰陣唔知嘅事。三個都**擴大或改變咗
+落地形狀**,所以逐個記低理由。
+
+### `DEV-1` — 範圍由 `failed` 擴到 `failed` + `expired`
+
+逐個 `agentRun.update` 驗過,**`AgentRun.status` 實際只被寫入六個值**:
+
+| 寫入點 | status | step 寫低嘅 `whoFixes` |
+|---|---|---|
+| `queueRun`(create) | `running` | — |
+| `persistTurn:1265` | `awaiting_approval` | — |
+| `persistTurn:1204` | `completed` | — |
+| `failRun:1179` | **`failed`** | **`platform`** |
+| `expireRun:1068` | **`expired`** | **`operator`** |
+| `abortRun:931` | `aborted` | ❌ 冇(佢寫 `key: 'abort', status: 'ok'`) |
+
+⇒ **`expired` 同 `failed` 係同一個形狀**(終結 · 冇 assistant turn · **有 `whoFixes`**),
+只做 `failed` 就係「一個狀態講得出,另一個一模一樣嘅講唔出」。
+⚠️ **`aborted` 刻意唔做** —— 佢係人自己撳 Stop,唔係失敗,而且**冇 `whoFixes` 可以顯示**。
+
+🔴 順帶一個唔喺本單 scope 嘅發現:**`rejected` 同 `approved` 兩個 status 前端 type 有,
+而 api 側冇任何 writer**(`rejected` 全部係 `AgentProposal.status`)。**唔喺本單處理**,
+已記入 `progress.md`。
+
+### `DEV-2` — `whoFixes` 唔喺 `AgentRun` 而喺 `AgentStep`
+
+`D1` = C 要送 `whoFixes`,而佢係 **`AgentStep` 嘅欄**唔係 run 嘅。⇒ `GET
+/agent/conversations/:id` 個 runs select 要 **nested 攞最後一條 failed step**,再 map 成
+一個 `whoFixes` 純量。`spec §4 D` 原文寫「改 `CONVERSATION_SELECT`」係**錯位**:runs
+select 根本唔喺嗰個常數入面。⇒ 照 `TURN_SELECT` 先例抽一個 **`RUN_SELECT`**,`R2` 個
+「改一個共用常數」嘅意圖照樣兌現。
+
+### `DEV-3` — `WHO_FIXES` 文案唔自己寫,重用 ADR-0029 嗰個
+
+`assign-result-dialog.tsx:65-71` **一早有** `WHO_FIXES`,而且 ADR-0029 `D2` 明文寫低
+`operator` **刻意冇 line**（「those messages already say what to do」)——
+啱好對上 `expireRun` 個 `operator`。⇒ 抽去 `lib/who-fixes.ts` 兩邊 import。
+
+🔴 **但咁樣會令 `G4` 對呢一半變成 tautology**(spec `R1` 擔心嗰樣),所以**分開兩層**:
+
+| 層 | 做法 | 理由 |
+|---|---|---|
+| `whoFixes` 文案 | **共用 const** | 佢係 **ADR-0029 定義嘅 vocabulary**,唔係某個畫面嘅文案 |
+| 主句(「run 停咗」) | **兩邊各自寫死 + source scan** | 呢個先係畫面文案,而 CH-032 `D2` 證過各寫一句必然漂 |
+
+⇒ `G4` 守主句,仍然有意義;vocabulary 結構上唔會漂。
+
+---
+
+## 10. 估算
 
 **半日以內。** 三個分支加埋幾十行,而 `ai-assist-card.tsx` 有寫好嘅 `failed` 呈現可以參考。
 成本主要喺 test(尤其 `G5` 個互斥 assert)同 render,唔喺實作。

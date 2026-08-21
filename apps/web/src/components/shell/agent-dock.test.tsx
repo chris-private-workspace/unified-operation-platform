@@ -326,6 +326,67 @@ describe('agent dock chat (W49 F4)', () => {
   // ── F4-2 / ADR-0041 D8 — no approving from the dock ─────────────
 
   /**
+   * 🔴 CH-035 `G3` — the dock had the same blind spot `/assistant` did.
+   *
+   * ⚠️ Not a case of "the dock got it right and the screen lagged", which was
+   * the shape of all three CH-032 sentences. Neither surface said anything when
+   * a run died, and the dock meets that state MORE often for the same reason
+   * `F4-3` gives about the disconnected banner: it stays open all day, so it is
+   * there when an api restart kills a run mid-question.
+   */
+  it('says when the latest run failed, and who can fix it', () => {
+    asRole('ADMIN');
+    withOpenThread({
+      turns: [{ id: 't1', role: 'user', content: 'what can you help' }],
+      runs: [
+        {
+          id: 'run-1',
+          status: 'failed',
+          startedAt: '2026-08-20T07:50:17Z',
+          whoFixes: 'platform',
+        },
+      ],
+    });
+    useUiStore.setState({ dockOpen: true });
+    renderDock();
+
+    fireEvent.click(screen.getByRole('button', { name: /new conversation/i }));
+
+    expect(
+      screen.getByText(
+        'That question was not answered — the run stopped before it could reply.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('This one is ours — raise it with the platform team.'),
+    ).toBeInTheDocument();
+  });
+
+  /** The negative — otherwise the notice is furniture on every healthy thread. */
+  it('stays quiet when the run completed', () => {
+    asRole('ADMIN');
+    withOpenThread({
+      runs: [
+        {
+          id: 'run-1',
+          status: 'completed',
+          startedAt: '2026-08-20T07:50:17Z',
+        },
+      ],
+    });
+    useUiStore.setState({ dockOpen: true });
+    renderDock();
+
+    fireEvent.click(screen.getByRole('button', { name: /new conversation/i }));
+
+    expect(
+      screen.queryByText(
+        'That question was not answered — the run stopped before it could reply.',
+      ),
+    ).toBeNull();
+  });
+
+  /**
    * 🔴 The behavioural half: a parked proposal offers a LINK, never a decision.
    */
   it('sends a waiting proposal to the request instead of deciding it here', () => {

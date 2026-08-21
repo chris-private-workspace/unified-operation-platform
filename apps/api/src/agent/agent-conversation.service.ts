@@ -59,6 +59,41 @@ export const CONVERSATION_SELECT = {
   updatedAt: true,
 } as const;
 
+/**
+ * CH-035 `A` / `DEV-2` — one run of this conversation, as the thread sees it.
+ *
+ * 🔴 A named constant for the reason `TURN_SELECT` above is one: this shape is
+ * about to grow a nested read, and a `select` written inline at its single call
+ * site is a shape nobody can point at from a test.
+ *
+ * 🔴 **`steps` is here because `whoFixes` is not on `AgentRun`.** It is an
+ * `AgentStep` column, written by `failRun` (`'platform'`) and `expireRun`
+ * (`'operator'`), so "who can fix this" has to come from the step that ended the
+ * run rather than from the run itself. `spec §4 D` said to change
+ * `CONVERSATION_SELECT`; that was aimed at the wrong constant, and the deviation
+ * is written up in `spec §9 DEV-2`.
+ *
+ * ⚠️ `detail` is deliberately NOT selected. `D1` chose C — a controlled
+ * vocabulary, not free text — and the live example is exactly why: the real
+ * message on 2026-08-20 was `Set AZURE_OPENAI_ENDPOINT`, which is both the wrong
+ * audience for an operator and the kind of string that quotes internal
+ * coordinates. `AgentStep.detail` stays where it is, readable by an admin on the
+ * run itself.
+ */
+export const RUN_SELECT = {
+  id: true,
+  status: true,
+  startedAt: true,
+  steps: {
+    where: { status: 'failed' },
+    select: { whoFixes: true },
+    // The step that ENDED it. A run can fail a tool call mid-way and carry on,
+    // so the newest failed step is the one that describes how it finished.
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+  },
+} as const;
+
 @Injectable()
 export class AgentConversationService {
   constructor(
@@ -179,15 +214,31 @@ export class AgentConversationService {
       select: {
         ...CONVERSATION_SELECT,
         turns: { select: TURN_SELECT, orderBy: { createdAt: 'asc' } },
-        runs: {
-          select: { id: true, status: true, startedAt: true },
-          orderBy: { startedAt: 'asc' },
-        },
+        runs: { select: RUN_SELECT, orderBy: { startedAt: 'asc' } },
       },
     });
     if (!conversation) throw new NotFoundException('Conversation not found');
     this.assertOwner(user, conversation.startedById);
-    return conversation;
+
+    /**
+     * CH-035 `A` — the nested step collapses to one scalar before it leaves.
+     *
+     * 🔴 `steps` is destructured OUT rather than left alongside `whoFixes`. A
+     * response carrying both would be two answers to the same question, and the
+     * one this service did not intend — an array a client could read further —
+     * is the one that grows a `detail` field the day somebody widens the select.
+     * The API says who can fix it; it does not ship a step list.
+     */
+    return {
+      ...conversation,
+      runs: conversation.runs.map(({ steps, ...run }) => ({
+        ...run,
+        // null on a run that has not failed, and on `aborted` — that path
+        // writes no failed step at all, because somebody pressing Stop is not
+        // a failure anybody has to fix (`spec §9 DEV-1`).
+        whoFixes: steps[0]?.whoFixes ?? null,
+      })),
+    };
   }
 
   /**

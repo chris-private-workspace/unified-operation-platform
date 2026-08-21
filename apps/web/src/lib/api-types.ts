@@ -1011,6 +1011,19 @@ export interface AgentConversationRun {
   id: string;
   status: AgentRunStatus;
   startedAt: string;
+  /**
+   * CH-035 / `D1` = C — who can unblock a run that ended badly.
+   *
+   * 🔴 The ADR-0029 D2 vocabulary, NEVER the error text. The server reads it off
+   * the step that ended the run (`whoFixes` is an `AgentStep` column, not a run
+   * one) and sends only this word, because the real message behind a failure can
+   * be something like `Set AZURE_OPENAI_ENDPOINT` — true, and useless to the
+   * person reading it.
+   *
+   * ⚠️ `null` on any run that has not failed, and on `aborted` too: pressing
+   * Stop writes no failed step. Absent means "nothing to fix", not "unknown".
+   */
+  whoFixes?: AssignStepOwner | null;
 }
 
 export interface AgentConversation {
