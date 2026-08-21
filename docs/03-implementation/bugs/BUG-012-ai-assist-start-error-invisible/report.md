@@ -139,8 +139,17 @@ profile 嘅狀態**:
 | `ai-assist.service.ts:258`(`queueRun` 入面) | `resolveForRun` ← profile 三條 400 喺呢度 |
 
 ⇒ 執行**停咗喺文字檢查**,`resolveForRun` **由頭到尾冇跑過** ⇒ 「DEV 有冇 active
-profile」呢條問題**今日仍然冇答案**。📌 同「`sync-check` 返 `FOUND` 證明唔到個 user
+profile」呢條問題**喺呢一刻冇答案**。📌 同「`sync-check` 返 `FOUND` 證明唔到個 user
 存在」同族:**一個閘冇報錯,唔等於佢後面嗰啲閘過咗**。
+
+> 🟢🟢 **後續(同日,收單之後)—— 呢條問題答咗:DEV 有恰好一個 active profile。**
+> Chris 喺 UI 撳 `Edit` 落一句 remark 再撳 `Run AI Assist`,**run 真開到兼且 agent
+> 提咗兩個 SKU** ⇒ `resolveForRun` 過咗關,而佢**只喺「恰好一個 active」先放行**
+> ⇒ **`= 1` 係嚴謹推論唔係估計**。
+> 📌 **上面段落嘅判斷冇錯,亦刻意保留** —— 佢講嘅係「**喺 `A3` 嗰一刻**推論唔到」,
+> 而嗰句到今日仍然啱。**新資訊嚟自一個新動作,唔係嚟自重新詮釋舊證據。**
+> 📌 **順帶一個對稱性**:「一個閘冇報錯」推論唔到後面;但「**一個動作成功**」就證明晒
+> **沿路每道閘都過** —— 同一日兩個方向都撞到。
 
 🟢 **而根因本身唔係 bug** —— 嗰張 request 真係冇 free-text remark,平台拒絕係**啱**嘅。
 **本單修好嘅係:呢個啱嘅拒絕,由「撳極都冇反應」變成一句人睇得明嘅說話。**
