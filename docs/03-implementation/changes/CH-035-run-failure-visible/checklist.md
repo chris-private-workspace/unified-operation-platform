@@ -43,5 +43,14 @@
 - [x] `CLAUDE.md §0` + `SESSION_SUMMARY` 換座標
 - [x] 🔴 **清返 render probe 嘅副作用** —— 兩條被誤 archive 嘅 thread 已 unarchive,
       DB 覆核 `archived = 0`(見 `progress.md` ④)
-- [ ] 🚧 **DEV 上機** —— 要部署 #14(連 CH-034)。🟢 本單**有新字串**,主句本身就係 marker
-      (而佢喺舊版確定唔存在 —— 呢單就係加佢嗰單)
+- [x] 🟢🟢 **DEV 上機 —— 部署 #14(`dev-4a92be0`)2026-08-21 做咗**。
+      主句 marker **×0 → ×2**;`AgentConversationRunDto` props 由 `id, status, startedAt`
+      → **`id, status, startedAt, whoFixes`**(enum 六個值逐個對上),`api-json`
+      **90,341 → 90,596 B**。
+      🔴 **開工揭到一個假 marker,而佢係我哋自己寫落文件嗰個** —— 本 checklist 上一版寫住
+      CH-034「靠 CSS `self-start`」,而 `self-start` 喺舊版**四個檔已經用緊** ⇒ Tailwind
+      一早生成咗嗰條 rule,`×0 → ×1` 結構上冇可能成立。改用 `max-w-full`(舊版**零檔**)。
+      📌 **一份交接文件推薦嘅 marker,同一個外人推薦嘅,一樣要驗。**
+- [ ] 🚧 **live 行為驗證(睇實物)** —— Chris 人手(要登入,AI 側刻意唔打 break-glass 密碼,H4)。
+      ⚠️ 而本單個提示**喺 DEV 平時唔會出** —— 要一條真失敗嘅 run,而 DEV 側 Azure OpenAI 通
+      ⇒ 同 CH-032 個 disconnected banner 一樣,**上到機唔等於見到**。
